@@ -184,13 +184,15 @@ class SqliteMemorySelectionJournal:
             ) from exc
 
     def list_memory_selections(
-        self, workspace_id: str, *, limit: int = 100
+        self, workspace_id: str, *, limit: int = 100, offset: int = 0
     ) -> tuple[MemorySelection, ...]:
         _check_limit(limit, "selection")
+        if not isinstance(offset, int) or offset < 0:
+            raise ValueError("selection offset is invalid")
         rows = self.backend.read_all(
             f"SELECT {_SELECTION_COLUMNS} FROM memory_selections "
-            "WHERE workspace_id = ? ORDER BY created_at_unix ASC, selection_id ASC LIMIT ?",
-            (workspace_id, limit),
+            "WHERE workspace_id = ? ORDER BY created_at_unix ASC, selection_id ASC LIMIT ? OFFSET ?",
+            (workspace_id, limit, offset),
         )
         return tuple(
             selection
@@ -233,6 +235,25 @@ class SqliteMemorySelectionJournal:
             return self.list_memory_search_terms(
                 workspace_id, knowledge_revision_id=knowledge_revision_id, limit=500
             )
+
+        return self.backend.transact(work)
+
+    def clear_memory_search_terms(self, workspace_id: str) -> int:
+        """Delete one workspace's derived terms and return the removed count."""
+
+        def work() -> int:
+            executor = self.backend.executor()
+            count = int(
+                executor.execute(
+                    "SELECT COUNT(*) FROM memory_search_terms WHERE workspace_id = ?",
+                    (workspace_id,),
+                )[0][0]
+            )
+            executor.execute(
+                "DELETE FROM memory_search_terms WHERE workspace_id = ?",
+                (workspace_id,),
+            )
+            return count
 
         return self.backend.transact(work)
 

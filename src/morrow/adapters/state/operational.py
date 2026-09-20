@@ -1,4 +1,4 @@
-"""SQLite adapter for the Stage 4 v1 Operational Store foundation."""
+"""SQLite adapter for the current Operational Store schema."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import sqlite3
 import stat
 import threading
 import time
+import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -16,14 +17,8 @@ from urllib.parse import quote
 
 from filelock import FileLock, Timeout
 
-from morrow.adapters.state.migrations import (
-    MigrationRegistry,
-    SchemaMigration,
-    identity_insert_sql,
-    identity_version_sql,
-    migration_insert_sql,
-    production_registry,
-)
+from morrow.adapters.state.schema import CURRENT_SCHEMA_STATEMENTS, CURRENT_SCHEMA_VERSION
+from morrow.adapters.state.schema_reconcile import reconcile_schema
 from morrow.core.store import (
     APPLICATION_ID,
     APPLICATION_NAME,
@@ -32,7 +27,6 @@ from morrow.core.store import (
     FILE_MODE,
     WRITE_RETRY_ATTEMPTS,
     BackupReport,
-    MigrationReport,
     OperationalStoreLayout,
     StorageError,
     StorageErrorCode,
@@ -48,6 +42,10 @@ _BUSY_CODES = {
     getattr(sqlite3, "SQLITE_BUSY", 5),
     getattr(sqlite3, "SQLITE_LOCKED", 6),
 }
+
+# Versions that still have a bounded data-migration path.  Older or unknown
+# catalogs remain diagnosable and require an explicit restore/rebuild choice.
+_UPGRADEABLE_SCHEMA_VERSIONS = tuple(range(42, CURRENT_SCHEMA_VERSION))
 
 
 class SystemStoreClock:
@@ -121,31 +119,6 @@ def rollback_quietly(connection: sqlite3.Connection) -> None:
         connection.execute("ROLLBACK")
     except sqlite3.Error:
         pass
-
-
-def _restore_migration_pragmas(connection: sqlite3.Connection, migration: SchemaMigration) -> None:
-    try:
-        if getattr(migration, "requires_foreign_keys_off", False):
-            connection.execute("PRAGMA foreign_keys = ON")
-        if getattr(migration, "requires_legacy_alter_table", False):
-            connection.execute("PRAGMA legacy_alter_table = OFF")
-    except sqlite3.Error:
-        pass
-
-
-def _verify_rebuild(connection: sqlite3.Connection) -> None:
-    """A rebuild migration proves the store consistent before its own commit."""
-
-    try:
-        violations = connection.execute("PRAGMA foreign_key_check").fetchall()
-        integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
-    except sqlite3.Error as exc:
-        raise translate_sqlite_error(exc) from exc
-    if violations or integrity != "ok":
-        raise StorageError(
-            StorageErrorCode.NEEDS_REPAIR,
-            "operational store migration left the store inconsistent",
-        )
 
 
 def posix_mode(path: Path) -> int:
@@ -342,14 +315,12 @@ class OperationalStore:
         retry_policy: BusyRetryPolicy | None = None,
         maintenance_timeout: float = 0.1,
         failure_injector: Callable[[str], None] | None = None,
-        registry: MigrationRegistry | None = None,
     ) -> None:
         self.layout = OperationalStoreLayout.from_root(data_root)
         self.clock = clock or SystemStoreClock()
         self.retry_policy = retry_policy or BusyRetryPolicy()
         self.maintenance_timeout = maintenance_timeout
         self.failure_injector = failure_injector
-        self.registry = registry or production_registry()
 
     def _fail(self, point: str) -> None:
         if self.failure_injector:
@@ -401,6 +372,11 @@ class OperationalStore:
             with self.maintenance_lock():
                 return self._initialize_locked()
         if mode is StoreOpenMode.READ_WRITE:
+            if self.classify().schema_version in _UPGRADEABLE_SCHEMA_VERSIONS:
+                with self.maintenance_lock():
+                    self._upgrade_locked()
+            with self.maintenance_lock():
+                self._reconcile_locked()
             return self._open_read_write()
         if mode is StoreOpenMode.READ_ONLY:
             return self._open_inspect(mode, full_integrity=False)
@@ -408,10 +384,6 @@ class OperationalStore:
 
     def initialize(self) -> OperationalStoreSession:
         return self.open(StoreOpenMode.CREATE)
-
-    def migrate(self) -> MigrationReport:
-        with self.maintenance_lock():
-            return self._migrate_locked()
 
     def backup(self, destination_name: str | None = None) -> BackupReport:
         with self.maintenance_lock():
@@ -485,14 +457,14 @@ class OperationalStore:
             if mode is StoreOpenMode.READ_ONLY:
                 _raise_if_unhealthy(classified, allow_read_only=True)
                 health = (
-                    StoreHealth.READ_ONLY
-                    if not os.access(self.layout.database, os.W_OK)
-                    else StoreHealth.OK
-                )
-                if classified.health is StoreHealth.FUTURE_SCHEMA:
-                    raise StorageError(
-                        StorageErrorCode.FUTURE_SCHEMA, _message_for(StorageErrorCode.FUTURE_SCHEMA)
+                    classified.health
+                    if classified.health is StoreHealth.FUTURE_SCHEMA
+                    else (
+                        StoreHealth.READ_ONLY
+                        if not os.access(self.layout.database, os.W_OK)
+                        else StoreHealth.OK
                     )
+                )
                 if not _header_is_wal(self.layout.database):
                     raise StorageError(
                         StorageErrorCode.UNAVAILABLE, "operational store is not in WAL mode"
@@ -535,7 +507,11 @@ class OperationalStore:
         database = self.layout.database
         if database.exists():
             classification = self.classify()
+            if classification.schema_version in _UPGRADEABLE_SCHEMA_VERSIONS:
+                self._upgrade_locked()
+                classification = self.classify()
             if classification.ok:
+                self._reconcile_locked()
                 return self._open_read_write()
             code = classification.error_code or StorageErrorCode.NEEDS_REPAIR
             raise StorageError(code, _message_for(code))
@@ -545,19 +521,28 @@ class OperationalStore:
             connection = self._connect(read_only=False, missing_ok=True)
             _apply_session_pragmas(connection, self.retry_policy.busy_timeout_ms)
             _enable_wal(connection)
-            created_at = int(self.clock.now().timestamp())
-            self._fail("begin")
-            connection.execute("BEGIN IMMEDIATE")
             try:
-                self._apply_v1(connection, created_at)
+                # The catalog is created once at the current schema version. DDL
+                # containing JSON functions must be parsed while trusted_schema
+                # is enabled; it is restored before the session is returned.
+                connection.execute("PRAGMA trusted_schema = ON")
+                self._fail("begin")
+                connection.execute("BEGIN IMMEDIATE")
+                for statement in CURRENT_SCHEMA_STATEMENTS:
+                    connection.execute(statement)
+                connection.execute(f"PRAGMA application_id = {APPLICATION_ID}")
+                connection.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
                 self._fail("before_commit")
                 connection.execute("COMMIT")
             except Exception:
                 rollback_quietly(connection)
                 raise
+            finally:
+                try:
+                    connection.execute("PRAGMA trusted_schema = OFF")
+                except sqlite3.Error:
+                    pass
             self._fail("after_commit")
-            for migration in self.registry.pending(1):
-                self._apply_migration(connection, migration)
             _full_integrity(connection)
             restrict_path(database, FILE_MODE)
             _restrict_sidecars(self.layout)
@@ -565,7 +550,7 @@ class OperationalStore:
                 connection,
                 mode=StoreOpenMode.CREATE,
                 health=StoreHealth.OK,
-                schema_version=self.registry.supported_version,
+                schema_version=CURRENT_SCHEMA_VERSION,
                 retry_policy=self.retry_policy,
                 clock=self.clock,
                 failure_injector=self.failure_injector,
@@ -585,116 +570,138 @@ class OperationalStore:
                 StorageErrorCode.UNAVAILABLE, "operational store could not be written"
             ) from exc
 
-    def _apply_v1(self, connection: sqlite3.Connection, created_at: int) -> None:
-        migration = self.registry.get(1)
-        for statement in migration.statements:
-            connection.execute(statement)
-        connection.execute(f"PRAGMA application_id = {APPLICATION_ID}")
-        connection.execute(f"PRAGMA user_version = {int(migration.version)}")
-        connection.execute(
-            identity_insert_sql(),
-            (APPLICATION_NAME, migration.version, created_at),
-        )
-        connection.execute(
-            migration_insert_sql(),
-            (migration.version, migration.name, migration.checksum, created_at),
-        )
+    def _upgrade_locked(self) -> None:
+        from morrow.adapters.state.schema_upgrade import DATA_MIGRATIONS, upgrade_v42, upgrade_v43
 
-    def _migrate_locked(self) -> MigrationReport:
-        classification = self._require_present_header()
-        if classification.error_code in {
-            StorageErrorCode.NEEDS_REPAIR,
-            StorageErrorCode.IDENTITY_MISMATCH,
-            StorageErrorCode.FUTURE_SCHEMA,
-        }:
-            raise StorageError(classification.error_code, _message_for(classification.error_code))
+        classification = self.classify()
+        if classification.ok:
+            return
+        if (
+            classification.schema_version not in _UPGRADEABLE_SCHEMA_VERSIONS
+            or classification.error_code is not StorageErrorCode.UNSUPPORTED_SCHEMA
+        ):
+            raise StorageError(
+                classification.error_code or StorageErrorCode.NEEDS_REPAIR,
+                "operational store cannot be upgraded",
+            )
+        version = classification.schema_version
+        if version is None:
+            raise StorageError(
+                StorageErrorCode.NEEDS_REPAIR, "operational store cannot be upgraded"
+            )
+        while version < CURRENT_SCHEMA_VERSION:
+            if version == 42:
+                upgrade = upgrade_v42
+            elif version == 43:
+                upgrade = upgrade_v43
+            else:
+                upgrade = DATA_MIGRATIONS.get(version)
+            if upgrade is None:
+                raise StorageError(
+                    StorageErrorCode.UNSUPPORTED_SCHEMA,
+                    "operational store cannot be upgraded",
+                )
+            next_version = version + 1
+            # The source backup includes committed WAL content, not only the DB file.
+            self._backup_locked(
+                f"pre-v{next_version}-{uuid.uuid4().hex}.sqlite", allow_upgrade=True
+            )
+            connection = self._connect(read_only=False)
+            try:
+                _apply_session_pragmas(connection, self.retry_policy.busy_timeout_ms)
+                identity = _read_identity(connection)
+                if identity.user_version != version:
+                    raise StorageError(
+                        StorageErrorCode.BUSY, "store version changed during upgrade"
+                    )
+                upgrade(connection, before_commit=lambda: self._fail("upgrade_before_commit"))
+            except sqlite3.Error as exc:
+                raise translate_sqlite_error(exc) from exc
+            finally:
+                connection.close()
+            version = next_version
+        if not classification.ok:
+            classification = self.classify()
+        if not classification.ok:
+            raise StorageError(
+                classification.error_code or StorageErrorCode.NEEDS_REPAIR,
+                "operational store cannot be upgraded",
+            )
+
+    def _reconcile_locked(self) -> None:
+        """Apply safe additive schema changes while holding the maintenance lock."""
+
+        classification = self.classify()
+        if not classification.present or classification.health is StoreHealth.FUTURE_SCHEMA:
+            return
+        if classification.error_code not in {None, StorageErrorCode.UNSUPPORTED_SCHEMA}:
+            return
+        if classification.schema_version is None or classification.schema_version < min(
+            _UPGRADEABLE_SCHEMA_VERSIONS
+        ):
+            return
         connection = None
         try:
-            connection = self._connect(read_only=False)
-            _apply_session_pragmas(connection, self.retry_policy.busy_timeout_ms)
-            classified = self._classify_connection(connection, full_integrity=True)
-            _raise_if_unhealthy(classified, allow_read_only=False)
-            current = classified.schema_version or 0
-            pending = self.registry.pending(current)
-            if not pending:
-                _enable_wal(connection)
-                connection.close()
-                return MigrationReport(
-                    from_version=current,
-                    to_version=current,
-                    applied=(),
-                    health=StoreHealth.OK,
-                )
-            backup = self._backup_locked()
-            applied: list[str] = []
-            for migration in pending:
-                self._apply_migration(connection, migration)
-                applied.append(migration.name)
-            _enable_wal(connection)
-            _full_integrity(connection)
-            _restrict_sidecars(self.layout)
-            restrict_path(self.layout.database, FILE_MODE)
+            # Most opens are already at the desired shape.  Diff those stores
+            # through a read-only connection so an unrelated writer does not
+            # turn a no-op open into a write-lock contention.
+            connection = self._connect(read_only=True)
+            _apply_session_pragmas(connection, self.retry_policy.busy_timeout_ms, writable=False)
+            preview = reconcile_schema(connection, apply=False)
             connection.close()
             connection = None
-            return MigrationReport(
-                from_version=current,
-                to_version=self.registry.supported_version,
-                applied=tuple(applied),
-                health=StoreHealth.OK,
-                backup_name=backup.destination_name,
-            )
-        except Exception:
-            if connection is not None:
-                connection.close()
-            raise
+            if not preview.pending_changes:
+                return
 
-    def _apply_migration(self, connection: sqlite3.Connection, migration: SchemaMigration) -> None:
-        applied_at = int(self.clock.now().timestamp())
-        try:
-            # SQLite cannot alter CHECK constraints in place. A rebuild migration
-            # declares its pragma needs as metadata; foreign_keys must be set
-            # before the transaction begins and both pragmas are always restored.
-            # Duck-typed test migrations carry no metadata and get no pragmas.
-            if getattr(migration, "requires_legacy_alter_table", False):
-                connection.execute("PRAGMA legacy_alter_table = ON")
-            if getattr(migration, "requires_foreign_keys_off", False):
-                connection.execute("PRAGMA foreign_keys = OFF")
+            connection = self._connect(read_only=False)
+            _apply_session_pragmas(connection, self.retry_policy.busy_timeout_ms)
+            connection.execute("PRAGMA trusted_schema = ON")
             connection.execute("BEGIN IMMEDIATE")
-            self._fail("begin")
-            for statement in migration.statements:
-                connection.execute(statement)
-            if migration.version == 1:
-                connection.execute(f"PRAGMA application_id = {APPLICATION_ID}")
-                connection.execute(
-                    identity_insert_sql(),
-                    (APPLICATION_NAME, migration.version, applied_at),
+            report = reconcile_schema(connection, apply=True)
+            if report.pending_changes:
+                raise StorageError(
+                    StorageErrorCode.UNSUPPORTED_SCHEMA,
+                    "operational store requires an explicit schema migration",
                 )
-            else:
-                connection.execute(identity_version_sql(), (migration.version,))
-            connection.execute(f"PRAGMA user_version = {int(migration.version)}")
-            connection.execute(
-                migration_insert_sql(),
-                (migration.version, migration.name, migration.checksum, applied_at),
-            )
-            if getattr(migration, "requires_rebuild_verification", False):
-                _verify_rebuild(connection)
-            self._fail("before_migration_commit")
+            if connection.execute("PRAGMA foreign_key_check").fetchall():
+                raise StorageError(
+                    StorageErrorCode.NEEDS_REPAIR,
+                    "operational store foreign-key validation failed",
+                )
             connection.execute("COMMIT")
-            _restore_migration_pragmas(connection, migration)
-        except sqlite3.Error as exc:
-            rollback_quietly(connection)
-            _restore_migration_pragmas(connection, migration)
-            raise translate_sqlite_error(exc) from exc
-        except Exception:
-            rollback_quietly(connection)
-            _restore_migration_pragmas(connection, migration)
+        except StorageError:
+            if connection is not None:
+                rollback_quietly(connection)
             raise
+        except sqlite3.Error as exc:
+            if connection is not None:
+                rollback_quietly(connection)
+            raise translate_sqlite_error(exc) from exc
+        finally:
+            if connection is not None:
+                try:
+                    connection.execute("PRAGMA trusted_schema = OFF")
+                except sqlite3.Error:
+                    pass
+                connection.close()
 
-    def _backup_locked(self, destination_name: str | None = None) -> BackupReport:
+    def _backup_locked(
+        self, destination_name: str | None = None, *, allow_upgrade: bool = False
+    ) -> BackupReport:
         classification = self._require_present_header()
-        if classification.error_code is not None and classification.error_code not in {
-            StorageErrorCode.FUTURE_SCHEMA,
-        }:
+        upgrading = (
+            allow_upgrade
+            and classification.schema_version in _UPGRADEABLE_SCHEMA_VERSIONS
+            and classification.error_code is StorageErrorCode.UNSUPPORTED_SCHEMA
+        )
+        if (
+            not upgrading
+            and classification.error_code is not None
+            and classification.error_code
+            not in {
+                StorageErrorCode.FUTURE_SCHEMA,
+            }
+        ):
             # Backup of a future schema is allowed as a safe copy; corrupt files are not.
             if classification.error_code is not StorageErrorCode.FUTURE_SCHEMA:
                 raise StorageError(
@@ -849,7 +856,8 @@ class OperationalStore:
                 health=StoreHealth.NEEDS_REPAIR,
                 error_code=StorageErrorCode.NEEDS_REPAIR,
             )
-        return _classify_identity_with_checksums(connection, identity, self.registry)
+        classified = _classify_identity(identity)
+        return classified
 
 
 def _read_header(database: Path) -> bytes:
@@ -867,6 +875,7 @@ def _pragma_int(connection: sqlite3.Connection, name: str) -> int:
 def _read_identity(connection: sqlite3.Connection) -> StoreIdentity:
     application_id = _pragma_int(connection, "application_id")
     user_version = _pragma_int(connection, "user_version")
+    fallback_name = APPLICATION_NAME if application_id == APPLICATION_ID else None
     try:
         row = connection.execute(
             "SELECT application_name, schema_version FROM store_identity WHERE singleton = 1"
@@ -874,18 +883,20 @@ def _read_identity(connection: sqlite3.Connection) -> StoreIdentity:
     except sqlite3.DatabaseError as exc:
         if is_busy_or_locked(exc):
             raise
+        if "no such table: store_identity" not in str(exc).lower():
+            raise
         return StoreIdentity(
             application_id=application_id,
             user_version=user_version,
-            application_name=None,
-            schema_version=None,
+            application_name=fallback_name,
+            schema_version=user_version if fallback_name is not None else None,
         )
     if row is None:
         return StoreIdentity(
             application_id=application_id,
             user_version=user_version,
-            application_name=None,
-            schema_version=None,
+            application_name=fallback_name,
+            schema_version=user_version if fallback_name is not None else None,
         )
     return StoreIdentity(
         application_id=application_id,
@@ -895,7 +906,7 @@ def _read_identity(connection: sqlite3.Connection) -> StoreIdentity:
     )
 
 
-def _classify_identity(identity: StoreIdentity, registry: MigrationRegistry) -> StoreClassification:
+def _classify_identity(identity: StoreIdentity) -> StoreClassification:
     if (
         identity.application_id == 0
         and identity.application_name is None
@@ -923,11 +934,19 @@ def _classify_identity(identity: StoreIdentity, registry: MigrationRegistry) -> 
             schema_version=identity.schema_version,
             application_name=identity.application_name,
         )
-    if identity.user_version > registry.supported_version:
+    if identity.user_version > CURRENT_SCHEMA_VERSION:
         return StoreClassification(
             present=True,
             health=StoreHealth.FUTURE_SCHEMA,
             error_code=StorageErrorCode.FUTURE_SCHEMA,
+            schema_version=identity.user_version,
+            application_name=identity.application_name,
+        )
+    if identity.user_version != CURRENT_SCHEMA_VERSION:
+        return StoreClassification(
+            present=True,
+            health=StoreHealth.UNSUPPORTED_SCHEMA,
+            error_code=StorageErrorCode.UNSUPPORTED_SCHEMA,
             schema_version=identity.user_version,
             application_name=identity.application_name,
         )
@@ -940,48 +959,28 @@ def _classify_identity(identity: StoreIdentity, registry: MigrationRegistry) -> 
     )
 
 
-def _checksum_matches(connection: sqlite3.Connection, registry: MigrationRegistry) -> bool:
-    try:
-        rows = connection.execute(
-            "SELECT version, checksum FROM schema_migrations ORDER BY version"
-        ).fetchall()
-    except sqlite3.DatabaseError as exc:
-        if is_busy_or_locked(exc):
-            raise
-        return False
-    for version, checksum in rows:
-        expected = registry.checksum_for(int(version))
-        if expected is not None and expected != str(checksum):
-            return False
-    return True
-
-
-def _classify_identity_with_checksums(
-    connection: sqlite3.Connection, identity: StoreIdentity, registry: MigrationRegistry
-) -> StoreClassification:
-    classified = _classify_identity(identity, registry)
-    if classified.error_code is not None:
-        return classified
-    if not _checksum_matches(connection, registry):
-        return StoreClassification(
-            present=True,
-            health=StoreHealth.NEEDS_REPAIR,
-            error_code=StorageErrorCode.NEEDS_REPAIR,
-            schema_version=classified.schema_version,
-            application_name=classified.application_name,
-        )
-    return classified
-
-
 def _apply_session_pragmas(
     connection: sqlite3.Connection, busy_timeout_ms: int, *, writable: bool = True
 ) -> None:
     try:
         connection.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
         connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA trusted_schema = OFF")
-        if writable:
+        # SQLite 3.40 parses persistent schema lazily. Load the catalog while
+        # trusted_schema is still ON: the application-owned schema contains
+        # json_valid()/json_extract() in indexes, and parsing it for the first
+        # time after trusted_schema=OFF is rejected as unsafe.
+        schema_primed = True
+        try:
+            connection.execute("SELECT name FROM sqlite_master").fetchall()
+        except sqlite3.Error as exc:
+            # Leave malformed catalogs for the classifier/integrity checker so
+            # diagnose still reports NEEDS_REPAIR instead of UNAVAILABLE.
+            if is_busy_or_locked(exc):
+                raise
+            schema_primed = False
+        if writable and schema_primed:
             connection.execute("PRAGMA synchronous = FULL")
+        connection.execute("PRAGMA trusted_schema = OFF")
     except sqlite3.Error as exc:
         raise translate_sqlite_error(exc) from exc
 
@@ -1006,13 +1005,23 @@ def _header_is_wal(database: Path) -> bool:
 
 
 def _full_integrity(connection: sqlite3.Connection) -> None:
+    integrity = None
+    foreign_keys: tuple[tuple[object, ...], ...] | None = None
     try:
+        # integrity_check walks partial indexes that call json_extract();
+        # Debian SQLite 3.40 treats that as unsafe when trusted_schema is OFF.
+        connection.execute("PRAGMA trusted_schema = ON")
         integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
-        foreign_keys = connection.execute("PRAGMA foreign_key_check").fetchall()
+        foreign_keys = tuple(connection.execute("PRAGMA foreign_key_check").fetchall())
     except sqlite3.Error as exc:
         raise StorageError(
             StorageErrorCode.NEEDS_REPAIR, _message_for(StorageErrorCode.NEEDS_REPAIR)
         ) from exc
+    finally:
+        try:
+            connection.execute("PRAGMA trusted_schema = OFF")
+        except sqlite3.Error:
+            pass
     if integrity != "ok" or foreign_keys:
         raise StorageError(
             StorageErrorCode.NEEDS_REPAIR, _message_for(StorageErrorCode.NEEDS_REPAIR)
@@ -1036,7 +1045,13 @@ def _raise_if_unhealthy(classification: StoreClassification, *, allow_read_only:
 def _message_for(code: StorageErrorCode) -> str:
     return {
         StorageErrorCode.BUSY: "operational store write contended",
-        StorageErrorCode.FUTURE_SCHEMA: "operational store is newer than this binary",
+        StorageErrorCode.UNSUPPORTED_SCHEMA: (
+            "operational store uses an older schema; create a new store with this version"
+        ),
+        StorageErrorCode.FUTURE_SCHEMA: (
+            "operational store is newer than this binary; restore a backup from "
+            "a matching Morrow version"
+        ),
         StorageErrorCode.IDENTITY_MISMATCH: "file is not a Morrow operational store",
         StorageErrorCode.NEEDS_REPAIR: "operational store is not a usable SQLite file",
         StorageErrorCode.NOT_FOUND: "operational store is missing",

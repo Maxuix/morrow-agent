@@ -7,6 +7,7 @@ import os
 import platform
 import shutil
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -94,6 +95,7 @@ class NativeSandboxProcessAdapter:
         environment: dict[str, str],
         output_limit: int,
         redaction_overlap: int = 0,
+        output_listener: Callable[[str, str], None] | None = None,
     ) -> ProcessOutput:
         self.last_change_set = None
         try:
@@ -151,6 +153,7 @@ class NativeSandboxProcessAdapter:
                 environment=sandbox_environment,
                 output_limit=output_limit,
                 redaction_overlap=redaction_overlap,
+                output_listener=output_listener,
             )
             collect_cancel = threading.Event()
             self.last_change_set = await self._snapshot_phase(

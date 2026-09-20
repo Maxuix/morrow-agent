@@ -73,6 +73,19 @@ _SUPPORTED_KEYWORDS = _ANNOTATION_KEYWORDS | {
 }
 
 
+class CuratedArgumentError(ValueError):
+    """A reviewed, bounded correction raised inside an arguments model validator.
+
+    The message is fixed source text, never a reflection of raw argument
+    values, and the code is a stable machine reason for the error envelope.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
 class ToolArgumentsValidationError(ValueError):
     """Stable, bounded validation failure; raw argument values never enter it."""
 
@@ -230,7 +243,7 @@ def _pydantic_type_for_schema(node: Any) -> str | None:
 def _translate_schema_details(
     details: tuple[dict[str, str], ...], schema: Any
 ) -> tuple[dict[str, str], ...]:
-    """Keep Pydantic-backed diagnostics compatible after the schema-first check."""
+    """Keep Pydantic-backed diagnostics aligned after the schema-first check."""
 
     if not isinstance(schema, dict):
         return details
@@ -316,12 +329,22 @@ class PydanticArgumentsValidator:
         try:
             return self.model.model_validate_json(raw, strict=True)
         except ValidationError as exc:
+            errors = exc.errors(include_url=False, include_input=False)
+            for error in errors:
+                curated = error.get("ctx", {}).get("error")
+                if isinstance(curated, CuratedArgumentError):
+                    raise ToolArgumentsValidationError(
+                        curated.code,
+                        curated.message,
+                        details=({"path": _path(error["loc"]), "type": curated.code},),
+                        expected=self.expected_shape,
+                    ) from None
             details = tuple(
                 {
                     "path": ".".join(str(item) for item in error["loc"]) or "$",
                     "type": str(error["type"]),
                 }
-                for error in exc.errors(include_url=False)[:16]
+                for error in errors[:16]
             )
             raise ToolArgumentsValidationError(
                 "validation_failed",
@@ -698,6 +721,7 @@ class JsonSchemaArgumentsValidator:
 
 
 __all__ = [
+    "CuratedArgumentError",
     "JsonSchemaArgumentsValidator",
     "MAX_ARGUMENT_BYTES",
     "MAX_NUMBER_DIGITS",

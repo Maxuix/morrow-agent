@@ -18,7 +18,7 @@ from pydantic import ValidationError
 
 from morrow.core.agent_definitions import AgentDefinitionVersion, ToolRequirement
 from morrow.core.models import ModelRef
-from morrow.core.workflows.contracts import MECHANISM_TOOL_NAMES
+from morrow.core.workflows.contracts import MECHANISM_TOOL_NAMES, SUBMIT_SCHEMA_VERSION
 from morrow.core.workflows.definitions import (
     AgentNode,
     CompiledWorkflow,
@@ -77,6 +77,7 @@ def compile_workflow(
     catalog: DefinitionCatalog,
     active_model: ModelRef | None,
     compiler_version: str = COMPILER_VERSION,
+    submission_protocol_version: int = SUBMIT_SCHEMA_VERSION,
 ) -> CompilationResult:
     """Compile one desired source into a canonical candidate using only typed inputs."""
     diagnostics: list[CompileDiagnostic] = []
@@ -131,6 +132,7 @@ def compile_workflow(
             terminal_nodes=terminal_nodes,
             budget=source.default_budget,
             compiler_version=compiler_version,
+            submission_protocol_version=submission_protocol_version,
         )
     except ValidationError as exc:
         details = "; ".join(

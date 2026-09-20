@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 
@@ -21,7 +21,12 @@ ArtifactId = Annotated[str, Field(pattern=r"^art_[A-Za-z0-9_-]+$")]
 ToolExecutionId = Annotated[str, Field(pattern=r"^tex_[A-Za-z0-9_-]+$")]
 
 SUBMIT_NODE_RESULT_NAME = "submit_node_result"
-SUBMIT_SCHEMA_VERSION = 1
+#: Protocol v1 is the frozen wire contract of already admitted runs. v2 adds
+#: explicitly registered delivery files. A Workflow revision records the
+#: version it was compiled with so recovery rebuilds the exact frozen tool
+#: schema instead of silently switching an old run to v2.
+SUBMIT_SCHEMA_V1 = 1
+SUBMIT_SCHEMA_VERSION = 2
 CAPTURE_SCHEMA_VERSION = 1
 TEXT_OUTPUT_KINDS = frozenset({"TextResult"})
 SUBMISSION_OUTPUT_KINDS = frozenset(
@@ -271,6 +276,119 @@ class ChangeCapture(ProtocolModel):
     def safe_payload(self):
         _refuse_workflow_payload(self, label="ChangeCapture", budget=1_048_576 + 2048)
         return self
+
+
+# Explicit delivery registration (submission protocol v2) ---------------------
+
+#: Bounded explicit delivery registration per submission.
+DELIVERY_MAX_ITEMS = 64
+DELIVERY_PATH_MAX_CHARS = 512
+DELIVERY_NAME_MAX_CHARS = 128
+DELIVERY_MIME_MAX_CHARS = 128
+#: One registered file and one submission stay inside the existing bounds.
+DELIVERY_FILE_MAX_BYTES = 20 * 1024 * 1024
+DELIVERY_TOTAL_MAX_BYTES = 20 * 1024 * 1024
+#: Static local resources captured with one HTML deliverable.
+DELIVERY_HTML_MAX_RESOURCES = 128
+DELIVERY_HTML_MAX_DEPTH = 8
+#: Durable descriptor/marker budgets; never a second copy of file bytes.
+DELIVERY_DESCRIPTOR_MAX_BYTES = 64 * 1024
+DELIVERY_MARKER_MAX_BYTES = 512 * 1024
+
+
+class DeliverableRequest(ProtocolModel):
+    """One model-provided registration; every other fact is server-derived."""
+
+    path: str = Field(min_length=1, max_length=DELIVERY_PATH_MAX_CHARS)
+    label: str | None = Field(default=None, max_length=DELIVERY_NAME_MAX_CHARS)
+
+    @field_validator("path")
+    @classmethod
+    def relative_workspace_path(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("deliverable path must not be blank")
+        if "\x00" in cleaned or "\\" in cleaned:
+            raise ValueError("deliverable path must be a workspace-relative POSIX path")
+        if cleaned.startswith(("/", "~")):
+            raise ValueError("deliverable path must be relative to the workspace")
+        if len(cleaned) >= 2 and cleaned[1] == ":":
+            raise ValueError("deliverable path must not carry a drive prefix")
+        if any(part in {"", ".", ".."} for part in cleaned.split("/")):
+            raise ValueError("deliverable path must contain only workspace components")
+        return cleaned
+
+    @field_validator("label")
+    @classmethod
+    def normalized_label(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split())
+        return cleaned or None
+
+
+class DeliveryResource(ProtocolModel):
+    """One static local dependency captured beside an HTML deliverable."""
+
+    path: str = Field(min_length=1, max_length=DELIVERY_PATH_MAX_CHARS)
+    artifact_id: ArtifactId
+    sha256: Digest
+    byte_size: int = Field(ge=0, le=DELIVERY_FILE_MAX_BYTES)
+
+
+class DeliveryDescriptor(ProtocolModel):
+    """Server-verified snapshot reference for one registered deliverable.
+
+    It carries no file body: the artifact store holds the exact bytes and the
+    descriptor only names the verified identity of that snapshot.
+    """
+
+    slot: SlotName
+    path: str = Field(min_length=1, max_length=DELIVERY_PATH_MAX_CHARS)
+    name: str = Field(min_length=1, max_length=DELIVERY_NAME_MAX_CHARS)
+    #: Optional display label the model registered; the real file name stays in
+    #: ``name`` and is what download uses.
+    label: str | None = Field(default=None, max_length=DELIVERY_NAME_MAX_CHARS)
+    mime: str = Field(min_length=1, max_length=DELIVERY_MIME_MAX_CHARS)
+    artifact_id: ArtifactId
+    sha256: Digest
+    byte_size: int = Field(ge=0, le=DELIVERY_FILE_MAX_BYTES)
+    content_complete: bool = Field(default=True, strict=True)
+    resources: tuple[DeliveryResource, ...] = Field(
+        default=(), max_length=DELIVERY_HTML_MAX_RESOURCES
+    )
+    #: Bounded limits of the captured collection (missing/remote references);
+    #: a limitation is reported, never silently substituted.
+    limitations: tuple[Annotated[str, Field(min_length=1, max_length=256)], ...] = Field(
+        default=(), max_length=64
+    )
+
+    @model_validator(mode="after")
+    def safe_descriptor(self):
+        payload = canonical_json_bytes(self.model_dump(mode="json"))
+        if len(payload) > DELIVERY_DESCRIPTOR_MAX_BYTES:
+            raise ValueError("delivery descriptor exceeds its payload budget")
+        refuse_secret_material(
+            payload, label="delivery descriptor", profile="workflow_value_sensitive"
+        )
+        return self
+
+
+class NodeSubmissionMarker(ProtocolModel):
+    """Durable read model of the one completed submission of a NodeRun.
+
+    The v1 shape (digest/slots/replan) still parses: every v2 field defaults,
+    and a v1 run keeps writing exactly that shape. Slot attribution of
+    ordinary delivery files lives here, never in the Artifact uniqueness
+    columns.
+    """
+
+    schema_version: int = Field(default=SUBMIT_SCHEMA_V1, ge=1, strict=True)
+    digest: Digest
+    slots: tuple[SlotName, ...] = Field(default=(), max_length=64)
+    replan: dict[str, Any] | None = None
+    deliverables: tuple[DeliveryDescriptor, ...] = Field(default=(), max_length=DELIVERY_MAX_ITEMS)
+    tool_execution_id: ToolExecutionId | None = None
 
 
 class ArtifactBinding(ProtocolModel):

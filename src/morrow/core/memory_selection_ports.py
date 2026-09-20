@@ -38,6 +38,8 @@ class MemorySelectionJournalPort(TransactionalJournalPort, Protocol):
         terms: tuple[MemorySearchTerm, ...],
     ) -> tuple[MemorySearchTerm, ...]: ...
 
+    def clear_memory_search_terms(self, workspace_id: str) -> int: ...
+
 
 class MemoryRunProjectionJournalPort(
     SessionRestoreJournalPort,

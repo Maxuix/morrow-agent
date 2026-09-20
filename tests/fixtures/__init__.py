@@ -1,1 +1,1 @@
-"""Test fixtures for Stage 4 store upgrades."""
+"""Shared test fixtures."""

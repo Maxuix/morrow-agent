@@ -123,52 +123,8 @@ class SkillCandidatePayload(LearningPayload):
         return tuple(_local_code(value, label="skill tool name") for value in values)
 
 
-class WorkflowFeedbackCandidatePayload(LearningPayload):
-    candidate_type: Literal[LearningCandidateType.WORKFLOW_FEEDBACK] = (
-        LearningCandidateType.WORKFLOW_FEEDBACK
-    )
-    workflow_name: str
-    edit_summary: str
-    result_summary: str | None = None
-
-    _clean_workflow = field_validator("workflow_name")(
-        lambda value: _local_code(value, label="workflow name")
-    )
-    _clean_edit = field_validator("edit_summary")(
-        lambda value: normalize_learning_text(value, label="workflow edit summary", maximum=1_024)
-    )
-    _clean_result = field_validator("result_summary")(
-        lambda value: (
-            None
-            if value is None
-            else normalize_learning_text(value, label="workflow result summary", maximum=1_024)
-        )
-    )
-
-
-class OrchestrationPolicyCandidatePayload(LearningPayload):
-    candidate_type: Literal[LearningCandidateType.ORCHESTRATION_POLICY_CANDIDATE] = (
-        LearningCandidateType.ORCHESTRATION_POLICY_CANDIDATE
-    )
-    trigger: str
-    workflow_name: str
-    rule_summary: str
-
-    _clean_trigger = field_validator("trigger")(_semantic_key)
-    _clean_workflow = field_validator("workflow_name")(
-        lambda value: _local_code(value, label="orchestration workflow name")
-    )
-    _clean_rule = field_validator("rule_summary")(
-        lambda value: normalize_learning_text(value, label="orchestration rule", maximum=1_024)
-    )
-
-
 type CandidatePayload = Annotated[
-    ProfileCandidatePayload
-    | ProjectKnowledgeCandidatePayload
-    | SkillCandidatePayload
-    | WorkflowFeedbackCandidatePayload
-    | OrchestrationPolicyCandidatePayload,
+    ProfileCandidatePayload | ProjectKnowledgeCandidatePayload | SkillCandidatePayload,
     Field(discriminator="candidate_type"),
 ]
 
@@ -231,10 +187,8 @@ __all__ = [
     "CandidatePayload",
     "LearningCandidateDraft",
     "LearningPayload",
-    "OrchestrationPolicyCandidatePayload",
     "ProfileCandidatePayload",
     "ProjectKnowledgeCandidatePayload",
     "ProjectKnowledgeCategory",
     "SkillCandidatePayload",
-    "WorkflowFeedbackCandidatePayload",
 ]

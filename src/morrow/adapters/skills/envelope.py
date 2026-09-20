@@ -46,7 +46,7 @@ def skill_version_from_envelope(payload: dict) -> SkillVersion:
         file_count=payload["file_count"],
         total_bytes=payload["total_bytes"],
         source_kind=source_kind,
-        scope_id=payload.get("scope_id"),
+        scope_id=payload["scope_id"],
         provenance=f"{source_kind.value}:{skill_id}/{version_id}",
         evidence_refs=tuple(payload.get("evidence_refs", ())),
         effective_trust=TrustLevel(payload["effective_trust"]),
@@ -219,7 +219,9 @@ def _validate_envelope_structure(payload: object, *, verify_digest: bool) -> Non
     effective = payload.get("effective_trust")
     if not isinstance(effective, str):
         raise EnvelopeError("managed-version.json effective_trust is invalid")
-    scope_id = payload.get("scope_id")
+    if "scope_id" not in payload:
+        raise EnvelopeError("managed-version.json scope_id is missing")
+    scope_id = payload["scope_id"]
     if scope_id is not None and not isinstance(scope_id, str):
         raise EnvelopeError("managed-version.json scope_id is invalid")
     tree_digest = payload.get("tree_digest")

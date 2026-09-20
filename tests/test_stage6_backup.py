@@ -238,3 +238,40 @@ def test_current_backup_is_the_only_state_backup_cli_format(tmp_path):
     assert result.exit_code == 0, result.output
     manifest = root / "backups" / "operational" / "stage6-cli.bundle" / "manifest.json"
     assert json.loads(manifest.read_text(encoding="utf-8"))["manifest_version"] == 2
+
+
+def test_stage6_backup_captures_and_restores_preset_preferences(tmp_path):
+    from morrow.adapters.state.preset_preference_yaml import AgentPresetPreferenceYamlStore
+    from morrow.core.agent_presets import AgentPresetPreference, AgentPresetPreferenceDocument
+    from morrow.core.execution_selections import ExplicitGenerationSelection
+    from morrow.core.models import ModelRef
+
+    store, handle, journal = _store(tmp_path)
+    preferences = AgentPresetPreferenceYamlStore(store.layout.data_root)
+    written = preferences.write(
+        "ws_1",
+        AgentPresetPreferenceDocument(
+            presets=(
+                AgentPresetPreference(
+                    definition_id="builtin_explore",
+                    model=ModelRef(provider_id="fake-provider", model_id="m1"),
+                    generation=ExplicitGenerationSelection(mode="explicit", value="low"),
+                ),
+            )
+        ),
+        expected_revision=0,
+    )
+    backup = OperationalBackupService(store, journal=journal)
+    report = backup.create("stage6-preset-prefs")
+    bundle = store.layout.backups_dir / report.bundle_name
+    assert backup.verify(bundle).ok
+    manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+    assert any(
+        item["path"] == "workspaces/ws_1/agent-preset-preferences.yaml"
+        for item in manifest["files"]
+    )
+    restored = backup.restore(bundle, tmp_path / "restored")
+    assert restored.ok
+    restored_store = AgentPresetPreferenceYamlStore(tmp_path / "restored")
+    assert restored_store.load("ws_1").presets == written.presets
+    handle.close()

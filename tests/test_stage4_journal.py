@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
-from morrow.adapters.state.migrations import V1, V2, V3, V4, MigrationRegistry
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.core.artifacts import ArtifactKind, ArtifactMetadata, ArtifactSensitivity
 from morrow.core.domain import (
@@ -43,14 +42,13 @@ def _retry() -> BusyRetryPolicy:
     return BusyRetryPolicy(busy_timeout_ms=0, sleep=lambda _delay: None, rng=random.Random(0))
 
 
-def _open_journal(tmp_path: Path, *, registry: MigrationRegistry | None = None):
+def _open_journal(tmp_path: Path):
     root = tmp_path / "state"
     store = OperationalStore(
         root,
         retry_policy=_retry(),
         clock=FixedClock(),
         maintenance_timeout=0,
-        registry=registry,
     )
     session = store.initialize()
     return store, session, SqliteOperationalJournal(session)
@@ -105,18 +103,17 @@ def test_initialize_creates_v3_business_tables(tmp_path):
             "turns",
             "agent_runs",
             "conversation_records",
-            "turn_submit_receipts",
+            "command_receipts",
             "tool_executions",
             "approvals",
             "recovery_reports",
-            "recovery_receipts",
         }.issubset(names)
         assert journal.list_sessions("ws_a") == ()
     finally:
         session.close()
 
 
-def test_global_artifact_authority_includes_reference_only_fk_anomalies(tmp_path):
+def test_global_artifact_authority_uses_artifact_metadata_rows(tmp_path):
     store, session, journal = _open_journal(tmp_path)
     try:
         journal.reserve_artifact(
@@ -133,50 +130,13 @@ def test_global_artifact_authority_includes_reference_only_fk_anomalies(tmp_path
     finally:
         session.close()
 
-    connection = sqlite3.connect(store.layout.database)
-    try:
-        connection.execute(
-            """
-            INSERT INTO artifact_references(
-                artifact_id, workspace_id, owner_kind, owner_id, role, created_at_unix
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                "art_reference_only",
-                "ws_reference_only",
-                "tool_execution",
-                "tex_missing",
-                "evidence",
-                1,
-            ),
-        )
-        connection.execute(
-            """
-            INSERT INTO checkpoint_artifact_references(
-                artifact_id, workspace_id, checkpoint_id, role, created_at_unix
-            ) VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                "art_checkpoint_only",
-                "ws_checkpoint_only",
-                "chk_missing",
-                "evidence",
-                1,
-            ),
-        )
-        connection.commit()
-    finally:
-        connection.close()
-
     with store.open(StoreOpenMode.READ_WRITE) as opened:
         reopened = SqliteOperationalJournal(opened)
         assert reopened.has_global_artifact_authority("art_metadata") is True
-        assert reopened.has_global_artifact_authority("art_reference_only") is True
-        assert reopened.has_global_artifact_authority("art_checkpoint_only") is True
+        assert reopened.has_global_artifact_authority("art_reference_only") is False
+        assert reopened.has_global_artifact_authority("art_checkpoint_only") is False
         assert reopened.has_global_artifact_authority("art_missing") is False
-        assert {"ws_metadata", "ws_reference_only", "ws_checkpoint_only"}.issubset(
-            reopened.list_workspace_ids()
-        )
+        assert "ws_metadata" in reopened.list_workspace_ids()
 
 
 def test_transact_once_does_not_replay_busy_body_and_resets_journal_state(tmp_path):
@@ -218,167 +178,6 @@ def test_transact_once_fails_closed_inside_retryable_transaction(tmp_path):
         assert journal.list_sessions("ws_a") == ()
     finally:
         session.close()
-
-
-def test_v1_store_migrates_to_supported_journal(tmp_path):
-    v1 = MigrationRegistry(supported_version=1)
-    v1.add(V1)
-    store, session, _journal = _open_journal(tmp_path, registry=v1)
-    root = store.layout.data_root
-    session.close()
-    assert store.classify().schema_version == 1
-    upgraded = OperationalStore(
-        root, retry_policy=_retry(), clock=FixedClock(), maintenance_timeout=0
-    )
-    report = upgraded.migrate()
-    assert report.from_version == 1
-    assert report.to_version == SUPPORTED_SCHEMA_VERSION
-    with upgraded.open(StoreOpenMode.READ_WRITE) as opened:
-        journal = SqliteOperationalJournal(opened)
-        created = journal.create_session(_session(), task=_task())
-        assert created.current_task_run_id == "task_1"
-        assert journal.get_task_run("ws_a", "task_1") is not None
-
-
-def test_v2_store_migrates_to_v3_journal(tmp_path):
-    v2 = MigrationRegistry(supported_version=2)
-    v2.add(V1)
-    v2.add(V2)
-    store, session, _journal = _open_journal(tmp_path, registry=v2)
-    root = store.layout.data_root
-    session.close()
-    assert store.classify().schema_version == 2
-    upgraded = OperationalStore(
-        root, retry_policy=_retry(), clock=FixedClock(), maintenance_timeout=0
-    )
-    report = upgraded.migrate()
-    assert report.from_version == 2
-    assert report.to_version == SUPPORTED_SCHEMA_VERSION
-    assert "tool_execution_approval" in report.applied
-    with upgraded.open(StoreOpenMode.READ_WRITE) as opened:
-        names = {
-            row[0]
-            for row in opened.run_read(
-                lambda executor: executor.execute(
-                    "SELECT name FROM sqlite_master WHERE type = 'table'"
-                )
-            )
-        }
-        assert {"tool_executions", "approvals", "recovery_reports"}.issubset(names)
-
-
-def test_v3_store_migrates_to_v4_recovery(tmp_path):
-    v3 = MigrationRegistry(supported_version=3)
-    v3.add(V1)
-    v3.add(V2)
-    v3.add(V3)
-    store, session, _journal = _open_journal(tmp_path, registry=v3)
-    root = store.layout.data_root
-    session.close()
-    assert store.classify().schema_version == 3
-    upgraded = OperationalStore(
-        root, retry_policy=_retry(), clock=FixedClock(), maintenance_timeout=0
-    )
-    report = upgraded.migrate()
-    assert report.from_version == 3
-    assert report.to_version == SUPPORTED_SCHEMA_VERSION
-    assert report.applied == (
-        "recovery_reports",
-        "task_run_lifecycle_and_outcomes",
-        "artifact_store_and_references",
-        "context_checkpoints_and_session_lineage",
-        "application_events_and_command_receipts",
-        "capability_grants_and_permission_snapshots",
-        "learning_foundation",
-        "learning_inbox_project_knowledge",
-        "memory_selection_and_terms",
-        "preference_v2_foundation",
-        "skill_catalog_foundation",
-        "skill_drafts_and_usage",
-        "mcp_control_catalog_and_snapshots",
-        "agent_run_observability",
-        "agent_run_completion_truth",
-        "agent_run_request_evidence",
-        "agent_run_long_horizon_observability",
-        "agent_run_retry_progress",
-        "durable_runtime_control_queue",
-        "agent_definition_foundation",
-        "workflow_revision_artifact_contracts",
-        "workflow_node_request_cap",
-        "workflow_pause_drain_lineage",
-        "workflow_editor_drafts",
-        "workflow_global_replan",
-        "workflow_feedback_evaluation",
-        "compaction_request_accounting",
-    )
-
-
-def test_v4_task_children_survive_task_run_rebuild_to_v5(tmp_path):
-    v4 = MigrationRegistry(supported_version=4)
-    v4.add(V1)
-    v4.add(V2)
-    v4.add(V3)
-    v4.add(V4)
-    store, session, _journal = _open_journal(tmp_path, registry=v4)
-    root = store.layout.data_root
-
-    def seed(executor):
-        executor.execute(
-            "INSERT INTO sessions(session_id, workspace_id, lifecycle, health, "
-            "current_task_run_id, conversation_position, created_at_unix, updated_at_unix) "
-            "VALUES ('ses_1', 'ws_a', 'active', 'ok', 'task_1', 0, 1, 1)"
-        )
-        executor.execute(
-            "INSERT INTO task_runs(task_run_id, session_id, workspace_id, status, created_at_unix) "
-            "VALUES ('task_1', 'ses_1', 'ws_a', 'open', 1)"
-        )
-        executor.execute(
-            "INSERT INTO turns(turn_id, session_id, task_run_id, client_message_id, created_at_unix) "
-            "VALUES ('turn_1', 'ses_1', 'task_1', 'client-1', 1)"
-        )
-
-    session.run_write(seed)
-    session.close()
-
-    upgraded = OperationalStore(
-        root, retry_policy=_retry(), clock=FixedClock(), maintenance_timeout=0
-    )
-    report = upgraded.migrate()
-    assert report.applied == (
-        "task_run_lifecycle_and_outcomes",
-        "artifact_store_and_references",
-        "context_checkpoints_and_session_lineage",
-        "application_events_and_command_receipts",
-        "capability_grants_and_permission_snapshots",
-        "learning_foundation",
-        "learning_inbox_project_knowledge",
-        "memory_selection_and_terms",
-        "preference_v2_foundation",
-        "skill_catalog_foundation",
-        "skill_drafts_and_usage",
-        "mcp_control_catalog_and_snapshots",
-        "agent_run_observability",
-        "agent_run_completion_truth",
-        "agent_run_request_evidence",
-        "agent_run_long_horizon_observability",
-        "agent_run_retry_progress",
-        "durable_runtime_control_queue",
-        "agent_definition_foundation",
-        "workflow_revision_artifact_contracts",
-        "workflow_node_request_cap",
-        "workflow_pause_drain_lineage",
-        "workflow_editor_drafts",
-        "workflow_global_replan",
-        "workflow_feedback_evaluation",
-        "compaction_request_accounting",
-    )
-    with upgraded.open(StoreOpenMode.READ_WRITE) as opened:
-        journal = SqliteOperationalJournal(opened)
-        task = journal.get_task_run("ws_a", "task_1")
-        assert task is not None
-        assert task.status.value == "open"
-        assert journal.get_turn("ws_a", "turn_1") is not None
-        assert opened.run_read(lambda executor: executor.execute("PRAGMA foreign_key_check")) == ()
 
 
 def test_sessions_are_workspace_scoped(tmp_path):

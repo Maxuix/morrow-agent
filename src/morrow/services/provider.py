@@ -18,6 +18,7 @@ from morrow.core.models import (
     ModelRef,
     ProviderConfig,
     ProviderModelConfig,
+    StateLoadStatus,
     UserMessage,
     provider_error_message,
 )
@@ -269,9 +270,13 @@ class ProviderService(ProviderControlMixin):
 
     def list(self) -> GlobalConfig:
         result = self.global_store.load()
-        if not result.value:
-            return GlobalConfig()
-        return result.value
+        if result.status is StateLoadStatus.OK:
+            return result.value if result.value is not None else GlobalConfig()
+        path = getattr(getattr(self.global_store, "preference_store", None), "global_path", None)
+        location = f" ({path})" if path is not None else ""
+        raise ValueError(
+            f"全局配置不可用{location}: {result.status.value}: {result.error or 'unknown error'}"
+        )
 
     def catalog_snapshot(self) -> ProviderCatalogSnapshot:
         config = self.list()

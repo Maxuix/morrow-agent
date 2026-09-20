@@ -1,4 +1,4 @@
-"""Read-only orchestration for the v10/v11 Learning doctor checks."""
+"""Read-only orchestration for the current Learning doctor checks."""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from morrow.application.learning.learning_doctor_state import inspect_knowledge,
 from morrow.core.doctor import DoctorIssue, DoctorSeverity
 from morrow.core.store import StorageError
 
-_LEARNING_SCHEMA_VERSION = 10
 _PAGE_LIMIT = 500
 
 
@@ -28,11 +27,6 @@ def inspect_learning(
 ) -> None:
     """Load bounded Learning rows and run each domain's read-only invariants."""
 
-    if (
-        getattr(journal, "schema_version", lambda: _LEARNING_SCHEMA_VERSION)()
-        < _LEARNING_SCHEMA_VERSION
-    ):
-        return
     try:
         reviews = journal.list_learning_reviews(workspace_id, limit=_PAGE_LIMIT)
         evidence = journal.list_learning_evidence(workspace_id, limit=_PAGE_LIMIT)

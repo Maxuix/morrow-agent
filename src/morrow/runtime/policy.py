@@ -265,13 +265,12 @@ def resolve_runtime_policy(
         return defaults
     payload = defaults.model_dump(mode="python")
     if overrides.agent_run is not None:
-        values = overrides.agent_run.model_dump(mode="python", exclude_none=True)
-        v2_names = set(LongHorizonPolicySettings.model_fields)
         payload["agent_run"].update(
-            {name: value for name, value in values.items() if name not in v2_names}
+            overrides.agent_run.model_dump(mode="python", exclude_none=True)
         )
+    if overrides.long_horizon is not None:
         payload["long_horizon"].update(
-            {name: value for name, value in values.items() if name in v2_names}
+            overrides.long_horizon.model_dump(mode="python", exclude_none=True)
         )
     if overrides.reviews is not None:
         payload["reviews"].update(overrides.reviews.model_dump(mode="python", exclude_none=True))

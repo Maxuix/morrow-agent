@@ -3,7 +3,7 @@
  * `tests/fixtures/core_api_client.py`:
  *
  * - boot anchors one consistent `GET /v1/snapshot` cursor, then opens the
- *   WebSocket hint stream at `/v1/events/stream?token=`;
+ *   WebSocket hint stream at `/v1/events/stream` (with an optional auth token);
  * - WS `hello`/`cursor`/`ping` messages carry no facts — a `latest_cursor`
  *   ahead of ours only schedules a durable pull;
  * - pulls page `GET /v1/events?after=<cursor>&limit=100` until `has_more` is
@@ -112,6 +112,7 @@ export class SyncStore {
   private pullChain: Promise<void> = Promise.resolve()
   private ws: WebSocketLike | null = null
   private attempts = 0
+  private approvalsGeneration = 0
   private started = false
   private stopped = false
   private recovering = false
@@ -160,6 +161,12 @@ export class SyncStore {
     this.closeSocket()
   }
 
+  /** Re-read approvals after a local command settles before its event arrives. */
+  async refreshPendingApprovals(): Promise<void> {
+    if (this.stopped) return
+    await this.refreshApprovals()
+  }
+
   // Snapshot / resync ---------------------------------------------------------
 
   private async loadSnapshot(): Promise<void> {
@@ -199,7 +206,8 @@ export class SyncStore {
   // Event stream ---------------------------------------------------------------
 
   private wsUrl(): string {
-    const path = `/v1/events/stream?token=${encodeURIComponent(this.token)}`
+    const query = this.token === '' ? '' : `?token=${encodeURIComponent(this.token)}`
+    const path = this.client.scopePath(`/v1/events/stream${query}`)
     if (typeof window !== 'undefined' && window.location) {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       return `${protocol}//${window.location.host}${path}`
@@ -249,7 +257,9 @@ export class SyncStore {
     }
   }
 
-  /** Serialize pulls so events always apply in cursor order. */
+  /** Serialize pulls so events always apply in cursor order; the approvals
+   * generation guard drops any refresh overtaken by a newer one, so no
+   * debounce is needed for back-to-back lifecycle events. */
   private schedulePull(): void {
     this.pullChain = this.pullChain
       .then(async () => {
@@ -269,6 +279,8 @@ export class SyncStore {
         if (event.cursor <= this.state.cursor) continue
         if (!this.seenEventIds.has(event.event_id)) {
           this.seenEventIds.add(event.event_id)
+          // The cursor already deduplicates old events; bound the auxiliary ID window.
+          if (this.seenEventIds.size > 1024) this.seenEventIds.delete(this.seenEventIds.values().next().value!)
           await this.applyEvent(event)
         }
         this.commit(event)
@@ -364,10 +376,14 @@ export class SyncStore {
   }
 
   private async refreshApprovals(): Promise<void> {
+    // Generation guard: lifecycle events can overlap this with a newer refresh,
+    // and a stale response must not resurrect resolved approvals.
+    const generation = ++this.approvalsGeneration
     const approvals = await this.client.listApprovals(true)
-    this.state.pendingApprovals = new Map(
+    if (generation !== this.approvalsGeneration) return
+    this.patch({pendingApprovals: new Map(
       approvals.map((approval) => [approval.approval_id, approval]),
-    )
+    )})
   }
 
   // Failure / reconnect ---------------------------------------------------------

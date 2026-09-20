@@ -9,6 +9,54 @@ from test_stage8_core_api import ServerFixture
 
 
 @pytest.mark.asyncio
+async def test_chat_context_uses_turn_task_ownership_and_latest_frozen_run(tmp_path):
+    from test_stage8_chat_submission import drain, new_session
+
+    fixture = ServerFixture(tmp_path, scripts=[["First answer"], ["Follow-up answer"]])
+    try:
+        sid, path = await new_session(fixture)
+        run_ids = []
+        for ordinal in (1, 2):
+            key = f"context.chat.{ordinal}"
+            sent = await fixture.client.post(
+                path + "/interactions",
+                {"client_message_id": key, "text": f"Question {ordinal}"},
+            )
+            assert sent.status == 202
+            await drain(fixture, sid)
+            receipt = (await fixture.client.get(path + "/interactions/" + key)).json()["receipt"]
+            assert receipt["status"] == "settled"
+            run_ids.append(receipt["agent_run_id"])
+            session = (await fixture.client.get(path)).json()["session"]
+            task_id = session["current_task_run_id"]
+            context = await fixture.client.get("/v1/management/context?task_run_id=" + task_id)
+            assert context.status == 200
+            assert context.json()["status"] == "resolved"
+            assert context.json()["agent_run_id"] == run_ids[-1]
+            assert {r["agent_run_id"] for r in context.json()["available_runs"]} == set(run_ids)
+
+        historical = await fixture.client.get(
+            f"/v1/management/context?task_run_id={task_id}&agent_run_id={run_ids[0]}"
+        )
+        assert historical.status == 200
+        assert historical.json()["agent_run_id"] == run_ids[0]
+        # Another task in the same Session must never inherit the previous task's run.
+        created = await fixture.client.post("/v1/tasks", {"session_id": sid})
+        assert created.status == 200
+        other_id = created.json()["result"]["task"]["task_run_id"]
+        empty = await fixture.client.get("/v1/management/context?task_run_id=" + other_id)
+        assert empty.status == 200
+        assert empty.json()["status"] == "not_started"
+        assert empty.json()["available_runs"] == []
+        foreign = await fixture.client.get(
+            f"/v1/management/context?task_run_id={other_id}&agent_run_id={run_ids[0]}"
+        )
+        assert foreign.status == 404
+    finally:
+        fixture.close()
+
+
+@pytest.mark.asyncio
 async def test_management_queries_and_preference_write_replay_stale(tmp_path):
     fixture = ServerFixture(tmp_path)
     try:
@@ -315,6 +363,114 @@ async def test_profile_commands_and_non_user_fields_rejected(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_profile_save_command_is_atomic_replayable_and_conflict_safe(tmp_path):
+    _app, handle, service = management_fixture(tmp_path)
+    client = api_for(service)
+    snapshot = {
+        "name": "Morrow",
+        "summary": "当前工程的简要描述",
+        "tech_stack": ["Python 3.12", "React 19"],
+        "goals": ["统一入口"],
+        "constraints": ["不得写入凭据"],
+        "conventions": ["Ruff line-length 100"],
+    }
+    request = {"command_id": "cmd_profile_save_1", "expected_revision": 0, "profile": snapshot}
+    try:
+        response = await client.post("/v1/management/profile-save", request)
+        assert response.status == 200, response.json()
+        result = response.json()["result"]
+        assert result["status"] == "applied"
+        assert result["value"] == {
+            "status": "applied",
+            "scope": "workspace",
+            "target": "profile",
+            "revision": 1,
+        }
+        assert service.query("profile") == {
+            "profile": snapshot,
+            "revision": 1,
+            "scope": "workspace",
+        }
+
+        replay = await client.post("/v1/management/profile-save", request)
+        assert replay.status == 200, replay.json()
+        assert replay.json()["result"]["status"] == "replayed"
+        assert service.query("profile")["revision"] == 1
+
+        unchanged = await client.post(
+            "/v1/management/profile-save",
+            {**request, "command_id": "cmd_profile_save_2", "expected_revision": 1},
+        )
+        assert unchanged.status == 200, unchanged.json()
+        assert unchanged.json()["result"]["value"]["status"] == "unchanged"
+        assert service.query("profile")["revision"] == 1
+
+        stale = await client.post(
+            "/v1/management/profile-save",
+            {**request, "command_id": "cmd_profile_save_3", "expected_revision": 0},
+        )
+        assert stale.status == 409
+        assert service.query("profile")["profile"] == snapshot
+
+        for mutation in (
+            {"unknown": "x"},
+            {"name": "   "},
+            {"name": "Morrow", "goals": ["A", "a"]},
+            {"name": "Morrow", "summary": "x" * 2049},
+        ):
+            rejected = await client.post(
+                "/v1/management/profile-save",
+                {
+                    "command_id": "cmd_profile_save_bad",
+                    "expected_revision": 1,
+                    "profile": {**snapshot, **mutation},
+                },
+            )
+            assert rejected.status == 400, rejected.json()
+        assert service.query("profile")["revision"] == 1
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+async def test_profile_save_without_receipt_never_publishes_twice(tmp_path, monkeypatch):
+    from morrow.application.management_requests import ProfileSaveRequest
+    from morrow.core.application import ApplicationError, ApplicationErrorCode
+
+    _app, handle, service = management_fixture(tmp_path)
+    request = ProfileSaveRequest.model_validate(
+        {
+            "command_id": "cmd_profile_save_window",
+            "expected_revision": 0,
+            "profile": {"name": "Morrow", "conventions": ["Ruff line-length 100"]},
+        }
+    )
+    journal = service.api.journal
+    original = journal.transact
+
+    def fail_receipt(*_args, **_kwargs):
+        raise RuntimeError("receipt failed")
+
+    try:
+        monkeypatch.setattr(journal, "transact", fail_receipt)
+        with pytest.raises(ApplicationError):
+            service.execute("profile-save", request)
+        monkeypatch.setattr(journal, "transact", original)
+
+        # The YAML publication already happened; the receipt was never recorded.
+        assert service.query("profile")["revision"] == 1
+        assert journal.get_application_command_receipt("ws_1", request.command_id) is None
+
+        with pytest.raises(ApplicationError) as excinfo:
+            service.execute("profile-save", request)
+        assert excinfo.value.code is ApplicationErrorCode.CONFLICT
+        assert service.query("profile")["revision"] == 1
+        assert service.query("profile")["profile"]["conventions"] == ["Ruff line-length 100"]
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
 async def test_resolved_workflow_context_is_frozen_and_task_scoped(tmp_path):
     from test_stage8_core_api import (
         create_session_and_task,
@@ -345,6 +501,14 @@ async def test_resolved_workflow_context_is_frozen_and_task_scoped(tmp_path):
         assert before.status == 200, before.json()
         assert before.json()["preferences"][0]["statement"] == "Original rule"
         assert len(before.json()["available_runs"]) == 2
+        assert all(run["label"] for run in before.json()["available_runs"])
+        assert all("agent_run_id" not in run["label"] for run in before.json()["available_runs"])
+        assert {section["kind"] for section in before.json()["prompt_constraints"]["sections"]} == {
+            "profile",
+            "role",
+            "project_instructions",
+        }
+        assert "digest" not in json.dumps(before.json()["prompt_constraints"]).lower()
         await fixture.client.post(
             "/v1/management/preferences",
             {
@@ -368,6 +532,200 @@ async def test_resolved_workflow_context_is_frozen_and_task_scoped(tmp_path):
             + before.json()["agent_run_id"]
         )
         assert foreign.status == 404
+    finally:
+        fixture.close()
+
+
+def test_learning_query_filters_source_before_pagination(tmp_path):
+    from morrow.core.domain import (
+        DurableSession,
+        DurableTaskRun,
+        DurableTaskRunTransition,
+        TaskRunStatus,
+    )
+    from test_stage5_learning_store import _candidate, _evidence, _review, _seed_subjects
+
+    _app, handle, service = management_fixture(tmp_path)
+    try:
+        journal = service.api.journal
+        _seed_subjects(journal)
+        journal.put_learning_review("ws_1", _review())
+        journal.put_learning_evidence("ws_1", _evidence())
+
+        # A second Session/Task supplies a similarly-sized distractor set. The
+        # Inspector must receive only its source set, with counts computed before
+        # the 50-item page is sliced.
+        journal.create_session(
+            DurableSession(session_id="ses_2", workspace_id="ws_1"),
+            task=DurableTaskRun(task_run_id="task_2", session_id="ses_2", workspace_id="ws_1"),
+        )
+        journal.transition_task_run(
+            "ws_1",
+            "task_2",
+            target=TaskRunStatus.READY_FOR_ACCEPTANCE,
+            transition=DurableTaskRunTransition(
+                transition_id="ttr_3",
+                workspace_id="ws_1",
+                session_id="ses_2",
+                task_run_id="task_2",
+                from_status=TaskRunStatus.OPEN,
+                to_status=TaskRunStatus.READY_FOR_ACCEPTANCE,
+                reason="answer ready",
+            ),
+            expected_row_version=1,
+        )
+        journal.transition_task_run(
+            "ws_1",
+            "task_2",
+            target=TaskRunStatus.ACCEPTED,
+            transition=DurableTaskRunTransition(
+                transition_id="ttr_4",
+                workspace_id="ws_1",
+                session_id="ses_2",
+                task_run_id="task_2",
+                from_status=TaskRunStatus.READY_FOR_ACCEPTANCE,
+                to_status=TaskRunStatus.ACCEPTED,
+                reason="user accepted",
+            ),
+            expected_row_version=2,
+        )
+        outcome = journal.get_task_outcome("ws_1", "out_1")
+        assert outcome is not None
+        journal.put_task_outcome(
+            "ws_1",
+            outcome.model_copy(
+                update={"outcome_id": "out_2", "session_id": "ses_2", "task_run_id": "task_2"}
+            ),
+        )
+        journal.put_learning_review(
+            "ws_1",
+            _review().model_copy(
+                update={"review_id": "lrv_2", "task_run_id": "task_2", "task_outcome_id": "out_2"}
+            ),
+        )
+        journal.put_learning_evidence(
+            "ws_1",
+            _evidence(
+                evidence_id="lev_2",
+                origin_review_id="lrv_2",
+                task_run_id="task_2",
+                source_id="turn_2",
+            ),
+        )
+        sample = _candidate()
+        for index in range(55):
+            payload = sample.proposed_payload.model_copy(update={"value": f"中文 {index}"})
+            journal.put_learning_candidate(
+                "ws_1",
+                sample.model_copy(
+                    update={
+                        "candidate_id": f"lcn_scope_one_{index:03}",
+                        "proposed_payload": payload,
+                        "fingerprint": sample.fingerprint_for(
+                            candidate_type=sample.candidate_type,
+                            scope=sample.proposed_scope,
+                            semantic_key=sample.semantic_key,
+                            operation=sample.operation,
+                            proposed_payload=payload,
+                        ),
+                        "evidence_ids": ("lev_1",),
+                    }
+                ),
+            )
+        for index in range(4):
+            payload = sample.proposed_payload.model_copy(update={"value": f"其他 {index}"})
+            journal.put_learning_candidate(
+                "ws_1",
+                sample.model_copy(
+                    update={
+                        "candidate_id": f"lcn_scope_two_{index:03}",
+                        "origin_review_id": "lrv_2",
+                        "proposed_payload": payload,
+                        "fingerprint": sample.fingerprint_for(
+                            candidate_type=sample.candidate_type,
+                            scope=sample.proposed_scope,
+                            semantic_key=sample.semantic_key,
+                            operation=sample.operation,
+                            proposed_payload=payload,
+                        ),
+                        "evidence_ids": ("lev_2",),
+                    }
+                ),
+            )
+
+        first = service.query("learning", session_id="ses_1", page=0)
+        second = service.query("learning", session_id="ses_1", page=1)
+        other = service.query("learning", session_id="ses_2")
+        assert first["source_scope"] == "session"
+        assert first["candidate_count"] == 55
+        assert len(first["candidates"]) == 50
+        assert len(second["candidates"]) == 5
+        assert second["next_cursor"] is None
+        assert other["candidate_count"] == 4
+        assert {row["candidate"]["candidate_id"] for row in other["candidates"]} == {
+            f"lcn_scope_two_{index:03}" for index in range(4)
+        }
+        assert service.query("learning", session_id="ses_1", page=0)["total_count"] == 55
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+async def test_profile_save_reaches_the_next_run_and_keeps_frozen_snapshots(tmp_path):
+    """A15: a finished run keeps its snapshot; the next run resolves the new profile."""
+    from test_stage8_core_api import (
+        create_session_and_task,
+        publish_pipeline,
+        start_run,
+        wait_for_run,
+    )
+
+    fixture = ServerFixture(tmp_path, scripts=[["first leaf"], ["second leaf"]])
+    try:
+        revision = await publish_pipeline(fixture)
+        sid, tid, version = await create_session_and_task(fixture.client)
+        first = await start_run(fixture.client, revision.workflow_revision_id, sid, tid, version)
+        await wait_for_run(
+            fixture.client, first.json()["result"]["run"]["workflow_run_id"], "completed"
+        )
+        before = await fixture.client.get("/v1/management/context?task_run_id=" + tid)
+        assert before.status == 200, before.json()
+        assert before.json()["profile"]["name"] == "Test Workspace"
+        current = await fixture.client.get("/v1/management/profile")
+        assert current.status == 200, current.json()
+
+        saved = await fixture.client.post(
+            "/v1/management/profile-save",
+            {
+                "command_id": "cmd_profile_save_a15",
+                "expected_revision": current.json()["revision"],
+                "profile": {
+                    "name": "A15 项目",
+                    "summary": "新资料",
+                    "tech_stack": ["Python 3.12"],
+                    "goals": [],
+                    "constraints": [],
+                    "conventions": ["Ruff line-length 100"],
+                },
+            },
+        )
+        assert saved.status == 200, saved.json()
+        assert saved.json()["result"]["value"]["revision"] == current.json()["revision"] + 1
+
+        frozen = await fixture.client.get("/v1/management/context?task_run_id=" + tid)
+        assert frozen.json() == before.json()
+
+        sid2, tid2, version2 = await create_session_and_task(fixture.client)
+        second = await start_run(
+            fixture.client, revision.workflow_revision_id, sid2, tid2, version2
+        )
+        await wait_for_run(
+            fixture.client, second.json()["result"]["run"]["workflow_run_id"], "completed"
+        )
+        after = await fixture.client.get("/v1/management/context?task_run_id=" + tid2)
+        assert after.status == 200, after.json()
+        assert after.json()["profile"]["name"] == "A15 项目"
+        assert after.json()["convention_count"] == 1
     finally:
         fixture.close()
 

@@ -10,13 +10,14 @@ from morrow.application.artifacts import ArtifactService
 from morrow.application.prepared import prepare_cycle_executions
 from morrow.application.turn_permissions import RunPermissionCoordinator
 from morrow.core.artifacts import ArtifactError
-from morrow.core.capabilities import ChangeToolFact, ToolRunContext
+from morrow.core.capabilities import ChangeToolFact, CommandToolFact, ToolRunContext
 from morrow.core.domain import ArtifactReference
 from morrow.core.execution import (
     APPROVAL_ID_PREFIX,
     ApprovalDecisionError,
     ApprovalResolution,
     DurableApproval,
+    DurableCommandFacts,
     DurableToolExecution,
     DurableToolFacts,
     HandlerResultEnvelope,
@@ -136,6 +137,12 @@ class DurableToolExecutionCoordinator:
     ) -> tuple[DurableToolExecution, DurableApproval, bool]:
         stamp = now or self.clock()
         self.permissions.assert_execution_permission(execution, now=stamp)
+        if (approval.granted_scope or "").startswith(
+            "session:"
+        ) and not self.journal.session_scopes.active(
+            self.workspace_id, execution.session_id, approval
+        ):
+            raise ApprovalDecisionError("session-scoped authorization was revoked")
         if approval.resolution is ApprovalResolution.PENDING:
             resolved = resolve_approval(
                 approval,
@@ -309,12 +316,14 @@ class DurableToolExecutionCoordinator:
         for reference in (*result.artifact_refs, *result.mcp_result_artifact_refs):
             if reference not in artifact_refs:
                 artifact_refs.append(reference)
-        if self.artifacts is not None and execution.tool_name in {"run_command", "bash"}:
+        if (
+            self.artifacts is not None
+            and execution.tool_name in {"run_command", "bash"}
+            and result.artifact_content is not None
+        ):
             try:
                 artifact = self.artifacts.publish_command_output(
-                    result.artifact_content
-                    if result.artifact_content is not None
-                    else result.envelope,
+                    result.artifact_content,
                     session_id=execution.session_id,
                     task_run_id=execution.task_run_id,
                     tool_execution_id=execution.tool_execution_id,
@@ -328,11 +337,32 @@ class DurableToolExecutionCoordinator:
             for reference in self.change_capture.capture(execution, result, artifact_refs):
                 if reference not in artifact_refs:
                     artifact_refs.append(reference)
-        durable_facts = None
-        if execution.intent.file_evidence and any(
-            isinstance(fact, ChangeToolFact) for fact in result.facts
-        ):
-            durable_facts = DurableToolFacts(files=execution.intent.file_evidence)
+        durable_commands = tuple(
+            DurableCommandFacts(
+                command_class=fact.command_class,
+                status=fact.status,
+                cwd=fact.relative_paths[0] if fact.relative_paths else ".",
+                exit_code=fact.exit_code,
+                signal=fact.signal,
+                duration_ms=fact.duration_ms,
+                output_truncated=fact.output_truncated,
+                redaction_flags=fact.redaction_flags,
+                redaction_count=fact.redaction_count,
+            )
+            for fact in result.facts
+            if isinstance(fact, CommandToolFact)
+        )
+        durable_files = (
+            execution.intent.file_evidence
+            if execution.intent.file_evidence
+            and any(isinstance(fact, ChangeToolFact) for fact in result.facts)
+            else ()
+        )
+        durable_facts = (
+            DurableToolFacts(commands=durable_commands, files=durable_files)
+            if durable_commands or durable_files
+            else None
+        )
         completed = transition_execution(
             execution,
             ToolExecutionState.HANDLER_COMPLETED,
@@ -497,17 +527,22 @@ class ToolConversationPersistence:
 def _envelope_from_outcome(result: ToolExecutionOutcome) -> HandlerResultEnvelope:
     error_code = result.error_code.value if result.error_code is not None else None
     diagnostics: list[ValidationDiagnostic] = []
+    error_reason: str | None = None
     if result.error_code is ToolErrorCode.INVALID_ARGUMENTS:
         try:
             payload = json.loads(result.envelope)
             error = payload.get("error") if isinstance(payload, dict) else None
-            details = (
-                error.get("details", [])
-                if payload.get("ok") is False
+            if (
+                payload.get("ok") is False
                 and isinstance(error, dict)
                 and error.get("code") == ToolErrorCode.INVALID_ARGUMENTS.value
-                else []
-            )
+            ):
+                details = error.get("details", [])
+                candidate_reason = error.get("reason")
+                if isinstance(candidate_reason, str) and candidate_reason:
+                    error_reason = candidate_reason
+            else:
+                details = []
         except (TypeError, ValueError, json.JSONDecodeError, AttributeError):
             details = []
         if isinstance(details, list):
@@ -529,6 +564,7 @@ def _envelope_from_outcome(result: ToolExecutionOutcome) -> HandlerResultEnvelop
         truncated=bool(result.truncated),
         summary={"chars": len(result.envelope or "")},
         error_code=error_code,
+        error_reason=error_reason,
         validation_diagnostics=tuple(diagnostics),
     )
 

@@ -278,6 +278,32 @@ class TrustedArtifactLayout:
         finally:
             self._close_quietly(descriptor)
 
+    def discard_released_attachment(self, quarantine: QuarantinedTarget) -> bool:
+        """Delete only a privately quarantined, exact-inode released draft payload.
+
+        Generic orphan cleanup keeps its existing quarantine-only semantics.
+        AttachmentService calls this only after dropping unreferenced draft metadata.
+        """
+        parent = self._parent(quarantine.target.parent)
+        descriptor = None
+        try:
+            self.assert_stable()
+            descriptor = self._open_quarantine(parent, quarantine)
+            info = os.stat(_QUARANTINE_PAYLOAD, dir_fd=descriptor, follow_symlinks=False)
+            if not quarantine.target.matches(info):
+                return False
+            os.unlink(_QUARANTINE_PAYLOAD, dir_fd=descriptor)
+            os.fsync(descriptor)
+            self.assert_stable()
+            os.rmdir(quarantine.directory_name, dir_fd=parent.descriptor)
+            os.fsync(parent.descriptor)
+            return True
+        except OSError:
+            return False
+        finally:
+            if descriptor is not None:
+                self._close_quietly(descriptor)
+
     def restore_quarantine(
         self,
         quarantine: QuarantinedTarget,

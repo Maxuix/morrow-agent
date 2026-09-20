@@ -1,4 +1,4 @@
-"""YAML authority and migration codec for generic Preferences."""
+"""YAML authority for current generic Preferences."""
 
 from __future__ import annotations
 
@@ -8,10 +8,6 @@ from pathlib import Path
 
 from filelock import FileLock
 
-from morrow.adapters.state.preference_migration import (
-    GLOBAL_CONFIG_PREFERENCE_SCHEMA_VERSION,
-    WORKSPACE_PREFERENCE_SCHEMA_VERSION,
-)
 from morrow.adapters.state.preference_yaml_io import (
     PreferenceYamlIoError,
 )
@@ -30,9 +26,7 @@ from morrow.adapters.state.preference_yaml_io import (
 from morrow.adapters.state.preference_yaml_io import (
     yaml_bytes as _yaml_bytes,
 )
-from morrow.adapters.state.preference_yaml_migration import PreferenceYamlMigrationMixin
 from morrow.adapters.state.preference_yaml_types import (
-    PreferenceMigrationPlan,
     PreferenceYamlConflict,
     PreferenceYamlError,
     PreferenceYamlLoad,
@@ -40,6 +34,10 @@ from morrow.adapters.state.preference_yaml_types import (
 )
 from morrow.core.domain import canonical_json_bytes
 from morrow.core.preference_documents import GlobalConfig, WorkspacePreferenceDocument
+from morrow.core.state_schema import (
+    GLOBAL_CONFIG_SCHEMA_VERSION,
+    WORKSPACE_PREFERENCE_SCHEMA_VERSION,
+)
 
 
 def _read_raw(path: Path) -> dict | None:
@@ -64,7 +62,7 @@ def _value_digest(value: GlobalConfig | WorkspacePreferenceDocument) -> str:
     return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
 
 
-class PreferenceYamlStore(PreferenceYamlMigrationMixin):
+class PreferenceYamlStore:
     """Read, prepare, and explicitly publish generic Preference YAML."""
 
     def __init__(
@@ -121,10 +119,10 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
         if raw is None:
             value = GlobalConfig()
             return PreferenceYamlLoad(
-                PreferenceYamlLoadStatus.OK, value, 0, GLOBAL_CONFIG_PREFERENCE_SCHEMA_VERSION
+                PreferenceYamlLoadStatus.OK, value, 0, GLOBAL_CONFIG_SCHEMA_VERSION
             )
         schema = _schema_version(raw)
-        if schema != GLOBAL_CONFIG_PREFERENCE_SCHEMA_VERSION:
+        if schema != GLOBAL_CONFIG_SCHEMA_VERSION:
             return PreferenceYamlLoad(
                 PreferenceYamlLoadStatus.UNSUPPORTED_SCHEMA,
                 None,
@@ -291,8 +289,6 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
 
 
 __all__ = [
-    "GLOBAL_CONFIG_PREFERENCE_SCHEMA_VERSION",
-    "PreferenceMigrationPlan",
     "PreferenceYamlConflict",
     "PreferenceYamlError",
     "PreferenceYamlLoad",

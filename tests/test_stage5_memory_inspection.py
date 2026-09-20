@@ -126,6 +126,47 @@ def test_memory_typer_selection_commands_are_registered():
     assert learning_cli.selection_app.registered_commands
 
 
+def test_memory_rebuild_index_command_is_registered():
+    result = CliRunner().invoke(cli_module.app, ["memory", "--help"])
+    assert result.exit_code == 0, result.stdout
+    assert "rebuild-index" in result.stdout
+
+
+def test_memory_rebuild_index_command_uses_writable_state_boundary(monkeypatch):
+    calls = []
+
+    class FakeApi:
+        workspace_id = "ws_1"
+
+        def rebuild_memory_index(self, *, page_size):
+            calls.append(page_size)
+            return 7
+
+    def fake_state_services(**kwargs):
+        assert kwargs["write"] is True
+        return None, object(), FakeApi(), None, None
+
+    monkeypatch.setattr(cli_module, "_state_services", fake_state_services)
+    monkeypatch.setattr(cli_module, "_close_state", lambda _handle: None)
+
+    result = CliRunner().invoke(
+        cli_module.app,
+        [
+            "memory",
+            "rebuild-index",
+            "--workspace-id",
+            "ws_1",
+            "--page-size",
+            "3",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [3]
+    assert '"heads_rebuilt": 7' in result.stdout
+
+
 def test_doctor_checks_selection_references_and_rebuildable_terms(tmp_path):
     handle, journal, _api, _session = _admitted(tmp_path)
     try:

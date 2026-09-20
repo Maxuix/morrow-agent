@@ -146,7 +146,8 @@ def test_policy_rejects_invalid_values_and_combinations(updates):
 def test_user_overlay_changes_only_declared_fields_and_revalidates_combinations():
     overrides = RuntimePolicyOverrides.model_validate(
         {
-            "agent_run": {"tool_timeout_seconds": 180.0, "reserve_tokens": 20_000},
+            "agent_run": {"tool_timeout_seconds": 180.0},
+            "long_horizon": {"reserve_tokens": 20_000},
             "reviews": {
                 "preference_retry_backoff_seconds": [10, 30],
             },
@@ -162,7 +163,7 @@ def test_user_overlay_changes_only_declared_fields_and_revalidates_combinations(
 
     invalid_combination = RuntimePolicyOverrides.model_validate(
         {
-            "agent_run": {
+            "long_horizon": {
                 "retry_base_delay_seconds": 30.0,
                 "max_provider_retry_delay_seconds": 10.0,
             }
@@ -177,6 +178,7 @@ def test_user_overlay_changes_only_declared_fields_and_revalidates_combinations(
     "payload",
     [
         {"agent_run": {"loop_detection_enabled": False}},
+        {"agent_run": {"reserve_tokens": 20_000}},
         {"agent_run": {"model_safe_request_chars": {"vendor/model": 100}}},
         {"agent_run": {"max_tool_rounds": 30}},
         {"reviews": {"learning_timeout_seconds": 90.0}},

@@ -22,10 +22,6 @@ from morrow.core.domain import (
 )
 from morrow.core.store import StorageError, StorageErrorCode
 
-_CHECKPOINT_ARTIFACT_REFERENCE_COLUMNS = (
-    "artifact_id, workspace_id, checkpoint_id, role, created_at_unix"
-)
-
 
 def _unix(value: datetime) -> int:
     return int(value.timestamp())
@@ -118,18 +114,6 @@ class SqliteContextJournal:
                     _unix(checkpoint.created_at),
                 ),
             )
-            for reference in checkpoint.artifact_refs:
-                executor.execute(
-                    f"INSERT INTO checkpoint_artifact_references("
-                    f"{_CHECKPOINT_ARTIFACT_REFERENCE_COLUMNS}) VALUES (?, ?, ?, ?, ?)",
-                    (
-                        reference.artifact_id,
-                        workspace_id,
-                        checkpoint.checkpoint_id,
-                        reference.role,
-                        _unix(checkpoint.created_at),
-                    ),
-                )
             loaded = self.get(workspace_id, checkpoint.checkpoint_id)
             if loaded is None:
                 raise StorageError(

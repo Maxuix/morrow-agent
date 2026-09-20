@@ -158,15 +158,6 @@ class PreferenceReviewContextBuilder:
             )
         return context
 
-    def build_from_job(
-        self,
-        job: PreferenceReviewJob,
-        evidence: PreferenceEvidence,
-        *,
-        active_snapshot: PreferenceReviewSnapshot | None = None,
-    ) -> PreferenceReviewContext:
-        return self.build(job=job, evidence=evidence, active_snapshot=active_snapshot)
-
     def _assert_job_and_evidence(
         self, job: PreferenceReviewJob, evidence: PreferenceEvidence
     ) -> None:

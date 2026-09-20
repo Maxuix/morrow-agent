@@ -514,3 +514,36 @@ def test_tool_execution_can_link_a_command_artifact(tmp_path):
         assert listed_links[0].model_copy(update={"created_at": mcp_link.created_at}) == mcp_link
     finally:
         handle.close()
+
+
+@pytest.mark.parametrize("damaged", [False, True])
+async def test_async_artifact_read_offloads_files_but_keeps_integrity_updates_on_owner(
+    tmp_path, monkeypatch, damaged
+):
+    import threading
+
+    handle, journal, filesystem, service = _service(tmp_path)
+    try:
+        artifact = service.publish_bytes(
+            b"safe content", kind=ArtifactKind.TEST_REPORT, session_id="ses_1", task_run_id="task_1"
+        )
+        owner = threading.get_ident()
+        threads = []
+        original = filesystem.read
+
+        def read(*args, **kwargs):
+            threads.append(threading.get_ident())
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(filesystem, "read", read)
+        if damaged:
+            filesystem.final_path(artifact.artifact_id).write_bytes(b"tampered")
+            with pytest.raises(ArtifactIntegrityError):
+                await service.read_async(artifact.artifact_id, max_bytes=100)
+            assert service.get(artifact.artifact_id).state is ArtifactState.CORRUPT
+        else:
+            result = await service.read_async(artifact.artifact_id, max_bytes=100)
+            assert result.content == b"safe content"
+        assert len(threads) == 1 and threads[0] != owner
+    finally:
+        handle.close()

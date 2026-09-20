@@ -205,7 +205,11 @@ async def test_cancel_preserves_user_but_not_partial_assistant():
         provider, ModelRef(provider_id="p", model_id="m"), make_context_builder()
     )
     task = asyncio.create_task(_collect(runtime.run_turn(session, "stop me")))
-    await asyncio.sleep(0.01)
+    for _ in range(1000):
+        if provider.stream_calls:
+            break
+        await asyncio.sleep(0)
+    assert provider.stream_calls, "provider stream must start before cancel"
     task.cancel()
     events = await task
     assert events[-1].payload["finish_reason"] == FinishReason.CANCELLED.value
@@ -220,7 +224,11 @@ async def test_conversation_succeeds_after_cancelled_turn():
         provider, ModelRef(provider_id="p", model_id="m"), make_context_builder()
     )
     task = asyncio.create_task(_collect(runtime.run_turn(session, "cancel this")))
-    await asyncio.sleep(0.01)
+    for _ in range(1000):
+        if provider.stream_calls:
+            break
+        await asyncio.sleep(0)
+    assert provider.stream_calls, "provider stream must start before cancel"
     task.cancel()
 
     cancelled = await task
@@ -271,7 +279,9 @@ async def test_network_error_retries_once_before_visible_text():
         make_context_builder(),
     )
     events = [event async for event in runtime.run_turn(session, "retry")]
-    assert [event.type for event in events].count("status.changed") == 1
+    statuses = [event.payload.get("status") for event in events if event.type == "status.changed"]
+    # The retry attempt streams text, so the responding stage is observable.
+    assert statuses == ["awaiting_model", "retrying", "awaiting_model", "model_responding"]
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
     assert len(provider.stream_calls) == 2
 

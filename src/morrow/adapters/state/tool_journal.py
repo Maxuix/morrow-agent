@@ -94,6 +94,9 @@ class SqliteToolJournal:
         self.get_capability_grant = get_capability_grant
         self.validate_artifact_refs = validate_artifact_refs
         self.replace_artifact_refs = replace_artifact_refs
+        from morrow.adapters.state.session_scope_grants import SessionScopeGrants
+
+        self.session_scopes = SessionScopeGrants(backend, self.get_execution)
 
     def put_execution(
         self, workspace_id: str, execution: DurableToolExecution
@@ -359,6 +362,7 @@ class SqliteToolJournal:
                     approval.revocation_reason,
                 ),
             )
+            self.session_scopes.bind(workspace_id, approval)
             loaded = self.get_approval(workspace_id, approval.approval_id)
             if loaded is None:
                 raise StorageError(
@@ -419,7 +423,9 @@ class SqliteToolJournal:
         row = self.backend.read_one(
             f"SELECT {_APPROVAL_SELECT} FROM approvals a "
             "JOIN tool_executions e ON e.tool_execution_id = a.tool_execution_id "
-            "WHERE e.workspace_id = ? AND e.session_id = ? AND a.granted_scope = ? "
+            "LEFT JOIN session_scope_revisions s ON s.session_id=e.session_id AND s.scope=a.granted_scope "
+            "WHERE COALESCE(a.scope_revision,0)=COALESCE(s.revision,0) "
+            "AND e.workspace_id = ? AND e.session_id = ? AND a.granted_scope = ? "
             "AND a.resolution = 'approved' AND a.revoked_at_unix IS NULL "
             "ORDER BY a.created_at_unix DESC, a.approval_id DESC LIMIT 1",
             (workspace_id, session_id, granted_scope),
@@ -495,6 +501,7 @@ class SqliteToolJournal:
                 expected_row_version,
             ),
         )
+        self.session_scopes.bind(workspace_id, approval)
         loaded = self.get_approval(workspace_id, approval.approval_id)
         if loaded is None or loaded.row_version != approval.row_version:
             raise StorageError(

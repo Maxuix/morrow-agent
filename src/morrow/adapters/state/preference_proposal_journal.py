@@ -104,10 +104,6 @@ class PreferenceProposalJournalMixin:
                     _optional_unix(proposal.resolved_at),
                 ),
             )
-            self.backend.executor().execute(
-                "INSERT INTO preference_proposal_evidence(workspace_id, proposal_id, evidence_id) VALUES (?, ?, ?)",
-                (workspace_id, proposal.proposal_id, proposal.evidence_id),
-            )
             loaded = self.get_preference_proposal(workspace_id, proposal.proposal_id)
             if loaded is None:
                 raise StorageError(
@@ -123,6 +119,8 @@ class PreferenceProposalJournalMixin:
         *,
         status: PreferenceProposalStatus | None = None,
         job_id: str | None = None,
+        session_id: str | None = None,
+        task_run_ids: tuple[str, ...] | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> tuple[PreferenceProposal, ...]:
@@ -138,19 +136,78 @@ class PreferenceProposalJournalMixin:
         if job_id is not None:
             sql += " AND job_id = ?"
             parameters.append(job_id)
+        if session_id is not None:
+            sql += (
+                " AND job_id IN (SELECT job_id FROM preference_review_jobs "
+                "WHERE workspace_id = ? AND session_id = ?)"
+            )
+            parameters.extend((workspace_id, session_id))
+        if task_run_ids is not None:
+            if not task_run_ids:
+                sql += " AND 0"
+            else:
+                placeholders = ",".join("?" for _ in task_run_ids)
+                sql += (
+                    " AND job_id IN (SELECT j.job_id FROM preference_review_jobs j "
+                    "JOIN turns t ON t.turn_id = j.turn_id "
+                    f"WHERE j.workspace_id = ? AND t.task_run_id IN ({placeholders}))"
+                )
+                parameters.extend((workspace_id, *task_run_ids))
         sql += " ORDER BY created_at_unix ASC, proposal_id ASC LIMIT ? OFFSET ?"
         parameters.extend((limit, offset))
         return tuple(
             _proposal_from_row(row) for row in self.backend.read_all(sql, tuple(parameters))
         )
 
-    def count_preference_proposals(self, workspace_id: str, *, status=None) -> int:
+    def count_preference_proposals(
+        self,
+        workspace_id: str,
+        *,
+        status=None,
+        session_id: str | None = None,
+        task_run_ids: tuple[str, ...] | None = None,
+    ) -> int:
         sql = "SELECT COUNT(*) FROM preference_proposals WHERE workspace_id = ?"
         params: list[object] = [workspace_id]
         if status is not None:
             sql += " AND status = ?"
             params.append(status.value)
+        if session_id is not None:
+            sql += (
+                " AND job_id IN (SELECT job_id FROM preference_review_jobs "
+                "WHERE workspace_id = ? AND session_id = ?)"
+            )
+            params.extend((workspace_id, session_id))
+        if task_run_ids is not None:
+            if not task_run_ids:
+                sql += " AND 0"
+            else:
+                placeholders = ",".join("?" for _ in task_run_ids)
+                sql += (
+                    " AND job_id IN (SELECT j.job_id FROM preference_review_jobs j "
+                    "JOIN turns t ON t.turn_id = j.turn_id "
+                    f"WHERE j.workspace_id = ? AND t.task_run_id IN ({placeholders}))"
+                )
+                params.extend((workspace_id, *task_run_ids))
         return int(self.backend.read_one(sql, tuple(params))[0])
+
+    def count_preference_proposals_with_missing_source(self, workspace_id: str) -> int:
+        """Count unlinked proposals that cannot be joined to a durable Task."""
+
+        row = self.backend.read_one(
+            "SELECT COUNT(*) FROM preference_proposals p "
+            "LEFT JOIN preference_review_jobs j ON j.workspace_id=p.workspace_id "
+            "AND j.job_id=p.job_id "
+            "LEFT JOIN turns tr ON tr.turn_id=j.turn_id "
+            "LEFT JOIN task_runs t ON t.workspace_id=p.workspace_id AND t.task_run_id=tr.task_run_id "
+            "WHERE p.workspace_id=? AND (j.job_id IS NULL OR t.task_run_id IS NULL)",
+            (workspace_id,),
+        )
+        if row is None:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "Preference proposal source count could not be read"
+            )
+        return int(row[0])
 
     def has_preference_proposal_fingerprint(
         self,

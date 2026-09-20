@@ -1,4 +1,4 @@
-"""SQLite Skill journal for v14 catalog/run evidence and v15 Draft/Usage rows."""
+"""SQLite Skill journal for catalog, run evidence, Draft and Usage rows."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from morrow.adapters.state.migrations_v14_skills import GLOBAL_SCOPE_ID
 from morrow.adapters.state.transaction import SqliteJournalBackend
 from morrow.core.domain import canonical_json_bytes, sha256_digest
 from morrow.core.skills.catalog import (
@@ -48,6 +47,7 @@ _USAGE_COLUMNS = (
 )
 
 SCOPE_VALUES = ("global", "workspace")
+GLOBAL_SCOPE_ID = ""
 AVAILABILITY_VALUES = tuple(item.value for item in SkillAvailability)
 CONFLICT_VALUES = tuple(item.value for item in SkillConflictStatus)
 TRUST_VALUES = tuple(item.value for item in TrustLevel)
@@ -125,7 +125,7 @@ def _usage_digest(usage: SkillUsage) -> str:
 
 
 class SqliteSkillJournal:
-    """Bounded v14 Skill repository sharing one outer transaction backend."""
+    """Bounded Skill repository sharing one outer transaction backend."""
 
     def __init__(self, backend: SqliteJournalBackend) -> None:
         self.backend = backend
@@ -333,7 +333,6 @@ class SqliteSkillJournal:
             ("agent_run_skill_contexts", "version_id"),
             ("skill_drafts", "accepted_version_id"),
             ("skill_usage", "version_id"),
-            ("agent_definition_skills", "skill_version_id"),
         )
         references: list[str] = []
         for table, column in tables:
@@ -348,6 +347,19 @@ class SqliteSkillJournal:
                 (version_id,),
             )
             references.extend(f"{table}:{index}" for index, _ in enumerate(rows))
+        rows = self.backend.read_all(
+            "SELECT version_id, body_json FROM agent_definition_versions ORDER BY version_id"
+        )
+        for definition_version_id, body_json in rows:
+            try:
+                payload = json.loads(str(body_json))
+                source = payload.get("source", {})
+                skill_ids = source.get("skill_version_ids", []) if isinstance(source, dict) else []
+            except (TypeError, ValueError, json.JSONDecodeError):
+                references.append(f"agent_definition_versions:{definition_version_id}")
+                continue
+            if isinstance(skill_ids, list) and version_id in skill_ids:
+                references.append(f"agent_definition_versions:{definition_version_id}")
         return tuple(references[:32])
 
     def delete_version(self, version_id: str) -> None:
@@ -719,8 +731,9 @@ class SqliteSkillJournal:
         version_id: str | None = None,
         agent_run_id: str | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[SkillUsage, ...]:
-        if not 1 <= limit <= 1000:
+        if not 1 <= limit <= 1000 or offset < 0:
             raise StorageError(StorageErrorCode.UNAVAILABLE, "Skill usage page is invalid")
         sql = f"SELECT {_USAGE_COLUMNS} FROM skill_usage WHERE workspace_id = ?"
         params: list[object] = [workspace_id]
@@ -732,8 +745,8 @@ class SqliteSkillJournal:
             if value is not None:
                 sql += f" AND {column} = ?"
                 params.append(value)
-        sql += " ORDER BY created_at_unix ASC, usage_id ASC LIMIT ?"
-        params.append(limit)
+        sql += " ORDER BY created_at_unix ASC, usage_id ASC LIMIT ? OFFSET ?"
+        params.extend((limit, offset))
         return tuple(self._usage_from_row(row) for row in self.backend.read_all(sql, tuple(params)))
 
     @staticmethod
@@ -761,7 +774,9 @@ class SqliteSkillJournal:
         if not isinstance(payload, dict):
             raise StorageError(StorageErrorCode.NEEDS_REPAIR, "Skill context JSON is invalid")
         try:
-            content = str(payload.get("content", ""))
+            if payload["context_digest"] != str(row[6]):
+                raise ValueError("Skill context digest is inconsistent")
+            content = payload["content"]
             return SkillContextEntry(
                 context_id=str(row[0]),
                 agent_run_id=str(row[1]),
@@ -769,14 +784,14 @@ class SqliteSkillJournal:
                 scope_id=_domain_scope_id(str(row[3])),
                 skill_id=str(row[4]),
                 version_id=str(row[5]),
-                selection_id=str(payload.get("selection_id", "")),
-                tree_digest=str(payload.get("tree_digest", "0" * 64)),
+                selection_id=payload["selection_id"],
+                tree_digest=payload["tree_digest"],
                 content=content,
                 context_digest=str(row[6]),
                 omitted_count=int(row[8]),
-                truncated=bool(payload.get("truncated", False)),
+                truncated=payload["truncated"],
             )
-        except (TypeError, ValueError) as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             raise StorageError(
                 StorageErrorCode.NEEDS_REPAIR, "Skill context row is invalid"
             ) from exc

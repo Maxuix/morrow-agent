@@ -43,7 +43,6 @@ def referenced_version_ids(executor, *, pinned_version_ids: tuple[str, ...] = ()
         ("agent_run_skill_contexts", "version_id"),
         ("skill_drafts", "accepted_version_id"),
         ("skill_usage", "version_id"),
-        ("agent_definition_skills", "skill_version_id"),
     )
     for table, column in references:
         if executor.execute(
@@ -53,6 +52,15 @@ def referenced_version_ids(executor, *, pinned_version_ids: tuple[str, ...] = ()
                 f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL LIMIT 4097"
             )
             version_ids.update(str(row[0]) for row in rows if row[0])
+    rows = executor.execute("SELECT body_json FROM agent_definition_versions LIMIT 4097")
+    for (body_json,) in rows:
+        try:
+            source = json.loads(str(body_json)).get("source", {})
+            skill_ids = source.get("skill_version_ids", []) if isinstance(source, dict) else []
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if isinstance(skill_ids, list):
+            version_ids.update(str(version_id) for version_id in skill_ids if version_id)
     if executor.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
         ("skill_catalog_operations",),

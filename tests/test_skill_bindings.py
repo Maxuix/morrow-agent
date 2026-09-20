@@ -22,7 +22,7 @@ from morrow.core.skills.trust import SourceKind
 def test_global_and_workspace_extension_documents_are_independent(tmp_path: Path) -> None:
     store = ExtensionYamlStore(tmp_path)
     global_value = GlobalExtensionDocument(
-        bindings=(
+        skills=(
             SkillBinding(
                 skill_id="global-skill",
                 scope="global",
@@ -32,7 +32,7 @@ def test_global_and_workspace_extension_documents_are_independent(tmp_path: Path
     )
     workspace_value = WorkspaceExtensionDocument(
         scope_id="ws_one",
-        bindings=(
+        skills=(
             SkillBinding(
                 skill_id="workspace-skill",
                 scope="workspace",
@@ -49,11 +49,19 @@ def test_global_and_workspace_extension_documents_are_independent(tmp_path: Path
     assert "preferences" not in store.global_path.read_text(encoding="utf-8")
 
 
+def test_extension_document_accepts_only_the_current_skills_key() -> None:
+    assert GlobalExtensionDocument.model_validate({"scope": "global", "skills": []}).bindings == ()
+    with pytest.raises(ValueError):
+        GlobalExtensionDocument.model_validate({"scope": "global", "bindings": []})
+    with pytest.raises(ValueError):
+        GlobalExtensionDocument.model_validate({"scope": "global", "skill_bindings": []})
+
+
 def test_extension_yaml_uses_revision_occ_and_last_valid_backup(tmp_path: Path) -> None:
     store = ExtensionYamlStore(tmp_path)
-    first = GlobalExtensionDocument(bindings=(SkillBinding(skill_id="demo", scope="global"),))
+    first = GlobalExtensionDocument(skills=(SkillBinding(skill_id="demo", scope="global"),))
     second = GlobalExtensionDocument(
-        bindings=(SkillBinding(skill_id="demo", scope="global", enabled=True, revision=1),)
+        skills=(SkillBinding(skill_id="demo", scope="global", enabled=True, revision=1),)
     )
     store.write_global(first, expected_revision=0)
     written = store.write_global(second, expected_revision=1)

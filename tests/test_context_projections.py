@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from morrow.adapters.models.openai_compatible import estimate_request_chars
 from morrow.application.context import ContextBudgetError
+from morrow.core.context import ContextRunLabel, PromptConstraintSource
 from morrow.core.models import (
     AssistantMessage,
     FinishReason,
@@ -91,8 +92,9 @@ def test_multi_result_cycle_is_retained_atomically_while_compaction_is_requested
     session.log.finish_turn(FinishReason.STOP)
     session.log.begin_turn(UserMessage(content="current"))
     source = session.log.snapshot()
-
-    pack = make_context_builder(100).build(session)
+    probe = make_context_builder()
+    mandatory = (*probe._system_messages(session), UserMessage(content="current"))
+    pack = make_context_builder(estimate_request_chars(mandatory, ())).build(session)
 
     results = [message for message in pack.messages if isinstance(message, ToolMessage)]
     assert [message.content for message in results] == ["x" * 1000, "y" * 1000]
@@ -149,11 +151,12 @@ def test_over_budget_context_retains_closed_cycles_for_compaction():
     assert pack.dropped_cycle_count == 0
 
 
-def test_protected_context_overflow_requests_compaction():
+def test_protected_context_overflow_rejects_uncompactable_current_input():
     session = Session(session_id="s")
     session.log.begin_turn(UserMessage(content="x" * 1000))
-    pack = make_context_builder(10).build(session)
-    assert pack.compaction_required is True
+    with pytest.raises(ContextBudgetError, match="当前输入超过模型上下文限制") as exc:
+        make_context_builder(10).build(session)
+    assert exc.value.kind == "input"
 
 
 def test_canonical_estimator_counts_tool_schema_and_rejects_wire_oversize():
@@ -171,10 +174,26 @@ def test_canonical_estimator_counts_tool_schema_and_rejects_wire_oversize():
     content_only_limit = estimate_request_chars(no_tools, ())
 
     builder = make_context_builder(content_only_limit)
-    pack = builder.build(session, tools=(tool,))
-    assert pack.compaction_required is True
-    with pytest.raises(ContextBudgetError):
-        builder.validate_request(pack.messages, pack.tools)
+    pack = builder.build(session)
+    assert pack.compaction_required is False
+    with pytest.raises(ContextBudgetError, match="当前输入超过模型上下文限制") as exc:
+        builder.build(session, tools=(tool,))
+    assert exc.value.kind == "input"
+
+
+def test_inspector_context_contract_rejects_unsafe_source_metadata():
+    assert PromptConstraintSource(path="AGENTS.md", scope=".", byte_count=12).scope == "."
+    with pytest.raises(ValidationError):
+        PromptConstraintSource(path="../AGENTS.md", scope="workspace", byte_count=12)
+    with pytest.raises(ValidationError):
+        PromptConstraintSource(path="C:/outside.txt", scope="workspace", byte_count=12)
+    with pytest.raises(ValidationError):
+        ContextRunLabel(
+            agent_run_id="arun_context",
+            label="api_key=abcd",
+            task_title="当前任务",
+            created_at="2026-09-11T00:00:00Z",
+        )
 
 
 def test_estimator_is_exact_compact_canonical_json_length():

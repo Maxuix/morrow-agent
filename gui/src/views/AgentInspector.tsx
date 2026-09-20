@@ -1,3 +1,4 @@
+import { DefinitionLifecycle } from './DefinitionLifecycle'
 import { useEffect, useMemo, useState } from 'react'
 import type { ApiClient } from '../api/client'
 import type {
@@ -17,6 +18,8 @@ export function AgentInspector({
   skills,
   tools,
   onRefresh,
+  onManageTools,
+  onDirtyChange,
 }: {
   client: ApiClient
   definitions: AgentDefinitionViewWire[]
@@ -25,11 +28,14 @@ export function AgentInspector({
   skills: SkillCatalogWire[]
   tools: ToolCatalogWire[]
   onRefresh: (definitionId?: string) => Promise<void>
+  onManageTools?: () => void
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   const [source, setSource] = useState<AgentDefinitionSourceWire | null>(null)
   const [cloneId, setCloneId] = useState('')
   const [copying, setCopying] = useState(false)
   const [baseSource, setBaseSource] = useState<AgentDefinitionSourceWire | null>(null)
+  const [baseline, setBaseline] = useState<AgentDefinitionSourceWire | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
@@ -38,23 +44,28 @@ export function AgentInspector({
       setCopying(false)
       setSource(null)
       setBaseSource(null)
+      setBaseline(null)
       return
     }
     if (selected.origin === 'builtin') {
       setCopying(true)
       setCloneId(`${selected.definition_id.replace(/^builtin_/, '')}_copy`)
-      setSource({
+      const next = {
         ...structuredClone(selected.source),
         definition_id: `${selected.definition_id.replace(/^builtin_/, '')}_copy`,
         name: `${selected.source.name} Copy`,
         ...agentCopyProvenance(selected),
-      })
+      }
+      setSource(next)
+      setBaseline(structuredClone(next))
       setBaseSource(selected.source)
       return
     }
     setCopying(false)
     setCloneId('')
-    setSource(structuredClone(selected.source))
+    const next = structuredClone(selected.source)
+    setSource(next)
+    setBaseline(structuredClone(next))
     setBaseSource(selected.published_version?.source ?? null)
     const parentId = selected.source.derived_from_version_id
     if (parentId !== null) {
@@ -66,8 +77,16 @@ export function AgentInspector({
   }, [client, selected])
 
   const diff = useMemo(() => structuralDiff(baseSource, source), [baseSource, source])
+  useEffect(() => {
+    if (!onDirtyChange) return
+    if (source === null || baseline === null) {
+      onDirtyChange(false)
+      return
+    }
+    onDirtyChange(JSON.stringify(source) !== JSON.stringify(baseline))
+  }, [source, baseline, onDirtyChange])
   if (selected === null || source === null) {
-    return <p className="p-6 text-sm text-secondary">选择 AgentDefinition 以检查或复制。</p>
+    return <p className="p-6 text-sm text-secondary">未选择 Agent</p>
   }
   const currentSource = source
   const currentSelected = selected
@@ -103,7 +122,7 @@ export function AgentInspector({
             currentSelected.source_revision ?? currentSourceRevision,
             commandId('agent_update'),
           )
-      setMessage('已保存 desired source；尚未改变已发布版本。')
+      setMessage('草稿已保存。')
       await onRefresh(value.definition_id)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '保存失败')
@@ -122,7 +141,7 @@ export function AgentInspector({
         currentSelected.head?.row_version ?? 0,
         commandId('agent_publish'),
       )
-      setMessage('已发布新的不可变 AgentDefinitionVersion。')
+      setMessage('版本已发布。')
       await onRefresh(currentSource.definition_id)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '发布失败')
@@ -135,12 +154,14 @@ export function AgentInspector({
     const nextId = `${currentSelected.definition_id}_copy`
     setCopying(true)
     setCloneId(nextId)
-    setSource({
+    const next = {
       ...structuredClone(currentSource),
       definition_id: nextId,
       name: `${currentSource.name} Copy`,
       ...agentCopyProvenance(currentSelected),
-    })
+    }
+    setSource(next)
+    setBaseline(structuredClone(next))
     setBaseSource(currentSource)
   }
 
@@ -153,6 +174,7 @@ export function AgentInspector({
             {cloning ? '内置 · 复制为用户定义' : `用户定义 · v${selected.published_version?.version ?? '未发布'}`}
           </span>
         </div>
+        <DefinitionLifecycle key={selected.definition_id} client={client} kind="agent" id={selected.definition_id} revision={selected.head?.row_version??0} enabled={selected.head?.enabled??false} version={selected.published_version?.version_id??null} readOnly={selected.origin === 'builtin' || selected.revoked} onRefresh={()=>onRefresh(selected.definition_id)}/>
         <div className="mt-5 grid grid-cols-2 gap-3">
           <Field label="Definition ID">
             <input
@@ -195,7 +217,12 @@ export function AgentInspector({
           </Field>
         </div>
         <section className="mt-4 rounded-[10px] border border-subtle p-3">
-          <h3 className="text-xs font-medium text-secondary">Skills（只读 Catalog 选择）</h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs font-medium text-secondary">Skills</h3>
+            {onManageTools && (
+              <button type="button" className="editor-button" onClick={onManageTools}>管理工具</button>
+            )}
+          </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
             {skills.map((skill) => {
               const version = skill.versions.find((item) => item.version_id === skill.binding?.pinned_version_id) ?? skill.versions.at(-1)
@@ -221,9 +248,7 @@ export function AgentInspector({
           {!cloning && <button type="button" className="editor-button border-accent text-accent" disabled={busy || !selected.desired_ahead_of_published} onClick={() => void publish()}>发布 Version</button>}
           {message !== null && <span role="status" className="self-center text-xs text-secondary">{message}</span>}
         </div>
-        <p className="mt-4 rounded-[8px] border border-subtle bg-base p-3 text-xs leading-relaxed text-secondary">
-          固定安全边界、Credential 原文、路径越界、审计隐藏、reasoning 记录和高风险免审批均不属于此 schema，无法由此表单覆盖。节点合同与输入/输出绑定在 Workflow Inspector 中配置。
-        </p>
+
       </section>
       <aside className="min-h-0 overflow-y-auto p-4">
         <h3 className="text-xs font-medium tracking-wide text-secondary">Definition Diff</h3>

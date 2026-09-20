@@ -6,7 +6,7 @@ from morrow.core.store import StorageError, StorageErrorCode
 
 def require_user_task(backend, task):
     owned = task.purpose == TaskRunPurpose.WORKFLOW_NODE
-    if not owned and backend.schema_version() >= 24:
+    if not owned:
         owned = (
             backend.read_one(
                 "SELECT 1 FROM workflow_runs WHERE workspace_id=? AND root_task_run_id=? "

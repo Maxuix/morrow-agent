@@ -140,8 +140,8 @@ def test_mcp_review_only_converts_eligible_denial_and_binds_exact_run() -> None:
         agent_run_id="arun_1",
         server_id="mcp_fake",
         config_digest=launch.config_digest,
-        catalog_digest=launch.catalog_digest or "0" * 64,
-        toolset_digest=launch.toolset_digest or "0" * 64,
+        catalog_digest=launch.catalog_digest,
+        toolset_digest=launch.toolset_digest,
         risks=(McpReviewRisk.NETWORK,),
     )
     approved = evaluate_mcp_policy(
@@ -153,8 +153,8 @@ def test_mcp_review_only_converts_eligible_denial_and_binds_exact_run() -> None:
         agent_run_id="arun_1",
         server_id="mcp_fake",
         config_digest=launch.config_digest,
-        catalog_digest=launch.catalog_digest or "0" * 64,
-        toolset_digest=launch.toolset_digest or "0" * 64,
+        catalog_digest=launch.catalog_digest,
+        toolset_digest=launch.toolset_digest,
     )
     assert approved.verdict is PolicyVerdict.REQUIRE_APPROVAL
     assert "mcp_review_required" in approved.reason_codes
@@ -169,8 +169,8 @@ def test_mcp_review_only_converts_eligible_denial_and_binds_exact_run() -> None:
         agent_run_id="arun_1",
         server_id="mcp_fake",
         config_digest=launch.config_digest,
-        catalog_digest=launch.catalog_digest or "0" * 64,
-        toolset_digest=launch.toolset_digest or "0" * 64,
+        catalog_digest=launch.catalog_digest,
+        toolset_digest=launch.toolset_digest,
     )
     assert denied.verdict is PolicyVerdict.DENY
 
@@ -184,8 +184,8 @@ def test_mcp_review_only_converts_eligible_denial_and_binds_exact_run() -> None:
         agent_run_id="arun_1",
         server_id="mcp_fake",
         config_digest=launch.config_digest,
-        catalog_digest=launch.catalog_digest or "0" * 64,
-        toolset_digest=launch.toolset_digest or "0" * 64,
+        catalog_digest=launch.catalog_digest,
+        toolset_digest=launch.toolset_digest,
     )
     assert still_denied.verdict is PolicyVerdict.DENY
 

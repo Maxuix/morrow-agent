@@ -3,7 +3,7 @@
 Four concepts stay separate: SkillDefinition (stable identity), SkillVersion
 (immutable managed content), SkillBinding (desired enabled/pinned state) and
 SkillSelection (exact version chosen for one AgentRun). Bindings live in YAML
-(Subplan 66); selections and contexts land in the v14 store (Subplan 67).
+(Subplan 66); selections and contexts are persisted by the current store.
 """
 
 from __future__ import annotations

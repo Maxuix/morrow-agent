@@ -40,5 +40,7 @@ describe('Replan proposal review', () => {
     expect(await client.listReplans('wrun_one')).toEqual([view])
     await client.decideReplan('rprop_one', false, 7, 'cmd_same')
     expect(calls[1]).toEqual({ url: '/v1/replans/rprop_one/decide', body: { approved: false, expected_row_version: 7, command_id: 'cmd_same' }, auth: 'Bearer test' })
+    await client.processReplans('wrun_one','cmd_process')
+    expect(calls[2]).toEqual({url:'/v1/workflow-runs/wrun_one/replans/process',body:{command_id:'cmd_process'},auth:'Bearer test'})
   })
 })

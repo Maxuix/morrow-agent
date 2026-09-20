@@ -29,6 +29,7 @@ class OperationalBackupService:
         self.backend = BackupService(store)
 
     def create(self, bundle_name: str | None = None) -> BackupBundleReport:
+        getattr(self, "maintenance_check", lambda: None)()
         name = bundle_name or f"operational-{int(self.store.clock.now().timestamp())}"
         try:
             bundle, manifest, manifest_digest = self.backend.create(name)

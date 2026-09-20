@@ -39,6 +39,77 @@ class ProviderControlMixin:
             raise ProviderControlError("Provider 配置保存失败")
         return result.value
 
+    def configure_saved(
+        self, provider_id: str, *, base_url: str | None = None, secret: str | None = None
+    ) -> None:
+        """Save desired configuration without an implicit network probe."""
+        current = self.list()
+        old = current.providers.get(validate_provider_id(provider_id))
+        if old is None:
+            raise ProviderControlError("Provider 不存在")
+        updates = {"last_test": None}
+        if base_url is not None:
+            updates["base_url"] = validate_base_url(base_url)
+        new_ref = None
+        if secret is not None:
+            from morrow.adapters.credentials.keyring import environment_credential
+
+            if not secret.strip():
+                raise ProviderControlError("凭据不能为空")
+            if environment_credential(provider_id):
+                raise ProviderControlError("环境变量凭据正在生效；请先取消该环境变量")
+            new_ref = self._ref(provider_id)
+            self.credentials.set(new_ref.ref, secret)
+            updates["credential_ref"] = new_ref
+        try:
+            self._commit(
+                current,
+                lambda value: value.model_copy(
+                    update={
+                        "providers": {
+                            **value.providers,
+                            provider_id: old.model_copy(update=updates),
+                        }
+                    }
+                ),
+            )
+        except Exception:
+            if new_ref is not None:
+                self.credentials.delete(new_ref.ref)
+            raise
+        # Keep old references: immutable AgentRuns may still need them for recovery.
+
+    def add_preset_saved(self, preset_id: str) -> ModelRef:
+        from morrow.adapters.registry import PRESETS
+
+        preset = PRESETS.get(preset_id)
+        if preset is None:
+            raise ProviderControlError("Provider 预设不存在")
+        current = self.list()
+        provider_id = preset["provider_id"]
+        old = current.providers.get(provider_id)
+        if old and (old.adapter != preset["adapter"] or old.base_url != preset["base_url"]):
+            raise ProviderControlError("已有 Provider 与预设配置冲突")
+        config = old or ProviderConfig(adapter=preset["adapter"], base_url=preset["base_url"])
+        model_id = preset["model_id"]
+        if model_id in config.models:
+            raise ProviderControlError("预设模型已存在")
+        config = config.model_copy(
+            update={
+                "models": {
+                    **config.models,
+                    model_id: ProviderModelConfig(api_model_id=preset["api_model_id"]),
+                }
+            }
+        )
+        self._commit(
+            current,
+            lambda value: value.model_copy(
+                update={"providers": {**value.providers, provider_id: config}}
+            ),
+        )
+        return ModelRef(provider_id=provider_id, model_id=model_id)
+
     @staticmethod
     def _require_adapter(registry, adapter_id: str) -> None:
         if not adapter_id.strip():
@@ -55,6 +126,10 @@ class ProviderControlMixin:
                 overrides = ModelCapabilityOverrides.model_validate(overrides)
             except ValueError as exc:
                 raise ProviderControlError("模型能力覆盖项无效") from exc
+        if overrides.reasoning_efforts and not set(overrides.reasoning_efforts).issubset(
+            registry.capabilities(adapter_id).reasoning_efforts
+        ):
+            raise ProviderControlError("模型思考选项不能超出 Adapter 已实现的参数")
         if overrides.tool_protocol not in (None, "none"):
             declared = registry.capabilities(adapter_id).tool_protocol
             if declared != overrides.tool_protocol:
@@ -168,6 +243,34 @@ class ProviderControlMixin:
             ),
         )
         return ModelRef(provider_id=provider_id, model_id=model_id)
+
+    def configure_model(self, provider_id, model_id, *, api_model_id=None, capabilities=None):
+        current = self.list()
+        provider = current.providers.get(validate_provider_id(provider_id))
+        if provider is None or model_id not in provider.models:
+            raise ProviderControlError("模型不存在")
+        self._require_capability_override(self.registry, provider.adapter, capabilities)
+        old = provider.models[model_id]
+        config = ProviderModelConfig(
+            api_model_id=validate_model_id(api_model_id or old.api_model_id),
+            capabilities=capabilities,
+        )
+        self._commit(
+            current,
+            lambda value: value.model_copy(
+                update={
+                    "providers": {
+                        **value.providers,
+                        provider_id: provider.model_copy(
+                            update={
+                                "models": {**provider.models, model_id: config},
+                                "last_test": None,
+                            }
+                        ),
+                    }
+                }
+            ),
+        )
 
     def remove_model(self, provider_id: str, model_id: str) -> None:
         provider_id = validate_provider_id(provider_id)

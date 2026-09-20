@@ -18,6 +18,7 @@ class AdapterRegistry:
         self._factories: dict[str, Callable[[ProviderConfig, str], ModelProvider]] = {}
         self._tool_support: dict[str, ProviderToolSupport] = {}
         self._capabilities: dict[str, ProviderCapabilities] = {}
+        self._reasoning_implementations: dict[str, tuple[str, ...]] = {}
         self._discoveries: dict[str, ModelDiscovery] = {}
 
     def register(
@@ -29,6 +30,7 @@ class AdapterRegistry:
         multiple_tool_calls: bool | None = None,
         capabilities: ProviderCapabilities | None = None,
         discovery: ModelDiscovery | None = None,
+        reasoning_implementation: tuple[str, ...] = (),
     ) -> None:
         if not adapter_id.strip():
             raise ValueError("adapter_id must not be empty")
@@ -41,6 +43,7 @@ class AdapterRegistry:
             ):
                 raise ValueError("multiple_tool_calls conflicts with declared Adapter capabilities")
         self._factories[adapter_id] = factory
+        self._reasoning_implementations[adapter_id] = reasoning_implementation
         previous = self._tool_support.get(adapter_id)
         declared = capabilities or self._capabilities.get(adapter_id)
         self._tool_support[adapter_id] = ProviderToolSupport(
@@ -77,6 +80,17 @@ class AdapterRegistry:
     def contains(self, adapter_id: str) -> bool:
         return adapter_id in self._factories
 
+    def catalog(self) -> tuple[dict, ...]:
+        return tuple(
+            {
+                "adapter_id": key,
+                "input_types": list(self.capabilities(key).input_types),
+                "discovery": key in self._discoveries,
+                "reasoning_efforts": list(self.capabilities(key).reasoning_efforts),
+            }
+            for key in sorted(self._factories)
+        )
+
     def tool_support(self, adapter_id: str) -> ProviderToolSupport:
         try:
             return self._tool_support[adapter_id]
@@ -87,7 +101,17 @@ class AdapterRegistry:
         """Declared capabilities; default derived from tool support when absent."""
         declared = self._capabilities.get(adapter_id)
         if declared is not None:
-            return declared
+            return declared.model_copy(
+                update={
+                    "tool_protocol": self.tool_support(adapter_id).tool_protocol,
+                    "multiple_tool_calls": self.tool_support(adapter_id).multiple_tool_calls,
+                    "reasoning_efforts": tuple(
+                        value
+                        for value in declared.reasoning_efforts
+                        if value in self._reasoning_implementations.get(adapter_id, ())
+                    ),
+                }
+            )
         support = self.tool_support(adapter_id)
         return ProviderCapabilities(
             tool_protocol=support.tool_protocol,
@@ -117,24 +141,17 @@ class AdapterRegistry:
         return models
 
 
-OPENCODE_GO_PRESET: dict[str, Any] = {
-    "preset_id": "opencode-go",
-    "provider_id": "opencode-go",
-    "adapter": "openai-compatible",
-    "base_url": "https://opencode.ai/zen/go/v1",
-    "model_id": "deepseek-v4-flash",
-    "api_model_id": "deepseek-v4-flash",
-}
+DEFAULT_PROVIDER_PRESET = "volcengine"
 
-OPENCODE_GO_MIMO_PRESET: dict[str, Any] = {
-    "preset_id": "opencode-go-mimo",
-    "provider_id": "opencode-go",
+VOLCENGINE_PRESET: dict[str, Any] = {
+    "preset_id": "volcengine",
+    "provider_id": "volcengine",
     "adapter": "openai-compatible",
-    "base_url": "https://opencode.ai/zen/go/v1",
-    "model_id": "mimo-v2.5",
-    "api_model_id": "mimo-v2.5",
+    "base_url": "https://ark.cn-beijing.volces.com/api/plan/v3",
+    "model_id": "glm-5.3-flash",
+    "api_model_id": "glm-5.3-flash",
 }
 
 PRESETS: dict[str, dict[str, Any]] = {
-    preset["preset_id"]: preset for preset in (OPENCODE_GO_PRESET, OPENCODE_GO_MIMO_PRESET)
+    VOLCENGINE_PRESET["preset_id"]: VOLCENGINE_PRESET,
 }

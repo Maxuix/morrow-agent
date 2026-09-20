@@ -1,0 +1,175 @@
+{
+  "contract_version": "1.1.0",
+  "description": "Frozen wire samples for the four-lane parallel repair. Python side round-trips every sample through src/morrow/core/contracts.py; TypeScript side validates the same samples in gui/src/api/contracts.test.ts. A field change here requires a contract-version bump.",
+  "samples": {
+    "turn_interrupt_outcome": {
+      "turn_id": "turn_01J9PARQ1",
+      "agent_run_id": "arun_01J9PARQ1",
+      "finish_reason": "interrupted",
+      "stop_code": "user_pause",
+      "committed_position": 42,
+      "partial_text": "我正在把登录页改为蓝",
+      "workflow_run_id": "wfr_01J9PARQ1",
+      "node_run_id": "noderun_01J9PARQ1",
+      "segment_id": "seg_01J9PARQ1"
+    },
+    "pause_intent_fact": {
+      "control_generation": 7,
+      "command_id": "cmd_pause_01J9PARQ1",
+      "owner": "workflow_run",
+      "owner_id": "wfr_01J9PARQ1",
+      "reason": "user_interrupt",
+      "lifecycle": "suspended",
+      "requested_at": "2026-09-09T12:00:00Z",
+      "suspended_at": "2026-09-09T12:00:01Z",
+      "resumed_at": null
+    },
+    "execution_segment_identity": {
+      "segment_id": "seg_01J9PARQ1",
+      "workflow_run_id": "wfr_01J9PARQ1",
+      "node_run_id": "noderun_01J9PARQ1",
+      "ordinal": 2,
+      "leaf_session_id": "ses_01J9PARQ1",
+      "leaf_task_run_id": "task_01J9PARQ1",
+      "agent_run_id": "arun_01J9PARQ2",
+      "turn_id": "turn_01J9PARQ2",
+      "status": "active",
+      "pause_reason": null,
+      "previous_segment_id": "seg_01J9PARQ0",
+      "accepted_command_id": "cmd_continue_01J9PARQ2"
+    },
+    "planning_request_outcome_model_request": {
+      "operation_id": "plop_01J9PARQ1",
+      "attempt": 2,
+      "request_sequence": 5,
+      "layer": "model_request",
+      "outcome": "interrupted",
+      "started_at": "2026-09-09T12:00:00Z",
+      "ended_at": "2026-09-09T12:00:04Z",
+      "reason": "user_pause",
+      "revision": 1
+    },
+    "planning_request_outcome_validation": {
+      "operation_id": "plop_01J9PARQ1",
+      "attempt": 2,
+      "request_sequence": 5,
+      "layer": "candidate_validation",
+      "outcome": "invalid",
+      "started_at": "2026-09-09T12:00:04Z",
+      "ended_at": "2026-09-09T12:00:05Z",
+      "reason": "missing_required_change",
+      "revision": 1
+    },
+    "planning_request_outcome_operation": {
+      "operation_id": "plop_01J9PARQ1",
+      "attempt": 2,
+      "request_sequence": 5,
+      "layer": "planning_operation",
+      "outcome": "paused",
+      "started_at": "2026-09-09T11:59:00Z",
+      "ended_at": null,
+      "reason": null,
+      "revision": 3
+    },
+    "timeline_entry_identity": {
+      "workspace_id": "ws_01J9PARQ1",
+      "root_session_id": "ses_01J9ROOT0",
+      "item_id": "input:ses_01J9ROOT0:cmid_01J9PARQ1",
+      "kind": "planning_input",
+      "source_kind": "planning_receipt",
+      "source_id": "cmd_plan_01J9PARQ1",
+      "source_session_id": "ses_01J9ROOT0",
+      "source_position": null,
+      "planning_binding_id": "plb_01J9PARQ1",
+      "planning_operation_id": "plop_01J9PARQ1",
+      "workflow_run_id": null,
+      "node_run_id": null,
+      "segment_id": null,
+      "parent_item_id": null,
+      "revision": 1,
+      "occurred_at": "2026-09-09T11:58:00Z",
+      "content_ref": null,
+      "availability": "committed"
+    },
+    "timeline_sink_entry": {
+      "workspace_id": "ws_01J9PARQ1",
+      "root_session_id": "ses_01J9ROOT0",
+      "item_id": "node:ses_01J9LEAF0:reply:ses_01J9LEAF0:7",
+      "kind": "node_progress",
+      "source_kind": "conversation_record",
+      "source_id": "rec_01J9PARQ1",
+      "source_session_id": "ses_01J9LEAF0",
+      "source_position": 7,
+      "planning_binding_id": null,
+      "planning_operation_id": null,
+      "workflow_run_id": "wfr_01J9PARQ1",
+      "node_run_id": "noderun_01J9PARQ1",
+      "segment_id": "seg_01J9PARQ1",
+      "parent_item_id": "input:ses_01J9ROOT0:cmid_01J9PARQ1",
+      "revision": 2,
+      "occurred_at": "2026-09-09T12:01:00Z",
+      "content_ref": "/v1/workspaces/ws_01J9PARQ1/sessions/ses_01J9LEAF0/content/rec_01J9PARQ1",
+      "availability": "committed",
+      "timeline_position": 120
+    },
+    "safe_content_ref": {
+      "content_id": "content_01J9PARQ1",
+      "kind": "blob",
+      "committed_offset": 4096,
+      "total_length": 8192,
+      "availability": "committed"
+    },
+    "timeline_cursor": {
+      "schema_version": 1,
+      "workspace_id": "ws_01J9PARQ1",
+      "root_session_id": "ses_01J9ROOT0",
+      "high_water": 120,
+      "before_position": null
+    },
+    "timeline_snapshot_page": {
+      "entries": [
+        {
+          "workspace_id": "ws_01J9PARQ1",
+          "root_session_id": "ses_01J9ROOT0",
+          "item_id": "node:ses_01J9LEAF0:reply:ses_01J9LEAF0:7",
+          "kind": "node_progress",
+          "source_kind": "conversation_record",
+          "source_id": "rec_01J9PARQ1",
+          "source_session_id": "ses_01J9LEAF0",
+          "source_position": 7,
+          "planning_binding_id": null,
+          "planning_operation_id": null,
+          "workflow_run_id": "wfr_01J9PARQ1",
+          "node_run_id": "noderun_01J9PARQ1",
+          "segment_id": "seg_01J9PARQ1",
+          "parent_item_id": "input:ses_01J9ROOT0:cmid_01J9PARQ1",
+          "revision": 2,
+          "occurred_at": "2026-09-09T12:01:00Z",
+          "content_ref": "/v1/workspaces/ws_01J9PARQ1/sessions/ses_01J9LEAF0/content/rec_01J9PARQ1",
+          "availability": "committed",
+          "timeline_position": 120
+        }
+      ],
+      "cursor": {
+        "schema_version": 1,
+        "workspace_id": "ws_01J9PARQ1",
+        "root_session_id": "ses_01J9ROOT0",
+        "high_water": 120,
+        "before_position": null
+      },
+      "revision": 9,
+      "reset": false
+    },
+    "gui_control_request": {
+      "command_id": "cmd_ctrl_01J9PARQ1",
+      "session_id": "ses_01J9ROOT0",
+      "text": "继续",
+      "client_message_id": "cmid_01J9PARQ1"
+    },
+    "gui_pause_request": {
+      "command_id": "cmd_pause_01J9PARQ1",
+      "session_id": "ses_01J9ROOT0",
+      "expected_run_row_version": 11
+    }
+  }
+}

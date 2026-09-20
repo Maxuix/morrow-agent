@@ -97,16 +97,17 @@ class PreferenceReviewJournalMixin:
         *,
         status: PreferenceReviewJobStatus | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[PreferenceReviewJob, ...]:
-        if not 1 <= limit <= 500:
+        if not 1 <= limit <= 500 or not isinstance(offset, int) or offset < 0:
             raise StorageError(StorageErrorCode.UNAVAILABLE, "Preference Review page is invalid")
         sql = f"SELECT {_JOB_COLUMNS} FROM preference_review_jobs WHERE workspace_id = ?"
         parameters: list[object] = [workspace_id]
         if status is not None:
             sql += " AND status = ?"
             parameters.append(status.value)
-        sql += " ORDER BY created_at_unix ASC, job_id ASC LIMIT ?"
-        parameters.append(limit)
+        sql += " ORDER BY created_at_unix ASC, job_id ASC LIMIT ? OFFSET ?"
+        parameters.extend((limit, offset))
         return tuple(_job_from_row(row) for row in self.backend.read_all(sql, tuple(parameters)))
 
     def list_claimable_preference_review_jobs(

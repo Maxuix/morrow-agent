@@ -92,6 +92,17 @@ class SqliteAgentDefinitionJournal:
         )
 
     def put_version(self, value):
+        for skill_id in value.source.skill_version_ids:
+            if (
+                self.backend.read_one(
+                    "SELECT 1 FROM skill_versions WHERE version_id=?", (skill_id,)
+                )
+                is None
+            ):
+                raise StorageError(
+                    StorageErrorCode.NOT_FOUND,
+                    "Agent definition Skill version is missing",
+                )
         self.backend.executor().execute(
             "INSERT INTO agent_definition_versions VALUES(?,?,?,?,?,?)",
             (
@@ -103,11 +114,6 @@ class SqliteAgentDefinitionJournal:
                 value.model_dump_json(),
             ),
         )
-        for skill_id in value.source.skill_version_ids:
-            self.backend.executor().execute(
-                "INSERT INTO agent_definition_skills VALUES(?,?)",
-                (value.version_id, skill_id),
-            )
 
     def put_head(self, value, *, expected_row_version):
         current = self.get_head(value.workspace_id, value.definition_id)

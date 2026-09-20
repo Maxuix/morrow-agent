@@ -310,6 +310,18 @@ def test_discovery_rejects_skill_id_mismatch(tmp_path: Path) -> None:
     assert "does not match envelope" in failures[0].errors[0]
 
 
+def test_discovery_rejects_envelopes_without_current_scope_field(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    version_dir, payload = _make_package(root)
+    current = dict(payload)
+    current.pop("scope_id")
+    write_envelope(version_dir, _resign_envelope(current))
+
+    failures = scan_source_root(root, source_kind=SourceKind.IMPORTED).failures
+    assert len(failures) == 1
+    assert "scope_id is missing" in failures[0].errors[0]
+
+
 def test_discovery_rejects_directory_symlinks_at_every_package_boundary(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     version_dir, _payload = _make_package(outside)

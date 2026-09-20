@@ -34,6 +34,56 @@ describe('ApiClient', () => {
     expect(recorded).toEqual([{ url: '/v1/meta', authorization: 'Bearer secret-token' }])
   })
 
+  it('types the frozen task_workflow capability advertised by Core', async () => {
+    const { fetchImpl, recorded } = scriptedFetch({
+      body: {
+        protocol_version: 1,
+        interaction_protocol_version: 1,
+        workspace_id: 'ws_1',
+        execution_ready: true,
+        features: { chat: { available: true } },
+        limits: { text_chars: 4096 },
+        task_workflow: {
+          schema: 1,
+          planning: true,
+          start: true,
+          control: true,
+          pause: true,
+          change: true,
+          apply_change: true,
+          resume: true,
+          repair: true,
+        },
+      },
+    })
+    const client = new ApiClient({ baseUrl: '', token: 't', fetchImpl })
+    const caps = await client.capabilities()
+    expect(caps.task_workflow).toEqual({
+      schema: 1,
+      planning: true,
+      start: true,
+      control: true,
+      pause: true,
+      change: true,
+      apply_change: true,
+      resume: true,
+      repair: true,
+    })
+    expect(recorded).toEqual([{ url: '/v1/capabilities', authorization: 'Bearer t' }])
+  })
+
+  it('treats missing or disabled task_workflow planning as the rollback entry', async () => {
+    const { taskWorkflowAvailable } = await import('./chat')
+    expect(taskWorkflowAvailable(undefined)).toBe(false)
+    expect(taskWorkflowAvailable({
+      interaction_protocol_version: 1, workspace_id: 'ws', execution_ready: true, features: {}, limits: {},
+    })).toBe(false)
+    expect(taskWorkflowAvailable({
+      interaction_protocol_version: 1, workspace_id: 'ws', execution_ready: true, features: {}, limits: {},
+      task_workflow: { schema: 1, planning: false, start: true, control: true, pause: true, change: true, apply_change: true, resume: true, repair: true },
+    })).toBe(false)
+  })
+
   it('builds the events paging query with after/limit', async () => {
     const { fetchImpl, recorded } = scriptedFetch({
       body: { events: [], latest_cursor: 0, has_more: false },
@@ -184,4 +234,27 @@ describe('ApiClient', () => {
       },
     ])
   })
+
+  it('keeps workspace file requests scoped to the client workspace', async () => {
+    const { fetchImpl, recorded } = scriptedFetch({ body: {} })
+    const client = new ApiClient({ baseUrl: '', token: 't', workspaceId: 'ws_1', fetchImpl })
+
+    await client.workspaceFileTree('.')
+
+    expect(recorded.map(item => item.url)).toEqual([
+      '/v1/workspaces/ws_1/files/tree?path=.',
+    ])
+  })
+})
+
+it('scopes legacy resources while preserving global discovery and explicit chat scope', async () => {
+  const {fetchImpl,recorded}=scriptedFetch({body:{}})
+  const client=new ApiClient({baseUrl:'',token:'t',workspaceId:'ws_b',fetchImpl})
+  await client.meta()
+  await client.events(0)
+  await client.workspaces()
+  await client.chatSession('ws_a','ses_a')
+  await client.sessionMetadata('ws_b','ses_b',{command_id:'cmd_name',expected_revision:2,title:'项目'})
+  expect(recorded.map(r=>r.url)).toEqual(['/v1/workspaces/ws_b/meta','/v1/workspaces/ws_b/events?after=0&limit=100','/v1/workspaces','/v1/workspaces/ws_a/sessions/ses_a','/v1/workspaces/ws_b/sessions/ses_b/metadata'])
+  expect(client.scopePath('/v1/events/stream')).toBe('/v1/workspaces/ws_b/events/stream')
 })

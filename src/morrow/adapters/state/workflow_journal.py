@@ -5,7 +5,9 @@ resolves a model, generates an identity or computes a content hash.
 """
 
 from datetime import UTC, datetime, timedelta
+from typing import get_args
 
+from morrow.core.contracts import PauseReason
 from morrow.core.domain import TaskRunPurpose, TaskRunStatus
 from morrow.core.execution import StaleRowVersionError
 from morrow.core.store import StorageError, StorageErrorCode
@@ -26,6 +28,9 @@ from morrow.core.workflows.runs import (
     validate_run_transition,
 )
 
+# Every status that still owns its root TaskRun and node conversations.
+_ACTIVE_RUN_STATUSES = "('queued','running','blocked','draining','paused')"
+
 
 class SqliteWorkflowJournal:
     def __init__(
@@ -39,6 +44,12 @@ class SqliteWorkflowJournal:
         get_permission_snapshot,
     ):
         self.backend = backend
+        from morrow.adapters.state.planning_journal import SqlitePlanningJournal
+
+        self.planning = SqlitePlanningJournal(self)
+        from morrow.adapters.state.execution_pause_journal import SqliteExecutionPauseJournal
+
+        self.execution_pause = SqliteExecutionPauseJournal(self.backend)
         self.get_task = get_task
         self.get_artifact = get_artifact
         self.get_agent_version = get_agent_version
@@ -221,7 +232,35 @@ class SqliteWorkflowJournal:
         )
         return tuple(self.get_draft(workspace_id, str(row[0])) for row in rows)
 
-    def create_draft(self, value: WorkflowDraft):
+    def draft_page(self, workspace_id, *, after=None, limit=100):
+        rows = self.backend.read_all(
+            "SELECT draft_id FROM workflow_drafts WHERE workspace_id=? AND draft_id>? ORDER BY draft_id LIMIT ?",
+            (workspace_id, after or "", limit),
+        )
+        return tuple(self.get_draft(workspace_id, row[0]) for row in rows)
+
+    def _draft_history(self, value):
+        from morrow.core.domain import canonical_json_bytes, sha256_digest
+        from morrow.core.workflows.planning import DraftVersion
+
+        previous = self.planning.version(value.workspace_id, value.draft_id, value.row_version - 1)
+        return DraftVersion(
+            workspace_id=value.workspace_id,
+            draft_id=value.draft_id,
+            version=value.row_version,
+            source=value.source,
+            source_hash=value.source_hash,
+            node_metadata=previous.node_metadata if previous else {},
+            execution_selections=previous.execution_selections if previous else {},
+            created_from="manual_edit",
+            command_id=f"cmd_{value.draft_id}_{value.row_version}",
+            validation_digest=sha256_digest(
+                canonical_json_bytes([(d.severity, d.code, d.node_id) for d in value.diagnostics])
+            ),
+            created_at=value.updated_at,
+        )
+
+    def create_draft(self, value: WorkflowDraft, *, history=None):
         def work():
             if value.row_version != 1 or self.get_draft(value.workspace_id, value.draft_id):
                 raise ValueError("Workflow Draft already exists")
@@ -238,11 +277,12 @@ class SqliteWorkflowJournal:
                     int(value.updated_at.timestamp()),
                 ),
             )
+            self.planning.append_version(history or self._draft_history(value))
             return value
 
         return self.backend.transact(work)
 
-    def save_draft(self, value: WorkflowDraft, *, expected_row_version: int):
+    def save_draft(self, value: WorkflowDraft, *, expected_row_version: int, history=None):
         def work():
             current = self.get_draft(value.workspace_id, value.draft_id)
             if current is None:
@@ -270,6 +310,7 @@ class SqliteWorkflowJournal:
                     value.draft_id,
                 ),
             )
+            self.planning.append_version(history or self._draft_history(value))
             return value
 
         return self.backend.transact(work)
@@ -363,8 +404,16 @@ class SqliteWorkflowJournal:
 
         return self.backend.transact(work)
 
-    def store_detached_revision(self, revision: WorkflowRevision):
-        """Store one run-local immutable Revision without moving a Definition head."""
+    def get_task_plan_provenance(self, workspace_id, revision_id):
+        return self.planning.provenance(workspace_id, revision_id)
+
+    def store_detached_revision(self, revision: WorkflowRevision, *, provenance=None):
+        """Store one run-local immutable Revision without moving a Definition head.
+
+        Parentless Revisions are task-plan initials: they require verified
+        provenance in the same transaction. Continuations keep the existing
+        parent-lineage check and never carry provenance.
+        """
 
         def work():
             candidate = revision
@@ -372,18 +421,30 @@ class SqliteWorkflowJournal:
             if existing is not None:
                 if existing != candidate.model_copy(update={"revision": existing.revision}):
                     raise ValueError("detached Workflow revision identifier conflict")
+                stored_origin = self.get_task_plan_provenance(
+                    existing.workspace_id, existing.workflow_revision_id
+                )
+                if provenance is not None:
+                    if stored_origin is None or stored_origin != provenance:
+                        raise ValueError("detached Workflow revision identifier conflict")
+                elif stored_origin is not None or existing.parent_workflow_revision_id is None:
+                    raise ValueError("detached Workflow revision lineage mismatch")
                 return existing
             parent = (
                 self.get_revision(candidate.workspace_id, candidate.parent_workflow_revision_id)
                 if candidate.parent_workflow_revision_id
                 else None
             )
-            if (
-                parent is None
-                or parent.workflow_definition_id != candidate.workflow_definition_id
-                or candidate.revision >= 0
-            ):
-                raise ValueError("detached Workflow revision lineage mismatch")
+            if candidate.parent_workflow_revision_id:
+                if (
+                    provenance is not None
+                    or parent is None
+                    or parent.workflow_definition_id != candidate.workflow_definition_id
+                    or candidate.revision >= 0
+                ):
+                    raise ValueError("detached Workflow revision lineage mismatch")
+            else:
+                self._require_task_plan_origin(candidate, provenance)
             for node in candidate.nodes:
                 ref = node.agent_definition_ref
                 agent = self.get_agent_version(candidate.workspace_id, ref.version_id)
@@ -420,9 +481,61 @@ class SqliteWorkflowJournal:
                         node.agent_definition_ref.version_id,
                     ),
                 )
+            if provenance is not None:
+                sql.execute(
+                    "INSERT INTO workflow_task_plan_provenance VALUES(?,?,?,?,?,?)",
+                    (
+                        provenance.workspace_id,
+                        provenance.workflow_revision_id,
+                        provenance.planning_binding_id,
+                        provenance.plan_decision_id,
+                        provenance.origin,
+                        provenance.model_dump_json(),
+                    ),
+                )
             return stored
 
         return self.backend.transact(work)
+
+    def _require_task_plan_origin(self, candidate, provenance):
+        from morrow.core.workflows.planning import TASK_PLAN_DEFINITION_PREFIX
+
+        if (
+            provenance is None
+            or candidate.revision >= 0
+            or not candidate.workflow_definition_id.startswith(TASK_PLAN_DEFINITION_PREFIX)
+            or provenance.workspace_id != candidate.workspace_id
+            or provenance.workflow_revision_id != candidate.workflow_revision_id
+        ):
+            raise ValueError("detached Workflow revision lineage mismatch")
+        if self.get_head(candidate.workspace_id, candidate.workflow_definition_id) is not None:
+            raise ValueError("task-plan revision must not occupy a Definition head")
+        binding = self.planning.get_binding(candidate.workspace_id, provenance.planning_binding_id)
+        decision = self.planning.decision(candidate.workspace_id, provenance.plan_decision_id)
+        version = self.planning.version(
+            candidate.workspace_id, provenance.draft_id, provenance.draft_version
+        )
+        root = self.get_task(candidate.workspace_id, provenance.root_task_run_id)
+        expected_mode = "repair" if provenance.origin == "repair" else "initial"
+        if (
+            binding is None
+            or binding.status != "active"
+            or binding.mode != expected_mode
+            or binding.current_draft_id != provenance.draft_id
+            or decision is None
+            or decision.decision != "start"
+            or decision.command_id != provenance.command_id
+            or decision.session_id != binding.session_id
+            or decision.draft_id != provenance.draft_id
+            or decision.draft_version != provenance.draft_version
+            or version is None
+            or {item.node_id for item in provenance.frozen_selections}
+            != {node.node_id for node in candidate.nodes}
+            or root is None
+            or root.purpose is not TaskRunPurpose.USER
+            or root.session_id != binding.session_id
+        ):
+            raise ValueError("detached Workflow revision lineage mismatch")
 
     def _put_head(self, head):
         self.backend.executor().execute(
@@ -518,20 +631,88 @@ class SqliteWorkflowJournal:
         return tuple(self.get_run(workspace_id, row[0]) for row in rows)
 
     def get_leaf_ownership(self, workspace_id, node_run_id):
-        del workspace_id
-        row = self.backend.read_one(
-            "SELECT session_id, task_run_id FROM workflow_leaf_ownership WHERE node_run_id=?",
-            (node_run_id,),
+        node = self.get_node(workspace_id, node_run_id)
+        if node is None:
+            return None
+        run = self.get_run(workspace_id, node.workflow_run_id)
+        if run is None:
+            return None
+        revision = self.get_revision(workspace_id, run.workflow_revision_id)
+        definition = (
+            next((item for item in revision.nodes if item.node_id == node.node_id), None)
+            if revision is not None
+            else None
         )
-        return (str(row[0]), str(row[1])) if row else None
+        # Invoking-session nodes use the workflow root directly; only isolated
+        # nodes have a separately owned leaf conversation.
+        if definition is not None and definition.conversation_scope == "invoking_session":
+            return None
+        row = self.backend.read_one(
+            "SELECT leaf_session_id, leaf_task_run_id FROM workflow_node_runs "
+            "WHERE workspace_id=? AND node_run_id=?",
+            (workspace_id, node_run_id),
+        )
+        return (str(row[0]), str(row[1])) if row and row[0] and row[1] else None
 
     def active_for_root(self, workspace_id, task_run_id):
         row = self.backend.read_one(
             "SELECT workflow_run_id FROM workflow_runs WHERE workspace_id=? AND root_task_run_id=? "
-            "AND status IN ('queued','running','blocked','draining','paused')",
+            "AND status IN " + _ACTIVE_RUN_STATUSES,
             (workspace_id, task_run_id),
         )
         return self.get_run(workspace_id, row[0]) if row else None
+
+    def active_runs_for_root_session(self, workspace_id, session_id):
+        """Non-terminal runs whose root TaskRun belongs to this Session."""
+        rows = self.backend.read_all(
+            "SELECT r.workflow_run_id FROM workflow_runs r "
+            "JOIN task_runs t ON t.workspace_id=r.workspace_id AND t.task_run_id=r.root_task_run_id "
+            "WHERE r.workspace_id=? AND t.session_id=? AND r.status IN "
+            + _ACTIVE_RUN_STATUSES
+            + " ORDER BY r.workflow_run_id",
+            (workspace_id, session_id),
+        )
+        return tuple(self.get_run(workspace_id, row[0]) for row in rows)
+
+    def active_runs_for_leaf_session(self, workspace_id, session_id):
+        """Non-terminal runs owning this Session as an isolated node conversation."""
+        rows = self.backend.read_all(
+            "SELECT DISTINCT r.workflow_run_id FROM workflow_runs r "
+            "JOIN workflow_node_runs n ON n.workspace_id=r.workspace_id "
+            "AND n.workflow_run_id=r.workflow_run_id "
+            "WHERE r.workspace_id=? AND r.status IN "
+            + _ACTIVE_RUN_STATUSES
+            + " AND json_extract(n.body_json,'$.conversation_session_id')=? "
+            "ORDER BY r.workflow_run_id",
+            (workspace_id, session_id),
+        )
+        return tuple(self.get_run(workspace_id, row[0]) for row in rows)
+
+    def runs_for_root_session(self, workspace_id, session_id):
+        """All runs whose root TaskRun belongs to this Session, terminal included."""
+        rows = self.backend.read_all(
+            "SELECT r.workflow_run_id FROM workflow_runs r "
+            "JOIN task_runs t ON t.workspace_id=r.workspace_id AND t.task_run_id=r.root_task_run_id "
+            "WHERE r.workspace_id=? AND t.session_id=? ORDER BY r.workflow_run_id",
+            (workspace_id, session_id),
+        )
+        return tuple(self.get_run(workspace_id, row[0]) for row in rows)
+
+    def nodes_for_conversation_session(self, workspace_id, session_id):
+        """Every NodeRun admitted onto this Session as its conversation, any status."""
+        rows = self.backend.read_all(
+            "SELECT n.node_run_id FROM workflow_node_runs n "
+            "WHERE n.workspace_id=? "
+            "AND json_extract(n.body_json,'$.conversation_session_id')=? "
+            "ORDER BY n.node_run_id",
+            (workspace_id, session_id),
+        )
+        nodes = []
+        for row in rows:
+            node = self.get_node(workspace_id, str(row[0]))
+            if node is not None:
+                nodes.append(node)
+        return tuple(nodes)
 
     def create_run(self, value: WorkflowRun, nodes: tuple[NodeRun, ...]):
         def work():
@@ -598,7 +779,9 @@ class SqliteWorkflowJournal:
                 ):
                     raise ValueError("invalid initial NodeRun")
                 self.backend.executor().execute(
-                    "INSERT INTO workflow_node_runs VALUES(?,?,?,?,?,?,?)",
+                    "INSERT INTO workflow_node_runs "
+                    "(node_run_id,workspace_id,workflow_run_id,node_id,attempt,status,body_json,"
+                    "agent_run_id,leaf_session_id,leaf_task_run_id) VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (
                         node.node_run_id,
                         node.workspace_id,
@@ -607,6 +790,9 @@ class SqliteWorkflowJournal:
                         node.attempt,
                         node.status.value,
                         node.model_dump_json(),
+                        node.agent_run_id,
+                        node.conversation_session_id,
+                        node.leaf_task_run_id,
                     ),
                 )
             for ordinal, node_id in enumerate(self._stable_order(revision)):
@@ -728,7 +914,9 @@ class SqliteWorkflowJournal:
             )
             for node in nodes:
                 sql.execute(
-                    "INSERT INTO workflow_node_runs VALUES(?,?,?,?,?,?,?)",
+                    "INSERT INTO workflow_node_runs "
+                    "(node_run_id,workspace_id,workflow_run_id,node_id,attempt,status,body_json,"
+                    "agent_run_id,leaf_session_id,leaf_task_run_id) VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (
                         node.node_run_id,
                         node.workspace_id,
@@ -737,6 +925,9 @@ class SqliteWorkflowJournal:
                         node.attempt,
                         node.status.value,
                         node.model_dump_json(),
+                        node.agent_run_id,
+                        node.conversation_session_id,
+                        node.leaf_task_run_id,
                     ),
                 )
             for item in sorted(execution_nodes, key=lambda row: row.topology_ordinal):
@@ -860,7 +1051,9 @@ class SqliteWorkflowJournal:
                 ):
                     raise ValueError("invalid rerun NodeRun")
                 sql.execute(
-                    "INSERT INTO workflow_node_runs VALUES(?,?,?,?,?,?,?)",
+                    "INSERT INTO workflow_node_runs "
+                    "(node_run_id,workspace_id,workflow_run_id,node_id,attempt,status,body_json,"
+                    "agent_run_id,leaf_session_id,leaf_task_run_id) VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (
                         node.node_run_id,
                         node.workspace_id,
@@ -869,6 +1062,9 @@ class SqliteWorkflowJournal:
                         node.attempt,
                         node.status.value,
                         node.model_dump_json(),
+                        node.agent_run_id,
+                        node.conversation_session_id,
+                        node.leaf_task_run_id,
                     ),
                 )
             for item in execution_nodes:
@@ -1001,13 +1197,239 @@ class SqliteWorkflowJournal:
         )
         return tuple(self.get_node(workspace_id, row[0]) for row in rows)
 
+    # Node execution segments (P02) -------------------------------------------
+
+    def append_segment(self, value):
+        """Append one execution segment under the repository's identity rules.
+
+        Rejects unknown nodes, workspace mismatch, leaf-ownership drift, a
+        predecessor that is not the node's current tail, and a second active
+        segment. Identity columns are immutable once written (trigger guard).
+        """
+        from morrow.core.workflows.segments import WorkflowNodeSegment
+
+        if not isinstance(value, WorkflowNodeSegment):
+            raise ValueError("append_segment requires a WorkflowNodeSegment")
+
+        def work():
+            node = self.get_node(value.workspace_id, value.node_run_id)
+            if node is None or node.workflow_run_id != value.workflow_run_id:
+                raise ValueError("segment node does not belong to the workflow run")
+            ownership = self.get_leaf_ownership(value.workspace_id, value.node_run_id)
+            refs = (value.leaf_session_id, value.leaf_task_run_id)
+            if ownership is not None and refs != ownership:
+                raise ValueError("segment leaf references must match the node's leaf ownership")
+            if ownership is None and value.leaf_session_id is not None:
+                # An invoking_session node owns the root conversation and has
+                # no leaf-ownership row: accept the segment only when the refs
+                # match the node's own admission binding. A truly unadmitted
+                # node binds nothing and stays rejected.
+                admitted_refs = (node.conversation_session_id, node.leaf_task_run_id)
+                if refs != admitted_refs:
+                    raise ValueError("an unadmitted node cannot own a segment conversation")
+            if value.previous_segment_id is not None:
+                previous = self.get_segment(value.workspace_id, value.previous_segment_id)
+                if (
+                    previous is None
+                    or previous.node_run_id != value.node_run_id
+                    or previous.ordinal != value.ordinal - 1
+                ):
+                    raise ValueError("segment predecessor must be the node's previous tail")
+                if previous.status == "active":
+                    raise ValueError("a node cannot open a second active segment")
+            elif value.ordinal != 1 or self.segments_for_node(
+                value.workspace_id, value.node_run_id
+            ):
+                raise ValueError("only the first segment of a node lacks a predecessor")
+            self.backend.executor().execute(
+                "INSERT INTO workflow_node_segments (segment_id, workspace_id, "
+                "workflow_run_id, node_run_id, ordinal, leaf_session_id, leaf_task_run_id, "
+                "agent_run_id, turn_id, status, pause_reason, previous_segment_id, "
+                "accepted_command_id, row_version, created_at_unix, updated_at_unix, "
+                "body_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    value.segment_id,
+                    value.workspace_id,
+                    value.workflow_run_id,
+                    value.node_run_id,
+                    value.ordinal,
+                    value.leaf_session_id,
+                    value.leaf_task_run_id,
+                    value.agent_run_id,
+                    value.turn_id,
+                    value.status,
+                    value.pause_reason,
+                    value.previous_segment_id,
+                    value.accepted_command_id,
+                    value.row_version,
+                    int(value.created_at.timestamp()),
+                    int(value.updated_at.timestamp()),
+                    value.model_dump_json(),
+                ),
+            )
+            return value
+
+        return self.backend.transact(work)
+
+    def close_segment(
+        self,
+        workspace_id,
+        segment_id,
+        *,
+        status,
+        pause_reason=None,
+        agent_run_id=None,
+        turn_id=None,
+        expected_row_version,
+    ):
+        """Settle an active segment (interrupted/completed) under OCC."""
+
+        if status not in ("interrupted", "completed"):
+            raise ValueError("close_segment settles to interrupted or completed")
+        if pause_reason is not None and pause_reason not in get_args(PauseReason):
+            raise ValueError("unknown Workflow node pause reason")
+
+        def work():
+            current = self.get_segment(workspace_id, segment_id)
+            if current is None:
+                raise ValueError("WorkflowNodeSegment is missing")
+            if current.status != "active":
+                if current.status == status:
+                    return current
+                raise ValueError("WorkflowNodeSegment revision conflict")
+            update = {
+                "status": status,
+                "row_version": current.row_version + 1,
+                "updated_at": self.backend.now(),
+            }
+            if pause_reason is not None:
+                update["pause_reason"] = pause_reason
+            if agent_run_id is not None:
+                update["agent_run_id"] = agent_run_id
+            if turn_id is not None:
+                update["turn_id"] = turn_id
+            value = current.model_copy(update=update)
+            self.backend.executor().execute(
+                "UPDATE workflow_node_segments SET status=?, pause_reason=?, agent_run_id=?, "
+                "turn_id=?, row_version=?, updated_at_unix=?, body_json=? "
+                "WHERE segment_id=? AND row_version=? AND status='active'",
+                (
+                    value.status,
+                    value.pause_reason,
+                    value.agent_run_id,
+                    value.turn_id,
+                    value.row_version,
+                    int(value.updated_at.timestamp()),
+                    value.model_dump_json(),
+                    segment_id,
+                    expected_row_version,
+                ),
+            )
+            changed = self.backend.executor().execute("SELECT changes()")
+            if not changed or int(changed[0][0]) != 1:
+                raise ValueError("WorkflowNodeSegment revision conflict")
+            return value
+
+        return self.backend.transact(work)
+
+    _SEGMENT_COLUMNS = (
+        "segment_id, workspace_id, workflow_run_id, node_run_id, ordinal, "
+        "leaf_session_id, leaf_task_run_id, agent_run_id, turn_id, status, "
+        "pause_reason, previous_segment_id, accepted_command_id, row_version, "
+        "created_at_unix, updated_at_unix"
+    )
+
+    def _segment(self, row):
+        """Column-authoritative mapping; body_json only carries audit metadata."""
+        from datetime import UTC, datetime
+
+        from morrow.core.workflows.segments import WorkflowNodeSegment
+
+        if row is None:
+            return None
+        try:
+            return WorkflowNodeSegment(
+                segment_id=str(row[0]),
+                workspace_id=str(row[1]),
+                workflow_run_id=str(row[2]),
+                node_run_id=str(row[3]),
+                ordinal=int(row[4]),
+                leaf_session_id=row[5] if row[5] is None else str(row[5]),
+                leaf_task_run_id=row[6] if row[6] is None else str(row[6]),
+                agent_run_id=row[7] if row[7] is None else str(row[7]),
+                turn_id=row[8] if row[8] is None else str(row[8]),
+                status=str(row[9]),
+                pause_reason=row[10] if row[10] is None else str(row[10]),
+                previous_segment_id=row[11] if row[11] is None else str(row[11]),
+                accepted_command_id=row[12] if row[12] is None else str(row[12]),
+                row_version=int(row[13]),
+                created_at=datetime.fromtimestamp(int(row[14]), UTC),
+                updated_at=datetime.fromtimestamp(int(row[15]), UTC),
+            )
+        except (ValueError, TypeError, IndexError):
+            raise StorageError(
+                StorageErrorCode.NEEDS_REPAIR, "Workflow node segment record is corrupt"
+            ) from None
+
+    def get_segment(self, workspace_id, segment_id):
+        row = self.backend.read_one(
+            f"SELECT {self._SEGMENT_COLUMNS} FROM workflow_node_segments "
+            "WHERE segment_id=? AND workspace_id=?",
+            (segment_id, workspace_id),
+        )
+        return self._segment(row)
+
+    def segments_for_node(self, workspace_id, node_run_id):
+        rows = self.backend.read_all(
+            f"SELECT {self._SEGMENT_COLUMNS} FROM workflow_node_segments "
+            "WHERE workspace_id=? AND node_run_id=? ORDER BY ordinal",
+            (workspace_id, node_run_id),
+        )
+        return tuple(segment for row in rows if (segment := self._segment(row)) is not None)
+
+    def current_segment(self, node_run_id):
+        """Port view: the node's one active segment, workspace-agnostic."""
+        row = self.backend.read_one(
+            f"SELECT {self._SEGMENT_COLUMNS} FROM workflow_node_segments "
+            "WHERE node_run_id=? AND status='active'",
+            (node_run_id,),
+        )
+        return self._segment(row)
+
+    def first_segment(self, workspace_id, node_run_id):
+        row = self.backend.read_one(
+            f"SELECT {self._SEGMENT_COLUMNS} FROM workflow_node_segments "
+            "WHERE workspace_id=? AND node_run_id=? ORDER BY ordinal LIMIT 1",
+            (workspace_id, node_run_id),
+        )
+        return self._segment(row)
+
+    def segment_directory(self):
+        """Frozen ``SegmentDirectoryPort`` view over this repository."""
+        return SqliteSegmentDirectory(self)
+
     def save_run(self, value: WorkflowRun, *, expected_row_version):
         return self._save(value, expected_row_version, node=False)
 
     def save_node(self, value: NodeRun, *, expected_row_version):
         return self._save(value, expected_row_version, node=True)
 
-    def _save(self, value, expected, *, node):
+    def save_recovered_run(self, value: WorkflowRun, *, expected_row_version):
+        """Restricted historical-recovery write: the only sanctioned
+        ``failed -> paused`` run transition. Ordinary ``save_run`` keeps
+        refusing every terminal transition; the recovery service owns this
+        path and re-validates its eligibility inside its own transaction."""
+
+        return self._save(value, expected_row_version, node=False, recovery=True)
+
+    def save_recovered_node(self, value: NodeRun, *, expected_row_version):
+        """Restricted historical-recovery write: only ``failed -> running``
+        and ``cancelled -> queued`` node transitions, re-verified against the
+        frozen evidence like any other node save."""
+
+        return self._save(value, expected_row_version, node=True, recovery=True)
+
+    def _save(self, value, expected, *, node, recovery=False):
         value = type(value).model_validate(value.model_dump())
 
         def work():
@@ -1054,7 +1476,25 @@ class SqliteWorkflowJournal:
                 if getattr(value, field) != getattr(current, field):
                     raise ValueError("frozen Workflow evidence cannot change")
             if current.status != value.status:
-                validate_run_transition(current.status, value.status)
+                sanctioned = recovery and (
+                    (
+                        not node
+                        and current.status is WorkflowStatus.FAILED
+                        and value.status is WorkflowStatus.PAUSED
+                    )
+                    or (
+                        node
+                        and current.status is WorkflowStatus.FAILED
+                        and value.status is WorkflowStatus.RUNNING
+                    )
+                    or (
+                        node
+                        and current.status is WorkflowStatus.CANCELLED
+                        and value.status is WorkflowStatus.QUEUED
+                    )
+                )
+                if not sanctioned:
+                    validate_run_transition(current.status, value.status)
             elif (
                 current.status.terminal
                 or node
@@ -1115,10 +1555,7 @@ class SqliteWorkflowJournal:
                                 "parallel read admission requires frozen permission evidence"
                             )
                 direct = definition.conversation_scope == "invoking_session"
-                owner = self.backend.read_one(
-                    "SELECT session_id, task_run_id FROM workflow_leaf_ownership WHERE node_run_id=?",
-                    (value.node_run_id,),
-                )
+                owner = self.get_leaf_ownership(value.workspace_id, value.node_run_id)
                 if direct:
                     if (
                         owner is not None
@@ -1151,11 +1588,6 @@ class SqliteWorkflowJournal:
                     and effective_cap > declared_cap
                 ):
                     raise ValueError("Workflow node request cap escalates the revision")
-                if current.agent_run_id is None:
-                    self.backend.executor().execute(
-                        "INSERT INTO workflow_agent_run_refs VALUES(?,?)",
-                        (value.agent_run_id, value.node_run_id),
-                    )
             if value.status == WorkflowStatus.COMPLETED:
                 if node:
                     available = {
@@ -1186,8 +1618,16 @@ class SqliteWorkflowJournal:
             )
             if node:
                 self.backend.executor().execute(
-                    "UPDATE workflow_node_runs SET status=?, body_json=? WHERE node_run_id=?",
-                    (value.status.value, value.model_dump_json(), value.node_run_id),
+                    "UPDATE workflow_node_runs SET status=?, body_json=?, agent_run_id=?, "
+                    "leaf_session_id=?, leaf_task_run_id=? WHERE node_run_id=?",
+                    (
+                        value.status.value,
+                        value.model_dump_json(),
+                        value.agent_run_id,
+                        value.conversation_session_id,
+                        value.leaf_task_run_id,
+                        value.node_run_id,
+                    ),
                 )
             else:
                 self.backend.executor().execute(
@@ -1243,10 +1683,7 @@ class SqliteWorkflowJournal:
                         binding.contract.version,
                     ):
                         raise ValueError("Workflow output slot contract mismatch")
-                    owner = self.backend.read_one(
-                        "SELECT session_id, task_run_id FROM workflow_leaf_ownership WHERE node_run_id=?",
-                        (node_run_id,),
-                    )
+                    owner = self.get_leaf_ownership(workspace_id, node_run_id)
                     direct = declared.conversation_scope == "invoking_session"
                     root = self.get_task(workspace_id, run.root_task_run_id)
                     expected_owner = (
@@ -1307,3 +1744,27 @@ class SqliteWorkflowJournal:
             (run_id,),
         )
         return tuple((row[0], row[1], ArtifactBinding.model_validate_json(row[2])) for row in rows)
+
+
+class SqliteSegmentDirectory:
+    """Frozen ``SegmentDirectoryPort`` implementation over the workflow journal.
+
+    Lane C/D and tests may consume this port directly; node identity is
+    globally unique so the frozen port methods take no workspace argument.
+    """
+
+    def __init__(self, journal: SqliteWorkflowJournal) -> None:
+        self._journal = journal
+
+    def current_segment(self, node_run_id: str):
+        return self._journal.current_segment(node_run_id)
+
+    def segments(self, workflow_run_id: str, node_run_id: str):
+        rows = self._journal.backend.read_all(
+            f"SELECT {self._journal._SEGMENT_COLUMNS} FROM workflow_node_segments "
+            "WHERE workflow_run_id=? AND node_run_id=? ORDER BY ordinal",
+            (workflow_run_id, node_run_id),
+        )
+        return tuple(
+            segment for row in rows if (segment := self._journal._segment(row)) is not None
+        )

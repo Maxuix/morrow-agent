@@ -6,10 +6,8 @@ from datetime import UTC, datetime
 
 from morrow.adapters.state.learning_journal import (
     _CANDIDATE_COLUMNS,
-    _EVIDENCE_COLUMNS_QUALIFIED,
     _SUPPRESSION_COLUMNS,
     _candidate_from_row,
-    _evidence_from_row,
     _missing,
     _optional_unix,
     _stale,
@@ -70,6 +68,7 @@ class SqliteLearningCandidateMixin:
         status: LearningCandidateStatus | None = None,
         candidate_type: LearningCandidateType | None = None,
         origin_review_id: str | None = None,
+        task_run_ids: tuple[str, ...] | None = None,
         fingerprint: str | None = None,
         semantic_key: str | None = None,
         expires_before: datetime | None = None,
@@ -91,6 +90,17 @@ class SqliteLearningCandidateMixin:
         if origin_review_id is not None:
             sql += " AND origin_review_id = ?"
             parameters.append(origin_review_id)
+        if task_run_ids is not None:
+            if not task_run_ids:
+                sql += " AND 0"
+            else:
+                placeholders = ",".join("?" for _ in task_run_ids)
+                sql += (
+                    " AND origin_review_id IN ("
+                    "SELECT review_id FROM learning_reviews "
+                    f"WHERE workspace_id = ? AND task_run_id IN ({placeholders}))"
+                )
+                parameters.extend((workspace_id, *task_run_ids))
         if fingerprint is not None:
             sql += " AND fingerprint = ?"
             parameters.append(fingerprint)
@@ -116,6 +126,7 @@ class SqliteLearningCandidateMixin:
         status: LearningCandidateStatus | None = None,
         candidate_type: LearningCandidateType | None = None,
         origin_review_id: str | None = None,
+        task_run_ids: tuple[str, ...] | None = None,
         expires_after: datetime | None = None,
     ) -> int:
         sql = "SELECT COUNT(*) FROM learning_candidates WHERE workspace_id = ?"
@@ -129,6 +140,17 @@ class SqliteLearningCandidateMixin:
         if origin_review_id is not None:
             sql += " AND origin_review_id = ?"
             parameters.append(origin_review_id)
+        if task_run_ids is not None:
+            if not task_run_ids:
+                sql += " AND 0"
+            else:
+                placeholders = ",".join("?" for _ in task_run_ids)
+                sql += (
+                    " AND origin_review_id IN ("
+                    "SELECT review_id FROM learning_reviews "
+                    f"WHERE workspace_id = ? AND task_run_id IN ({placeholders}))"
+                )
+                parameters.extend((workspace_id, *task_run_ids))
         if expires_after is not None:
             sql += " AND expires_at_unix > ?"
             parameters.append(int(expires_after.timestamp()))
@@ -136,6 +158,23 @@ class SqliteLearningCandidateMixin:
         if row is None:
             raise StorageError(
                 StorageErrorCode.UNAVAILABLE, "learning candidate count could not be read"
+            )
+        return int(row[0])
+
+    def count_learning_candidates_with_missing_source(self, workspace_id: str) -> int:
+        """Count unlinked candidates that cannot be joined to a durable Task."""
+
+        row = self.backend.read_one(
+            "SELECT COUNT(*) FROM learning_candidates c "
+            "LEFT JOIN learning_reviews r ON r.workspace_id=c.workspace_id "
+            "AND r.review_id=c.origin_review_id "
+            "LEFT JOIN task_runs t ON t.workspace_id=c.workspace_id AND t.task_run_id=r.task_run_id "
+            "WHERE c.workspace_id=? AND (r.review_id IS NULL OR t.task_run_id IS NULL)",
+            (workspace_id,),
+        )
+        if row is None:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "learning candidate source count could not be read"
             )
         return int(row[0])
 
@@ -163,11 +202,6 @@ class SqliteLearningCandidateMixin:
                 f"INSERT INTO learning_candidates({_CANDIDATE_COLUMNS}) VALUES ({','.join('?' for _ in range(25))})",
                 self._candidate_values(candidate),
             )
-            for evidence_id in candidate.evidence_ids:
-                self.backend.executor().execute(
-                    "INSERT INTO learning_candidate_evidence(workspace_id, candidate_id, evidence_id) VALUES (?, ?, ?)",
-                    (workspace_id, candidate.candidate_id, evidence_id),
-                )
             loaded = self.get_learning_candidate(workspace_id, candidate.candidate_id)
             if loaded is None:
                 raise StorageError(
@@ -283,11 +317,6 @@ class SqliteLearningCandidateMixin:
                     expected_row_version,
                 ),
             )
-            for evidence_id in set(candidate.evidence_ids) - set(existing.evidence_ids):
-                self.backend.executor().execute(
-                    "INSERT INTO learning_candidate_evidence(workspace_id, candidate_id, evidence_id) VALUES (?, ?, ?)",
-                    (workspace_id, candidate.candidate_id, evidence_id),
-                )
             loaded = self.get_learning_candidate(workspace_id, candidate.candidate_id)
             if loaded is None or loaded.row_version != candidate.row_version:
                 raise _stale("candidate")
@@ -364,14 +393,15 @@ class SqliteLearningCandidateMixin:
     def list_learning_candidate_evidence(
         self, workspace_id: str, candidate_id: str
     ) -> tuple[LearningEvidence, ...]:
-        rows = self.backend.read_all(
-            f"SELECT {_EVIDENCE_COLUMNS_QUALIFIED} FROM learning_evidence e "
-            "JOIN learning_candidate_evidence l ON l.evidence_id = e.evidence_id "
-            "WHERE l.workspace_id = ? AND l.candidate_id = ? "
-            "ORDER BY e.created_at_unix ASC, e.evidence_id ASC",
-            (workspace_id, candidate_id),
-        )
-        return tuple(_evidence_from_row(row) for row in rows)
+        candidate = self.get_learning_candidate(workspace_id, candidate_id)
+        if candidate is None:
+            return ()
+        evidence: list[LearningEvidence] = []
+        for evidence_id in candidate.evidence_ids:
+            value = self.get_learning_evidence(workspace_id, evidence_id)
+            if value is not None:
+                evidence.append(value)
+        return tuple(sorted(evidence, key=lambda item: (item.created_at, item.evidence_id)))
 
     def get_learning_suppression(
         self, workspace_id: str, suppression_id: str

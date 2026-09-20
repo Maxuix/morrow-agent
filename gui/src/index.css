@@ -5,6 +5,9 @@
 
 @import 'tailwindcss';
 @import './styles/tokens.css';
+@import './styles/workbench.css';
+@import './styles/preferences.css';
+@import './styles/workflow-editor.css';
 
 /* Wire Tailwind v4 to the Warm Paper tokens so utilities like
  * `bg-base text-primary border-subtle text-accent` work. */
@@ -73,3 +76,31 @@ body {
   cursor: not-allowed;
   opacity: 0.55;
 }
+
+.workspace-manager { flex-shrink:0; min-height:0; overflow:auto; }
+.workspace-management-panel { padding:24px; max-width:1100px; margin:auto; }
+.workspace-management-grid {display:grid;grid-template-columns: minmax(220px,1fr) minmax(280px,2fr);gap:32px;margin-top:24px;}
+.workspace-entry {display:flex;flex-direction:column;gap:4px;text-align:left;width:100%;padding:10px;border-bottom:1px solid var(--border-subtle);overflow-wrap:anywhere;font-size:13px;}
+.workspace-entry:hover {background:var(--bg-raised);}
+.workspace-input {display:block;width:100%;border:1px solid var(--border-subtle);padding:8px;margin-top:4px;border-radius:6px;background:var(--bg-raised);}
+.directory-children {max-height:200px;overflow:auto;}
+@media(max-width:700px){.workspace-management-grid{grid-template-columns:1fr;gap:20px}.workspace-management-panel{padding:16px}}
+.session-actions {position:relative;font-size:13px;}
+.session-actions summary {list-style:none;cursor:pointer;}
+.session-action-popover {position:absolute;right:0;top:36px;z-index:30;width:310px;max-width:85vw;padding:16px;background:var(--bg-raised);border:1px solid var(--border-subtle);border-radius:8px;box-shadow:0 8px 30px #0002;max-height:65vh;overflow:auto;}
+
+/* Attachment UI keeps source content inert and bounded in the chat flow. */
+.attachment-composer { min-width: 0; }
+.attachment-tray { display:flex; flex-wrap:wrap; gap:.4rem; }
+.attachment-card { display:flex; flex-wrap:wrap; align-items:center; gap:.35rem; border:1px solid var(--border-subtle); border-radius:.6rem; padding:.3rem .55rem; max-width:100%; font-size:.75rem; background: var(--bg-raised); }
+.attachment-card strong { overflow-wrap:anywhere; font-weight:500; }
+.attachment-card .editor-button { padding: 2px 7px; font-size: 10px; border-color: transparent; background: transparent; color: var(--text-secondary); }
+.attachment-card .editor-button:hover { background: var(--bg-base); }
+.attachment-card label.editor-button { cursor: pointer; }
+.attachment-card input[type=file] { max-width:11rem; font-size:.65rem; }
+.attachment-file-menu { max-height:14rem; overflow:auto; padding:.5rem; display:grid; gap:.3rem; }
+.attachment-preview { border:1px solid var(--border-subtle); border-radius:.6rem; padding:.7rem; margin-top:.5rem; max-height:24rem; overflow:auto; }
+.attachment-preview header { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
+.attachment-preview pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.75rem; }
+.attachment-preview img { max-width:100%; max-height:20rem; object-fit:contain; }
+.attachment-preview figure { margin:.5rem 0; }

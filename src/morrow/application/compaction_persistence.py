@@ -2,7 +2,7 @@
 
 The operational store already has an immutable, range-validated context-checkpoint
 repository.  Compaction entries use that repository with a distinct codec, so the
-authoritative ConversationLog schema and migration history remain unchanged.
+authoritative ConversationLog schema remains unchanged.
 """
 
 from __future__ import annotations

@@ -151,11 +151,12 @@ class LearningApplicationService:
                 self.workspace_id,
                 status=selected_status,
                 task_outcome_id=task_outcome_id,
-                limit=min(500, offset + limit),
+                limit=limit,
+                offset=offset,
             )
         )
-        page = tuple(self._review_view(review) for review in reviews[offset : offset + limit])
-        next_cursor = str(offset + len(page)) if offset + len(page) < len(reviews) else None
+        page = tuple(self._review_view(review) for review in reviews)
+        next_cursor = str(offset + len(page)) if len(page) == limit else None
         return QueryPage(page, next_cursor)
 
     def get_candidate(
@@ -175,6 +176,7 @@ class LearningApplicationService:
         candidate_type: LearningCandidateType | str | None = None,
         fingerprint: str | None = None,
         semantic_key: str | None = None,
+        task_run_ids: tuple[str, ...] | None = None,
         cursor: str | None = None,
         limit: int = 50,
         expire_due: bool = True,
@@ -189,6 +191,7 @@ class LearningApplicationService:
                 self.workspace_id,
                 status=selected_status,
                 candidate_type=selected_type,
+                task_run_ids=task_run_ids,
                 fingerprint=fingerprint,
                 semantic_key=semantic_key,
                 limit=limit,
@@ -333,6 +336,26 @@ class LearningApplicationService:
         if state is None:
             return self.promotion.configuration.list_unresolved_operations()
         return self.promotion.configuration.list_operations(state=state)
+
+    def configuration_page(self, *, activations=False, state=None, cursor=None, limit=50):
+        offset = _offset(cursor, limit)
+        rows = self.context._query(
+            lambda: (
+                self.journal.list_configuration_activations(
+                    self.workspace_id,
+                    limit=limit,
+                    offset=offset,
+                )
+                if activations
+                else self.journal.list_promotion_operations(
+                    self.workspace_id,
+                    state=state,
+                    limit=limit,
+                    offset=offset,
+                )
+            )
+        )
+        return QueryPage(rows, str(offset + len(rows)) if len(rows) == limit else None)
 
     def get_promotion_operation(self, operation_id: str):
         return self.promotion.configuration.get_operation(operation_id)

@@ -60,6 +60,16 @@ describe('Workflow editor source helpers', () => {
     ])
   })
 
+  it('redacts credential-shaped diff values and traceback tails', () => {
+    expect(structuralDiff(
+      { settings: { token: 'sk-old' }, prompt: 'Traceback (most recent call last):\nsecret=sk-old' },
+      { settings: { token: 'sk-new' }, prompt: 'Traceback (most recent call last):\nsecret=sk-new' },
+    )).toEqual([
+      { path: '$.prompt', before: '"详细异常已省略。"', after: '"详细异常已省略。"' },
+      { path: '$.settings.token', before: '"已隐藏"', after: '"已隐藏"' },
+    ])
+  })
+
   it('removes compiler-only node fields from a Revision diff base', () => {
     const source = newSingleNodeWorkflow('flow', 'Flow', agent)
     const revision = {

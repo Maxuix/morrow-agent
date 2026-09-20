@@ -13,7 +13,6 @@ from morrow.core.domain import (
     DurableSession,
     DurableTaskRun,
     DurableTurn,
-    TurnSubmitDisposition,
     TurnSubmitReceipt,
     canonical_json_bytes,
     session_can_start_work,
@@ -22,7 +21,6 @@ from morrow.core.store import StorageError, StorageErrorCode
 
 _TURN_COLUMNS = "turn_id, session_id, task_run_id, client_message_id, created_at_unix"
 _RECORD_COLUMNS = "record_id, session_id, conversation_position, kind, payload_json, payload_bytes"
-_RECEIPT_COLUMNS = "session_id, client_message_id, request_digest, disposition, turn_id, command_id"
 
 
 def _unix(value: datetime) -> int:
@@ -257,9 +255,10 @@ class SqliteConversationJournal:
         if self.get_session(workspace_id, session_id) is None:
             return None
         row = self.backend.read_one(
-            f"SELECT {_RECEIPT_COLUMNS} FROM turn_submit_receipts "
-            "WHERE session_id = ? AND client_message_id = ?",
-            (session_id, client_message_id),
+            "SELECT payload_json FROM command_receipts "
+            "WHERE receipt_kind='turn_submit' AND workspace_id=? AND session_id=? "
+            "AND client_message_id=?",
+            (workspace_id, session_id, client_message_id),
         )
         return _receipt_from_row(row) if row is not None else None
 
@@ -275,14 +274,18 @@ class SqliteConversationJournal:
                         "operational receipt turn does not belong to the session",
                     )
             self.backend.executor().execute(
-                f"INSERT INTO turn_submit_receipts({_RECEIPT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO command_receipts(receipt_kind,workspace_id,session_id,receipt_key,"
+                "command_id,client_message_id,request_digest,payload_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
+                    "turn_submit",
+                    workspace_id,
                     receipt.session_id,
+                    f"{receipt.session_id}:{receipt.client_message_id}",
+                    receipt.command_id,
                     receipt.client_message_id,
                     receipt.request_digest,
-                    receipt.disposition.value,
-                    receipt.turn_id,
-                    receipt.command_id,
+                    receipt.model_dump_json(),
                 ),
             )
             loaded = self.get_receipt(workspace_id, receipt.session_id, receipt.client_message_id)
@@ -300,16 +303,14 @@ class SqliteConversationJournal:
             if existing is None:
                 raise StorageError(StorageErrorCode.NOT_FOUND, "operational receipt is missing")
             self.backend.executor().execute(
-                """
-                UPDATE turn_submit_receipts
-                SET request_digest = ?, disposition = ?, turn_id = ?, command_id = ?
-                WHERE session_id = ? AND client_message_id = ?
-                """,
+                "UPDATE command_receipts SET command_id=?, request_digest=?, payload_json=? "
+                "WHERE receipt_kind='turn_submit' AND workspace_id=? AND session_id=? "
+                "AND client_message_id=?",
                 (
-                    receipt.request_digest,
-                    receipt.disposition.value,
-                    receipt.turn_id,
                     receipt.command_id,
+                    receipt.request_digest,
+                    receipt.model_dump_json(),
+                    workspace_id,
                     receipt.session_id,
                     receipt.client_message_id,
                 ),
@@ -365,11 +366,9 @@ def _record_from_row(row: tuple[object, ...]) -> DurableConversationRecord:
 
 
 def _receipt_from_row(row: tuple[object, ...]) -> TurnSubmitReceipt:
-    return TurnSubmitReceipt(
-        session_id=str(row[0]),
-        client_message_id=str(row[1]),
-        request_digest=str(row[2]),
-        disposition=TurnSubmitDisposition(str(row[3])),
-        turn_id=str(row[4]) if row[4] is not None else None,
-        command_id=str(row[5]) if row[5] is not None else None,
-    )
+    try:
+        return TurnSubmitReceipt.model_validate_json(str(row[0]))
+    except (TypeError, ValueError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "operational conversation receipt is invalid"
+        ) from exc

@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from morrow.core.agent_definitions import DefinitionId, Digest, OpaqueId
+from morrow.core.agent_definitions import DefinitionId, Digest
 from morrow.core.domain import canonical_json_bytes, refuse_secret_material
 from morrow.core.models import ModelRef, ProtocolModel
 from morrow.core.workflows.contracts import SlotName, TaskContract
@@ -69,10 +69,9 @@ class OrchestrationPolicy(PlanningFacts):
     review_requirement: Literal["adaptive", "required", "skip"] = "adaptive"
     multi_agent: bool = Field(default=True, strict=True)
     parallelism_limit: Literal[1] = 1
-    auto_run_mode: Literal["approval_only", "allow_promoted"] = "approval_only"
+    auto_run_mode: Literal["approval_only", "auto"] = "approval_only"
     auto_replan_mode: Literal["approval_only", "allow_low_risk"] = "approval_only"
     source: Literal["builtin", "user"] = "user"
-    evidence: tuple[OpaqueId, ...] = Field(default=(), max_length=32)
     status: Literal["active", "disabled"] = "active"
     revision: int = Field(default=0, ge=0, strict=True)
 
@@ -123,9 +122,7 @@ class PlannerExplanation(PlanningFacts):
     budget: WorkflowBudget
     concurrency: Literal[1] = 1
     auto_run_eligible: bool = False
-    auto_run_reason: Literal["approval_only", "paired_evidence_missing", "paired_benefit"] = (
-        "approval_only"
-    )
+    auto_run_reason: Literal["approval_only", "user_policy"] = "approval_only"
 
 
 class PlannerMetadata(PlanningFacts):

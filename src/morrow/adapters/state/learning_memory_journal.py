@@ -61,6 +61,31 @@ def _stale(label: str) -> StorageError:
     return StorageError(StorageErrorCode.UNAVAILABLE, f"learning {label} row version is stale")
 
 
+def _evidence_ids(value: object) -> tuple[str, ...]:
+    try:
+        parsed = json.loads(str(value)) if value is not None else []
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "project knowledge evidence IDs are corrupt"
+        ) from exc
+    if not isinstance(parsed, list) or any(not isinstance(item, str) for item in parsed):
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "project knowledge evidence IDs are invalid"
+        )
+    return tuple(parsed)
+
+
+def _revision_evidence_ids(backend: SqliteJournalBackend, workspace_id: str, revision_id: str):
+    row = backend.read_one(
+        "SELECT evidence_ids_json FROM project_knowledge_revisions "
+        "WHERE workspace_id=? AND knowledge_revision_id=?",
+        (workspace_id, revision_id),
+    )
+    if row is None:
+        return None
+    return _evidence_ids(row[0])
+
+
 def _decision_from_row(row: tuple[object, ...]) -> LearningCandidateDecision:
     try:
         return LearningCandidateDecision(
@@ -401,13 +426,14 @@ class SqliteLearningMemoryJournal:
         knowledge_id: str,
         *,
         limit: int = 100,
+        revision: int | None = None,
     ) -> tuple[ProjectKnowledgeRevision, ...]:
         _check_limit(limit, "knowledge revision")
         rows = self.backend.read_all(
             f"SELECT {_REVISION_COLUMNS} FROM project_knowledge_revisions "
-            "WHERE workspace_id = ? AND knowledge_id = ? "
+            "WHERE workspace_id = ? AND knowledge_id = ? AND (? IS NULL OR revision = ?) "
             "ORDER BY revision ASC, knowledge_revision_id ASC LIMIT ?",
-            (workspace_id, knowledge_id, limit),
+            (workspace_id, knowledge_id, revision, revision, limit),
         )
         return tuple(_revision_from_row(row) for row in rows)
 
@@ -523,20 +549,23 @@ class SqliteLearningMemoryJournal:
                 raise _missing("knowledge evidence")
             if str(evidence[0]) != workspace_id:
                 raise _workspace_error("knowledge evidence")
-            existing = self.backend.read_one(
-                "SELECT workspace_id, knowledge_revision_id, evidence_id "
-                "FROM project_knowledge_evidence "
-                "WHERE knowledge_revision_id = ? AND evidence_id = ?",
-                (link.knowledge_revision_id, link.evidence_id),
+            existing = _revision_evidence_ids(
+                self.backend, workspace_id, link.knowledge_revision_id
             )
-            if existing is not None:
-                if str(existing[0]) != workspace_id:
-                    raise _workspace_error("knowledge evidence")
-                return _link_from_row(existing)
+            if existing is None:
+                raise _missing("knowledge evidence revision")
+            if link.evidence_id in existing:
+                return link
             self.backend.executor().execute(
-                "INSERT INTO project_knowledge_evidence("
-                "workspace_id, knowledge_revision_id, evidence_id) VALUES (?, ?, ?)",
-                (workspace_id, link.knowledge_revision_id, link.evidence_id),
+                "UPDATE project_knowledge_revisions SET evidence_ids_json=? "
+                "WHERE workspace_id=? AND knowledge_revision_id=?",
+                (
+                    json.dumps(
+                        (*existing, link.evidence_id), ensure_ascii=False, separators=(",", ":")
+                    ),
+                    workspace_id,
+                    link.knowledge_revision_id,
+                ),
             )
             return link
 
@@ -545,14 +574,19 @@ class SqliteLearningMemoryJournal:
     def list_project_knowledge_evidence(
         self, workspace_id: str, revision_id: str
     ) -> tuple[ProjectKnowledgeEvidenceLink, ...]:
-        rows = self.backend.read_all(
-            "SELECT workspace_id, knowledge_revision_id, evidence_id "
-            "FROM project_knowledge_evidence "
-            "WHERE workspace_id = ? AND knowledge_revision_id = ? "
-            "ORDER BY evidence_id ASC",
-            (workspace_id, revision_id),
+        evidence_ids = _revision_evidence_ids(self.backend, workspace_id, revision_id)
+        if evidence_ids is None:
+            return ()
+        if not evidence_ids:
+            return ()
+        return tuple(
+            ProjectKnowledgeEvidenceLink(
+                workspace_id=workspace_id,
+                knowledge_revision_id=revision_id,
+                evidence_id=evidence_id,
+            )
+            for evidence_id in sorted(evidence_ids)
         )
-        return tuple(_link_from_row(row) for row in rows)
 
     def get_memory_workspace_state(self, workspace_id: str) -> MemoryWorkspaceState | None:
         row = self.backend.read_one(

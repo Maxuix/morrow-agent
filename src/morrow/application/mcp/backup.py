@@ -24,7 +24,7 @@ def verify_mcp_backup_references(connection: sqlite3.Connection) -> tuple[bool, 
         normalized = tuple(dict.fromkeys(issues))
         return False, normalized
     try:
-        launches: dict[str, tuple[str, str, str, int | None]] = {}
+        launches: dict[str, tuple[str, str, str, int]] = {}
         rows = connection.execute(
             "SELECT launch_snapshot_id, workspace_id, agent_run_id, server_id, catalog_revision "
             "FROM mcp_run_launch_snapshots"
@@ -34,7 +34,7 @@ def verify_mcp_backup_references(connection: sqlite3.Connection) -> tuple[bool, 
                 str(workspace_id),
                 str(agent_run_id),
                 str(server_id),
-                None if catalog_revision is None else int(catalog_revision),
+                int(catalog_revision),
             )
             scope = "workspace"
             scope_id = str(workspace_id)
@@ -51,15 +51,14 @@ def verify_mcp_backup_references(connection: sqlite3.Connection) -> tuple[bool, 
                 ).fetchone()
             if server is None:
                 issues.append("mcp_launch_server")
-            if catalog_revision is not None:
-                catalog = connection.execute(
-                    "SELECT 1 FROM mcp_catalog_revisions WHERE server_id = ? "
-                    "AND revision = ? AND ((scope = 'global' AND scope_id = '') OR "
-                    "(scope = 'workspace' AND scope_id = ?)) LIMIT 1",
-                    (server_id, catalog_revision, workspace_id),
-                ).fetchone()
-                if catalog is None:
-                    issues.append("mcp_launch_catalog")
+            catalog = connection.execute(
+                "SELECT 1 FROM mcp_catalog_revisions WHERE server_id = ? "
+                "AND revision = ? AND ((scope = 'global' AND scope_id = '') OR "
+                "(scope = 'workspace' AND scope_id = ?)) LIMIT 1",
+                (server_id, catalog_revision, workspace_id),
+            ).fetchone()
+            if catalog is None:
+                issues.append("mcp_launch_catalog")
             run = connection.execute(
                 "SELECT 1 FROM agent_runs AS ar JOIN sessions AS s ON s.session_id = ar.session_id "
                 "WHERE ar.agent_run_id = ? AND s.workspace_id = ? LIMIT 1",
@@ -88,7 +87,6 @@ def verify_mcp_backup_references(connection: sqlite3.Connection) -> tuple[bool, 
                 str(workspace_id) != launch_workspace
                 or str(agent_run_id) != launch_run
                 or str(server_id) != launch_server
-                or catalog_revision is None
                 or launch_catalog != int(catalog_revision)
             ):
                 issues.append("mcp_tool_launch_mismatch")

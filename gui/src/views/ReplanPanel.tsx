@@ -75,9 +75,11 @@ export function ReplanPanel({ client, run }: { client: ApiClient; run: WorkflowR
     finally { setBusy(false) }
   }
   return <section className="flex flex-col gap-2" aria-label="全局重规划">
-    <h3 className="text-sm font-medium">全局重规划</h3>
+    {views.length > 0 && <h3 className="text-sm font-medium">计划调整</h3>}
+    <details><summary className="text-xs text-secondary cursor-pointer">检查计划调整</summary>
+    <button className="editor-button" disabled={busy} onClick={()=>{setBusy(true);setError(null);void client.processReplans(run.workflow_run_id,commandId('replan_process')).then(()=>client.listReplans(run.workflow_run_id)).then(setViews,e=>setError(e.message)).finally(()=>setBusy(false))}}>检查更新</button></details>
     {error && <p role="alert" className="text-xs text-failed">{error}</p>}
-    {!views.length && !error && <p className="text-xs text-secondary">暂无提案。节点完成时提交的信号会在此显示。</p>}
+
     {views.map(view => <ReplanReview key={view.proposal.proposal_id} view={view} paused={run.status === 'paused'} stale={view.proposal.patch.expected_parent_row_version !== run.row_version || view.proposal.patch.base_workflow_revision_id !== run.workflow_revision_id} busy={busy} decide={approved => { void decide(view, approved) }} />)}
   </section>
 }

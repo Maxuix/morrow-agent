@@ -53,6 +53,11 @@ class SessionOrchestrator:
         self.preparation = preparation
         self.runtime_control = runtime_control
         self._run_active = False
+        self.prepare_options = None
+        self.execution_lock = None
+        self.pre_admission_check = None
+        self.cancelled_is_user = True
+        self.queue_enabled = lambda: True
 
     @property
     def run_active(self) -> bool:
@@ -86,9 +91,11 @@ class SessionOrchestrator:
             return
         self.command_service.reset_session(new_id)
 
-    async def stream(self, text: str):
+    async def stream(
+        self, text: str, *, client_message_id: str | None = None, interpret_commands: bool = True
+    ):
         """Yield model events as they arrive, then a terminal dispatch result."""
-        if text.startswith("/"):
+        if interpret_commands and text.startswith("/"):
             result = self.command_service.execute(text)
             if result.action == "compact":
                 instructions = result.value if isinstance(result.value, str) else ""
@@ -138,7 +145,7 @@ class SessionOrchestrator:
         self._run_active = True
         try:
             next_text = text
-            next_client_message_id = None
+            next_client_message_id = client_message_id
             while True:
                 terminal_reason: FinishReason | None = None
                 async for event in self._stream_turn(
@@ -151,6 +158,8 @@ class SessionOrchestrator:
                         except (TypeError, ValueError):
                             terminal_reason = FinishReason.ERROR
                     yield event
+                if not self.queue_enabled():
+                    break
                 if self.runtime_control is None or terminal_reason not in {
                     FinishReason.STOP,
                     FinishReason.STEERED,
@@ -167,12 +176,27 @@ class SessionOrchestrator:
             self._run_active = False
         yield DispatchResult()
 
-    async def _stream_turn(
+    async def _stream_turn(self, text, *, client_message_id=None):
+        if self.execution_lock is None:
+            async for event in self._stream_turn_unlocked(
+                text, client_message_id=client_message_id
+            ):
+                yield event
+        else:
+            async with self.execution_lock:
+                async for event in self._stream_turn_unlocked(
+                    text, client_message_id=client_message_id
+                ):
+                    yield event
+
+    async def _stream_turn_unlocked(
         self,
         text: str,
         *,
         client_message_id: str | None = None,
     ):
+        if self.pre_admission_check is not None:
+            self.pre_admission_check(client_message_id)
         if client_message_id is None and self.id_source is not None:
             client_message_id = self.id_source.new_id("cmsg")
         prepared: PreparedAgentRunRuntime | None = None
@@ -196,11 +220,28 @@ class SessionOrchestrator:
                             if run_id_source is not None:
                                 prepared_agent_run_id = run_id_source.new_id("arun")
                         try:
+                            options = (
+                                self.prepare_options(client_message_id)
+                                if self.prepare_options is not None
+                                else {}
+                            )
+                            resume_snapshot = options.pop("resume_snapshot", None)
+                            continuation_snapshot = getattr(
+                                durable_runtime, "get_continuation_snapshot", None
+                            )
+                            if resume_snapshot is None and callable(continuation_snapshot):
+                                resume_snapshot = continuation_snapshot(self.session.session_id)
                             prepare_new = self.preparation.prepare_new
-                            if "agent_run_id" in inspect.signature(prepare_new).parameters:
-                                prepared = prepare_new(agent_run_id=prepared_agent_run_id)
+                            if resume_snapshot is not None:
+                                prepared = self.preparation.rehydrate(
+                                    resume_snapshot, agent_run_id=prepared_agent_run_id
+                                )
+                            elif "agent_run_id" in inspect.signature(prepare_new).parameters:
+                                prepared = prepare_new(
+                                    agent_run_id=prepared_agent_run_id, **options
+                                )
                             else:
-                                prepared = prepare_new()
+                                prepared = prepare_new(**options)
                         except (ApplicationError, AgentRunPreparationError, ValueError) as exc:
                             startup_error = _preparation_error(exc)
             async for event in self.runtime.run_turn(
@@ -210,6 +251,11 @@ class SessionOrchestrator:
                 prepared=prepared,
                 startup_error=startup_error,
                 agent_run_id=prepared_agent_run_id,
+                **(
+                    {"cancelled_is_user": self.cancelled_is_user}
+                    if self.cancelled_is_user is not True
+                    else {}
+                ),
             ):
                 yield event
         finally:
@@ -222,11 +268,11 @@ class SessionOrchestrator:
                     if inspect.isawaitable(result):
                         await result
 
-    async def dispatch(self, text: str) -> DispatchResult:
+    async def dispatch(self, text: str, *, client_message_id: str | None = None) -> DispatchResult:
         """Collect one streaming dispatch for non-streaming callers."""
         events: list[AgentEvent] = []
         result = DispatchResult()
-        async for item in self.stream(text):
+        async for item in self.stream(text, client_message_id=client_message_id):
             if isinstance(item, AgentEvent):
                 events.append(item)
             else:
@@ -263,6 +309,7 @@ class SessionOrchestrator:
                 self.session,
                 "",
                 resume_current_turn=True,
+                cancelled_is_user=self.cancelled_is_user,
                 prepared=prepared,
                 startup_error=startup_error,
             ):
@@ -285,10 +332,15 @@ class SessionOrchestrator:
             if not resume_completed:
                 self._run_active = False
         try:
-            while self.runtime_control is not None and terminal_reason in {
-                FinishReason.STOP,
-                FinishReason.STEERED,
-            }:
+            while (
+                self.queue_enabled()
+                and self.runtime_control is not None
+                and terminal_reason
+                in {
+                    FinishReason.STOP,
+                    FinishReason.STEERED,
+                }
+            ):
                 entry = self.runtime_control.peek_steering(self.session.session_id)
                 if entry is None and terminal_reason is FinishReason.STOP:
                     entry = self.runtime_control.peek_follow_up(self.session.session_id)

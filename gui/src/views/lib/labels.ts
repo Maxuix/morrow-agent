@@ -13,6 +13,7 @@ import type {
   WorkflowStatus,
 } from '../../api/types'
 import type { ConnectionState } from '../../state/sync'
+import type { NodeDisplayStatus } from './graph'
 
 export const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
   queued: '排队中',
@@ -26,12 +27,28 @@ export const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
   superseded: '已被取代',
 }
 
+/** Per-node execution projection labels (BUG-GUI-002, P02). */
+export const NODE_EXECUTION_LABELS: Record<
+  'running' | 'pausing' | 'paused' | 'needs_recovery',
+  string
+> = {
+  running: '执行中',
+  pausing: '正在暂停',
+  paused: '已暂停',
+  needs_recovery: '待恢复',
+}
+
+/** Display label for run statuses plus the plan-review "尚未执行" marker. */
+export function displayStatusLabel(status: NodeDisplayStatus): string {
+  return status === 'planned' ? '尚未执行' : WORKFLOW_STATUS_LABELS[status]
+}
+
 /**
- * Tailwind classes for the status dot. `queued` is outline-only per the
- * design language; draining/paused share the warm gray; cancelled and
- * superseded use the muted outline treatment.
+ * Tailwind classes for the status dot. `queued` and the plan-review marker
+ * `planned` are outline-only per the design language; draining/paused share
+ * the warm gray; cancelled and superseded use the muted outline treatment.
  */
-export function statusDotClass(status: WorkflowStatus): string {
+export function statusDotClass(status: NodeDisplayStatus): string {
   switch (status) {
     case 'running':
       return 'bg-running'
@@ -47,6 +64,7 @@ export function statusDotClass(status: WorkflowStatus): string {
       return 'bg-paused'
     case 'queued':
     case 'superseded':
+    case 'planned':
       return 'border-2 border-queued'
   }
 }
@@ -93,7 +111,7 @@ export const RISK_REASON_LABELS: Record<string, string> = {
 }
 
 export const APPROVAL_DECISION_LABELS: Record<ApprovalDecisionWire, string> = {
-  allow_once: '允许一次',
+  allow_once: '允许本次执行',
   deny: '拒绝',
   allow_session: '本会话同范围免批',
 }

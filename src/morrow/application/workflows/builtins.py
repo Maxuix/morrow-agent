@@ -20,6 +20,32 @@ from morrow.core.workflows.definitions import (
 _DEFAULT_BUDGET = WorkflowBudget()
 
 
+def resolve_builtin_placeholders(source, journal, workspace_id):
+    """Resolve unpublished scaffold refs without changing any published revision."""
+    nodes = []
+    for node in source.nodes:
+        ref = node.agent_definition_ref
+        if ref.version_id == f"adev_unpublished_{ref.definition_id}":
+            head = journal.agent_definitions.get_head(workspace_id, ref.definition_id)
+            version = (
+                journal.agent_definitions.get_version(workspace_id, head.version_id)
+                if head is not None
+                else None
+            )
+            if version is not None:
+                node = node.model_copy(
+                    update={
+                        "agent_definition_ref": AgentDefinitionRef(
+                            definition_id=ref.definition_id,
+                            version_id=version.version_id,
+                            content_hash=version.content_hash,
+                        )
+                    }
+                )
+        nodes.append(node)
+    return source.model_copy(update={"nodes": tuple(nodes)})
+
+
 def _task_binding() -> WorkflowInputBinding:
     return WorkflowInputBinding(
         source="workflow_input",
@@ -138,26 +164,6 @@ def builtin_workflows(
             native_sandbox=native_sandbox,
         ),
     )
-
-
-def available_builtin_workflows(
-    refs: dict[str, AgentDefinitionRef], *, native_sandbox: bool
-) -> tuple[WorkflowDefinitionSource, ...]:
-    """Construct every template whose exact packaged Agent versions are published."""
-
-    values = []
-    if "builtin_direct" in refs:
-        values.append(builtin_direct_workflow(refs["builtin_direct"]))
-    if {"builtin_explorer", "builtin_coder", "builtin_reviewer"} <= refs.keys():
-        values.append(
-            builtin_explore_implement_verify(
-                refs["builtin_explorer"],
-                refs["builtin_coder"],
-                refs["builtin_reviewer"],
-                native_sandbox=native_sandbox,
-            )
-        )
-    return tuple(values)
 
 
 def visible_builtin_workflows(

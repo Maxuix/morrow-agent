@@ -16,6 +16,11 @@ from morrow.core.compaction import (
 )
 from morrow.core.context import ContextCheckpoint
 from morrow.core.domain import canonical_json_bytes, refuse_secret_material, sha256_digest
+from morrow.core.image_tokens import (
+    estimate_image_part_tokens,
+    iter_image_parts,
+    messages_without_image_payloads,
+)
 from morrow.core.models import (
     Message,
     ModelCost,
@@ -29,7 +34,8 @@ from morrow.core.models import (
     UserMessage,
 )
 from morrow.core.preferences import merge_preference_entries
-from morrow.runtime.conversation import ConversationSnapshot, MessageRecord, PublicTurnView
+from morrow.core.runtime_policy import AGENT_MAX_REQUEST_CHARS
+from morrow.runtime.conversation import ConversationSnapshot, MessageRecord
 from morrow.runtime.policy import RunPolicy
 from morrow.runtime.session import Session
 
@@ -83,6 +89,10 @@ class ContextPack(ProtocolModel):
 class ContextBudgetError(ValueError):
     code = "context_budget"
 
+    def __init__(self, message: str, *, kind: str = "history") -> None:
+        super().__init__(message)
+        self.kind = kind
+
 
 @dataclass(frozen=True, slots=True)
 class CompactionCandidate:
@@ -120,12 +130,34 @@ class ContextBuilder:
         estimate_request_chars: EstimateRequestChars,
         estimate_request_tokens: EstimateRequestTokens | None = None,
         prompt_assembler=None,
+        attachment_resolver=None,
+        input_types=("text", "image"),
+        payload_char_limit: int | None = None,
     ) -> None:
         self.run_policy = run_policy
         self.request_char_limit = run_policy.effective_request_chars
+        self.payload_char_limit = payload_char_limit or AGENT_MAX_REQUEST_CHARS
         self.estimate_request_chars = estimate_request_chars
         self.estimate_request_tokens = estimate_request_tokens or self._pi_estimate_tokens
         self.prompt_assembler = prompt_assembler
+        self.attachment_resolver = attachment_resolver
+        self.input_types = input_types
+
+    def _hydrate(self, messages):
+        result = []
+        for message in messages:
+            if isinstance(message, UserMessage) and message.attachments:
+                if self.attachment_resolver is None:
+                    raise ContextBudgetError("Attachment content resolver is unavailable")
+                message = self.attachment_resolver(message)
+                if "image" not in self.input_types and any(
+                    p.type == "image" for p in message.input_parts
+                ):
+                    raise ContextBudgetError(
+                        "当前模型无法读取历史中的图像附件，请选择支持图像的模型或新建对话"
+                    )
+            result.append(message)
+        return tuple(result)
 
     def _system_messages(
         self,
@@ -228,22 +260,50 @@ class ContextBuilder:
     ) -> int:
         """Use a stable Pi-style fallback when the Provider omits prompt usage.
 
-        Morrow has no tokenizer dependency.  The estimator intentionally counts the canonical
-        request wire in UTF-8 bytes and rounds up at four bytes per token; provider usage remains
-        authoritative whenever it is available.
+        Morrow has no tokenizer dependency. Text is the canonical request wire in
+        UTF-8 bytes at four bytes per token, with image Base64 excluded. Images
+        use the conservative pixel fallback from sent dimensions. Provider usage
+        remains authoritative whenever it is available.
         """
 
+        stripped = messages_without_image_payloads(messages)
         wire_bytes = len(
             json.dumps(
                 {
-                    "messages": [message.model_dump(mode="json") for message in messages],
+                    "messages": [message.model_dump(mode="json") for message in stripped],
                     "tools": [tool.model_dump(mode="json") for tool in tools],
                 },
                 ensure_ascii=False,
                 separators=(",", ":"),
             ).encode("utf-8")
         )
-        return max(1, math.ceil(wire_bytes / 4))
+        text_tokens = math.ceil(wire_bytes / 4) if wire_bytes else 0
+        image_tokens = sum(estimate_image_part_tokens(part) for part in iter_image_parts(messages))
+        return max(1, text_tokens + image_tokens)
+
+    def _estimate_text_chars(self, messages: tuple[Message, ...] | list[Message], tools) -> int:
+        return self.estimate_request_chars(
+            messages_without_image_payloads(tuple(messages)), tuple(tools)
+        )
+
+    def _payload_exceeds(self, messages: tuple[Message, ...] | list[Message], tools) -> bool:
+        return self._estimate(messages, tools) > self.payload_char_limit
+
+    def _model_budget_exceeds(self, messages: tuple[Message, ...] | list[Message], tools) -> bool:
+        packed = tuple(messages)
+        toolset = tuple(tools)
+        if self.run_policy.context_window_tokens is not None:
+            threshold = self.run_policy.context_window_tokens - self.run_policy.reserve_tokens
+            return self.estimate_request_tokens(packed, toolset) > threshold
+        return self._estimate_text_chars(packed, toolset) > self.request_char_limit
+
+    def _raise_if_uncompactable_input(
+        self, messages: tuple[Message, ...], tools: tuple[ToolDefinition, ...]
+    ) -> None:
+        if self._payload_exceeds(messages, tools):
+            raise ContextBudgetError("模型请求超过传输体积限制", kind="payload")
+        if self._model_budget_exceeds(messages, tools):
+            raise ContextBudgetError("当前输入超过模型上下文限制", kind="input")
 
     @staticmethod
     def context_digest(
@@ -352,16 +412,6 @@ class ContextBuilder:
                 messages.append(turn.final_assistant.message)
         return tuple(messages)
 
-    @staticmethod
-    def _turn_messages(turn: PublicTurnView) -> list[Message]:
-        messages: list[Message] = [turn.user.message]
-        for cycle in turn.cycles:
-            messages.append(cycle.assistant.message)
-            messages.extend(record.message for record in cycle.results)
-        if turn.final_assistant is not None:
-            messages.append(turn.final_assistant.message)
-        return messages
-
     def _estimate(self, messages: list[Message] | tuple[Message, ...], tools) -> int:
         return self.estimate_request_chars(tuple(messages), tuple(tools))
 
@@ -389,10 +439,6 @@ class ContextBuilder:
                 projected.append(turn.user.message)
             projected.extend(retained)
         return tuple(projected)
-
-    @staticmethod
-    def _turn_messages_from_view(turn: PublicTurnView) -> tuple[Message, ...]:
-        return tuple(record.message for record in turn.records if hasattr(record, "message"))
 
     @staticmethod
     def _safe_file_union(*groups: tuple[str, ...]) -> tuple[str, ...]:
@@ -471,7 +517,9 @@ class ContextBuilder:
         retained_start = len(units)
         retained_tokens = 0
         for index in range(len(units) - 1, -1, -1):
-            candidate_tokens = self.estimate_request_tokens(units[index].messages, ())
+            candidate_tokens = self.estimate_request_tokens(
+                self._hydrate(units[index].messages), ()
+            )
             if (
                 retained_start < len(units)
                 and retained_tokens + candidate_tokens > self.run_policy.keep_recent_tokens
@@ -486,14 +534,18 @@ class ContextBuilder:
         source_units = units[:retained_start]
         if not source_units:
             return None
-        source_messages = tuple(message for unit in source_units for message in unit.messages)
+        source_messages = self._hydrate(
+            tuple(message for unit in source_units for message in unit.messages)
+        )
         source_start = source_units[0].source_start_sequence
         source_end = source_units[-1].source_end_sequence
         first_retained = units[retained_start].source_start_sequence
-        full_messages = (
-            *self._system_messages(session, tools),
-            *self._compaction_messages(session),
-            *self._messages_for_boundary(snapshot, boundary),
+        full_messages = self._hydrate(
+            (
+                *self._system_messages(session, tools),
+                *self._compaction_messages(session),
+                *self._messages_for_boundary(snapshot, boundary),
+            )
         )
         accounting = self._accounting(session, full_messages, tools)
         if accounting is None:
@@ -522,10 +574,12 @@ class ContextBuilder:
             SystemMessage(content=summary_instruction),
             UserMessage(content=source_payload),
         )
-        retained_messages = (
-            *self._system_messages(session, tools),
-            *self._compaction_messages(session),
-            *self._messages_for_boundary(snapshot, first_retained),
+        retained_messages = self._hydrate(
+            (
+                *self._system_messages(session, tools),
+                *self._compaction_messages(session),
+                *self._messages_for_boundary(snapshot, first_retained),
+            )
         )
         estimated_after = self.estimate_request_tokens(retained_messages, tools)
         previous_read = (
@@ -611,16 +665,23 @@ class ContextBuilder:
             raise ContextBudgetError("上下文包含未闭合的工具调用")
         boundary = session.compaction_boundary_sequence
         projected = self._messages_for_boundary(request.snapshot, boundary)
-        messages = (*request.system_messages, *request.memory_messages, *projected)
+        messages = self._hydrate((*request.system_messages, *request.memory_messages, *projected))
+        self._validate_tool_pairing(messages)
+        active = turns[-1]
+        if active.terminal is None:
+            mandatory = self._hydrate(
+                (*request.system_messages, *request.memory_messages, active.user.message)
+            )
+            self._raise_if_uncompactable_input(mandatory, request.tools)
         accounting = self._accounting(session, messages, request.tools)
         estimated = self._estimate(messages, request.tools)
         threshold = accounting.threshold_tokens
-        compaction_required = (
+        model_over_budget = (
             accounting.should_compact
             if threshold is not None
-            else estimated > request.request_char_limit
+            else self._estimate_text_chars(messages, request.tools) > request.request_char_limit
         )
-        self._validate_tool_pairing(messages)
+        compaction_required = model_over_budget or self._payload_exceeds(messages, request.tools)
         return ContextPack(
             messages=messages,
             tools=request.tools,
@@ -653,10 +714,12 @@ class ContextBuilder:
         if request.purpose != "structured":
             raise ValueError(f"unsupported context purpose: {request.purpose}")
         projected = self._structured_messages(request.snapshot)
-        messages = (*request.system_messages, *request.memory_messages, *projected)
+        messages = self._hydrate((*request.system_messages, *request.memory_messages, *projected))
         estimated = self._estimate(messages, ())
-        if estimated > request.request_char_limit:
-            raise ContextBudgetError("必要上下文超过预算，请缩短当前输入或状态")
+        if self._payload_exceeds(messages, ()):
+            raise ContextBudgetError("模型请求超过传输体积限制", kind="payload")
+        if self._estimate_text_chars(messages, ()) > request.request_char_limit:
+            raise ContextBudgetError("必要上下文超过预算，请缩短当前输入或状态", kind="input")
         return ContextPack(
             messages=messages,
             purpose=request.purpose,
@@ -680,8 +743,13 @@ class ContextBuilder:
     ) -> int:
         self._validate_tool_pairing(tuple(messages))
         estimated = self._estimate(messages, tools)
-        if self.run_policy.context_window_tokens is None and estimated > self.request_char_limit:
-            raise ContextBudgetError("模型请求超过保守上下文预算")
+        if estimated > self.payload_char_limit:
+            raise ContextBudgetError("模型请求超过传输体积限制", kind="payload")
+        if (
+            self.run_policy.context_window_tokens is None
+            and self._estimate_text_chars(messages, tools) > self.request_char_limit
+        ):
+            raise ContextBudgetError("模型请求超过保守上下文预算", kind="input")
         return estimated
 
 

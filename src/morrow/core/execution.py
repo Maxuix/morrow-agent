@@ -415,7 +415,55 @@ class ConfigMutationEvidence(ProtocolModel):
         return _valid_digest(value)
 
 
+class DurableCommandFacts(ProtocolModel):
+    """Safe command metadata retained independently from command output bytes."""
+
+    command_class: str = Field(min_length=1, max_length=64)
+    status: str = Field(min_length=1, max_length=32)
+    cwd: str = Field(min_length=1, max_length=_RELATIVE_PATH_LIMIT)
+    exit_code: int | None = Field(default=None, ge=0, le=255)
+    signal: int | None = Field(default=None, ge=1, le=255)
+    duration_ms: int = Field(ge=0, le=120_000)
+    output_truncated: bool = False
+    redaction_flags: tuple[str, ...] = ()
+    redaction_count: int = Field(default=0, ge=0, le=100_000)
+
+    @field_validator("command_class", "status")
+    @classmethod
+    def bounded_token(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("command fact token must not be empty")
+        return cleaned[:64]
+
+    @field_validator("cwd")
+    @classmethod
+    def relative_cwd(cls, value: str) -> str:
+        if "\x00" in value or "\\" in value or value.startswith("/"):
+            raise ValueError("command fact cwd must be workspace-relative")
+        if any(part in {"", ".", ".."} for part in value.split("/")) and value != ".":
+            raise ValueError("command fact cwd must be workspace-relative")
+        return value
+
+    @field_validator("redaction_flags")
+    @classmethod
+    def bounded_flags(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if len(values) > 16:
+            raise ValueError("command fact has too many redaction flags")
+        return tuple(" ".join(value.split())[:64] for value in values if value.strip())
+
+
 class DurableToolFacts(ProtocolModel):
+    """Bounded, value-free facts retained for one completed tool execution.
+
+    ``commands`` is intentionally separate from ``HandlerResultEnvelope``:
+    command stdout/stderr belongs in a COMMAND_OUTPUT Artifact, while the
+    durable execution row keeps only the safe metadata needed to reconstruct
+    a terminal view after reconnect. Non-command executions report an explicit
+    metadata gap when no command facts are present.
+    """
+
+    commands: tuple[DurableCommandFacts, ...] = ()
     files: tuple[FileMutationEvidence, ...] = ()
     config: ConfigMutationEvidence | None = None
     truncated: bool = False
@@ -523,6 +571,9 @@ class HandlerResultEnvelope(ProtocolModel):
     summary: dict[str, Any] = Field(default_factory=dict)
     error_code: str | None = Field(default=None, max_length=64)
     error_message: str | None = None
+    # Stable reviewed reason for an argument-validation failure (for example
+    # ``empty_submission``); fixed source text, never raw argument content.
+    error_reason: str | None = Field(default=None, max_length=64)
     validation_diagnostics: tuple[ValidationDiagnostic, ...] = ()
 
     @field_validator("error_message")

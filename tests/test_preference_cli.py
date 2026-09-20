@@ -136,3 +136,73 @@ def test_preference_inbox_review_reports_worker_result(monkeypatch):
     payload = json.loads(result.stdout)
     assert payload["status"] == "completed"
     assert payload["proposal_count"] == 2
+
+
+def _accept_many_fake_api(monkeypatch):
+    class FakeIdSource:
+        def new_id(self, prefix):
+            return f"{prefix}_1"
+
+    class FakePreview:
+        def __init__(self, proposal_id):
+            self.proposal = SimpleNamespace(proposal_id=proposal_id)
+            self.expected_row_version = 1
+
+    class FakeResult:
+        def model_dump(self, mode="json"):
+            return {"status": "applied", "accepted": ["prop_1", "prop_2"]}
+
+    class FakeApi:
+        id_source = FakeIdSource()
+
+        def preview_preference_proposal(self, proposal_id):
+            return FakePreview(proposal_id)
+
+        def accept_preference_proposals(
+            self, proposal_ids, *, command_id, expected_row_versions, expected_document_revision
+        ):
+            assert command_id == "cmd_1"
+            assert tuple(proposal_ids) == ("prop_1", "prop_2")
+            assert expected_row_versions == {"prop_1": 1, "prop_2": 1}
+            return FakeResult()
+
+    monkeypatch.setattr(
+        cli_module,
+        "_state_services",
+        lambda **_kwargs: (None, "handle", FakeApi(), None, None),
+    )
+    monkeypatch.setattr(cli_module, "_close_state", lambda _handle: None)
+
+
+def test_preference_inbox_accept_many_json_emits_single_document(monkeypatch):
+    _accept_many_fake_api(monkeypatch)
+
+    result = CliRunner().invoke(
+        cli_module.app,
+        [
+            "preferences",
+            "inbox",
+            "accept-many",
+            "prop_1",
+            "prop_2",
+            "--yes",
+            "--json",
+            "--workspace-id",
+            "ws_1",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload == {"status": "applied", "accepted": ["prop_1", "prop_2"]}
+
+
+def test_preference_inbox_accept_many_json_requires_yes(monkeypatch):
+    _accept_many_fake_api(monkeypatch)
+
+    result = CliRunner().invoke(
+        cli_module.app,
+        ["preferences", "inbox", "accept-many", "prop_1", "--json", "--workspace-id", "ws_1"],
+    )
+
+    assert result.exit_code == 2

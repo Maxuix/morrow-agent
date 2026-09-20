@@ -21,21 +21,18 @@ from . import management_requests as requests
 COMMAND_MODELS = {
     "preferences": requests.PreferenceWriteRequest,
     "profile": requests.ProfileWriteRequest,
+    "profile-save": requests.ProfileSaveRequest,
     "preference-decision": requests.PreferenceDecisionRequest,
     "learning-decision": requests.LearningDecisionRequest,
     "knowledge": requests.KnowledgeLifecycleRequest,
     "skill-binding": requests.SkillBindingRequest,
     "skill-draft": requests.SkillDraftRequest,
     "skill-draft-create": requests.SkillDraftCreateRequest,
-    "workflow-feedback": requests.WorkflowFeedbackRequest,
-    "workflow-policy-decision": requests.WorkflowPolicyDecisionRequest,
-    "workflow-evaluation": requests.WorkflowEvaluationRequest,
 }
 
 
 class ManagementService:
-    def __init__(self, api, preferences, profile, skills, *, workflow_feedback=None) -> None:
-        self.workflow_feedback = workflow_feedback
+    def __init__(self, api, preferences, profile, skills) -> None:
         self.api = api
         self.preferences = preferences
         self.profile = profile
@@ -45,49 +42,34 @@ class ManagementService:
         self.queries = ContextManagementQueries(api, profile.project_store)
         self.skill_queries = SkillManagementQueries(skills, api.workspace_id)
 
-    def query(self, kind, *, scope="workspace", task_run_id=None, agent_run_id=None, page=0):
+    def query(
+        self,
+        kind,
+        *,
+        scope="workspace",
+        session_id=None,
+        task_run_id=None,
+        agent_run_id=None,
+        page=0,
+    ):
         if not isinstance(page, int) or isinstance(page, bool) or not 0 <= page <= 100000:
             raise ApplicationError(ApplicationErrorCode.INVALID, "management page is invalid")
         if scope not in {"workspace", "global"}:
             raise ApplicationError(ApplicationErrorCode.INVALID, "management scope is invalid")
         if kind == "context":
-            result = self.queries.resolved(task_run_id=task_run_id, agent_run_id=agent_run_id)
-            if self.workflow_feedback:
-                from morrow.core.workflows.feedback import WorkflowPolicyCandidate
-
-                result["pending_learning_count"] += sum(
-                    c.status in {"proposed", "applying"}
-                    for c in self.workflow_feedback.records.list(
-                        WorkflowPolicyCandidate, self.workspace_id
-                    )
-                )
-            return result
+            return self.queries.resolved(
+                session_id=session_id, task_run_id=task_run_id, agent_run_id=agent_run_id
+            )
         if kind == "preferences":
             return self.queries.preferences(scope)
         if kind == "profile":
             return self.queries.profile()
         if kind == "learning":
-            result = self.queries.learning(page)
-            result["orchestration"] = (
-                self.workflow_feedback.review_view(page)
-                if self.workflow_feedback
-                else {"items": [], "next_cursor": None}
-            )
-            if result["orchestration"]["next_cursor"]:
-                # Keep the aggregate offset cursor available until every list
-                # is exhausted; all three lists use the same 50-row page.
-                result["next_cursor"] = str((page + 1) * 50)
-            return result
-        if kind == "workflow-evaluation" and self.workflow_feedback:
-            from morrow.application.workflows.evaluation import WorkflowEvaluationService
-
-            return WorkflowEvaluationService(self.workflow_feedback).dashboard(page)
-        if kind == "workflow-policy-candidates" and self.workflow_feedback:
-            return self.workflow_feedback.review_view(page)
+            return self.queries.learning(page, session_id=session_id, task_run_id=task_run_id)
         if kind == "knowledge":
             return self.queries.knowledge(page)
         if kind == "skills":
-            return self.skill_queries.catalog(scope)
+            return self.skill_queries.catalog(scope, page)
         if kind == "skill-drafts":
             return self.skill_queries.drafts(page)
         raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "management query is missing")
@@ -147,7 +129,7 @@ class ManagementService:
         # Profile and Draft acceptance own file/YAML publication, so never nest
         # their saga in an outer SQLite transaction. OCC prevents a blind retry
         # after an interrupted publication; the normal domain recovery remains authoritative.
-        if kind in {"profile", "skill-binding", "workflow-policy-decision"} or (
+        if kind in {"profile", "profile-save", "skill-binding"} or (
             kind in {"skill-draft", "preference-decision"} and request.action == "accept"
         ):
             value = self._adapter_command(kind, request, target)
@@ -179,14 +161,6 @@ class ManagementService:
         return value
 
     def _adapter_command(self, kind, request, target):
-        if kind == "workflow-feedback" and self.workflow_feedback:
-            return self.workflow_feedback.submit(request)
-        if kind == "workflow-policy-decision" and self.workflow_feedback:
-            return self.workflow_feedback.decide(target, request)
-        if kind == "workflow-evaluation" and self.workflow_feedback:
-            from morrow.application.workflows.evaluation import WorkflowEvaluationService
-
-            return WorkflowEvaluationService(self.workflow_feedback).record(request)
         if kind == "skill-binding":
             owner_request = request.model_copy(
                 update={"command_id": "cmd_" + sha256_digest(request.command_id)[:48]}
@@ -197,6 +171,12 @@ class ManagementService:
             if prepared.expected_revision != request.expected_revision:
                 raise ApplicationError(ApplicationErrorCode.STALE, "Profile revision is stale")
             return self.profile.apply_prepared(prepared, operation_id=request.command_id)
+        if kind == "profile-save":
+            return self.profile.save_profile(
+                request.profile.to_profile(),
+                expected_revision=request.expected_revision,
+                operation_id=request.command_id,
+            )
         if kind == "preference-decision":
             inbox = self.api.preference_inbox
             if request.action == "accept":
@@ -213,6 +193,7 @@ class ManagementService:
                 command_id=request.command_id,
                 expected_row_version=request.expected_row_version,
                 suppress=request.action == "suppress",
+                reason=request.reason,
             )
         if kind == "skill-draft-create":
             return self.skills.drafts.create_from_candidate(request.candidate_id)
@@ -226,7 +207,7 @@ class ManagementService:
             if request.action == "validate":
                 return drafts.revalidate(target)
             if request.action == "reject":
-                return drafts.reject(target, reason="rejected_by_user")
+                return drafts.reject(target, reason=request.reason)
             # The install saga has its own receipt namespace, shared by GUI and CLI.
             return drafts.accept(
                 target, command_id="cmd_" + sha256_digest(request.command_id + ":install")[:48]
@@ -240,7 +221,7 @@ class ManagementService:
             if request.action != "accept":
                 result = self.api.learning.reject_candidate(
                     RejectLearningCandidateCommand(
-                        **values, never_suggest=request.action == "suppress"
+                        **values, never_suggest=request.action == "suppress", reason=request.reason
                     )
                 )
             else:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ctypes
 import difflib
 import hashlib
 import os
@@ -11,6 +10,7 @@ import stat
 import sys
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +18,9 @@ from morrow.core.capabilities import ToolRunContext
 from morrow.core.local_tools import validate_workspace_relative_path
 from morrow.services.files import WorkspaceFileService
 
+MAX_SNAPSHOT_ENTRIES = 20_000
+MAX_SNAPSHOT_DEPTH = 64
+MAX_SNAPSHOT_SCAN_SECONDS = 10.0
 MAX_SNAPSHOT_FILES = 10_000
 MAX_SNAPSHOT_BYTES = 32 * 1024 * 1024
 MAX_SNAPSHOT_FILE_BYTES = 8 * 1024 * 1024
@@ -49,6 +52,10 @@ class SandboxServiceError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class _SandboxScanLimitExceeded(Exception):
+    """Collect-time scan crossed the aggregate snapshot caps; abort the scan."""
 
 
 @dataclass(frozen=True)
@@ -184,6 +191,9 @@ class SandboxSnapshotService:
                 private_cache=private_cache,
                 baseline=baseline,
             )
+        except _SandboxScanLimitExceeded as exc:
+            self.cleanup_reserved(temp_root)
+            raise SandboxServiceError("sandbox_limit", "沙箱遍历超过目录或时间上限") from exc
         except SandboxServiceError:
             self.cleanup_reserved(temp_root)
             raise
@@ -196,9 +206,15 @@ class SandboxSnapshotService:
     ) -> SandboxChangeSet:
         self._validate_session_root(session)
         self._check_cancelled(cancel_event)
-        current = self._scan_tree(
-            session.snapshot_root, include_raw=True, cancel_event=cancel_event
-        )
+        try:
+            current = self._scan_tree(
+                session.snapshot_root, include_raw=True, cancel_event=cancel_event
+            )
+        except _SandboxScanLimitExceeded:
+            # A command-created tree past the snapshot caps cannot be diffed
+            # safely (unscanned baseline paths would look deleted), so the
+            # change set is empty and only carries the truncated marker.
+            return SandboxChangeSet(session.change_set_id, (), True)
         paths = sorted(
             set(session.baseline) | set(current), key=lambda value: (value.casefold(), value)
         )
@@ -293,7 +309,12 @@ class SandboxSnapshotService:
         cancel_event: threading.Event | None = None,
     ) -> dict[str, SnapshotEntry]:
         baseline: dict[str, SnapshotEntry] = {}
-        counters = {"files": 0, "bytes": 0}
+        counters = {
+            "files": 0,
+            "bytes": 0,
+            "entries": 0,
+            "deadline": time.monotonic() + MAX_SNAPSHOT_SCAN_SECONDS,
+        }
         self._copy_directory(source, destination, "", baseline, counters, cancel_event=cancel_event)
         return baseline
 
@@ -303,18 +324,18 @@ class SandboxSnapshotService:
         destination: Path,
         prefix: str,
         baseline: dict[str, SnapshotEntry],
-        counters: dict[str, int],
+        counters: dict[str, int | float],
         *,
         cancel_event: threading.Event | None = None,
     ) -> None:
         self._check_cancelled(cancel_event)
         try:
-            entries = sorted(
-                os.scandir(source), key=lambda entry: (entry.name.casefold(), entry.name)
-            )
+            entries = self._directory_entries(source, prefix, counters, cancel_event)
         except OSError as exc:
             raise SandboxServiceError("sandbox_unavailable", "沙箱快照无法读取工作空间") from exc
         for entry in entries:
+            if time.monotonic() >= counters["deadline"]:
+                raise _SandboxScanLimitExceeded
             self._check_cancelled(cancel_event)
             relative = f"{prefix}/{entry.name}" if prefix else entry.name
             if entry.name in _EXCLUDED_NAMES:
@@ -348,14 +369,20 @@ class SandboxSnapshotService:
                 continue
             if not stat.S_ISREG(mode.st_mode):
                 raise SandboxServiceError("sandbox_limit", "沙箱快照包含不支持的特殊文件")
+            if (
+                counters["files"] >= self.max_files
+                or mode.st_size > self.max_bytes - counters["bytes"]
+            ):
+                raise SandboxServiceError("sandbox_limit", "沙箱快照超过文件或字节上限")
             raw = self._read_file(source_path, mode.st_size, cancel_event=cancel_event)
             counters["files"] += 1
             counters["bytes"] += len(raw)
             if counters["files"] > self.max_files or counters["bytes"] > self.max_bytes:
                 raise SandboxServiceError("sandbox_limit", "沙箱快照超过文件或字节上限")
             destination_path.parent.mkdir(parents=True, exist_ok=True)
-            if not _clone_file(source_path, destination_path):
-                shutil.copyfile(source_path, destination_path)
+            # Copy the bounded bytes used for the baseline, not a second
+            # unbounded read of a file which may have changed in between.
+            destination_path.write_bytes(raw)
             self._check_cancelled(cancel_event)
             os.chmod(destination_path, stat.S_IMODE(mode.st_mode), follow_symlinks=False)
             baseline[relative] = SnapshotEntry(
@@ -394,6 +421,24 @@ class SandboxSnapshotService:
             real_mtime_ns=mtime_ns,
         )
 
+    def _directory_entries(self, directory, prefix, counters, cancel_event):
+        # Bound enumeration before sorting: wide empty trees must not allocate
+        # an unbounded DirEntry list, and depth is checked before recursion.
+        if prefix and prefix.count("/") + 1 > MAX_SNAPSHOT_DEPTH:
+            raise _SandboxScanLimitExceeded
+        entries = []
+        with os.scandir(directory) as iterator:
+            for entry in iterator:
+                self._check_cancelled(cancel_event)
+                counters["entries"] += 1
+                if (
+                    counters["entries"] > MAX_SNAPSHOT_ENTRIES
+                    or time.monotonic() >= counters["deadline"]
+                ):
+                    raise _SandboxScanLimitExceeded
+                entries.append(entry)
+        return sorted(entries, key=lambda entry: (entry.name.casefold(), entry.name))
+
     def _scan_tree(
         self,
         root: Path,
@@ -402,7 +447,13 @@ class SandboxSnapshotService:
         cancel_event: threading.Event | None = None,
     ) -> dict[str, SnapshotEntry]:
         result: dict[str, SnapshotEntry] = {}
-        self._scan_directory(root, "", result, include_raw, cancel_event=cancel_event)
+        counters = {
+            "files": 0,
+            "bytes": 0,
+            "entries": 0,
+            "deadline": time.monotonic() + MAX_SNAPSHOT_SCAN_SECONDS,
+        }
+        self._scan_directory(root, "", result, include_raw, counters, cancel_event=cancel_event)
         return result
 
     def _scan_directory(
@@ -411,17 +462,18 @@ class SandboxSnapshotService:
         prefix: str,
         result: dict[str, SnapshotEntry],
         include_raw: bool,
+        counters: dict[str, int | float],
         *,
         cancel_event: threading.Event | None = None,
     ) -> None:
         self._check_cancelled(cancel_event)
         try:
-            entries = sorted(
-                os.scandir(directory), key=lambda entry: (entry.name.casefold(), entry.name)
-            )
+            entries = self._directory_entries(directory, prefix, counters, cancel_event)
         except OSError as exc:
             raise SandboxServiceError("sandbox_violation", "沙箱工作目录无法读取") from exc
         for entry in entries:
+            if time.monotonic() >= counters["deadline"]:
+                raise _SandboxScanLimitExceeded
             self._check_cancelled(cancel_event)
             relative = f"{prefix}/{entry.name}" if prefix else entry.name
             if entry.name in _EXCLUDED_NAMES:
@@ -437,6 +489,7 @@ class SandboxSnapshotService:
                     relative,
                     result,
                     include_raw,
+                    counters,
                     cancel_event=cancel_event,
                 )
             elif stat.S_ISLNK(mode.st_mode):
@@ -444,6 +497,10 @@ class SandboxSnapshotService:
                     relative, "symlink", None, 0, stat.S_IMODE(mode.st_mode), None, None
                 )
             elif stat.S_ISREG(mode.st_mode):
+                counters["files"] += 1
+                counters["bytes"] += mode.st_size
+                if counters["files"] > self.max_files or counters["bytes"] > self.max_bytes:
+                    raise _SandboxScanLimitExceeded
                 raw = self._read_file(path, mode.st_size, cancel_event=cancel_event)
                 result[relative] = SnapshotEntry(
                     relative,
@@ -637,7 +694,10 @@ class SandboxSnapshotService:
         if size > MAX_SNAPSHOT_FILE_BYTES:
             raise SandboxServiceError("sandbox_limit", "沙箱文件超过单文件上限")
         try:
-            raw = path.read_bytes()
+            with path.open("rb") as source:
+                raw = source.read(size + 1)
+            if len(raw) > size:
+                raise SandboxServiceError("sandbox_limit", "沙箱文件在读取期间增长")
         except OSError as exc:
             raise SandboxServiceError("sandbox_unavailable", "沙箱文件读取失败") from exc
         cls._check_cancelled(cancel_event)
@@ -651,19 +711,6 @@ class SandboxSnapshotService:
             shutil.rmtree(root)
         except OSError as exc:
             raise SandboxServiceError("sandbox_cleanup_failed", "沙箱临时目录清理失败") from exc
-
-
-def _clone_file(source: Path, destination: Path) -> bool:
-    if sys.platform != "darwin":
-        return False
-    try:
-        libc = ctypes.CDLL(None, use_errno=True)
-        clonefile = libc.clonefile
-        clonefile.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint32]
-        clonefile.restype = ctypes.c_int
-        return clonefile(os.fsencode(source), os.fsencode(destination), 0) == 0
-    except (AttributeError, OSError):
-        return False
 
 
 def _sha256(raw: bytes) -> str:

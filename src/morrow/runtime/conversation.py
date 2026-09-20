@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pydantic import field_validator, model_validator
 
 from morrow.core.models import (
+    INTERRUPT_STOP_CODES,
     AgentStopCode,
     AssistantMessage,
     FinishReason,
@@ -41,8 +42,13 @@ class TurnTerminalRecord(ProtocolModel):
 
     @model_validator(mode="after")
     def legal_stop_code(self) -> TurnTerminalRecord:
-        if self.finish_reason is not FinishReason.ERROR and self.stop_code is not None:
-            raise ValueError("only an error terminal may contain a stop code")
+        allowed = {FinishReason.ERROR, FinishReason.INTERRUPTED}
+        if self.finish_reason not in allowed and self.stop_code is not None:
+            raise ValueError("only an error or interrupted terminal may contain a stop code")
+        if self.finish_reason is FinishReason.INTERRUPTED and (
+            self.stop_code not in INTERRUPT_STOP_CODES
+        ):
+            raise ValueError("an interrupted terminal records a resumable stop code")
         return self
 
 

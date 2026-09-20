@@ -32,10 +32,8 @@ from morrow.core.learning_memory import (
 )
 from morrow.core.learning_payloads import (
     LearningCandidateDraft,
-    OrchestrationPolicyCandidatePayload,
     ProjectKnowledgeCandidatePayload,
     SkillCandidatePayload,
-    WorkflowFeedbackCandidatePayload,
 )
 from morrow.core.models import ModelRef
 from morrow.core.store import StoreOpenMode
@@ -511,32 +509,8 @@ async def test_project_knowledge_candidate_only_acceptance_has_no_active_side_ef
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("candidate_type", "semantic_key", "payload"),
-    (
-        (
-            LearningCandidateType.WORKFLOW_FEEDBACK,
-            "workflow.release_checks",
-            WorkflowFeedbackCandidatePayload(
-                workflow_name="release_checks",
-                edit_summary="Reordered the verification step.",
-                result_summary="The run completed with the expected checks.",
-            ),
-        ),
-        (
-            LearningCandidateType.ORCHESTRATION_POLICY_CANDIDATE,
-            "orchestration.release_checks",
-            OrchestrationPolicyCandidatePayload(
-                trigger="task.accepted",
-                workflow_name="release_checks",
-                rule_summary="Use the verification workflow for release tasks.",
-            ),
-        ),
-    ),
-)
-async def test_future_candidate_acceptance_remains_candidate_only(
-    tmp_path, candidate_type, semantic_key, payload
-):
+async def test_skill_candidate_acceptance_remains_candidate_only(tmp_path):
+    """SKILL_CANDIDATE acceptance acknowledges the candidate without any side effects."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     marker = workspace / "keep.txt"
@@ -554,15 +528,19 @@ async def test_future_candidate_acceptance_remains_candidate_only(
         candidate = journal.put_learning_candidate(
             "ws_1",
             LearningCandidate.from_draft(
-                candidate_id=f"lcn_{candidate_type.value}",
+                candidate_id="lcn_skill_fixture",
                 workspace_id="ws_1",
                 origin_review_id=review.review_id,
                 draft=LearningCandidateDraft(
-                    candidate_type=candidate_type,
+                    candidate_type=LearningCandidateType.SKILL_CANDIDATE,
                     operation="set",
-                    semantic_key=semantic_key,
+                    semantic_key="skill.release_checks",
                     proposed_scope="workspace",
-                    proposed_payload=payload,
+                    proposed_payload=SkillCandidatePayload(
+                        title="Release checks workflow",
+                        problem_pattern="Release tasks need ordered verification steps.",
+                        observed_steps=("Run the verification workflow",),
+                    ),
                     evidence_ids=(evidence.evidence_id,),
                     temporary_or_durable="durable",
                 ),
@@ -576,7 +554,7 @@ async def test_future_candidate_acceptance_remains_candidate_only(
         view = api.get_learning_candidate_view(candidate.candidate_id)
         assert view is not None
 
-        result = api.accept_learning_candidate(_accept_command(view, f"cmd_{candidate_type.value}"))
+        result = api.accept_learning_candidate(_accept_command(view, "cmd_skill_only"))
 
         assert result.value.outcome == "candidate_only"
         assert result.value.candidate.status is LearningCandidateStatus.ACCEPTED

@@ -44,11 +44,13 @@ def build_workflow_runtime(
     clock: Callable[[], datetime] = utc_now,
     skill_selection=None,
     preference_loader=None,
+    agent_preference_loader=None,
     initialize_context=None,
     retry_sleep=None,
     faults=None,
     mutation=None,
     change_capture=None,
+    event_observer=None,
 ) -> WorkflowRuntime:
     transitions = WorkflowTransitionService(journal, workspace_id=workspace_id, clock=clock)
     finalizer = WorkflowOutcomeFinalizer(
@@ -80,11 +82,13 @@ def build_workflow_runtime(
         clock=clock,
         skill_selection=skill_selection,
         preference_loader=preference_loader,
+        agent_preference_loader=agent_preference_loader,
         initialize_context=initialize_context,
         retry_sleep=retry_sleep,
         faults=faults,
         mutation=mutation,
         change_capture=change_capture,
+        event_observer=event_observer,
     )
     patches = PatchApplicationService(
         journal,

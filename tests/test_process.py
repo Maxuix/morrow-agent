@@ -12,6 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
+from morrow.adapters.local.process import HostProcessAdapter
 from morrow.application.local_tools import make_bash_tool
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import (
@@ -443,3 +444,93 @@ async def test_fake_provider_can_recover_after_host_command_failure(tmp_path):
     assert first["result"]["exit_code"] == 1
     assert second["result"]["exit_code"] == 0
     assert approval.requests == []
+
+
+# Process-group drain lifecycle (batch 2) -------------------------------------
+
+
+def _adapter_env() -> dict[str, str]:
+    return {"PATH": os.environ.get("PATH", ""), "TMPDIR": os.environ.get("TMPDIR", "/tmp")}
+
+
+@pytest.mark.asyncio
+async def test_grandchild_holding_pipe_does_not_hang_the_drain(tmp_path):
+    """`sh -c 'sleep 100 & exit 0'`: the shell exits 0 while the grandchild
+    keeps the pipe open; the run must still return promptly and reap the group."""
+    adapter = HostProcessAdapter()
+    pid_file = tmp_path / "grandchild.pid"
+    script = f"sleep 100 & echo $! > {pid_file}; exit 0"
+    output = await asyncio.wait_for(
+        adapter.run(
+            argv=("/bin/sh", "-c", script),
+            shell=None,
+            cwd=tmp_path,
+            timeout_seconds=0.2,
+            environment=_adapter_env(),
+            output_limit=4096,
+        ),
+        timeout=5,  # failure guard only; the drain itself must finish unaided
+    )
+    assert output.status is CommandStatus.EXITED
+    assert output.returncode == 0
+    grandchild = int(pid_file.read_text())
+    for _ in range(200):
+        try:
+            os.kill(grandchild, 0)
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.05)
+    else:
+        pytest.fail("grandchild process outlived the process-group cleanup")
+
+
+@pytest.mark.asyncio
+async def test_sigterm_ignoring_process_is_sigkilled_and_returns(tmp_path):
+    adapter = HostProcessAdapter()
+    output = await asyncio.wait_for(
+        adapter.run(
+            argv=("/bin/sh", "-c", "trap '' TERM; sleep 100"),
+            shell=None,
+            cwd=tmp_path,
+            timeout_seconds=0.2,
+            environment=_adapter_env(),
+            output_limit=4096,
+        ),
+        timeout=8,  # failure guard: SIGTERM grace plus SIGKILL must bound the wait
+    )
+    assert output.status is CommandStatus.TIMED_OUT
+    assert output.returncode is not None and output.returncode < 0
+
+
+@pytest.mark.asyncio
+async def test_descendant_escaping_the_group_is_abandoned_after_drain_budget(tmp_path):
+    """A grandchild in its own session cannot be killed via the process group;
+    the bounded drain must give up and return the partial output."""
+    adapter = HostProcessAdapter(drain_timeout_seconds=0.3)
+    pid_file = tmp_path / "escaped.pid"
+    code = (
+        "import subprocess, sys; "
+        "p = subprocess.Popen(['/bin/sleep', '100'], start_new_session=True); "
+        "open(sys.argv[1], 'w').write(str(p.pid)); "
+        "print('ready', flush=True)"
+    )
+    try:
+        output = await asyncio.wait_for(
+            adapter.run(
+                argv=_python(code) + (str(pid_file),),
+                shell=None,
+                cwd=tmp_path,
+                timeout_seconds=0.2,
+                environment=_adapter_env(),
+                output_limit=4096,
+            ),
+            timeout=5,
+        )
+        assert output.status is CommandStatus.TIMED_OUT
+        assert b"ready" in output.stdout_tail
+    finally:
+        if pid_file.exists():
+            try:
+                os.kill(int(pid_file.read_text()), signal.SIGKILL)
+            except (OSError, ValueError):
+                pass

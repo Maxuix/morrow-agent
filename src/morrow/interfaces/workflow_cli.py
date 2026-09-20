@@ -29,6 +29,7 @@ from morrow.application.agent_definitions.publication import (
     DefinitionCatalog,
 )
 from morrow.application.workflows.builtins import visible_builtin_workflows
+from morrow.application.workflows.consistency import WorkflowConsistencyService
 from morrow.application.workflows.finalizer import WorkflowOutcomeFinalizer
 from morrow.application.workflows.management import WorkflowManagementService
 from morrow.application.workflows.publication import WorkflowCompilationService
@@ -111,9 +112,14 @@ def _workflow_run_exit_code(run) -> int:
     return 0 if status == "completed" else 1
 
 
+_MAX_INPUT_CHARS = 1024 * 1024
+
+
 def _source(path: Path, model):
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return model.model_validate(raw)
+    raw = path.read_bytes()
+    if len(raw) > _MAX_INPUT_CHARS:
+        raise ValueError(f"input file exceeds the {_MAX_INPUT_CHARS}-byte limit: {path}")
+    return model.model_validate(yaml.safe_load(raw.decode("utf-8")))
 
 
 def _identity(application, workspace_id, directory):
@@ -472,6 +478,54 @@ def workflow_runs(
         _fail(exc)
 
 
+@workflow_app.command("consistency")
+def workflow_consistency(
+    session_id: str | None = typer.Option(None, "--session-id"),
+    settle: bool = typer.Option(
+        False,
+        "--settle",
+        help="关闭可证明安全的遗留叶子 TaskRun；默认只做只读检查。",
+    ),
+    command_id: str | None = typer.Option(
+        None,
+        "--command-id",
+        help="幂等键；重试同一检查/收束时复用。省略时自动生成。",
+    ),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    """只读检查已结束运行留下的不一致；--settle 只关闭可证明安全的叶子。
+
+    默认不执行任何业务工具，也不把已取消的运行改回 running。
+    """
+
+    try:
+        with _definition_services(
+            write=settle, **_options(workspace_id, directory, state_root)
+        ) as ctx:
+            application, identity, journal = ctx[0], ctx[1], ctx[2]
+            service = WorkflowConsistencyService(
+                journal,
+                identity.workspace_id,
+                id_source=application.id_source,
+            )
+            if settle:
+                report = service.settle(
+                    session_id=session_id,
+                    command_id=command_id or application.id_source.new_id("cmd"),
+                )
+            else:
+                report = service.scan(session_id=session_id)
+            _dump(report.wire())
+            if report.findings and not settle:
+                raise typer.Exit(code=1)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        _fail(exc)
+
+
 @workflow_app.command("show")
 def workflow_show(
     definition_id: str,
@@ -714,26 +768,9 @@ def _orchestration_service(state_root, workspace_id, directory):
 
     application = build_application(state_root=state_root)
     identity = _identity(application, workspace_id, directory)
-    service = OrchestrationPolicyService(
+    return OrchestrationPolicyService(
         ExtensionYamlStore(application.data_root.root), workspace_id=identity.workspace_id
     )
-
-    from types import SimpleNamespace
-
-    from morrow.application.workflows.evaluation import promotion_state
-    from morrow.core.workflows.feedback import WorkflowEvaluation
-
-    store = OperationalStore(application.data_root.root)
-    evidence = ()
-    if store.classify().present:
-        with store.open(StoreOpenMode.READ_ONLY) as handle:
-            evidence = SqliteOperationalJournal(handle).workflow_feedback.list(
-                WorkflowEvaluation, identity.workspace_id
-            )
-    service.evaluation = SimpleNamespace(
-        promotion=lambda task_class: promotion_state(evidence, task_class)
-    )
-    return service
 
 
 @policy_app.command("show")
@@ -794,7 +831,12 @@ def workflow_run(
             raise ValueError("plain workflow run requires an exact --revision")
         if ensure_published and expected_head_revision is None:
             raise ValueError("--ensure-published requires --expected-head-revision")
-        text = sys.stdin.read() if stdin else task
+        if stdin:
+            text = sys.stdin.read(_MAX_INPUT_CHARS + 1)
+            if len(text) > _MAX_INPUT_CHARS:
+                raise ValueError(f"stdin input exceeds the {_MAX_INPUT_CHARS}-character limit")
+        else:
+            text = task
         products = _session_management(state_root, workspace_id, directory, session)
         command_id = command_id or products.persistence.id_source.new_id("cmd")
         typer.echo(f"command_id: {command_id}")

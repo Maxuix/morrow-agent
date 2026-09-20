@@ -14,24 +14,15 @@ class OrchestrationPolicyService:
     def __init__(self, store, *, workspace_id: str):
         self.store = store
         self.workspace_id = workspace_id
-        self.evaluation = None
 
-    def promoted(self, task_type):
-        return bool(self.evaluation and self.evaluation.promotion(task_type)["promoted"])
+    @staticmethod
+    def auto_run(policy):
+        # The saved user policy is the whole decision; no evidence gate applies.
+        return policy.auto_run_mode == "auto"
 
-    def auto_run(self, policy, task_type):
-        return (
-            policy.source == "user"
-            and policy.auto_run_mode == "allow_promoted"
-            and self.promoted(task_type)
-        )
-
-    def auto_replan(self, policy):
-        return (
-            policy.source == "user"
-            and policy.auto_replan_mode == "allow_low_risk"
-            and (policy.task_matcher == "*" or self.promoted(policy.task_matcher))
-        )
+    @staticmethod
+    def auto_replan(policy):
+        return policy.auto_replan_mode == "allow_low_risk"
 
     def _document(self, scope):
         if scope not in {"global", "workspace"}:
@@ -48,29 +39,12 @@ class OrchestrationPolicyService:
         return loaded.value
 
     def view(self):
-        classes = ("implementation", "refactor", "research", "explanation", "diagnosis", "general")
-        eligibility = []
-        for task_type in classes:
-            policy = self.resolve(task_type)
-            eligibility.append(
-                {
-                    "task_type": task_type,
-                    "promoted": self.promoted(task_type),
-                    "auto_run_eligible": self.auto_run(policy, task_type),
-                    "auto_replan_eligible": self.auto_replan(policy),
-                }
-            )
-        eligible = any(row["auto_run_eligible"] for row in eligibility)
         return {
             scope: {
                 "revision": (doc := self._document(scope)).revision,
                 "policies": [policy.model_dump(mode="json") for policy in doc.orchestration],
             }
             for scope in ("global", "workspace")
-        } | {
-            "auto_run_eligible": eligible,
-            "auto_run_reason": "paired_benefit" if eligible else "paired_evidence_missing",
-            "eligibility": eligibility,
         }
 
     def resolve(self, task_type: str) -> OrchestrationPolicy:
@@ -95,7 +69,7 @@ class OrchestrationPolicyService:
             return self.view()
         policies[policy.policy_id] = saved
         updated = type(current).model_validate(
-            current.model_dump() | {"orchestration": tuple(policies.values())}
+            current.model_dump(by_alias=True) | {"orchestration": tuple(policies.values())}
         )
         try:
             if policy.scope == "global":

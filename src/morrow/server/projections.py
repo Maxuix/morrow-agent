@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from morrow.application.workflows.queries import node_execution_wire
 from morrow.core.application import ApplicationCommandReceipt, ApplicationEvent
 from morrow.core.artifacts import ArtifactMetadata
 from morrow.core.domain import DurableAgentRun, DurableSession, DurableTaskRun, TaskOutcome
@@ -213,6 +214,7 @@ def node_view_wire(view) -> dict[str, Any]:
         "artifacts": [artifact_wire(item) for item in view.artifacts],
         "approval_pending": view.approval_pending,
         "agent_generation_request_count": view.agent_generation_request_count,
+        "execution": node_execution_wire(view.execution),
     }
 
 

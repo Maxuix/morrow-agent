@@ -17,6 +17,7 @@ from morrow.adapters.state.learning_journal import SqliteLearningJournal
 from morrow.adapters.state.learning_memory_journal import SqliteLearningMemoryJournal
 from morrow.adapters.state.mcp_journal import SqliteMcpJournal
 from morrow.adapters.state.memory_selection_journal import SqliteMemorySelectionJournal
+from morrow.adapters.state.node_steer_journal import SqliteNodeSteerJournal
 from morrow.adapters.state.observability_journal import SqliteObservabilityJournal
 from morrow.adapters.state.operational import OperationalStoreSession, SqliteExecutor
 from morrow.adapters.state.permission_journal import SqliteRunPermissionJournal
@@ -27,7 +28,6 @@ from morrow.adapters.state.skill_journal import SqliteSkillJournal
 from morrow.adapters.state.task_journal import SqliteTaskJournal
 from morrow.adapters.state.tool_journal import SqliteToolJournal
 from morrow.adapters.state.transaction import SqliteJournalBackend
-from morrow.adapters.state.workflow_feedback_journal import SqliteWorkflowFeedbackJournal
 from morrow.adapters.state.workflow_journal import SqliteWorkflowJournal
 from morrow.adapters.state.workflow_ownership import require_user_task
 from morrow.core.application import (
@@ -139,6 +139,9 @@ class SqliteOperationalJournal:
         id_source=None,
     ) -> None:
         self._backend = SqliteJournalBackend(session, clock=clock)
+        from morrow.adapters.state.attachment_journal import AttachmentJournal
+
+        self.attachments = AttachmentJournal(self._backend)
         self._recovery_journal = SqliteRecoveryJournal(
             self._backend,
             session_exists=lambda workspace_id, session_id: (
@@ -210,7 +213,6 @@ class SqliteOperationalJournal:
         self._skill_journal = SqliteSkillJournal(self._backend)
         self._mcp_journal = SqliteMcpJournal(self._backend)
         self.agent_definitions = SqliteAgentDefinitionJournal(self._backend)
-        self.workflow_feedback = SqliteWorkflowFeedbackJournal(self._backend)
         self.workflows = SqliteWorkflowJournal(
             self._backend,
             get_task=self.get_task_run,
@@ -220,6 +222,26 @@ class SqliteOperationalJournal:
             get_permission_snapshot=self.get_permission_snapshot,
         )
         self._runtime_control_journal = SqliteRuntimeControlJournal(self._backend)
+        self._node_steer_journal = SqliteNodeSteerJournal(self._backend)
+        from morrow.adapters.state.interaction_journal import InteractionJournal
+
+        self.interactions = InteractionJournal(self._backend)
+        from morrow.adapters.state.control_receipt_journal import ControlReceiptJournal
+
+        self.control_receipts = ControlReceiptJournal(self._backend)
+        from morrow.adapters.state.chat_timeline_journal import ChatTimelineJournal
+
+        self.chat_timeline = ChatTimelineJournal(self._backend, self.get_session)
+        from morrow.adapters.state.session_metadata import SessionMetadataJournal
+
+        self.session_metadata = SessionMetadataJournal(self._backend, self.get_session)
+        from morrow.adapters.state.chat_settings import ChatSettingsJournal
+
+        self.chat_settings = ChatSettingsJournal(self._backend, self.get_session)
+        from morrow.adapters.state.chat_permissions import ChatPermissionJournal
+
+        self.chat_permissions = ChatPermissionJournal(self._backend)
+        self.session_scopes = self._tool_journal.session_scopes
 
     def now(self) -> datetime:
         return self._backend.now()
@@ -278,6 +300,25 @@ class SqliteOperationalJournal:
     ) -> tuple[RuntimeControlEntry, ...]:
         return self._runtime_control_journal.list_entries(workspace_id, session_id, status=status)
 
+    def enqueue_node_steer(self, workspace_id: str, **payload):
+        return self._node_steer_journal.enqueue(workspace_id, **payload)
+
+    def get_node_steer(self, workspace_id: str, session_id: str, client_message_id: str):
+        return self._node_steer_journal.get(workspace_id, session_id, client_message_id)
+
+    def peek_pending_node_steer(self, workspace_id: str, session_id: str):
+        return self._node_steer_journal.peek_pending(workspace_id, session_id)
+
+    def consume_node_steer(
+        self, workspace_id: str, session_id: str, client_message_id: str, *, consumed_at
+    ):
+        return self._node_steer_journal.consume(
+            workspace_id, session_id, client_message_id, consumed_at=consumed_at
+        )
+
+    def expire_node_steers(self, workspace_id: str, session_id: str) -> int:
+        return self._node_steer_journal.expire_pending(workspace_id, session_id)
+
     def consume_runtime_control(
         self,
         workspace_id: str,
@@ -295,7 +336,7 @@ class SqliteOperationalJournal:
 
     @property
     def preference_journal(self) -> SqlitePreferenceJournal:
-        """Expose the bounded v13 Preference repository to application services."""
+        """Expose the bounded Preference repository to application services."""
 
         return self._preference_journal
 
@@ -351,9 +392,11 @@ class SqliteOperationalJournal:
             workspace_id, turn_id, review_version=review_version
         )
 
-    def list_preference_review_jobs(self, workspace_id: str, *, status=None, limit: int = 100):
+    def list_preference_review_jobs(
+        self, workspace_id: str, *, status=None, limit: int = 100, offset: int = 0
+    ):
         return self._preference_journal.list_preference_review_jobs(
-            workspace_id, status=status, limit=limit
+            workspace_id, status=status, limit=limit, offset=offset
         )
 
     def list_claimable_preference_review_jobs(self, workspace_id: str, *, limit: int = 100):
@@ -416,11 +459,28 @@ class SqliteOperationalJournal:
         return self._preference_journal.get_preference_proposal(workspace_id, proposal_id)
 
     def list_preference_proposals(
-        self, workspace_id: str, *, status=None, job_id=None, limit: int = 100, offset: int = 0
+        self,
+        workspace_id: str,
+        *,
+        status=None,
+        job_id=None,
+        session_id=None,
+        task_run_ids=None,
+        limit: int = 100,
+        offset: int = 0,
     ):
         return self._preference_journal.list_preference_proposals(
-            workspace_id, status=status, job_id=job_id, limit=limit, offset=offset
+            workspace_id,
+            status=status,
+            job_id=job_id,
+            session_id=session_id,
+            task_run_ids=task_run_ids,
+            limit=limit,
+            offset=offset,
         )
+
+    def count_preference_proposals_with_missing_source(self, workspace_id: str):
+        return self._preference_journal.count_preference_proposals_with_missing_source(workspace_id)
 
     def has_preference_proposal_fingerprint(
         self, workspace_id: str, fingerprint: str, *, status=None
@@ -483,9 +543,10 @@ class SqliteOperationalJournal:
         status: LearningReviewStatus | None = None,
         task_outcome_id: str | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[LearningReview, ...]:
         return self._learning_journal.list_learning_reviews(
-            workspace_id, status=status, task_outcome_id=task_outcome_id, limit=limit
+            workspace_id, status=status, task_outcome_id=task_outcome_id, limit=limit, offset=offset
         )
 
     def count_learning_reviews(
@@ -584,6 +645,7 @@ class SqliteOperationalJournal:
         status: LearningCandidateStatus | None = None,
         candidate_type: LearningCandidateType | None = None,
         origin_review_id: str | None = None,
+        task_run_ids: tuple[str, ...] | None = None,
         fingerprint: str | None = None,
         semantic_key: str | None = None,
         expires_before: datetime | None = None,
@@ -595,6 +657,7 @@ class SqliteOperationalJournal:
             status=status,
             candidate_type=candidate_type,
             origin_review_id=origin_review_id,
+            task_run_ids=task_run_ids,
             fingerprint=fingerprint,
             semantic_key=semantic_key,
             expires_before=expires_before,
@@ -609,6 +672,7 @@ class SqliteOperationalJournal:
         status: LearningCandidateStatus | None = None,
         candidate_type: LearningCandidateType | None = None,
         origin_review_id: str | None = None,
+        task_run_ids: tuple[str, ...] | None = None,
         expires_after: datetime | None = None,
     ) -> int:
         return self._learning_journal.count_learning_candidates(
@@ -616,8 +680,12 @@ class SqliteOperationalJournal:
             status=status,
             candidate_type=candidate_type,
             origin_review_id=origin_review_id,
+            task_run_ids=task_run_ids,
             expires_after=expires_after,
         )
+
+    def count_learning_candidates_with_missing_source(self, workspace_id: str) -> int:
+        return self._learning_journal.count_learning_candidates_with_missing_source(workspace_id)
 
     def save_learning_candidate(
         self,
@@ -773,9 +841,10 @@ class SqliteOperationalJournal:
         knowledge_id: str,
         *,
         limit: int = 100,
+        revision: int | None = None,
     ) -> tuple[ProjectKnowledgeRevision, ...]:
         return self._learning_memory_journal.list_project_knowledge_revisions(
-            workspace_id, knowledge_id, limit=limit
+            workspace_id, knowledge_id, limit=limit, revision=revision
         )
 
     def put_project_knowledge_revision(
@@ -834,9 +903,6 @@ class SqliteOperationalJournal:
 
     def get_skill_operation(self, operation_id: str):
         return self._skill_journal.get_operation(operation_id)
-
-    def get_skill_definition(self, scope_id, skill_id):
-        return self._skill_journal.get_definition(scope_id, skill_id)
 
     def list_skill_definitions(self):
         return self._skill_journal.list_definitions()
@@ -918,7 +984,14 @@ class SqliteOperationalJournal:
         return self._skill_journal.get_usage(workspace_id, usage_id)
 
     def list_skill_usages(
-        self, workspace_id, *, skill_id=None, version_id=None, agent_run_id=None, limit=100
+        self,
+        workspace_id,
+        *,
+        skill_id=None,
+        version_id=None,
+        agent_run_id=None,
+        limit=100,
+        offset=0,
     ):
         return self._skill_journal.list_usages(
             workspace_id,
@@ -926,6 +999,7 @@ class SqliteOperationalJournal:
             version_id=version_id,
             agent_run_id=agent_run_id,
             limit=limit,
+            offset=offset,
         )
 
     def put_mcp_server(
@@ -993,9 +1067,11 @@ class SqliteOperationalJournal:
         return self._memory_selection_journal.get_memory_selection(workspace_id, selection_id)
 
     def list_memory_selections(
-        self, workspace_id: str, *, limit: int = 100
+        self, workspace_id: str, *, limit: int = 100, offset: int = 0
     ) -> tuple[MemorySelection, ...]:
-        return self._memory_selection_journal.list_memory_selections(workspace_id, limit=limit)
+        return self._memory_selection_journal.list_memory_selections(
+            workspace_id, limit=limit, offset=offset
+        )
 
     def replace_memory_search_terms(
         self,
@@ -1006,6 +1082,9 @@ class SqliteOperationalJournal:
         return self._memory_selection_journal.replace_memory_search_terms(
             workspace_id, knowledge_revision_id, terms
         )
+
+    def clear_memory_search_terms(self, workspace_id: str) -> int:
+        return self._memory_selection_journal.clear_memory_search_terms(workspace_id)
 
     def list_memory_search_terms(
         self,
@@ -1077,28 +1156,34 @@ class SqliteOperationalJournal:
             return None
         return _session_from_row(row)
 
-    def list_sessions(self, workspace_id: str) -> tuple[DurableSession, ...]:
+    def list_sessions(
+        self, workspace_id: str, *, include_execution: bool = True
+    ) -> tuple[DurableSession, ...]:
+        scope = (
+            ""
+            if include_execution
+            else (
+                "AND NOT (EXISTS (SELECT 1 FROM task_runs wt WHERE wt.workspace_id=sessions.workspace_id "
+                "AND wt.session_id=sessions.session_id AND wt.purpose='workflow_node') "
+                "AND NOT EXISTS (SELECT 1 FROM task_runs ut WHERE ut.workspace_id=sessions.workspace_id "
+                "AND ut.session_id=sessions.session_id AND ut.purpose='user')) "
+            )
+        )
         rows = self._read_all(
             f"SELECT {_SESSION_COLUMNS} FROM sessions "
             "WHERE workspace_id = ? AND lifecycle != 'deleted' "
-            "ORDER BY created_at_unix ASC, session_id ASC",
+            + scope
+            + "ORDER BY created_at_unix ASC, session_id ASC",
             (workspace_id,),
         )
         return tuple(_session_from_row(row) for row in rows)
 
     def list_workspace_ids(self) -> tuple[str, ...]:
-        definitions = (
-            "UNION SELECT workspace_id FROM agent_definition_versions "
-            if self.schema_version() >= 23
-            else ""
-        )
         rows = self._read_all(
             "SELECT workspace_id FROM sessions "
             "UNION SELECT workspace_id FROM artifacts "
-            "UNION SELECT workspace_id FROM artifact_references "
-            "UNION SELECT workspace_id FROM checkpoint_artifact_references "
             "UNION SELECT workspace_id FROM application_events "
-            + definitions
+            + "UNION SELECT workspace_id FROM agent_definition_versions "
             + "ORDER BY workspace_id"
         )
         return tuple(str(row[0]) for row in rows)
@@ -1106,11 +1191,11 @@ class SqliteOperationalJournal:
     def has_global_artifact_authority(self, artifact_id: str) -> bool:
         """Check root-wide metadata/reference authority for one cleanup candidate."""
 
-        if self.schema_version() >= 24 and self._read_one(
+        if self._read_one(
             "SELECT 1 FROM workflow_artifact_bindings WHERE artifact_id=? LIMIT 1", (artifact_id,)
         ):
             return True
-        if self.schema_version() >= 26 and self._read_one(
+        if self._read_one(
             "SELECT 1 FROM workflow_run_artifact_imports WHERE artifact_id=? LIMIT 1",
             (artifact_id,),
         ):
@@ -1120,13 +1205,9 @@ class SqliteOperationalJournal:
             """
             SELECT EXISTS (
                 SELECT artifact_id FROM artifacts WHERE artifact_id = ?
-                UNION ALL
-                SELECT artifact_id FROM artifact_references WHERE artifact_id = ?
-                UNION ALL
-                SELECT artifact_id FROM checkpoint_artifact_references WHERE artifact_id = ?
             )
             """,
-            (artifact_id, artifact_id, artifact_id),
+            (artifact_id,),
         )
         return bool(row and row[0])
 
@@ -1144,9 +1225,6 @@ class SqliteOperationalJournal:
             reason=session.fork_reason,
             created_at=session.created_at,
         )
-
-    def get_lineage(self, workspace_id: str, session_id: str) -> SessionLineage | None:
-        return self.get_session_lineage(workspace_id, session_id)
 
     def save_session(self, workspace_id: str, session: DurableSession) -> DurableSession:
         if session.workspace_id != workspace_id:
@@ -1225,12 +1303,12 @@ class SqliteOperationalJournal:
     def has_open_turn_submission(self, workspace_id: str, session_id: str) -> bool:
         """Durable open-Turn fact: an accepted submission receipt was never closed."""
 
-        del workspace_id
         return (
             self._read_one(
-                "SELECT 1 FROM turn_submit_receipts "
-                "WHERE session_id=? AND disposition='accepted_open' LIMIT 1",
-                (session_id,),
+                "SELECT 1 FROM command_receipts WHERE workspace_id=? AND session_id=? "
+                "AND receipt_kind='turn_submit' "
+                "AND json_extract(payload_json,'$.disposition')='accepted_open' LIMIT 1",
+                (workspace_id, session_id),
             )
             is not None
         )
@@ -1238,11 +1316,11 @@ class SqliteOperationalJournal:
     def has_nonterminal_agent_run(self, workspace_id: str, session_id: str) -> bool:
         """Durable in-flight AgentRun fact: no terminal metrics row exists yet."""
 
-        del workspace_id
         return (
             self._read_one(
                 "SELECT 1 FROM agent_runs r WHERE r.session_id=? AND NOT EXISTS "
-                "(SELECT 1 FROM agent_run_terminal_metrics m WHERE m.agent_run_id=r.agent_run_id) "
+                "(SELECT 1 FROM agent_runs terminal WHERE terminal.agent_run_id=r.agent_run_id "
+                "AND terminal.terminal_metrics_json IS NOT NULL) "
                 "LIMIT 1",
                 (session_id,),
             )
@@ -1250,14 +1328,18 @@ class SqliteOperationalJournal:
         )
 
     def count_workflow_agent_requests(self, workspace_id: str, workflow_run_id: str) -> int:
-        """Durable purpose=agent admissions across every NodeRun of one WorkflowRun."""
+        """Durable purpose=agent admissions across every NodeRun of one WorkflowRun.
 
-        del workspace_id
+        Joins through execution segments, not ``node_runs.agent_run_id``: that
+        column keeps the node's FIRST agent run, so continuation agent runs'
+        requests would vanish from the count and a continuation would
+        effectively reset the budget ledger.
+        """
+
         row = self._read_one(
             "SELECT COUNT(*) FROM agent_run_model_requests r "
-            "JOIN workflow_agent_run_refs w ON r.agent_run_id = w.agent_run_id "
-            "JOIN workflow_node_runs n ON w.node_run_id = n.node_run_id "
-            "WHERE n.workflow_run_id=? AND r.purpose='agent'",
+            "JOIN workflow_node_segments s ON r.agent_run_id = s.agent_run_id "
+            "WHERE s.workflow_run_id=? AND r.purpose='agent'",
             (workflow_run_id,),
         )
         return int(row[0]) if row else 0
@@ -1265,11 +1347,10 @@ class SqliteOperationalJournal:
     def count_node_agent_requests(self, workspace_id: str, node_run_id: str) -> int:
         """Durable purpose=agent admissions for one NodeRun's AgentRuns."""
 
-        del workspace_id
         row = self._read_one(
             "SELECT COUNT(*) FROM agent_run_model_requests r "
-            "JOIN workflow_agent_run_refs w ON r.agent_run_id = w.agent_run_id "
-            "WHERE w.node_run_id=? AND r.purpose='agent'",
+            "JOIN workflow_node_segments s ON r.agent_run_id = s.agent_run_id "
+            "WHERE s.node_run_id=? AND r.purpose='agent'",
             (node_run_id,),
         )
         return int(row[0]) if row else 0
@@ -1280,15 +1361,15 @@ class SqliteOperationalJournal:
         """Durable purpose=agent admissions across one whole continuation lineage.
 
         Stage 8 continuation children share their root's budget; an initial run
-        is its own root, so this equals the single-run count until then.
+        is its own root, so this equals the single-run count until then. The
+        segment join keeps every continuation execution in the ledger — the
+        budget a continuation faces is the accumulated one, never a reset.
         """
 
-        del workspace_id
         row = self._read_one(
             "SELECT COUNT(*) FROM agent_run_model_requests r "
-            "JOIN workflow_agent_run_refs w ON r.agent_run_id = w.agent_run_id "
-            "JOIN workflow_node_runs n ON w.node_run_id = n.node_run_id "
-            "JOIN workflow_runs wr ON n.workflow_run_id = wr.workflow_run_id "
+            "JOIN workflow_node_segments s ON r.agent_run_id = s.agent_run_id "
+            "JOIN workflow_runs wr ON s.workflow_run_id = wr.workflow_run_id "
             "WHERE wr.lineage_budget_root_run_id=? AND r.purpose='agent'",
             (lineage_budget_root_run_id,),
         )
@@ -1320,12 +1401,9 @@ class SqliteOperationalJournal:
             self.create_session(session)
             result = self._task_journal._create(workspace_id, task, make_current=True)
             self._backend.executor().execute(
-                "INSERT INTO workflow_leaf_ownership VALUES(?,?,?)",
-                (
-                    node_run_id,
-                    session.session_id,
-                    task.task_run_id,
-                ),
+                "UPDATE workflow_node_runs SET leaf_session_id=?, leaf_task_run_id=? "
+                "WHERE node_run_id=? AND leaf_session_id IS NULL AND leaf_task_run_id IS NULL",
+                (session.session_id, task.task_run_id, node_run_id),
             )
             return result
 
@@ -1357,26 +1435,19 @@ class SqliteOperationalJournal:
             return self._conversation_journal._create_turn(workspace_id, turn)
         if task is None or task.purpose.value != "workflow_node":
             raise ValueError("Workflow Turn requires an active Workflow and queued internal Task")
-        owner = self._backend.read_one(
-            "SELECT session_id, task_run_id FROM workflow_leaf_ownership WHERE node_run_id=?",
-            (node_run_id,),
-        )
+        owner = self.workflows.get_leaf_ownership(workspace_id, node_run_id)
         if owner != (turn.session_id, turn.task_run_id):
             raise ValueError("Workflow Turn does not match its owned leaf")
         return self._conversation_journal._create_turn(workspace_id, turn)
 
     def transition_workflow_task(self, workspace_id, workflow_run_id, task_run_id, **kwargs):
         run = self.workflows.get_run(workspace_id, workflow_run_id)
-        owned_leaf = self._backend.read_one(
-            """
-            SELECT 1
-            FROM workflow_leaf_ownership AS ownership
-            JOIN workflow_node_runs AS node USING(node_run_id)
-            WHERE node.workspace_id=? AND node.workflow_run_id=? AND ownership.task_run_id=?
-            """,
-            (workspace_id, workflow_run_id, task_run_id),
+        task = self.get_task_run(workspace_id, task_run_id)
+        is_owned_leaf = task is not None and any(
+            self.workflows.get_leaf_ownership(workspace_id, node.node_run_id)
+            == (task.session_id, task_run_id)
+            for node in self.workflows.list_nodes(workspace_id, workflow_run_id)
         )
-        is_owned_leaf = owned_leaf is not None
         is_owned_task = run is not None and (task_run_id == run.root_task_run_id or is_owned_leaf)
         if not is_owned_task:
             raise ValueError("Task is not owned by this Workflow")
@@ -1469,9 +1540,6 @@ class SqliteOperationalJournal:
     ) -> tuple[tuple[str, str, str, str], ...]:
         return self._artifact_journal.list_references(workspace_id, artifact_id)
 
-    def _validate_artifact_scope(self, workspace_id: str, metadata: ArtifactMetadata) -> None:
-        self._artifact_journal.validate_scope(workspace_id, metadata)
-
     def _replace_artifact_references(
         self,
         workspace_id: str,
@@ -1498,9 +1566,6 @@ class SqliteOperationalJournal:
         self, workspace_id: str, receipt: TaskCommandReceipt
     ) -> TaskCommandReceipt:
         return self._task_journal.put_command_receipt(workspace_id, receipt)
-
-    def get_application_event(self, workspace_id: str, event_id: str) -> ApplicationEvent | None:
-        return self._application_journal.get_event(workspace_id, event_id)
 
     def list_application_events(
         self, workspace_id: str, *, after_cursor: int = 0, limit: int = 100
@@ -1555,9 +1620,10 @@ class SqliteOperationalJournal:
         *,
         state: PromotionOperationState | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[PromotionOperation, ...]:
         return self._configuration_promotion_journal.list_promotion_operations(
-            workspace_id, state=state, limit=limit
+            workspace_id, state=state, limit=limit, offset=offset
         )
 
     def put_promotion_operation(
@@ -1593,9 +1659,10 @@ class SqliteOperationalJournal:
         path: str | None = None,
         status: ConfigurationActivationStatus | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[ConfigurationActivation, ...]:
         return self._configuration_promotion_journal.list_configuration_activations(
-            workspace_id, target=target, path=path, status=status, limit=limit
+            workspace_id, target=target, path=path, status=status, limit=limit, offset=offset
         )
 
     def put_configuration_activation(
@@ -1838,17 +1905,6 @@ class SqliteOperationalJournal:
             workspace_id, tool_execution_id, now=now, reason=reason
         )
 
-    def _save_execution_in_txn(
-        self,
-        workspace_id: str,
-        execution: DurableToolExecution,
-        *,
-        expected_row_version: int,
-    ) -> DurableToolExecution:
-        return self._tool_journal.save_execution_in_txn(
-            workspace_id, execution, expected_row_version=expected_row_version
-        )
-
     def put_approval(self, workspace_id: str, approval: DurableApproval) -> DurableApproval:
         return self._tool_journal.put_approval(workspace_id, approval)
 
@@ -1893,17 +1949,6 @@ class SqliteOperationalJournal:
     ) -> DurableApproval | None:
         return self._tool_journal.revoke_approval_in_txn(
             workspace_id, approval_id, now=now, reason=reason
-        )
-
-    def _save_approval_in_txn(
-        self,
-        workspace_id: str,
-        approval: DurableApproval,
-        *,
-        expected_row_version: int,
-    ) -> DurableApproval:
-        return self._tool_journal.save_approval_in_txn(
-            workspace_id, approval, expected_row_version=expected_row_version
         )
 
     def put_capability_grant(self, workspace_id: str, grant: CapabilityGrant) -> CapabilityGrant:
@@ -1954,9 +1999,6 @@ class SqliteOperationalJournal:
 
     def put_recovery_receipt(self, workspace_id: str, receipt: RecoveryReceipt) -> RecoveryReceipt:
         return self._recovery_journal.put_recovery_receipt(workspace_id, receipt)
-
-    def _insert_execution(self, workspace_id: str, execution: DurableToolExecution) -> None:
-        self._tool_journal.insert_execution(workspace_id, execution)
 
     def _insert_session(self, session: DurableSession) -> None:
         self._executor_or_raise().execute(

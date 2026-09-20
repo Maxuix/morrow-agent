@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from morrow.core.models import (
+    GenerationOptions,
     Message,
     ModelEvent,
     ModelRef,
@@ -35,6 +36,8 @@ class ModelProvider(Protocol):
         model: ModelRef,
         messages: list[Message],
         tools: tuple[ToolDefinition, ...] = (),
+        *,
+        generation: GenerationOptions | None = None,
     ) -> AsyncIterator[ModelEvent]: ...
 
     async def complete(self, model: ModelRef, messages: list[Message]) -> str: ...
@@ -44,6 +47,41 @@ class ApprovalPort(Protocol):
     """Asynchronous local approval boundary for generic tool execution."""
 
     async def request(self, request: ToolApprovalRequest) -> ToolApprovalDecision: ...
+
+
+class ModelContentObserver(Protocol):
+    """Receives projected vendor-visible reasoning fragments (P3.2).
+
+    The runtime calls this with typed facts only: which turn/attempt produced
+    the fragment and the already-projected bounded text. Implementations must
+    never raise, never block execution and never own durable state.
+    """
+
+    def reasoning_delta(self, *, turn_id: str, attempt_ordinal: int, fragment: str) -> None: ...
+
+    def tool_observation(
+        self,
+        *,
+        call_id: str,
+        tool_name: str,
+        ordinal: int,
+        total: int,
+        phase: str,
+        timestamp: str,
+        disposition: str | None = None,
+        arguments_json: str | None = None,
+        facts: tuple = (),
+        artifact_refs: tuple = (),
+        error_code: str | None = None,
+        validation_reason: str | None = None,
+        validation_path: str | None = None,
+    ) -> None:
+        """One real tool-lifecycle transition (P4.1); phase is closed vocabulary."""
+        ...
+
+    def tool_output(self, *, call_id: str, text: str) -> None:
+        """One bounded, already-redacted stdout/stderr fragment (P4.3)."""
+        ...
 
 
 class WorkspaceIndexStore(Protocol):
@@ -62,7 +100,7 @@ class WorkspaceIndexStore(Protocol):
 
 
 class PreferencePersistencePort(Protocol):
-    """Bounded v13 persistence surface; YAML remains the Active authority."""
+    """Bounded persistence surface; YAML remains the Active authority."""
 
     def put_preference_job_with_evidence(
         self, workspace_id: str, job: PreferenceReviewJob, evidence: PreferenceEvidence
@@ -133,12 +171,19 @@ class PreferencePersistencePort(Protocol):
         *,
         status: PreferenceProposalStatus | None = None,
         job_id: str | None = None,
+        session_id: str | None = None,
+        task_run_ids: tuple[str, ...] | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> tuple[PreferenceProposal, ...]: ...
 
     def count_preference_proposals(
-        self, workspace_id: str, *, status: PreferenceProposalStatus | None = None
+        self,
+        workspace_id: str,
+        *,
+        status: PreferenceProposalStatus | None = None,
+        session_id: str | None = None,
+        task_run_ids: tuple[str, ...] | None = None,
     ) -> int: ...
 
     def has_preference_proposal_fingerprint(

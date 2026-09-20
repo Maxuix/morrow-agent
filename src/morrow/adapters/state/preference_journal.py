@@ -1,4 +1,4 @@
-"""Public facade for the bounded SQLite Preference v13 repositories."""
+"""Public facade for the bounded SQLite Preference repositories."""
 
 from __future__ import annotations
 

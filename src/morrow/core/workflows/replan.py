@@ -9,17 +9,61 @@ from morrow.core.agent_definitions import WorkspaceId
 from morrow.core.domain import canonical_json_bytes
 from morrow.core.models import ProtocolModel
 from morrow.core.orchestration import PlanningFacts
-from morrow.core.workflows.contracts import SlotName, TaskContract
+from morrow.core.workflows.contracts import ArtifactId, SlotName
 from morrow.core.workflows.patches import FutureGraphPatch
+
+REPLAN_REQUEST_SCHEMA_VERSION = 2
+
+
+class ReplanEvidenceRef(ProtocolModel):
+    """Already-durable evidence the leaf observed. Never inlined bytes or a graph."""
+
+    kind: Literal["artifact", "node_output", "submitted_slot"]
+    artifact_id: ArtifactId | None = None
+    node_id: SlotName | None = None
+    slot: SlotName | None = None
+    note: str = Field(default="", max_length=512)
+
+    @model_validator(mode="after")
+    def matching_shape(self):
+        if self.kind == "artifact":
+            if self.artifact_id is None:
+                raise ValueError("artifact evidence requires artifact_id")
+        elif self.kind == "node_output":
+            if self.node_id is None or self.slot is None:
+                raise ValueError("node_output evidence requires node_id and slot")
+        elif self.slot is None:
+            raise ValueError("submitted_slot evidence requires slot")
+        return self
+
+
+class AffectedTaskFact(ProtocolModel):
+    """Which remaining work the new evidence may invalidate. Never a rewrite."""
+
+    node_id: SlotName | None = None
+    summary: str = Field(min_length=1, max_length=1024)
+    impact: Literal["invalidate", "missing_dependency", "scope_change"] = "invalidate"
+
+    @model_validator(mode="after")
+    def nonempty_summary(self):
+        if not self.summary.strip():
+            raise ValueError("affected task fact summary must not be blank")
+        return self
 
 
 class ReplanRequest(PlanningFacts):
     """A leaf requests a future task correction, never supplies a graph or authority."""
 
-    target_node_id: SlotName
-    task_contract: TaskContract
+    schema_version: Literal[REPLAN_REQUEST_SCHEMA_VERSION] = REPLAN_REQUEST_SCHEMA_VERSION
     reason: Literal["new_evidence", "missing_dependency", "scope_correction"] = "new_evidence"
-    depends_on: tuple[SlotName, ...] = Field(default=(), max_length=32)
+    evidence_refs: tuple[ReplanEvidenceRef, ...] = Field(default=(), max_length=32)
+    affected_facts: tuple[AffectedTaskFact, ...] = Field(default=(), max_length=32)
+
+    @model_validator(mode="after")
+    def current_shape(self):
+        if not (self.evidence_refs or self.affected_facts):
+            raise ValueError("replan signals require evidence or affected facts")
+        return self
 
 
 class ReplanSignal(PlanningFacts):

@@ -82,7 +82,10 @@ class ServerCommands:
         self.context = context
         self.journal = context.journal
         self.workspace_id = context.workspace_id
-        if getattr(context.runtime, "replan", None) is not None:
+        if (
+            not getattr(context.runtime, "_execution_proxy", False)
+            and getattr(context.runtime, "replan", None) is not None
+        ):
             context.runtime.replan.on_applied = self._replan_applied
 
     def _replan_applied(self, proposal):
@@ -248,6 +251,22 @@ class ServerCommands:
             raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "workflow run is missing")
         return run
 
+    def _bind_resume_continuation(self, workflow_run_id: str, command_id: str | None) -> None:
+        """Bind the run-resume command to the suspended pause cycle (P04.1).
+
+        Without the binding a suspended node has no continuation Turn to admit
+        and a resumed run would stall; the deterministic continue wording
+        drives the successor segment, exactly like the planning resume entry.
+        A command-less resume has nothing to bind and stays a bare unpause.
+        """
+        if command_id is None:
+            return
+        from morrow.application.execution_pause import ExecutionPauseService
+
+        ExecutionPauseService(
+            self.context.journal, workspace_id=self.context.workspace_id
+        ).store_continuation_input(workflow_run_id, command_id=command_id, text=None)
+
     def _require_draft(self, draft_id: str):
         view = self.context.products.workflow_drafts.get(draft_id)
         if view is None:
@@ -340,6 +359,19 @@ class ServerCommands:
             started.receipt,
         )
 
+    def workflow_recovery_eligibility(self, workflow_run_id: str) -> dict:
+        """Read-only historical-recovery verdict for one failed WorkflowRun."""
+
+        self._require_run(workflow_run_id)
+        assessment = self.context.management.assess_failed_workflow(workflow_run_id)
+        return {
+            "workflow_run_id": workflow_run_id,
+            "eligible": assessment.eligible,
+            "reasons": list(assessment.reasons),
+            "failed_node_run_id": assessment.failed_node_run_id,
+            "stop_code": assessment.stop_code,
+        }
+
     def workflow_pause(self, workflow_run_id: str, request: WorkflowControlRequest):
         self._require_run(workflow_run_id)
         value, receipt = self._idempotent(
@@ -347,7 +379,7 @@ class ServerCommands:
             request.command_id,
             {"workflow_run_id": workflow_run_id},
             lambda: (
-                self.context.management.pause(workflow_run_id),
+                self.context.management.pause(workflow_run_id, command_id=request.command_id),
                 workflow_run_id,
             ),
             lambda _existing: self._require_run(workflow_run_id),
@@ -355,15 +387,25 @@ class ServerCommands:
         return CommandOutcome({"run": projections.run_wire(value)}, receipt)
 
     def workflow_resume(self, workflow_run_id: str, request: WorkflowResumeRequest):
-        run = self._require_run(workflow_run_id)
+        self._require_run(workflow_run_id)
+
+        def execute_resume():
+            current = self._require_run(workflow_run_id)
+            if current.status is WorkflowStatus.FAILED:
+                # Restricted historical recovery: only a vouched serial
+                # Provider failure reopens the run; anything else refuses with
+                # concrete reasons and the run stays failed.
+                self.context.management.recover_failed_workflow(
+                    workflow_run_id, command_id=request.command_id
+                )
+            self._bind_resume_continuation(workflow_run_id, request.command_id)
+            return self.context.runtime.transitions.resume_run(workflow_run_id)
+
         value, receipt = self._idempotent(
             "workflow_resume",
             request.command_id,
             {"workflow_run_id": workflow_run_id},
-            lambda: (
-                self.context.runtime.transitions.resume_run(run.workflow_run_id),
-                workflow_run_id,
-            ),
+            lambda: (execute_resume(), workflow_run_id),
             lambda _existing: self._require_run(workflow_run_id),
         )
         driving = False
@@ -481,8 +523,8 @@ class ServerCommands:
 
     # Pre-freeze Workflow Drafts -------------------------------------------------
 
-    def list_workflow_drafts(self, *, limit: int) -> dict[str, Any]:
-        views = self.context.products.workflow_drafts.list(limit=limit)
+    def list_workflow_drafts(self, *, limit: int, after: str | None = None) -> dict[str, Any]:
+        views = self.context.products.workflow_drafts.list(limit=limit, after=after)
         return {"workflow_drafts": [projections.workflow_draft_wire(view) for view in views]}
 
     def get_workflow_draft(self, draft_id: str) -> dict[str, Any]:
@@ -928,8 +970,12 @@ class ServerCommands:
 
         return self.journal.transact(work)
 
-    def list_sessions(self, *, cursor: str | None, limit: int) -> dict[str, Any]:
-        page = self.context.api.list_sessions(cursor=cursor, limit=limit)
+    def list_sessions(
+        self, *, cursor: str | None, limit: int, include_execution: bool = True
+    ) -> dict[str, Any]:
+        page = self.context.api.list_sessions(
+            cursor=cursor, limit=limit, include_execution=include_execution
+        )
         return {
             "sessions": [projections.session_wire(item) for item in page.items],
             "next_cursor": page.next_cursor,

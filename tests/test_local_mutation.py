@@ -126,6 +126,28 @@ def test_stale_revision_conflicts_without_overwriting_external_change(tmp_path):
     assert path.read_text(encoding="utf-8") == "one\nexternal\n"
 
 
+def test_mode_drift_between_preview_and_apply_conflicts(tmp_path):
+    """A chmod between preview and apply must conflict, not rewrite the old mode."""
+
+    path = tmp_path / "sample.txt"
+    path.write_text("one\ntwo\n", encoding="utf-8")
+    path.chmod(0o644)
+    _, mutation = _services(tmp_path)
+    plan = mutation.preflight_patch(
+        "sample.txt",
+        expected_sha256=_sha(path),
+        edits=(ExactEdit(old_text="two", new_text="TWO"),),
+    )
+    path.chmod(0o600)
+
+    with pytest.raises(LocalFileError) as error:
+        _publish(mutation, plan)
+
+    assert error.value.code == "conflict"
+    assert path.read_text(encoding="utf-8") == "one\ntwo\n"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
 def test_patch_preserves_bom_newline_and_mode_and_returns_actual_diff(tmp_path):
     path = tmp_path / "sample.txt"
     path.write_bytes(b"\xef\xbb\xbfone\r\ntwo\r\n")

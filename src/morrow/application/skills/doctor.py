@@ -22,7 +22,6 @@ def inspect_skills(
     issues,
     *,
     issue_factory,
-    schema_version: int | None = None,
 ):
     """Inspect current-workspace Skill evidence without returning package content."""
 
@@ -143,8 +142,6 @@ def inspect_skills(
                             "Skill context digest or selection link is invalid",
                         )
                     )
-            if schema_version is not None and schema_version < 15:
-                continue
             for usage in journal.list_skill_usages(workspace_id, agent_run_id=run.agent_run_id):
                 counts["skill_usages"] += 1
                 version = by_id.get(usage.version_id)
@@ -174,8 +171,6 @@ def inspect_skills(
                             )
                         )
 
-    if schema_version is not None and schema_version < 15:
-        return
     for draft in journal.list_skill_drafts(workspace_id, limit=500):
         counts["skill_drafts"] += 1
         if draft.accepted_version_id is not None:

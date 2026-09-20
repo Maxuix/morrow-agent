@@ -78,10 +78,15 @@ def _open_journal(application, *, write: bool):
     return handle, SqliteOperationalJournal(handle)
 
 
-def _list_approvals(journal, workspace_id: str, *, pending_only: bool) -> list[dict]:
+def _list_approvals(journal, workspace_id: str, *, pending_only: bool, limit: int) -> list[dict]:
     rows = []
-    for session in journal.list_sessions(workspace_id):
-        for execution in journal.list_session_executions(workspace_id, session.session_id):
+    # Sessions and executions are both ascending by creation time; walk them
+    # newest-first so hitting the limit stops traversal early.
+    for session in reversed(journal.list_sessions(workspace_id)):
+        if len(rows) >= limit:
+            break
+        executions = journal.list_session_executions(workspace_id, session.session_id)
+        for execution in reversed(executions):
             if pending_only and execution.state is not ToolExecutionState.AWAITING_APPROVAL:
                 continue
             approval = journal.get_approval_for_execution(workspace_id, execution.tool_execution_id)
@@ -91,6 +96,8 @@ def _list_approvals(journal, workspace_id: str, *, pending_only: bool) -> list[d
                 continue
             agent_run = journal.get_agent_run(workspace_id, execution.agent_run_id)
             rows.append(approval_wire(approval, execution, agent_run))
+            if len(rows) >= limit:
+                break
     rows.sort(key=lambda item: item["created_at"])
     return rows
 
@@ -98,6 +105,7 @@ def _list_approvals(journal, workspace_id: str, *, pending_only: bool) -> list[d
 @approval_app.command("list")
 def approval_list(
     include_resolved: bool = typer.Option(False, "--all", help="Include resolved approvals."),
+    limit: int = typer.Option(50, "--limit", min=1, help="Maximum approvals to collect."),
     workspace_id: str | None = typer.Option(None, "--workspace-id"),
     directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
@@ -112,7 +120,10 @@ def approval_list(
         _echo(
             {
                 "approvals": _list_approvals(
-                    journal, identity.workspace_id, pending_only=not include_resolved
+                    journal,
+                    identity.workspace_id,
+                    pending_only=not include_resolved,
+                    limit=limit,
                 )
             }
         )

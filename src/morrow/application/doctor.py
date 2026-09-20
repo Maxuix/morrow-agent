@@ -17,6 +17,7 @@ from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
 from morrow.adapters.state.preference_yaml_types import PreferenceYamlLoadStatus
+from morrow.adapters.state.preset_preference_yaml import AgentPresetPreferenceYamlStore
 from morrow.application.agent_definitions.integrity import verify_definition_rows
 from morrow.application.learning.learning_doctor import inspect_learning
 from morrow.application.learning.memory_doctor import inspect_memory
@@ -35,6 +36,7 @@ from morrow.core.doctor import DoctorHealth, DoctorIssue, DoctorReport, DoctorSe
 from morrow.core.domain import (
     WORKSPACE_ID_PREFIX,
     SessionLifecycle,
+    canonical_json_bytes,
     sha256_digest,
     validate_prefixed_id,
 )
@@ -62,7 +64,7 @@ class OperationalDoctor:
         workspace_id = validate_prefixed_id(workspace_id, WORKSPACE_ID_PREFIX)
         issues: list[DoctorIssue] = []
         counts: Counter[str] = Counter()
-        checks = ["store_identity", "sqlite_integrity", "foreign_keys"]
+        checks = ["store_header", "sqlite_integrity", "foreign_keys"]
         try:
             classification = self.store.classify()
         except StorageError as exc:
@@ -104,7 +106,23 @@ class OperationalDoctor:
                     self._issue(
                         "future_schema",
                         DoctorSeverity.ERROR,
-                        "operational schema is newer than this client",
+                        "operational schema is newer than this client; restore a "
+                        "a backup created by this Morrow version or a matching data root",
+                    )
+                ],
+            )
+        if classification.health is StoreHealth.UNSUPPORTED_SCHEMA:
+            return self._report(
+                workspace_id,
+                DoctorHealth.NEEDS_REPAIR,
+                classification.schema_version,
+                checks,
+                counts,
+                [
+                    self._issue(
+                        "unsupported_schema",
+                        DoctorSeverity.ERROR,
+                        "operational schema is not the current version; recreate or restore the store",
                     )
                 ],
             )
@@ -140,101 +158,95 @@ class OperationalDoctor:
             self._inspect_domains(journal, workspace_id, counts, issues)
             checks.extend(("preference_yaml", "preference_run_projections"))
             self._inspect_preferences(journal, workspace_id, counts, issues)
-            checks.append("preference_v13_links_and_lifecycle")
+            checks.append("preset_preferences")
+            self._inspect_preset_preferences(workspace_id, counts, issues)
+            checks.append("preference_links_and_lifecycle")
             self._inspect_preference_records(journal, workspace_id, counts, issues)
-            preference_ok, preference_codes = handle.run_read(self._preference_v13_checks)
+            preference_ok, preference_codes = handle.run_read(self._preference_checks)
             if not preference_ok:
                 issues.extend(
                     self._issue(
                         code,
                         DoctorSeverity.ERROR,
-                        "Preference v13 integrity check failed",
+                        "Preference integrity check failed",
                     )
                     for code in preference_codes
                 )
             self._inspect_permissions(journal, workspace_id, counts, issues)
-            if (classification.schema_version or 0) >= 14:
-                checks.extend(
-                    ("skill_catalog_and_bindings", "skill_run_evidence", "skill_package_drift")
+            checks.extend(
+                ("skill_catalog_and_bindings", "skill_run_evidence", "skill_package_drift")
+            )
+            try:
+                inspect_skills(
+                    journal,
+                    self.data_root,
+                    workspace_id,
+                    counts,
+                    issues,
+                    issue_factory=self._issue,
                 )
-                try:
-                    inspect_skills(
-                        journal,
-                        self.data_root,
-                        workspace_id,
-                        counts,
-                        issues,
-                        issue_factory=self._issue,
-                        schema_version=classification.schema_version,
+            except StorageError:
+                raise
+            except Exception:
+                issues.append(
+                    self._issue(
+                        "skill_integrity",
+                        DoctorSeverity.ERROR,
+                        "Skill integrity checks could not read the bounded evidence",
                     )
-                except StorageError:
-                    raise
-                except Exception:
-                    issues.append(
-                        self._issue(
-                            "skill_integrity",
-                            DoctorSeverity.ERROR,
-                            "Skill integrity checks could not read the bounded evidence",
-                        )
+                )
+            checks.append("mcp_snapshots_and_reviews")
+            self._inspect_mcp(journal, workspace_id, counts, issues)
+            checks.append("agent_run_observations")
+            self._inspect_agent_run_observations(journal, workspace_id, counts, issues)
+            checks.append("agent_definitions")
+            definitions_ok, codes = handle.run_read(verify_definition_rows)
+            if not definitions_ok:
+                issues.extend(
+                    self._issue(
+                        code,
+                        DoctorSeverity.ERROR,
+                        "Published Agent definition integrity failed",
                     )
-            if (classification.schema_version or 0) >= 16:
-                checks.append("mcp_snapshots_and_reviews")
-                self._inspect_mcp(journal, workspace_id, counts, issues)
-            if (classification.schema_version or 0) >= 17:
-                checks.append("agent_run_observations")
-                self._inspect_agent_run_observations(journal, workspace_id, counts, issues)
-            if (classification.schema_version or 0) >= 23:
-                checks.append("agent_definitions")
-                definitions_ok, codes = handle.run_read(verify_definition_rows)
-                if not definitions_ok:
-                    issues.extend(
-                        self._issue(
-                            code,
-                            DoctorSeverity.ERROR,
-                            "Published Agent definition integrity failed",
-                        )
-                        for code in codes
+                    for code in codes
+                )
+            try:
+                AgentDefinitionYamlStore(self.data_root).load(workspace_id)
+            except (ValueError, OSError, ExtensionYamlError):
+                issues.append(
+                    self._issue(
+                        "agent_definition_source_invalid",
+                        DoctorSeverity.WARNING,
+                        "Desired Agent source is invalid; published versions remain usable",
                     )
-                try:
-                    AgentDefinitionYamlStore(self.data_root).load(workspace_id)
-                except (ValueError, OSError, ExtensionYamlError):
-                    issues.append(
-                        self._issue(
-                            "agent_definition_source_invalid",
-                            DoctorSeverity.WARNING,
-                            "Desired Agent source is invalid; published versions remain usable",
-                        )
-                    )
-            if (classification.schema_version or 0) >= 24:
-                checks.append("workflow_contracts")
-                workflow_ok, codes = handle.run_read(verify_workflow_rows)
-                if not workflow_ok:
-                    issues.extend(
-                        self._issue(code, DoctorSeverity.ERROR, "Workflow integrity failed")
-                        for code in codes
-                    )
-                try:
-                    desired = WorkflowDefinitionYamlStore(self.data_root).load(workspace_id)
-                    for source in desired.definitions:
-                        head = journal.workflows.get_head(
-                            workspace_id, source.workflow_definition_id
-                        )
-                        if head is not None and head.source_hash != source.content_hash:
-                            issues.append(
-                                self._issue(
-                                    "workflow_desired_ahead",
-                                    DoctorSeverity.WARNING,
-                                    "Desired Workflow source differs from its published revision",
-                                )
+                )
+            checks.append("workflow_contracts")
+            workflow_ok, codes = handle.run_read(verify_workflow_rows)
+            if not workflow_ok:
+                issues.extend(
+                    self._issue(code, DoctorSeverity.ERROR, "Workflow integrity failed")
+                    for code in codes
+                )
+            try:
+                desired = WorkflowDefinitionYamlStore(self.data_root).load(workspace_id)
+                for source in desired.definitions:
+                    head = journal.workflows.get_head(workspace_id, source.workflow_definition_id)
+                    if head is not None and head.source_hash != source.content_hash:
+                        issues.append(
+                            self._issue(
+                                "workflow_desired_ahead",
+                                DoctorSeverity.WARNING,
+                                "Desired Workflow source differs from its published revision",
                             )
-                except (ValueError, OSError, ExtensionYamlError):
-                    issues.append(
-                        self._issue(
-                            "workflow_definition_source_invalid",
-                            DoctorSeverity.WARNING,
-                            "Desired Workflow source is invalid; published revisions remain usable",
                         )
+            except (ValueError, OSError, ExtensionYamlError):
+                issues.append(
+                    self._issue(
+                        "workflow_definition_source_invalid",
+                        DoctorSeverity.WARNING,
+                        "Desired Workflow source is invalid; published revisions remain usable",
                     )
+                )
             checks.extend(("learning_reviews_and_candidates", "learning_promotions"))
             inspect_learning(
                 journal,
@@ -297,7 +309,7 @@ class OperationalDoctor:
         return integrity, foreign_rows
 
     @staticmethod
-    def _preference_v13_checks(executor):
+    def _preference_checks(executor):
         class Cursor:
             def __init__(self, rows):
                 self.rows = rows
@@ -440,6 +452,19 @@ class OperationalDoctor:
         for session in journal.list_sessions(workspace_id):
             for run in journal.list_session_agent_runs(workspace_id, session.session_id):
                 snapshot = run.snapshot
+                frozen = snapshot.provider_runtime
+                if frozen is not None and frozen.generation_digest is not None:
+                    counts["agent_run_generation_evidence"] += 1
+                    if frozen.generation_digest != sha256_digest(
+                        canonical_json_bytes(frozen.generation.model_dump(mode="json"))
+                    ):
+                        issues.append(
+                            self._issue(
+                                "agent_run_generation_digest",
+                                DoctorSeverity.ERROR,
+                                "AgentRun frozen generation evidence is inconsistent",
+                            )
+                        )
                 if snapshot.preference_projection_digest is None:
                     continue
                 counts["preference_run_projections"] += 1
@@ -454,6 +479,21 @@ class OperationalDoctor:
                             "AgentRun frozen Preference projection digest is invalid",
                         )
                     )
+
+    def _inspect_preset_preferences(self, workspace_id, counts, issues) -> None:
+        try:
+            document = AgentPresetPreferenceYamlStore(self.data_root).load(workspace_id)
+        except (ValueError, OSError, ExtensionYamlError):
+            issues.append(
+                self._issue(
+                    "preset_preferences_invalid",
+                    DoctorSeverity.ERROR,
+                    "Agent preset preference YAML is invalid",
+                )
+            )
+            return
+        counts["preset_preference_revision"] = document.revision
+        counts["preset_preferences"] = len(document.presets)
 
     def _inspect_preference_records(self, journal, workspace_id, counts, issues) -> None:
         jobs = journal.list_preference_review_jobs(workspace_id, limit=500)
@@ -877,8 +917,8 @@ class OperationalDoctor:
             for run in journal.list_session_agent_runs(workspace_id, session.session_id):
                 observation = journal.get_agent_run_observation(workspace_id, run.agent_run_id)
                 if observation is None:
-                    # v17 is additive: AgentRuns created before the migration
-                    # legitimately have no linked observation rows.
+                    # Runs without observation rows are valid when no
+                    # observation was emitted for that run.
                     continue
                 counts["agent_run_observations"] += 1
                 counts["agent_run_model_requests"] += len(observation.requests)

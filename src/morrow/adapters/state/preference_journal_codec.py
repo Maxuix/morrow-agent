@@ -1,4 +1,4 @@
-"""Strict SQLite codecs for the Preference v13 repositories."""
+"""Strict SQLite codecs for the Preference repositories."""
 
 from __future__ import annotations
 

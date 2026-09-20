@@ -199,15 +199,18 @@ def test_provider_onboarding_publishes_model_after_explicit_test(tmp_path):
     app = build_application(state_root=tmp_path / "state", credentials=credentials)
     fake = FakeProvider()
     app.registry.register("openai-compatible", lambda config, credential: fake)
-    model = app.provider_service.add("opencode-go", "credential-sentinel")
-    assert str(model) == "opencode-go/deepseek-v4-flash"
+    model = app.provider_service.add("volcengine", "credential-sentinel")
+    assert str(model) == "volcengine/glm-5.3-flash"
     config = app.global_store.load().value
     assert config.active_model == model
+    assert config.providers["volcengine"].base_url == (
+        "https://ark.cn-beijing.volces.com/api/plan/v3"
+    )
     assert "credential-sentinel" not in (tmp_path / "state" / "config.yaml").read_text(
         encoding="utf-8"
     )
     assert (
-        credentials.get(config.providers["opencode-go"].credential_ref.ref) == "credential-sentinel"
+        credentials.get(config.providers["volcengine"].credential_ref.ref) == "credential-sentinel"
     )
     assert all(
         "credential-sentinel" not in path.read_text(encoding="utf-8")
@@ -218,44 +221,27 @@ def test_provider_onboarding_publishes_model_after_explicit_test(tmp_path):
     assert fake.complete_messages[0][0].role == "user"
 
 
-def test_opencode_go_mimo_preset_registers_mimo_v25(tmp_path):
+def test_volcengine_preset_registers_glm_5_3_flash(tmp_path):
     credentials = MemoryCredentialStore()
     app = build_application(state_root=tmp_path / "state", credentials=credentials)
     fake = FakeProvider()
     app.registry.register("openai-compatible", lambda config, credential: fake)
 
-    model = app.provider_service.add("opencode-go-mimo", "credential-sentinel")
+    model = app.provider_service.add("volcengine", "credential-sentinel")
 
-    assert str(model) == "opencode-go/mimo-v2.5"
+    assert str(model) == "volcengine/glm-5.3-flash"
     config = app.global_store.load().value
-    provider = config.providers["opencode-go"]
-    assert provider.models["mimo-v2.5"].api_model_id == "mimo-v2.5"
+    provider = config.providers["volcengine"]
+    assert provider.models["glm-5.3-flash"].api_model_id == "glm-5.3-flash"
     assert config.active_model == model
 
 
-def test_adding_mimo_preset_keeps_existing_active_model_and_registers_both_models(tmp_path):
+def test_adding_existing_provider_preserves_existing_active_model(tmp_path):
     credentials = MemoryCredentialStore()
     app = build_application(state_root=tmp_path / "state", credentials=credentials)
     app.registry.register("openai-compatible", lambda config, credential: FakeProvider())
-
-    existing = app.provider_service.add("opencode-go", "first")
-    added = app.provider_service.add("opencode-go-mimo", "second")
-
-    config = app.global_store.load().value
-    assert added == ModelRef(provider_id="opencode-go", model_id="mimo-v2.5")
-    assert config.active_model == existing
-    assert set(config.providers["opencode-go"].models) == {
-        "deepseek-v4-flash",
-        "mimo-v2.5",
-    }
-
-
-def test_adding_another_provider_preserves_existing_active_model(tmp_path):
-    credentials = MemoryCredentialStore()
-    app = build_application(state_root=tmp_path / "state", credentials=credentials)
-    app.registry.register("openai-compatible", lambda config, credential: FakeProvider())
-    first = app.provider_service.add("opencode-go", "first")
-    second = app.provider_service.add("opencode-go", "second")
+    first = app.provider_service.add("volcengine", "first")
+    second = app.provider_service.add("volcengine", "second")
     assert second == first
     assert app.provider_service.current_model() == first
 
@@ -264,7 +250,7 @@ def test_provider_reconfigure_keeps_active_model_and_global_preferences(tmp_path
     credentials = MemoryCredentialStore()
     app = build_application(state_root=tmp_path / "state", credentials=credentials)
     app.registry.register("openai-compatible", lambda config, credential: FakeProvider())
-    first = app.provider_service.add("opencode-go", "first")
+    first = app.provider_service.add("volcengine", "first")
     entry = PreferenceEntry(
         preference_id="pref_provider_test",
         statement="默认使用中文。",
@@ -276,11 +262,11 @@ def test_provider_reconfigure_keeps_active_model_and_global_preferences(tmp_path
         ),
         expected_revision=app.global_store.load().revision,
     )
-    app.provider_service.configure("opencode-go", secret="second")
+    app.provider_service.configure("volcengine", secret="second")
     config = app.global_store.load().value
     assert config.active_model == first
     assert config.preferences.entries == (entry,)
-    assert credentials.get(config.providers["opencode-go"].credential_ref.ref) == "second"
+    assert credentials.get(config.providers["volcengine"].credential_ref.ref) == "second"
 
 
 def test_environment_credential_has_precedence_for_active_build_and_non_secret_configure(
@@ -295,16 +281,16 @@ def test_environment_credential_has_precedence_for_active_build_and_non_secret_c
         return FakeProvider()
 
     app.registry.register("openai-compatible", factory)
-    app.provider_service.add("opencode-go", "stored-secret")
+    app.provider_service.add("volcengine", "stored-secret")
     config = app.global_store.load().value
-    credential_ref = config.providers["opencode-go"].credential_ref.ref
+    credential_ref = config.providers["volcengine"].credential_ref.ref
     credentials.delete(credential_ref)
-    monkeypatch.setenv("MORROW_OPENCODE_GO_API_KEY", "environment-secret")
+    monkeypatch.setenv("MORROW_VOLCENGINE_API_KEY", "environment-secret")
 
     app.provider_service.build_active()
-    app.provider_service.configure("opencode-go", base_url="https://updated.example.test")
+    app.provider_service.configure("volcengine", base_url="https://updated.example.test")
 
-    updated = app.global_store.load().value.providers["opencode-go"]
+    updated = app.global_store.load().value.providers["volcengine"]
     assert updated.base_url == "https://updated.example.test"
     assert updated.credential_ref.ref == credential_ref
     assert seen_credentials[-2:] == ["environment-secret", "environment-secret"]
@@ -314,12 +300,12 @@ def test_credential_rotation_is_refused_while_environment_masks_store(tmp_path, 
     credentials = MemoryCredentialStore()
     app = build_application(state_root=tmp_path / "state", credentials=credentials)
     app.registry.register("openai-compatible", lambda config, credential: FakeProvider())
-    app.provider_service.add("opencode-go", "stored-secret")
+    app.provider_service.add("volcengine", "stored-secret")
     before = app.data_root.config_path.read_bytes()
-    monkeypatch.setenv("MORROW_OPENCODE_GO_API_KEY", "environment-secret")
+    monkeypatch.setenv("MORROW_VOLCENGINE_API_KEY", "environment-secret")
 
     with pytest.raises(ValueError, match="环境变量"):
-        app.provider_service.configure("opencode-go", secret="replacement", replace_credential=True)
+        app.provider_service.configure("volcengine", secret="replacement", replace_credential=True)
 
     assert app.data_root.config_path.read_bytes() == before
 
@@ -502,15 +488,15 @@ def test_provider_test_persists_typed_failure_code(tmp_path):
             )
 
     app.registry.register("openai-compatible", lambda config, credential: FakeProvider())
-    app.provider_service.add("opencode-go", "stored-secret")
+    app.provider_service.add("volcengine", "stored-secret")
     app.registry.register("openai-compatible", lambda config, credential: FailingProvider())
 
-    result = app.provider_service.test("opencode-go")
+    result = app.provider_service.test("volcengine")
 
     assert result.ok is False
     assert result.error_code == ModelErrorCode.AUTH
     assert result.message == provider_error_message(ModelErrorCode.AUTH)
-    assert app.provider_service.provider("opencode-go").last_test.error_code == ModelErrorCode.AUTH
+    assert app.provider_service.provider("volcengine").last_test.error_code == ModelErrorCode.AUTH
 
 
 @pytest.mark.asyncio
@@ -527,14 +513,25 @@ async def test_adapter_accepts_only_explicit_stop_and_isolates_reasoning():
 
     events = await collect_stream(provider)
 
+    # Vendor reasoning flows only through bounded reasoning_delta fragments
+    # (master plan D04/P3.1); the reply text channel stays isolated.
     assert [(event.kind, event.text) for event in events] == [
+        ("activity", None),
+        ("reasoning_delta", None),
         ("text_delta", "visible"),
         ("completed", None),
     ]
+    assert events[0].activity == "reasoning"
+    assert events[1].reasoning_text == "private reasoning"
     assert events[-1].finish_reason == ModelFinishReason.STOP
     assert events[-1].message is not None
     assert events[-1].message.content == "visible"
-    assert "private reasoning" not in str(events)
+    leaks = [
+        event
+        for event in events
+        if event.kind != "reasoning_delta" and "private reasoning" in str(event)
+    ]
+    assert leaks == []
 
 
 @pytest.mark.asyncio
@@ -550,8 +547,15 @@ async def test_adapter_reasoning_only_stream_has_no_visible_delta():
 
     events = await collect_stream(provider)
 
-    assert [event.kind for event in events] == ["completed"]
-    assert "private reasoning" not in str(events)
+    # Reasoning-only streams keep the reply channel empty; the fragment rides
+    # the dedicated reasoning_delta kind with the content-free marker intact.
+    assert [(event.kind, event.activity, event.text) for event in events] == [
+        ("activity", "reasoning", None),
+        ("reasoning_delta", None, None),
+        ("completed", None, None),
+    ]
+    assert events[1].reasoning_text == "private reasoning"
+    assert events[-1].message is None
 
 
 @pytest.mark.parametrize("finish", ["length", "content_filter"])
@@ -593,7 +597,7 @@ async def test_adapter_rejects_missing_finish_signal():
     events = [event async for event in stream]
 
     assert events[0].kind == "text_delta"
-    assert events[-1].failure.code is ModelErrorCode.INTERNAL
+    assert events[-1].failure.code is ModelErrorCode.NETWORK
     assert events[-1].failure.origin is ModelFailureOrigin.PROVIDER
     assert events[-1].failure.retryable is True
 
@@ -611,13 +615,13 @@ async def test_adapter_classifies_malformed_stream_as_invalid_response():
 @pytest.mark.live
 @pytest.mark.asyncio
 async def test_live_provider_streams_visible_text_without_reasoning():
-    credential = os.environ.get("MORROW_OPENCODE_GO_API_KEY")
+    credential = os.environ.get("MORROW_VOLCENGINE_API_KEY")
     if not credential:
-        pytest.skip("set MORROW_OPENCODE_GO_API_KEY for the explicit Live checklist")
-    provider = OpenAICompatibleProvider("https://opencode.ai/zen/go/v1", credential)
+        pytest.skip("set MORROW_VOLCENGINE_API_KEY for the explicit Live checklist")
+    provider = OpenAICompatibleProvider("https://ark.cn-beijing.volces.com/api/plan/v3", credential)
     visible = []
     async for event in provider.stream(
-        ModelRef(provider_id="opencode-go", model_id="deepseek-v4-flash"),
+        ModelRef(provider_id="volcengine", model_id="glm-5.3-flash"),
         [UserMessage(content="Reply with the single word 好。")],
     ):
         if event.text:
@@ -671,7 +675,9 @@ async def test_adapter_assembles_split_pure_tool_call_stream():
 
     events = await collect_stream_with_tools(provider, (demo_tool(),))
 
-    assert [event.kind for event in events] == ["completed"]
+    # Fragments accumulate internally; only a content-free arrival marker leaks.
+    assert [event.kind for event in events] == ["activity", "completed"]
+    assert events[0].activity == "tool_call"
     completed = events[-1]
     assert completed.finish_reason == ModelFinishReason.TOOL_CALLS
     assert completed.message is not None
@@ -697,7 +703,8 @@ async def test_adapter_assembles_mixed_content_and_normalizes_stop_with_calls():
 
     events = await collect_stream_with_tools(provider, (demo_tool("calculate"),))
 
-    assert [event.kind for event in events] == ["text_delta", "completed"]
+    assert [event.kind for event in events] == ["text_delta", "activity", "completed"]
+    assert events[1].activity == "tool_call"
     completed = events[-1]
     assert completed.finish_reason == ModelFinishReason.TOOL_CALLS
     assert completed.message is not None
@@ -1202,3 +1209,159 @@ async def test_completion_facts_preserve_usage_and_output_limit_and_do_not_hide_
 
     with pytest.raises(ModelProviderError):
         await provider.complete(model, messages)
+
+
+@pytest.mark.asyncio
+async def test_opaque_reasoning_payloads_stay_activity_only():
+    """Encrypted/opaque reasoning objects are never decoded into visible text."""
+    provider = provider_with_stream(
+        AsyncChunks(
+            [
+                stream_chunk(reasoning={"encrypted": "opaque-blob"}),
+                stream_chunk(finish="stop"),
+            ]
+        )
+    )
+
+    events = await collect_stream(provider)
+
+    assert [event.kind for event in events] == ["activity", "completed"]
+    assert not any(event.kind == "reasoning_delta" for event in events)
+    assert "opaque-blob" not in str(events)
+
+
+@pytest.mark.asyncio
+async def test_oversize_reasoning_fragments_are_clipped_with_marker():
+    from morrow.core.models import REASONING_DELTA_MAX_CHARS
+
+    provider = provider_with_stream(
+        AsyncChunks([stream_chunk(reasoning="思" * (REASONING_DELTA_MAX_CHARS + 99))])
+    )
+
+    events = await collect_stream(provider)
+
+    deltas = [event for event in events if event.kind == "reasoning_delta"]
+    assert len(deltas) == 1
+    assert len(deltas[0].reasoning_text) == REASONING_DELTA_MAX_CHARS
+    assert deltas[0].reasoning_truncated is True
+
+
+def test_provider_declares_visible_text_reasoning_capability():
+    provider = provider_with_stream(AsyncChunks([stream_chunk(finish="stop")]))
+    assert provider.reasoning_visibility == "visible_text"
+
+
+@pytest.mark.asyncio
+async def test_streaming_create_survives_slow_vendor_headers_up_to_first_token_budget():
+    """Live-verified regression (P7): a reasoning model can hold the response
+    headers for 14-32s while thinking server-side. The create() guard must use
+    the first-token budget, not the tighter connect timeout."""
+    import asyncio
+
+    chunks = [
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content="好", reasoning_content=None), finish_reason=None
+                )
+            ]
+        ),
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=None, reasoning_content=None),
+                    finish_reason="stop",
+                )
+            ]
+        ),
+    ]
+
+    class _SlowStream:
+        def __init__(self):
+            self._index = 0
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            await asyncio.sleep(0.02)
+            if self._index < len(chunks):
+                item = chunks[self._index]
+                self._index += 1
+                return item
+            raise StopAsyncIteration
+
+    class _SlowCreate:
+        async def create(self, **kwargs):
+            # Slower than the 20s connect guard would allow (scaled-down time),
+            # inside the first-token budget.
+            await asyncio.sleep(0.05)
+            return _SlowStream()
+
+    provider = OpenAICompatibleProvider(
+        "https://ark.example.test/api/plan/v3",
+        "secret",
+        connect_timeout=20.0,
+        first_token_timeout=45.0,
+    )
+    provider._client = SimpleNamespace(chat=SimpleNamespace(completions=_SlowCreate()))
+
+    events = []
+    async for event in provider.stream(
+        ModelRef(provider_id="test", model_id="m"), [UserMessage(content="好")]
+    ):
+        events.append(event)
+
+    kinds = [event.kind for event in events]
+    assert "error" not in kinds
+    assert kinds[-1] == "completed"
+
+
+class HangingChunks:
+    """Yields the scripted chunks, then stalls forever (no end signal)."""
+
+    def __init__(self, chunks):
+        self._chunks = list(chunks)
+        self.closed = False
+
+    def __aiter__(self):
+        return self._iterate()
+
+    async def _iterate(self):
+        for chunk in self._chunks:
+            yield chunk
+        await asyncio.Event().wait()
+        yield  # pragma: no cover
+
+    async def aclose(self):
+        self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_stream_chunk_timeout_bounds_inter_chunk_idle_and_closes_response():
+    response = HangingChunks([stream_chunk(text="partial")])
+    provider = OpenAICompatibleProvider(
+        "https://example.test", "credential-sentinel", chunk_timeout_seconds=0.05
+    )
+    provider._client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions(response)))
+
+    # Bounded collection is a failure guard; the chunk timeout itself is what
+    # must end the stream deterministically (no further chunk will ever arrive).
+    events = await asyncio.wait_for(collect_stream(provider), timeout=5)
+
+    assert [event.kind for event in events] == ["text_delta", "error"]
+    assert events[-1].failure.code == ModelErrorCode.TIMEOUT
+    assert events[-1].failure.origin == ModelFailureOrigin.PROVIDER
+    assert events[-1].failure.retryable is True
+    assert response.closed is True
+
+
+@pytest.mark.asyncio
+async def test_stream_chunk_timeout_defaults_to_first_token_budget():
+    provider = OpenAICompatibleProvider("https://example.test", "credential-sentinel")
+    assert provider.chunk_timeout_seconds == provider.first_token_timeout
+
+    provider = OpenAICompatibleProvider(
+        "https://example.test", "credential-sentinel", chunk_timeout_seconds=7.5
+    )
+    assert provider.chunk_timeout_seconds == 7.5

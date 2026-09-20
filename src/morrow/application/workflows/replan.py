@@ -6,14 +6,15 @@ from morrow.application.workflows.compiler import WorkflowCompilationError
 from morrow.application.workflows.patch_preview import diff_compiled
 from morrow.application.workflows.planning_features import local_features
 from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.domain import canonical_json_bytes, sha256_digest
 from morrow.core.orchestration import GraphPlanningRequest, OrchestrationPolicy
 from morrow.core.workflows.contracts import TaskContract
 from morrow.core.workflows.definitions import (
     AgentNodeSource,
     WorkflowDefinitionSource,
-    WorkflowEdge,
 )
 from morrow.core.workflows.patches import FutureGraphPatch
+from morrow.core.workflows.planning import PlanWorkflowRequest, PrepareWorkflowChangeRequest
 from morrow.core.workflows.replan import ReplanProposal
 from morrow.core.workflows.runs import WorkflowStatus
 
@@ -43,6 +44,9 @@ class ReplanCoordinator:
         self.policies = policies
         self.active_model = active_model
         self.on_applied = None
+        self.planning = None
+        self.changes = None
+        self._pending_plan = None
 
     def _policy(self, run_id):
         if self.policies is None:
@@ -96,39 +100,164 @@ class ReplanCoordinator:
             run = self.transitions.request_pause(run_id)
         if run.status is WorkflowStatus.DRAINING:
             return ()
-        base = self.journal.workflows.get_revision(self.workspace_id, run.workflow_revision_id)
-        source = revision_source(base)
-        by_id = {node.node_id: node for node in source.nodes}
-        edges = set(source.edges)
-        invalid_reason = None
-        requests = {}
-        for signal in signals:
-            request = signal.request
-            node = by_id.get(request.target_node_id)
-            if node is None:
-                invalid_reason = "unknown_target"
-                continue
-            if node.node_id in requests and requests[node.node_id] != request:
-                invalid_reason = "conflicting_signals"
-            requests[node.node_id] = request
-            by_id[node.node_id] = node.model_copy(update={"task_contract": request.task_contract})
-            edges.update(
-                WorkflowEdge(from_node_id=dep, to_node_id=node.node_id)
-                for dep in request.depends_on
-            )
-        source = source.model_copy(update={"nodes": tuple(by_id.values()), "edges": tuple(edges)})
-        try:
-            source = WorkflowDefinitionSource.model_validate_json(source.model_dump_json())
-        except ValueError:
-            source = revision_source(base)
-            invalid_reason = "signal_patch_unrepresentable"
-        proposal = self.propose(
-            run_id,
-            source,
-            signal_ids=tuple(s.signal_id for s in signals),
-            invalid_reason=invalid_reason,
+        # Chat task-plans always go through the current LLM candidate path.
+        session_id = self._session_for_run(run)
+        chat_plan = (
+            self.planning is not None
+            and self.changes is not None
+            and session_id is not None
+            and self.planning.repo.binding(self.workspace_id, session_id) is not None
         )
-        return (proposal,)
+        results = []
+        if chat_plan:
+            prepared = self._begin_fact_plan(run, signals)
+            if prepared is not None:
+                self._pending_plan = prepared
+                results.append(prepared)
+            return tuple(results)
+        return ()
+
+    def _session_for_run(self, run):
+        task = self.journal.get_task_run(self.workspace_id, run.root_task_run_id)
+        return None if task is None else task.session_id
+
+    def _fact_digest(self, run, signals):
+        return sha256_digest(
+            canonical_json_bytes(
+                {
+                    "run": run.workflow_run_id,
+                    "revision": run.workflow_revision_id,
+                    "row_version": run.row_version,
+                    "signals": [signal.signal_id for signal in signals],
+                }
+            )
+        )
+
+    def _replan_command_id(self, digest):
+        base = "cmd_replan_" + digest[:24]
+        for suffix in ("", "_2", "_3", "_4"):
+            command_id = base if not suffix else base + suffix
+            existing = self.planning.repo.command(self.workspace_id, command_id)
+            if existing is None or existing.status in {"queued", "running", "succeeded"}:
+                return command_id
+        return base + "_x"
+
+    def _task_contract(self, run):
+        artifacts = getattr(self.patches.finalizer, "artifacts", None)
+        if artifacts is None:
+            return None
+        artifact = artifacts.get(run.input_artifacts[0].artifact_id)
+        if artifact is None or artifact.byte_size > 16384:
+            return None
+        return TaskContract.model_validate_json(
+            artifacts.read(artifact.artifact_id, max_bytes=artifact.byte_size).content
+        )
+
+    def _begin_fact_plan(self, run, signals):
+        if self.planning is None or self.changes is None:
+            return None
+        if run.status is not WorkflowStatus.PAUSED:
+            return None
+        session_id = self._session_for_run(run)
+        if session_id is None:
+            return None
+        if self.planning.repo.binding(self.workspace_id, session_id) is None:
+            return None
+        nodes = self.journal.workflows.list_nodes(self.workspace_id, run.workflow_run_id)
+        past = tuple(sorted(self.patches._past_node_ids(run)))
+        past_set = set(past)
+        future = tuple(node.node_id for node in nodes if node.node_id not in past_set)
+        revision = self.journal.workflows.get_revision(self.workspace_id, run.workflow_revision_id)
+        completed = []
+        if revision is not None:
+            contracts = {item.node_id: item.task_contract.objective for item in revision.nodes}
+            for node in nodes:
+                if node.node_id in past_set:
+                    completed.append(
+                        {
+                            "node_id": node.node_id,
+                            "status": node.status.value,
+                            "objective": contracts.get(node.node_id, ""),
+                        }
+                    )
+        digest = self._fact_digest(run, signals)
+        bind_id = "cmd_replanb_" + digest[:24]
+        plan_id = self._replan_command_id(digest)
+        existing = self.planning.repo.command(self.workspace_id, plan_id)
+        if existing is not None and existing.status in {"queued", "running", "succeeded"}:
+            return existing
+        task = self._task_contract(run)
+        if task is None:
+            return None
+        self.changes.prepare(
+            PrepareWorkflowChangeRequest(
+                command_id=bind_id,
+                session_id=session_id,
+                origin_interaction_id=run.invoking_client_message_id or "replan",
+                action_source="button",
+                expected_run_row_version=run.row_version,
+            )
+        )
+        binding = self.planning.repo.binding(self.workspace_id, session_id)
+        draft = self.planning.drafts.get(binding.current_draft_id)
+        impacts, conflict = {}, False
+        for signal in signals:
+            for fact in signal.request.affected_facts:
+                if not fact.node_id:
+                    continue
+                previous = impacts.get(fact.node_id)
+                if previous is not None and previous != fact.impact:
+                    conflict = True
+                impacts[fact.node_id] = fact.impact
+        facts = {
+            "signals": [signal.request.model_dump(mode="json") for signal in signals],
+            "past_node_ids": list(past),
+            "future_node_ids": list(future),
+            "completed": completed,
+            "parent_run_id": run.workflow_run_id,
+            "parent_revision_id": run.workflow_revision_id,
+            "parent_row_version": run.row_version,
+            "conflicting_signals": conflict,
+            "review_blocking": any(
+                ref.kind == "submitted_slot" and ref.slot == "review"
+                for signal in signals
+                for ref in signal.request.evidence_refs
+            ),
+        }
+        self.journal.transact(
+            lambda _: self.planning.repo.event(
+                self.workspace_id, session_id, {"replan": True, **facts}
+            )
+        )
+        return self.planning.begin_replan(
+            PlanWorkflowRequest(
+                command_id=plan_id,
+                session_id=session_id,
+                origin_interaction_id=run.invoking_client_message_id or "replan",
+                task=task,
+                planning_binding_id=binding.planning_binding_id,
+                base_draft_version=draft.draft.row_version,
+                operation="revise",
+            ),
+            parent_row_version=run.row_version,
+            signal_ids=tuple(signal.signal_id for signal in signals),
+            past_node_ids=past,
+            facts=facts,
+        )
+
+    async def dispatch_pending(self):
+        prepared = self._pending_plan
+        self._pending_plan = None
+        if prepared is None or self.planning is None:
+            return None
+
+        async def command(work):
+            return work()
+
+        try:
+            return await self.planning.dispatch(prepared, command=command)
+        except ApplicationError:
+            return None
 
     def propose(self, run_id, source, *, signal_ids=(), invalid_reason=None):
         source = WorkflowDefinitionSource.model_validate(source.model_dump())

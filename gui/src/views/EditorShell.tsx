@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ApiError, type ApiClient } from '../api/client'
 import type {
   AgentDefinitionViewWire,
@@ -11,14 +11,20 @@ import type {
   WorkflowDraftDiagnosticWire,
   WorkflowDraftViewWire,
 } from '../api/types'
-import { AgentInspector } from './AgentInspector'
-import { WorkflowEditor } from './WorkflowEditor'
+import type { DirtyGuard } from '../state/navigation'
+import { WorkflowDraftController } from '../state/workflowDraft'
+import { DefinitionLifecycle } from './DefinitionLifecycle'
 import { GraphPlanner, PlannerExplanation } from './GraphPlanner'
+import { LeaveGuardDialog, useLeaveGuard, useLeavePrompt } from './management/LeaveGuard'
+import { WorkflowEditor } from './WorkflowEditor'
+import { WorkflowLibrary } from './editor/WorkflowLibrary'
+import { PublishReview } from './editor/PublishReview'
+import { safeErrorMessage } from './editor/diagnostics'
 import {
   cloneWorkflowSource,
   commandId,
-  draftStalenessBlocksFreeze,
   draftId,
+  draftStalenessBlocksFreeze,
   newSingleNodeWorkflow,
   sourceFromRevision,
   structuralDiff,
@@ -40,137 +46,335 @@ const EMPTY_CATALOGS: EditorCatalogs = {
   contracts: [],
 }
 
-export function EditorShell({ client }: { client: ApiClient }) {
-  const [section, setSection] = useState<'workflow' | 'agent'>('workflow')
+function generatedDefinitionId(): string {
+  return `workflow_${crypto.randomUUID().replaceAll('-', '_').slice(0, 16)}`
+}
+
+function selectedDraftStorageKey(workspaceId: string | null | undefined): string {
+  return `morrow.editor.draft.${workspaceId ?? ''}`
+}
+
+export function EditorShell({
+  client,
+  onManageTools,
+  onManageAgents,
+  registerGuard,
+}: {
+  client: ApiClient
+  onManageTools?: () => void
+  onManageAgents?: () => void
+  registerGuard?: (guard: DirtyGuard) => () => void
+}) {
   const [agents, setAgents] = useState<AgentDefinitionViewWire[]>([])
   const [workflows, setWorkflows] = useState<WorkflowDefinitionViewWire[]>([])
   const [drafts, setDrafts] = useState<WorkflowDraftViewWire[]>([])
   const [catalogs, setCatalogs] = useState<EditorCatalogs>(EMPTY_CATALOGS)
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null)
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
-  const [targetId, setTargetId] = useState('my_workflow')
+  const [libraryOpen, setLibraryOpen] = useState(true)
+  const [targetId, setTargetId] = useState(generatedDefinitionId)
   const [targetName, setTargetName] = useState('My Workflow')
-  const [draft, setDraft] = useState<WorkflowDraftViewWire | null>(null)
-  const [localSource, setLocalSource] = useState<WorkflowDefinitionSourceWire | null>(null)
-  const [savedSource, setSavedSource] = useState<WorkflowDefinitionSourceWire | null>(null)
   const [baseSource, setBaseSource] = useState<WorkflowDefinitionSourceWire | null>(null)
-  const [saving, setSaving] = useState(false)
+  const [more, setMore] = useState({ agents: false, workflows: false, drafts: false })
+  const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [freezeDiagnostics, setFreezeDiagnostics] = useState<WorkflowDraftDiagnosticWire[]>([])
+  const draftLoadEpoch = useRef(0)
+  const freezeCommand = useRef<string | null>(null)
+  const freezeInFlight = useRef(false)
+  const cloneIntent = useRef<{ draftId: string; commandId: string } | null>(null)
+  const cloneInFlight = useRef(false)
+  const [controller] = useState(() => new WorkflowDraftController(client))
+  const controllerState = useSyncExternalStore(
+    controller.subscribe,
+    controller.getState,
+    controller.getState,
+  )
+  const { open: guardOpen, confirmLeave: promptLeave, settle: settleLeave } = useLeavePrompt()
 
-  async function refresh(selectedId?: string) {
-    const [nextAgents, nextWorkflows, nextDrafts, nextCatalogs] = await Promise.all([
-      client.listAgentDefinitions(),
-      client.listWorkflowDefinitions(),
-      client.listWorkflowDrafts(),
-      client.editorCatalogs(),
-    ])
-    setAgents(nextAgents)
-    setWorkflows(nextWorkflows)
-    setDrafts(nextDrafts)
-    setCatalogs(nextCatalogs)
-    setSelectedAgentId((current) =>
-      selectedId ?? current ?? nextAgents[0]?.definition_id ?? null,
-    )
-    setSelectedWorkflowId((current) => current ?? nextWorkflows[0]?.workflow_definition_id ?? null)
+  const draft = controllerState.serverSnapshot
+  const localSource = controllerState.localSource
+  const dirty = controller.dirty
+  const saving = busy || controllerState.saveState === 'saving' || controllerState.saveState === 'scheduled'
+
+  useLeaveGuard(registerGuard, dirty, promptLeave)
+
+  useEffect(() => () => controller.dispose(), [controller])
+
+  async function refresh() {
+    try {
+      const [nextAgents, nextWorkflows, nextDrafts, nextCatalogs] = await Promise.all([
+        client.listAgentDefinitions(),
+        client.listWorkflowDefinitions(),
+        client.listWorkflowDrafts(),
+        client.editorCatalogs(),
+      ])
+      setMore({
+        agents: nextAgents.length === 100,
+        workflows: nextWorkflows.length === 100,
+        drafts: nextDrafts.length === 100,
+      })
+      setAgents(nextAgents)
+      setWorkflows(nextWorkflows)
+      setDrafts(nextDrafts)
+      setCatalogs(nextCatalogs)
+      setSelectedWorkflowId(current => current ?? nextWorkflows[0]?.workflow_definition_id ?? null)
+      const draftKey = selectedDraftStorageKey(client.workspaceId)
+      const requested = sessionStorage.getItem(draftKey)
+      const selected = requested === null
+        ? undefined
+        : nextDrafts.find(item => item.draft.draft_id === requested)
+      if (selected !== undefined) {
+        const currentDraftId = controller.getState().scope?.draftId
+        if (currentDraftId !== selected.draft.draft_id) void loadDraft(selected, nextWorkflows)
+        sessionStorage.removeItem(draftKey)
+      } else if (requested !== null) {
+        sessionStorage.removeItem(draftKey)
+      }
+    } catch (error: unknown) {
+      setMessage(safeErrorMessage(error, 'Editor Catalog 加载失败'))
+    }
   }
 
   useEffect(() => {
-    void refresh().catch((error: unknown) => {
-      setMessage(error instanceof Error ? error.message : 'Editor Catalog 加载失败')
-    })
+    void refresh()
   }, [])
 
   const selectedWorkflow = workflows.find(
-    (item) => item.workflow_definition_id === selectedWorkflowId,
+    item => item.workflow_definition_id === selectedWorkflowId,
   )
-  const selectedAgent = agents.find((item) => item.definition_id === selectedAgentId) ?? null
-  const sourceRevision = Math.max(0, ...workflows.map((item) => item.source_revision ?? 0))
-  const dirty =
-    localSource !== null &&
-    savedSource !== null &&
-    JSON.stringify(localSource) !== JSON.stringify(savedSource)
+  const sourceRevision = Math.max(0, ...workflows.map(item => item.source_revision ?? 0))
+
+  async function loadMore(kind: 'agents' | 'workflows' | 'drafts') {
+    try {
+      if (kind === 'agents') {
+        const page = await client.listAgentDefinitions(agents.at(-1)?.definition_id)
+        setAgents(old => [...old, ...page])
+        setMore(old => ({ ...old, agents: page.length === 100 }))
+      }
+      if (kind === 'workflows') {
+        const page = await client.listWorkflowDefinitions(workflows.at(-1)?.workflow_definition_id)
+        setWorkflows(old => [...old, ...page])
+        setMore(old => ({ ...old, workflows: page.length === 100 }))
+      }
+      if (kind === 'drafts') {
+        const page = await client.listWorkflowDrafts(drafts.at(-1)?.draft.draft_id)
+        setDrafts(old => [...old, ...page])
+        setMore(old => ({ ...old, drafts: page.length === 100 }))
+      }
+    } catch (error: unknown) {
+      setMessage(safeErrorMessage(error, '目录加载失败'))
+    }
+  }
 
   function rememberDraft(value: WorkflowDraftViewWire) {
-    setDrafts((current) => [
+    setDrafts(current => [
       value,
-      ...current.filter((item) => item.draft.draft_id !== value.draft.draft_id),
+      ...current.filter(item => item.draft.draft_id !== value.draft.draft_id),
     ])
   }
 
-  useEffect(() => {
-    if (
-      draft === null ||
-      localSource === null ||
-      !dirty ||
-      saving ||
-      draft.draft.status === 'frozen' ||
-      draft.draft.status === 'rejected'
-    ) {
+  async function saveSource() {
+    if (localSource === null || draft === null) return
+    const saved = await controller.saveNow()
+    if (!saved.ok) {
+      setMessage('请先解决 Draft 保存问题，再更新可复用定义。')
       return
     }
-    const source = structuredClone(localSource)
-    const rowVersion = draft.draft.row_version
-    const timer = window.setTimeout(() => {
-      setSaving(true)
-      setMessage('正在通过 Core Compiler 校验…')
-      client
-        .updateWorkflowDraft(
-          draft.draft.draft_id,
-          source,
-          rowVersion,
-          commandId('draft_update'),
-        )
-        .then((view) => {
-          setFreezeDiagnostics([])
-          setDraft(view)
-          rememberDraft(view)
-          setSavedSource(source)
-          setMessage(view.draft.status === 'valid' ? 'Draft 已校验并保存。' : 'Draft 已保存；请修复编译错误。')
-        })
-        .catch((error: unknown) => {
-          setMessage(
-            error instanceof Error
-              ? `${error.message}；若另一标签页已编辑，请重新打开 Draft。`
-              : 'Draft 保存失败',
-          )
-        })
-        .finally(() => setSaving(false))
-    }, 400)
-    return () => window.clearTimeout(timer)
-  }, [client, dirty, draft, localSource, saving])
-
-  function chooseWorkflow(value: WorkflowDefinitionViewWire) {
-    setSelectedWorkflowId(value.workflow_definition_id)
-    setDraft(null)
-    setLocalSource(null)
-    setSavedSource(null)
-    setFreezeDiagnostics([])
-    const copy = value.origin === 'builtin'
-    setTargetId(copy ? `${value.workflow_definition_id.replace(/^builtin_/, '')}_copy` : value.workflow_definition_id)
-    setTargetName(copy ? `${value.source?.name ?? value.workflow_definition_id} Copy` : value.source?.name ?? value.workflow_definition_id)
+    const state = controller.getState()
+    if (state.serverSnapshot === null || state.localSource === null) return
+    setBusy(true)
+    try {
+      const workflow = workflows.find(item => item.workflow_definition_id === state.localSource?.workflow_definition_id)
+      await client.writeWorkflowSource(
+        state.localSource,
+        workflow?.source_revision ?? sourceRevision,
+        commandId('workflow_source'),
+        workflow === undefined,
+      )
+      await refresh()
+      setMessage('定义已更新。')
+    } catch (error: unknown) {
+      setMessage(safeErrorMessage(error, '更新可复用定义失败'))
+    } finally {
+      setBusy(false)
+    }
   }
 
-  function chooseDraft(value: WorkflowDraftViewWire) {
-    const workflow = workflows.find(
-      (item) => item.workflow_definition_id === value.draft.source.workflow_definition_id,
+  function showDraft(value: WorkflowDraftViewWire, workflowList = workflows) {
+    setMessage(null)
+    sessionStorage.setItem(selectedDraftStorageKey(client.workspaceId), value.draft.draft_id)
+    const workflow = workflowList.find(
+      item => item.workflow_definition_id === value.draft.source.workflow_definition_id,
     )
     setSelectedWorkflowId(value.draft.source.workflow_definition_id)
-    setDraft(value)
-    setLocalSource(structuredClone(value.draft.source))
-    setSavedSource(structuredClone(value.draft.source))
+    setLibraryOpen(false)
+    controller.load(
+      { workspaceId: client.workspaceId ?? value.draft.workspace_id, draftId: value.draft.draft_id },
+      value,
+    )
     setFreezeDiagnostics([])
     setBaseSource(
       workflow?.published_revision === null || workflow === undefined
         ? null
         : sourceFromRevision(workflow.published_revision),
     )
-    setMessage('已重新打开持久化 Draft。')
+  }
+
+  async function loadDraft(value: WorkflowDraftViewWire, workflowList = workflows) {
+    const epoch = ++draftLoadEpoch.current
+    setMessage('正在读取 Draft 服务器事实…')
+    try {
+      const latest = await client.getWorkflowDraft(value.draft.draft_id)
+      if (epoch !== draftLoadEpoch.current) return
+      showDraft(latest, workflowList)
+    } catch (error: unknown) {
+      if (epoch === draftLoadEpoch.current) setMessage(safeErrorMessage(error, '读取 Draft 失败'))
+    }
+  }
+
+  async function checkDraft() {
+    if (draft === null) return
+    if (controller.dirty) {
+      setBusy(true)
+      try {
+        const saved = await controller.saveNow()
+        setMessage(saved.ok ? '草稿已保存并检查。' : '检查未完成；请先处理保存问题。')
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+    setBusy(true)
+    try {
+      const latest = await client.getWorkflowDraft(draft.draft.draft_id)
+      const local = controller.getState().localSource
+      if (local !== null && JSON.stringify(local) !== JSON.stringify(latest.draft.source)) {
+        setMessage('服务器版本已变化；本地内容仍保留，请先核对后再检查。')
+        return
+      }
+      showDraft(latest)
+      setMessage('已重新读取 Draft；检查状态已更新。')
+    } catch (error: unknown) {
+      setMessage(safeErrorMessage(error, 'Draft 检查失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function reconcileDraft() {
+    const result = await controller.reconcile()
+    setMessage(result === 'matched'
+      ? '已核对服务器结果，保存状态已恢复。'
+      : result === 'conflict'
+        ? '服务器版本与本地修改不同；本地内容仍保留。'
+        : '无法核对服务器结果，请稍后重试。')
+  }
+
+  async function useServerVersion() {
+    if (draft === null) return
+    const value = draft
+    setBusy(true)
+    try {
+      const latest = await client.getWorkflowDraft(value.draft.draft_id)
+      showDraft(latest)
+      setMessage('已采用服务器版本；本地未确认修改已放弃，持久化 Draft 未删除。')
+    } catch (error: unknown) {
+      setMessage(safeErrorMessage(error, '读取服务器版本失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function createNewDraftFromCurrent() {
+    if (draft === null || busy || cloneInFlight.current) return
+    const intent = cloneIntent.current ?? { draftId: draftId(), commandId: commandId('draft_clone') }
+    cloneIntent.current = intent
+    const source = cloneWorkflowSource(draft.draft.source, draft.draft.source.workflow_definition_id, draft.draft.source.name)
+    const expectedRevision = workflows.find(item => item.workflow_definition_id === source.workflow_definition_id)?.source_revision ?? sourceRevision
+    cloneInFlight.current = true
+    setBusy(true)
+    setMessage(null)
+    try {
+      const value = await client.createWorkflowDraft(source, expectedRevision, intent.commandId, intent.draftId)
+      rememberDraft(value)
+      showDraft(value)
+      cloneIntent.current = null
+      setMessage('新草稿已创建。')
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 0) {
+        try {
+          const readback = await client.getWorkflowDraft(intent.draftId)
+          rememberDraft(readback)
+          showDraft(readback)
+          cloneIntent.current = null
+          setMessage('新 Draft 创建结果已核对；原发布版本仍保持只读。')
+          return
+        } catch {
+          setMessage('新 Draft 创建结果未知；请稍后核对目录，不会重复创建。')
+          return
+        }
+      }
+      setMessage(safeErrorMessage(error, '创建新 Draft 失败'))
+    } finally {
+      setBusy(false)
+      cloneInFlight.current = false
+    }
+  }
+
+  async function leaveDraft(action: () => void) {
+    if (!dirty) {
+      action()
+      return
+    }
+    if (await promptLeave()) action()
+  }
+
+  function chooseWorkflow(value: WorkflowDefinitionViewWire) {
+    void leaveDraft(() => {
+      draftLoadEpoch.current += 1
+      cloneIntent.current = null
+      freezeCommand.current = null
+      sessionStorage.removeItem(selectedDraftStorageKey(client.workspaceId))
+      setSelectedWorkflowId(value.workflow_definition_id)
+      setLibraryOpen(true)
+      controller.clear()
+      setFreezeDiagnostics([])
+      const copy = value.origin === 'builtin'
+      setTargetId(copy ? `${value.workflow_definition_id.replace(/^builtin_/, '')}_copy` : value.workflow_definition_id)
+      setTargetName(copy ? `${value.source?.name ?? value.workflow_definition_id} Copy` : value.source?.name ?? value.workflow_definition_id)
+      setBaseSource(null)
+      setMessage(null)
+    })
+  }
+
+  function chooseDraft(value: WorkflowDraftViewWire) {
+    if (draft?.draft.draft_id !== value.draft.draft_id) {
+      cloneIntent.current = null
+      freezeCommand.current = null
+    }
+    void leaveDraft(() => loadDraft(value))
+  }
+
+  function chooseBlank() {
+    void leaveDraft(() => {
+      draftLoadEpoch.current += 1
+      cloneIntent.current = null
+      freezeCommand.current = null
+      sessionStorage.removeItem(selectedDraftStorageKey(client.workspaceId))
+      setSelectedWorkflowId(null)
+      setLibraryOpen(true)
+      controller.clear()
+      setTargetId(generatedDefinitionId())
+      setTargetName('My Workflow')
+      setBaseSource(null)
+      setFreezeDiagnostics([])
+      setMessage(null)
+    })
   }
 
   async function createDraft() {
     setMessage(null)
-    const version = agents.find((item) => item.published_version !== null)?.published_version
+    const version = agents.find(item => item.published_version !== null)?.published_version
     let source: WorkflowDefinitionSourceWire
     if (selectedWorkflow?.source !== null && selectedWorkflow?.source !== undefined) {
       source = cloneWorkflowSource(selectedWorkflow.source, targetId, targetName)
@@ -180,7 +384,7 @@ export function EditorShell({ client }: { client: ApiClient }) {
       setMessage('请先创建并发布至少一个 AgentDefinition。')
       return
     }
-    setSaving(true)
+    setBusy(true)
     try {
       const view = await client.createWorkflowDraft(
         source,
@@ -188,45 +392,73 @@ export function EditorShell({ client }: { client: ApiClient }) {
         commandId('draft_create'),
         draftId(),
       )
-      setDraft(view)
       rememberDraft(view)
-      setLocalSource(view.draft.source)
-      setSavedSource(view.draft.source)
-      setFreezeDiagnostics([])
-      setBaseSource(
-        selectedWorkflow?.published_revision === null || selectedWorkflow === undefined
-          ? null
-          : sourceFromRevision(selectedWorkflow.published_revision),
-      )
-      setMessage(view.draft.status === 'valid' ? 'Draft 已创建并通过 Compiler。' : 'Draft 已创建，存在编译错误。')
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Draft 创建失败')
+      showDraft(view)
+      cloneIntent.current = null
+      freezeCommand.current = null
+      setMessage(view.draft.status === 'valid' ? '草稿已创建，检查通过。' : '草稿已创建，请处理检查问题。')
+    } catch (error: unknown) {
+      setMessage(safeErrorMessage(error, 'Draft 创建失败'))
     } finally {
-      setSaving(false)
+      setBusy(false)
     }
   }
 
   async function freeze() {
-    if (draft === null) return
-    setSaving(true)
-    setMessage(null)
+    if (draft === null || busy || freezeInFlight.current) return
+    freezeInFlight.current = true
+    setBusy(true)
+    let latest: WorkflowDraftViewWire | null = null
     try {
+      const saved = await controller.saveNow()
+      if (!saved.ok) {
+        setMessage('发布前必须先保存最新修改；本地内容仍保留。')
+        return
+      }
+      latest = controller.getState().serverSnapshot
+      if (latest === null) return
+      if (latest.draft.status !== 'valid' || draftStalenessBlocksFreeze(latest.stale_reasons)) {
+        setMessage('当前 Draft 尚未满足发布条件；请先处理检查问题或目录变化。')
+        return
+      }
+      const freezeKey = freezeCommand.current ?? commandId('draft_freeze')
+      freezeCommand.current = freezeKey
+      setMessage('正在发布…')
       const value = await client.freezeWorkflowDraft(
-        draft.draft.draft_id,
-        draft.draft.row_version,
-        commandId('draft_freeze'),
+        latest.draft.draft_id,
+        latest.draft.row_version,
+        freezeKey,
       )
-      setDraft(value.workflow_draft)
       rememberDraft(value.workflow_draft)
-      setSavedSource(value.workflow_draft.draft.source)
+      showDraft(value.workflow_draft)
+      freezeCommand.current = null
       setFreezeDiagnostics([])
-      setMessage(`已冻结 Revision ${String(value.workflow_revision.workflow_revision_id)}`)
+      setMessage('版本已发布。')
       await refresh()
-    } catch (error) {
+    } catch (error: unknown) {
       if (error instanceof ApiError) setFreezeDiagnostics(error.diagnostics)
-      setMessage(error instanceof Error ? error.message : 'Freeze 失败')
+      if (error instanceof ApiError && error.status === 0) {
+        try {
+          const readback = await client.getWorkflowDraft(latest?.draft.draft_id ?? draft.draft.draft_id)
+          if (readback.draft.status === 'frozen' && readback.draft.frozen_workflow_revision_id !== null) {
+            rememberDraft(readback)
+            showDraft(readback)
+            freezeCommand.current = null
+            setFreezeDiagnostics([])
+            setMessage('版本已发布。')
+            await refresh()
+            return
+          }
+        } catch {
+          // Keep the same command identity for an explicit later retry/readback.
+        }
+        setMessage('发布结果未知；已读取失败，保留本地内容，请稍后核对服务器状态。')
+      } else {
+        setMessage(safeErrorMessage(error, '发布版本失败'))
+      }
     } finally {
-      setSaving(false)
+      setBusy(false)
+      freezeInFlight.current = false
     }
   }
 
@@ -234,65 +466,83 @@ export function EditorShell({ client }: { client: ApiClient }) {
     () => structuralDiff(baseSource, localSource),
     [baseSource, localSource],
   )
+  const currentMessage = message ?? controllerState.message
 
   return (
-    <main className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)]">
-      <aside className="min-h-0 overflow-y-auto border-r border-subtle p-3">
-        <div className="grid grid-cols-2 gap-1 rounded-[8px] border border-subtle bg-base p-1">
-          <button type="button" className={`rounded-[6px] px-2 py-1.5 text-xs ${section === 'workflow' ? 'bg-raised text-accent' : 'text-secondary'}`} onClick={() => setSection('workflow')}>Workflows</button>
-          <button type="button" className={`rounded-[6px] px-2 py-1.5 text-xs ${section === 'agent' ? 'bg-raised text-accent' : 'text-secondary'}`} onClick={() => setSection('agent')}>Agents</button>
-        </div>
-        {section === 'workflow' ? (
-          <>
-            <button type="button" className="editor-button mt-3 w-full" onClick={() => { setSelectedWorkflowId(null); setDraft(null); setTargetId('my_workflow'); setTargetName('My Workflow') }}>＋ 空白工作流</button>
-            {drafts.length > 0 && (
-              <>
-                <h2 className="mt-4 text-xs font-medium tracking-wide text-secondary">Durable Drafts</h2>
-                <ul className="mt-2 flex flex-col gap-1">
-                  {drafts.map((value) => <li key={value.draft.draft_id}><button type="button" onClick={() => chooseDraft(value)} className={`w-full rounded-[8px] border px-2 py-2 text-left ${draft?.draft.draft_id === value.draft.draft_id ? 'border-accent bg-raised' : 'border-transparent'}`}><div className="truncate text-sm">{value.draft.source.name}</div><div className="mt-0.5 font-mono text-[10px] text-secondary">{value.draft.status} · row {value.draft.row_version}</div></button></li>)}
-                </ul>
-              </>
-            )}
-            <h2 className="mt-4 text-xs font-medium tracking-wide text-secondary">Workflow Catalog</h2>
-            <ul className="mt-2 flex flex-col gap-1">
-              {workflows.map((workflow) => <li key={workflow.workflow_definition_id}><button type="button" onClick={() => chooseWorkflow(workflow)} className={`w-full rounded-[8px] border px-2 py-2 text-left ${selectedWorkflowId === workflow.workflow_definition_id ? 'border-accent bg-raised' : 'border-transparent'}`}><div className="text-sm">{workflow.source?.name ?? workflow.workflow_definition_id}</div><div className="mt-0.5 font-mono text-[10px] text-secondary">{workflow.origin} · {workflow.head === null ? '未发布' : `row ${workflow.head.row_version}`}</div></button></li>)}
-            </ul>
-          </>
-        ) : (
-          <>
-            <h2 className="mt-4 text-xs font-medium tracking-wide text-secondary">Agent Catalog</h2>
-            <ul className="mt-2 flex flex-col gap-1">{agents.map((agent) => <li key={agent.definition_id}><button type="button" onClick={() => setSelectedAgentId(agent.definition_id)} className={`w-full rounded-[8px] border px-2 py-2 text-left ${selectedAgentId === agent.definition_id ? 'border-accent bg-raised' : 'border-transparent'}`}><div className="text-sm">{agent.source?.name ?? agent.definition_id}</div><div className="mt-0.5 font-mono text-[10px] text-secondary">{agent.origin} · {agent.head?.enabled === false ? 'disabled' : agent.published_version === null ? '未发布' : `v${agent.published_version.version}`}</div></button></li>)}</ul>
-          </>
-        )}
-      </aside>
-      <div className="flex min-h-0 flex-col">
-        {section === 'agent' ? (
-          <AgentInspector client={client} definitions={agents} selected={selectedAgent} providers={catalogs.providers} skills={catalogs.skills} tools={catalogs.tools} onRefresh={async (definitionId) => { await refresh(definitionId) }} />
-        ) : draft === null || localSource === null ? (
-          <section className="mx-auto w-full max-w-2xl overflow-y-auto p-6">
+    <main className="workflow-editor-shell min-h-0 flex-1">
+      <WorkflowLibrary
+        open={libraryOpen}
+        drafts={drafts}
+        workflows={workflows}
+        selectedDraftId={draft?.draft.draft_id ?? null}
+        selectedWorkflowId={selectedWorkflowId}
+        more={more}
+        onToggle={() => setLibraryOpen(value => !value)}
+        onNew={chooseBlank}
+        onDraft={chooseDraft}
+        onWorkflow={chooseWorkflow}
+        onLoadMore={kind => { void loadMore(kind) }}
+        onManageAgents={onManageAgents}
+        onManageTools={onManageTools}
+      />
+      <div className="workflow-editor-content min-h-0">
+        {draft === null || localSource === null ? (
+          <section className="mx-auto w-full max-w-3xl overflow-y-auto p-6">
+            {selectedWorkflow && <DefinitionLifecycle key={selectedWorkflow.workflow_definition_id} client={client} kind="workflow" id={selectedWorkflow.workflow_definition_id} revision={selectedWorkflow.head?.row_version ?? 0} enabled={selectedWorkflow.head?.enabled ?? false} version={selectedWorkflow.head?.workflow_revision_id ?? null} readOnly={selectedWorkflow.origin === 'builtin' || selectedWorkflow.revoked} onRefresh={() => refresh()} />}
             <h2 className="font-serif text-2xl font-semibold">创建 Workflow Draft</h2>
-            <p className="mt-2 text-sm leading-relaxed text-secondary">从选中的建议复制，或从已发布 Agent 创建单节点图。编辑期间不会产生 Revision。</p>
-            <div className="mt-5 grid grid-cols-2 gap-3"><Field label="Definition ID"><input className="editor-input font-mono" value={targetId} onChange={(event) => setTargetId(event.target.value)} /></Field><Field label="名称"><input className="editor-input" value={targetName} onChange={(event) => setTargetName(event.target.value)} /></Field></div>
-            <button type="button" className="editor-button mt-4 border-accent text-accent" disabled={saving || targetId === '' || targetName === ''} onClick={() => void createDraft()}>创建 Draft</button>
-            {message !== null && <p role="status" className="mt-3 text-xs text-secondary">{message}</p>}
-            <GraphPlanner client={client} definitionId={targetId} name={targetName} onDraft={(value) => { rememberDraft(value); chooseDraft(value) }} />
+
+            <div className="mt-5 grid grid-cols-2 gap-3"><Field label="Definition ID（自动生成后可在详情查看）"><input aria-label="Definition ID" className="editor-input font-mono" value={targetId} onChange={event => setTargetId(event.target.value)} /></Field><Field label="名称"><input aria-label="工作流名称" className="editor-input" value={targetName} onChange={event => setTargetName(event.target.value)} /></Field></div>
+            <button type="button" className="editor-button mt-4 border-accent text-accent" disabled={saving || targetId.trim() === '' || targetName.trim() === ''} onClick={() => void createDraft()}>创建 Draft</button>
+            {currentMessage !== null && <p role="status" className="mt-3 text-xs text-secondary">{currentMessage}</p>}
+            <GraphPlanner client={client} definitionId={targetId} name={targetName} onDraft={value => { rememberDraft(value); showDraft(value) }} />
           </section>
         ) : (
           <>
-            <header className="flex items-center gap-3 border-b border-subtle px-4 py-2">
-              <span className={`rounded-[8px] border px-2 py-1 text-xs ${draft.draft.status === 'valid' ? 'border-completed text-completed' : draft.draft.status === 'invalid' ? 'border-failed text-failed' : 'border-subtle text-secondary'}`}>{draft.draft.status}</span>
-              <span className="font-mono text-xs text-secondary">row {draft.draft.row_version}</span>
-              {dirty && <span className="text-xs text-blocked">待保存</span>}
-              {draft.stale_reasons.length > 0 && <span className="text-xs text-blocked">Catalog/Head 已变化：{draft.stale_reasons.join(', ')}</span>}
-              {message !== null && <span role="status" className="truncate text-xs text-secondary">{message}</span>}
-              <button type="button" className="editor-button ml-auto border-accent text-accent" disabled={saving || dirty || draft.draft.status !== 'valid' || draftStalenessBlocksFreeze(draft.stale_reasons)} onClick={() => void freeze()}>Freeze Revision</button>
-            </header>
+            <PublishReview
+              status={draft.draft.status}
+              frozenRevisionId={draft.draft.frozen_workflow_revision_id}
+              saveState={controllerState.saveState}
+              checkState={controllerState.checkState}
+              dirty={dirty}
+              staleReasons={draft.stale_reasons}
+              diagnostics={[...draft.draft.diagnostics, ...freezeDiagnostics]}
+              busy={busy}
+              unresolved={controllerState.unresolvedCommand !== null}
+              message={currentMessage}
+              onCheck={() => { void checkDraft() }}
+              onUpdateDefinition={() => { void saveSource() }}
+              onPublish={() => { void freeze() }}
+              onReconcile={() => { void reconcileDraft() }}
+              onUseServer={() => { void useServerVersion() }}
+              onNewDraft={() => { void createNewDraftFromCurrent() }}
+            />
             {draft.draft.planner && <PlannerExplanation metadata={draft.draft.planner} edited={dirty || draft.draft.planner.source_hash !== draft.draft.source_hash} />}
-            <WorkflowEditor source={localSource} diagnostics={[...draft.draft.diagnostics, ...freezeDiagnostics]} agents={agents} contracts={catalogs.contracts} disabled={draft.draft.status === 'frozen'} onChange={(source) => { setFreezeDiagnostics([]); setLocalSource(source) }} />
-            <details className="border-t border-subtle px-4 py-2 text-xs"><summary className="cursor-pointer text-secondary">Revision Diff · {revisionDiff.length} 项</summary><ul className="mt-2 grid max-h-40 grid-cols-2 gap-2 overflow-y-auto">{revisionDiff.map((line) => <li key={line.path} className="rounded-[8px] border border-subtle p-2 font-mono"><div className="text-secondary">{line.path}</div><div className="text-failed">− {line.before}</div><div className="text-completed">+ {line.after}</div></li>)}</ul></details>
+            <WorkflowEditor
+              source={localSource}
+              diagnostics={[...draft.draft.diagnostics, ...freezeDiagnostics]}
+              agents={agents}
+              contracts={catalogs.contracts}
+              disabled={draft.draft.status === 'frozen' || draft.draft.status === 'rejected'}
+              onChange={source => { setFreezeDiagnostics([]); setMessage(null); controller.edit(source) }}
+              scope={controllerState.scope ?? undefined}
+              libraryOpen={libraryOpen}
+              onToggleLibrary={() => setLibraryOpen(value => !value)}
+            />
+            <details className="border-t border-subtle px-4 py-2 text-xs"><summary className="cursor-pointer text-secondary">版本与变更详情 · {revisionDiff.length} 项</summary><ul className="mt-2 grid max-h-40 grid-cols-2 gap-2 overflow-y-auto">{revisionDiff.map(line => <li key={line.path} className="rounded-[8px] border border-subtle p-2 font-mono"><div className="text-secondary">{line.path}</div><div className="text-failed">− {line.before}</div><div className="text-completed">+ {line.after}</div></li>)}</ul></details>
           </>
         )}
       </div>
+      <LeaveGuardDialog
+        open={guardOpen}
+        title="工作流草稿有未保存修改"
+        description="离开前保存修改，或放弃未保存的修改。"
+        saveLabel="保存后离开"
+        discardLabel="放弃未保存修改并离开"
+        stayLabel="继续编辑"
+        onSave={() => { void controller.saveNow().then(result => { settleLeave(result.ok) }) }}
+        onDiscard={() => { controller.discardLocal(); settleLeave(true) }}
+        onStay={() => settleLeave(false)}
+      />
     </main>
   )
 }

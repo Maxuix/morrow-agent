@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 from morrow.core.agent_definitions import AgentDefinitionRevocation, AgentDefinitionVersion
 from morrow.core.domain import sha256_digest
@@ -45,14 +46,16 @@ def verify_definition_rows(executor):
                 or row_version < 1
             ):
                 raise ValueError("head mismatch")
-        links = {}
-        for version_id, skill_id in rows(
-            "SELECT version_id, skill_version_id FROM agent_definition_skills"
-        ):
-            links.setdefault(version_id, set()).add(skill_id)
         for value in versions.values():
-            if links.get(value.version_id, set()) != set(value.source.skill_version_ids):
+            # Skill bindings are part of the immutable version body.  The
+            # former agent_definition_skills table was only a query mirror.
+            if len(set(value.source.skill_version_ids)) != len(value.source.skill_version_ids):
                 raise ValueError("Skill reference mismatch")
+            for skill_version_id in value.source.skill_version_ids:
+                if not executor.execute(
+                    "SELECT 1 FROM skill_versions WHERE version_id=?", (skill_version_id,)
+                ).fetchone():
+                    raise ValueError("Skill reference is missing")
         for version_id, body in rows(
             "SELECT version_id, body_json FROM agent_definition_revocations"
         ):
@@ -64,7 +67,9 @@ def verify_definition_rows(executor):
                 raise ValueError("revocation mismatch")
         workflow_agent_runs = {
             agent_run_id
-            for (agent_run_id,) in rows("SELECT agent_run_id FROM workflow_agent_run_refs")
+            for (agent_run_id,) in rows(
+                "SELECT agent_run_id FROM workflow_node_runs WHERE agent_run_id IS NOT NULL"
+            )
         }
         for agent_run_id, ws, session_id, body in rows(
             "SELECT r.agent_run_id, s.workspace_id, r.session_id, r.snapshot_json "
@@ -94,5 +99,5 @@ def verify_definition_rows(executor):
             ):
                 raise ValueError("AgentRun definition evidence mismatch")
         return True, ()
-    except (ValueError, TypeError, KeyError):
+    except (ValueError, TypeError, KeyError, sqlite3.Error):
         return False, ("agent_definition_integrity",)

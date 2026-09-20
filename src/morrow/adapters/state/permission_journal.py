@@ -148,12 +148,10 @@ class SqliteRunPermissionJournal:
         return self._with_workflow_ref(_agent_from_row(row)) if row is not None else None
 
     def _with_workflow_ref(self, run):
-        if self.backend.schema_version() < 24:
-            return run
         row = self.backend.read_one(
             "SELECT r.workflow_revision_id, n.workflow_run_id, n.node_run_id, n.node_id, n.attempt "
-            "FROM workflow_agent_run_refs a JOIN workflow_node_runs n USING(node_run_id) "
-            "JOIN workflow_runs r USING(workflow_run_id) WHERE a.agent_run_id=?",
+            "FROM workflow_node_runs n JOIN workflow_runs r USING(workflow_run_id) "
+            "WHERE n.agent_run_id=?",
             (run.agent_run_id,),
         )
         if row is None:
@@ -175,7 +173,8 @@ class SqliteRunPermissionJournal:
             "r.snapshot_json, r.created_at_unix, r.permission_snapshot_id FROM agent_runs r "
             "JOIN sessions s ON s.session_id = r.session_id "
             "WHERE r.session_id = ? AND s.workspace_id = ? "
-            "ORDER BY r.created_at_unix ASC, r.agent_run_id ASC",
+            # Persisted timestamps have second precision; opaque IDs do not order admissions.
+            "ORDER BY r.created_at_unix ASC, r.rowid ASC",
             (session_id, workspace_id),
         )
         return tuple(self._with_workflow_ref(_agent_from_row(row)) for row in rows)
@@ -428,7 +427,13 @@ class SqliteRunPermissionJournal:
             )
         if run.resume_of_agent_run_id is not None:
             previous = self.get_agent_run(workspace_id, run.resume_of_agent_run_id)
-            if previous is None or previous.turn_id != run.turn_id:
+            previous_turn = self.get_turn(workspace_id, previous.turn_id) if previous else None
+            if (
+                previous is None
+                or previous.session_id != run.session_id
+                or previous_turn is None
+                or previous_turn.task_run_id != turn.task_run_id
+            ):
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE,
                     "operational run resume target is missing",

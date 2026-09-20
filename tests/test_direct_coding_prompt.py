@@ -7,13 +7,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pydantic import BaseModel, ConfigDict
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.models.openai_compatible import (
     OpenAICompatibleProvider,
     estimate_request_chars,
 )
-from morrow.application.context import ContextBuilder
+from morrow.application.context import ContextBudgetError, ContextBuilder
 from morrow.application.learning.memory_run_projection import build_run_context_projection
 from morrow.application.prompt import (
     DirectCodingProfile,
@@ -23,10 +24,12 @@ from morrow.application.turn_lifecycle import build_agent_run_snapshot
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.core.context import RunContextProjection
-from morrow.core.models import ModelRef, UserMessage
+from morrow.core.models import AssistantMessage, FunctionToolCall, ModelRef, UserMessage
 from morrow.core.prompt import PromptProjection
 from morrow.core.store import StorageError, StorageErrorCode
+from morrow.runtime.agent import AgentLoop
 from morrow.runtime.session import Session
+from morrow.runtime.tools import ToolExecutor, ToolRegistry, make_tool
 from morrow.testing import ScriptedModelProvider, make_run_policy
 
 
@@ -35,11 +38,20 @@ def test_direct_profile_is_versioned_reusable_and_hash_stable() -> None:
     second = DirectCodingProfile()
 
     assert first.profile_id == "direct-coding"
-    assert first.version == "v2"
+    assert first.version == "v3"
     assert first.digest == second.digest
     assert first.coding_protocol
-    for required in ("inspect", "minimal", "user", "verify", "blocker", "temporary"):
-        assert required in first.coding_protocol.casefold()
+    for behavior in ("检查", "用户已有改动", "工具返回", "验证", "阻塞", "临时产物"):
+        assert behavior in first.coding_protocol
+    for norm in (
+        "仅在发生变化时更新",
+        "紧接着的操作",
+        "新发现",
+        "可以直接调用工具",
+        "区分计划执行、已经执行和已经验证",
+    ):
+        assert norm in first.coding_protocol
+    assert "协议关键词" not in first.coding_protocol
 
 
 def test_direct_assembly_orders_authority_and_labels_project_scope(tmp_path: Path) -> None:
@@ -178,7 +190,7 @@ def test_snapshot_freezes_only_prompt_metadata_not_role_or_instruction_text(tmp_
     encoded = json.dumps(snapshot.model_dump(mode="json"), ensure_ascii=False)
 
     assert snapshot.prompt_profile_id == "direct-coding"
-    assert snapshot.prompt_profile_version == "v2"
+    assert snapshot.prompt_profile_version == "v3"
     assert snapshot.prompt_profile_digest == assembler.profile.digest
     assert snapshot.project_instruction_sources[0].path == "AGENTS.md"
     assert snapshot.project_instruction_sources[0].byte_count == len(
@@ -234,8 +246,9 @@ def test_protected_prompt_layers_request_compaction_when_over_budget(tmp_path: P
         prompt_assembler=assembler,
     )
 
-    pack = builder.build(session)
-    assert pack.compaction_required is True
+    with pytest.raises(ContextBudgetError, match="当前输入超过模型上下文限制") as exc:
+        builder.build(session)
+    assert exc.value.kind == "input"
 
 
 @pytest.mark.asyncio
@@ -346,6 +359,69 @@ async def test_direct_prompt_reaches_openai_compatible_wire_serializer(tmp_path:
         "role": "user",
         "content": "inspect `main.py`",
     }
+
+
+@pytest.mark.asyncio
+async def test_retry_and_tool_rounds_rebuild_context_without_prompt_duplication() -> None:
+    """Offline regression: protocol assembles once per request; history stays intact."""
+
+    class EchoArguments(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        value: str
+
+    async def echo(arguments: EchoArguments) -> object:
+        return {"echo": arguments.value}
+
+    registry = ToolRegistry()
+    registry.register(
+        make_tool(name="echo", description="echo", arguments_model=EchoArguments, handler=echo)
+    )
+    executor = ToolExecutor(registry.snapshot(), make_run_policy())
+    provider = ScriptedModelProvider(
+        [
+            RuntimeError("scripted transient failure"),
+            AssistantMessage(
+                tool_calls=(FunctionToolCall(id="call_1", name="echo", arguments='{"value": "v"}'),)
+            ),
+            "已确认依赖可用，现在继续。",
+        ]
+    )
+    assembler = DirectCodingPromptAssembler()
+    builder = ContextBuilder(
+        run_policy=make_run_policy(),
+        estimate_request_chars=estimate_request_chars,
+        prompt_assembler=assembler,
+    )
+
+    async def _no_sleep(_delay: float) -> None:
+        return None
+
+    events = [
+        event
+        async for event in AgentLoop(
+            provider,
+            ModelRef(provider_id="p", model_id="m"),
+            builder,
+            tool_executor=executor,
+            retry_sleep=_no_sleep,
+        ).run_task(Session(session_id="s"), "检查依赖后继续")
+    ]
+
+    assert events[-1].payload["finish_reason"] == "stop"
+    assert len(provider.stream_calls) == 3  # failed attempt, retried rebuild, tool round
+    for messages in provider.stream_calls:
+        system = [message.content for message in messages if message.role == "system"]
+        assert system.count(assembler.profile.coding_protocol) == 1
+    # A retried attempt is a faithful context rebuild, not a concatenated replay.
+    assert provider.stream_calls[1] == provider.stream_calls[0]
+    tool_round = provider.stream_calls[2]
+    assert any(
+        message.tool_calls and message.tool_calls[0].id == "call_1"
+        for message in tool_round
+        if isinstance(message, AssistantMessage)
+    )
+    assert any(getattr(message, "tool_call_id", None) == "call_1" for message in tool_round)
 
 
 @pytest.mark.asyncio

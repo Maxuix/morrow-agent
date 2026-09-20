@@ -118,7 +118,12 @@ class BackupFileEntry(ProtocolModel):
             if (
                 len(parts) != 3
                 or parts[0] != "workspaces"
-                or parts[2] not in {"agent-definitions.yaml", "workflow-definitions.yaml"}
+                or parts[2]
+                not in {
+                    "agent-definitions.yaml",
+                    "workflow-definitions.yaml",
+                    "agent-preset-preferences.yaml",
+                }
             ):
                 raise ValueError("definition source path is not whitelisted")
             validate_prefixed_id(parts[1], WORKSPACE_ID_PREFIX)

@@ -1,11 +1,10 @@
-"""SQLite MCP Server/Catalog and future run-evidence repository for v16."""
+"""SQLite MCP server, catalog, and run-evidence repository."""
 
 from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
 
-from morrow.adapters.state.migrations_v14_skills import GLOBAL_SCOPE_ID
 from morrow.adapters.state.transaction import SqliteJournalBackend
 from morrow.core.domain import sha256_digest
 from morrow.core.mcp import (
@@ -24,6 +23,8 @@ from morrow.core.mcp import (
 from morrow.core.models import ToolEffect
 from morrow.core.store import StorageError, StorageErrorCode
 
+GLOBAL_SCOPE_ID = ""
+
 
 def _json(value: object) -> str:
     try:
@@ -32,9 +33,9 @@ def _json(value: object) -> str:
         raise StorageError(StorageErrorCode.UNAVAILABLE, "MCP durable value is not JSON") from exc
 
 
-def _load_json(value: object, *, fallback: object | None = None) -> object:
+def _load_json(value: object) -> object:
     if value is None:
-        return fallback
+        raise StorageError(StorageErrorCode.NEEDS_REPAIR, "MCP durable JSON is missing")
     try:
         return json.loads(str(value))
     except (TypeError, ValueError) as exc:
@@ -57,12 +58,35 @@ def _domain_scope_id(scope_id: str) -> str | None:
     return None if scope_id == GLOBAL_SCOPE_ID else scope_id
 
 
+def _link_from_payload(
+    item: object, *, workspace_id: str, tool_execution_id: str
+) -> McpResultArtifactLink:
+    if not isinstance(item, dict):
+        raise ValueError("MCP Artifact link is not an object")
+    for field in ("link_id", "workspace_id", "tool_execution_id", "artifact_id", "role"):
+        if not isinstance(item.get(field), str) or not item[field]:
+            raise ValueError("MCP Artifact link has an invalid identity")
+    if item["workspace_id"] != workspace_id or item["tool_execution_id"] != tool_execution_id:
+        raise ValueError("MCP Artifact link owner is mismatched")
+    stamp = item.get("created_at_unix")
+    if isinstance(stamp, bool) or not isinstance(stamp, int):
+        raise ValueError("MCP Artifact link timestamp is invalid")
+    return McpResultArtifactLink(
+        link_id=item["link_id"],
+        workspace_id=workspace_id,
+        tool_execution_id=tool_execution_id,
+        artifact_id=item["artifact_id"],
+        role=item["role"],
+        created_at=_from_unix(stamp),
+    )
+
+
 def _scope_fields(definition: McpServerDefinition) -> tuple[str, str]:
     return definition.scope, _stored_scope_id(definition.scope_id)
 
 
-def _catalog_row_id(snapshot: McpCatalogSnapshot) -> str:
-    identity = f"{snapshot.server_id}\x00{snapshot.revision}".encode()
+def _catalog_row_id(snapshot: McpCatalogSnapshot, definition: McpServerDefinition) -> str:
+    identity = f"{definition.scope}\x00{definition.scope_id or ''}\x00{snapshot.server_id}\x00{snapshot.revision}".encode()
     return f"mcpr_{sha256_digest(identity)[:32]}"
 
 
@@ -71,7 +95,7 @@ def _schema_digest_or_none(value: object) -> str | None:
 
 
 class SqliteMcpJournal:
-    """Bounded v16 MCP repository sharing the operational journal transaction."""
+    """Bounded MCP repository sharing the operational journal transaction."""
 
     def __init__(self, backend: SqliteJournalBackend) -> None:
         self.backend = backend
@@ -197,7 +221,12 @@ class SqliteMcpJournal:
         if server is None:
             raise StorageError(StorageErrorCode.NOT_FOUND, "MCP Server is missing")
         now = _unix(snapshot.created_at)
-        catalog_id = _catalog_row_id(snapshot)
+        existing = self.backend.read_one(
+            "SELECT catalog_revision_id FROM mcp_catalog_revisions WHERE scope = ? AND scope_id = ? AND server_id = ? AND revision = ?",
+            (scope, scope_id, definition.server_id, snapshot.revision),
+        )
+        # Preserve existing row IDs/FKs; new revisions include their complete scope.
+        catalog_id = str(existing[0]) if existing else _catalog_row_id(snapshot, definition)
         handshake_json = (
             _json(snapshot.handshake.model_dump(mode="json")) if snapshot.handshake else None
         )
@@ -301,16 +330,16 @@ class SqliteMcpJournal:
                 display_name=str(row[3]),
                 transport=str(row[4]),
                 executable=str(row[5]),
-                argv=tuple(_load_json(row[6], fallback=[])),
+                argv=tuple(_load_json(row[6])),
                 executable_kind=str(row[7]),
                 cwd_policy=str(row[8]),
                 cwd=str(row[9]) if row[9] is not None else None,
                 timeout_ms=int(row[10]),
-                credential_refs=tuple(_load_json(row[11], fallback=[])),
+                credential_refs=tuple(_load_json(row[11])),
                 workspace_visibility=str(row[12]),
-                requested_launch_risks=tuple(_load_json(row[13], fallback=[])),
+                requested_launch_risks=tuple(_load_json(row[13])),
                 enabled=bool(row[14]),
-                tool_policy=_load_json(row[15], fallback={}),
+                tool_policy=_load_json(row[15]),
                 revision=int(row[16]),
             )
         except (TypeError, ValueError, KeyError) as exc:
@@ -393,7 +422,7 @@ class SqliteMcpJournal:
                     schema_dialect=str(tool[5]) if tool[5] is not None else None,
                     input_schema_digest=_schema_digest_or_none(tool[6]),
                     output_schema_digest=_schema_digest_or_none(tool[7]),
-                    annotations=_load_json(tool[8], fallback={}),
+                    annotations=_load_json(tool[8]),
                     status=McpToolCatalogStatus(str(tool[9])),
                     invalid_reason=str(tool[10]) if tool[10] is not None else None,
                     risk_mapping=mapping,
@@ -486,8 +515,8 @@ class SqliteMcpJournal:
                     server_id=str(row[3]),
                     config_revision=int(row[4]),
                     config_digest=str(row[5]),
-                    catalog_revision=int(row[6]) if row[6] is not None else None,
-                    catalog_digest=str(row[7]) if row[7] is not None else None,
+                    catalog_revision=int(row[6]),
+                    catalog_digest=str(row[7]),
                     transport=str(row[8]),
                     argv_digest=str(row[9]),
                     executable_digest=str(row[10]),
@@ -496,8 +525,8 @@ class SqliteMcpJournal:
                     network_risk=bool(row[13]),
                     credential_risk=bool(row[14]),
                     outside_workspace_risk=bool(row[15]),
-                    allowlisted_remote_tools=tuple(_load_json(row[16], fallback=[])),
-                    toolset_digest=str(row[17]) if row[17] is not None else None,
+                    allowlisted_remote_tools=tuple(_load_json(row[16])),
+                    toolset_digest=str(row[17]),
                     created_at=_from_unix(row[18]),
                 )
                 for row in rows
@@ -571,7 +600,7 @@ class SqliteMcpJournal:
                     effect=str(row[9]),
                     approval=str(row[10]),
                     catalog_revision=int(row[11]),
-                    recovery_declaration=_load_json(row[12], fallback={}),
+                    recovery_declaration=_load_json(row[12]),
                     created_at=_from_unix(row[13]),
                 )
                 for row in rows
@@ -586,7 +615,8 @@ class SqliteMcpJournal:
 
     def _put_result_artifact_link(self, link: McpResultArtifactLink) -> McpResultArtifactLink:
         execution = self.backend.read_one(
-            "SELECT workspace_id FROM tool_executions WHERE tool_execution_id = ?",
+            "SELECT workspace_id, mcp_artifact_links_json FROM tool_executions "
+            "WHERE tool_execution_id = ?",
             (link.tool_execution_id,),
         )
         if execution is None:
@@ -602,49 +632,76 @@ class SqliteMcpJournal:
                 StorageErrorCode.IDENTITY_MISMATCH,
                 "MCP result Artifact and execution workspace do not match",
             )
-        self.backend.executor().execute(
-            """
-            INSERT INTO mcp_result_artifact_links(
-                link_id, workspace_id, tool_execution_id, artifact_id, role, created_at_unix
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(tool_execution_id, artifact_id, role) DO NOTHING
-            """,
-            (
-                link.link_id,
-                link.workspace_id,
-                link.tool_execution_id,
-                link.artifact_id,
-                link.role,
-                _unix(link.created_at),
-            ),
-        )
+        payload = _load_json(execution[1])
+        if not isinstance(payload, list):
+            raise StorageError(
+                StorageErrorCode.NEEDS_REPAIR, "MCP Artifact links durable value is invalid"
+            )
+        try:
+            existing = tuple(
+                _link_from_payload(
+                    item,
+                    workspace_id=link.workspace_id,
+                    tool_execution_id=link.tool_execution_id,
+                )
+                for item in payload
+            )
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise StorageError(
+                StorageErrorCode.NEEDS_REPAIR, "MCP Artifact links durable value is invalid"
+            ) from exc
+        if not any(
+            item.artifact_id == link.artifact_id and item.role == link.role for item in existing
+        ):
+            payload.append(
+                {
+                    "link_id": link.link_id,
+                    "workspace_id": link.workspace_id,
+                    "tool_execution_id": link.tool_execution_id,
+                    "artifact_id": link.artifact_id,
+                    "role": link.role,
+                    "created_at_unix": _unix(link.created_at),
+                }
+            )
+            self.backend.executor().execute(
+                "UPDATE tool_executions SET mcp_artifact_links_json=? WHERE tool_execution_id=?",
+                (_json(payload), link.tool_execution_id),
+            )
         return link
 
     def list_result_artifact_links(
         self, workspace_id: str, tool_execution_id: str
     ) -> tuple[McpResultArtifactLink, ...]:
-        rows = self.backend.read_all(
-            """
-            SELECT link_id, workspace_id, tool_execution_id, artifact_id, role, created_at_unix
-            FROM mcp_result_artifact_links
-            WHERE workspace_id = ? AND tool_execution_id = ?
-            ORDER BY role, link_id
-            """,
-            (workspace_id, tool_execution_id),
-        )
         try:
-            return tuple(
-                McpResultArtifactLink(
-                    link_id=str(row[0]),
-                    workspace_id=str(row[1]),
-                    tool_execution_id=str(row[2]),
-                    artifact_id=str(row[3]),
-                    role=str(row[4]),
-                    created_at=_from_unix(row[5]),
-                )
-                for row in rows
+            row = self.backend.read_one(
+                "SELECT workspace_id, mcp_artifact_links_json FROM tool_executions "
+                "WHERE workspace_id=? AND tool_execution_id=?",
+                (workspace_id, tool_execution_id),
             )
-        except (TypeError, ValueError, KeyError) as exc:
+            if row is None:
+                return ()
+            payload = _load_json(row[1])
+            if not isinstance(payload, list):
+                raise ValueError("MCP Artifact link payload is not a list")
+            values = tuple(
+                _link_from_payload(
+                    item,
+                    workspace_id=workspace_id,
+                    tool_execution_id=tool_execution_id,
+                )
+                for item in payload
+            )
+            identities = {(item.artifact_id, item.role) for item in values}
+            if len(identities) != len(values):
+                raise ValueError("MCP Artifact link payload contains duplicates")
+            for item in values:
+                artifact = self.backend.read_one(
+                    "SELECT workspace_id FROM artifacts WHERE artifact_id=?", (item.artifact_id,)
+                )
+                if artifact is None or str(artifact[0]) != workspace_id:
+                    raise ValueError("MCP Artifact link points outside the workspace")
+            return tuple(sorted(values, key=lambda item: (item.role, item.link_id)))
+        except (TypeError, ValueError, KeyError, OverflowError) as exc:
             raise StorageError(
                 StorageErrorCode.NEEDS_REPAIR, "MCP Artifact link durable row is invalid"
             ) from exc

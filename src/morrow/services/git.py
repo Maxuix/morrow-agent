@@ -346,26 +346,6 @@ class GitInspectionService:
         return fitted
 
 
-def _split_diff_segments(text: str) -> tuple[str, ...]:
-    marker = "diff --git "
-    if marker not in text:
-        return ()
-    parts = text.split(marker)
-    return tuple(marker + part for part in parts[1:])
-
-
-def _diff_paths(segment: str) -> tuple[str, ...]:
-    first = segment.splitlines()[0] if segment.splitlines() else ""
-    if not first.startswith("diff --git a/"):
-        return ()
-    remainder = first[len("diff --git a/") :]
-    separator = " b/"
-    if separator not in remainder:
-        return ()
-    left, right = remainder.split(separator, 1)
-    return tuple(dict.fromkeys((left, right)))
-
-
 def _truncate_utf8(value: bytes, limit: int) -> str:
     return value[:limit].decode("utf-8", errors="ignore")
 

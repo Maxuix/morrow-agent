@@ -51,7 +51,7 @@ class ExtensionYamlLoad:
     status: ExtensionYamlLoadStatus
     value: ExtensionDocument | None
     revision: int
-    source_schema_version: int | None
+    schema_version: int | None
     presence: str = "present"
     error: str | None = None
 
@@ -65,9 +65,6 @@ class ExtensionYamlLoad:
 def extension_document_digest(value: ExtensionDocument) -> str:
     payload = value.model_dump(mode="json", by_alias=True)
     payload.pop("updated_at", None)
-    # Preserve digests of pre-planner documents and in-flight Skill/MCP operations.
-    if not payload.get("orchestration"):
-        payload.pop("orchestration", None)
     return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
 
 
@@ -225,13 +222,18 @@ class ExtensionYamlStore:
         try:
             raw = _read_raw(path)
             schema = _schema_version(raw)
-            if schema is not None and schema > EXTENSION_YAML_SCHEMA_VERSION:
+            if schema != EXTENSION_YAML_SCHEMA_VERSION:
+                error = (
+                    "future_extension_schema"
+                    if schema is not None and schema > EXTENSION_YAML_SCHEMA_VERSION
+                    else "unsupported_extension_schema"
+                )
                 return ExtensionYamlLoad(
                     ExtensionYamlLoadStatus.UNSUPPORTED_SCHEMA,
                     None,
                     int(raw.get("revision", 0) or 0),
                     schema,
-                    error="future_extension_schema",
+                    error=error,
                 )
             model_type = (
                 GlobalExtensionDocument

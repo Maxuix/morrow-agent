@@ -1,4 +1,4 @@
-"""Restore-time integrity checks for Operational Store v13 Preference records."""
+"""Restore-time integrity checks for Preference records."""
 
 from __future__ import annotations
 
@@ -6,24 +6,20 @@ import hashlib
 import json
 import sqlite3
 
-_PREFERENCE_SCHEMA_VERSION = 13
 _PREFERENCE_TABLES = frozenset(
     {
         "preference_review_jobs",
         "preference_evidence",
         "preference_proposals",
-        "preference_proposal_evidence",
         "preference_write_batches",
-        "preference_write_batch_proposals",
     }
 )
 
 
 def verify_preference_references(connection: sqlite3.Connection) -> tuple[bool, tuple[str, ...]]:
-    """Verify v13 links and bounded JSON metadata without consulting YAML or credentials."""
+    """Verify Preference links and bounded JSON metadata."""
 
     try:
-        schema_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
         tables = {
             str(row[0])
             for row in connection.execute(
@@ -32,8 +28,6 @@ def verify_preference_references(connection: sqlite3.Connection) -> tuple[bool, 
         }
     except (TypeError, ValueError, sqlite3.Error):
         return False, ("preference_schema_unreadable",)
-    if schema_version < _PREFERENCE_SCHEMA_VERSION:
-        return True, ()
     if not _PREFERENCE_TABLES.issubset(tables):
         return False, ("preference_schema_tables_missing",)
 
@@ -75,28 +69,6 @@ def verify_preference_references(connection: sqlite3.Connection) -> tuple[bool, 
             WHERE j.job_id IS NULL OR e.evidence_id IS NULL
                OR j.workspace_id != p.workspace_id OR e.workspace_id != p.workspace_id
                OR e.job_id != p.job_id
-            """,
-        ),
-        (
-            "preference_proposal_evidence_links",
-            """
-            SELECT COUNT(*) FROM preference_proposal_evidence l
-            LEFT JOIN preference_proposals p ON p.proposal_id = l.proposal_id
-            LEFT JOIN preference_evidence e ON e.evidence_id = l.evidence_id
-            WHERE p.proposal_id IS NULL OR e.evidence_id IS NULL
-               OR p.workspace_id != l.workspace_id OR e.workspace_id != l.workspace_id
-               OR p.evidence_id != l.evidence_id
-            """,
-        ),
-        (
-            "preference_batch_proposal_links",
-            """
-            SELECT COUNT(*) FROM preference_write_batch_proposals l
-            LEFT JOIN preference_write_batches b ON b.batch_id = l.batch_id
-            LEFT JOIN preference_proposals p ON p.proposal_id = l.proposal_id
-            WHERE b.batch_id IS NULL OR p.proposal_id IS NULL
-               OR b.workspace_id != l.workspace_id OR p.workspace_id != l.workspace_id
-               OR b.scope != p.scope
             """,
         ),
         (
@@ -163,6 +135,30 @@ def verify_preference_references(connection: sqlite3.Connection) -> tuple[bool, 
                 break
     except (TypeError, ValueError, json.JSONDecodeError, sqlite3.Error):
         issues.append("preference_proposal_payload_unreadable")
+
+    try:
+        batches = connection.execute(
+            "SELECT workspace_id, scope, proposal_ids_json FROM preference_write_batches"
+        ).fetchall()
+        for workspace_id, scope, raw_ids in batches:
+            proposal_ids = json.loads(str(raw_ids))
+            if not isinstance(proposal_ids, list) or any(
+                not isinstance(proposal_id, str) for proposal_id in proposal_ids
+            ):
+                issues.append("preference_batch_proposals")
+                break
+            for proposal_id in proposal_ids:
+                proposal = connection.execute(
+                    "SELECT workspace_id, scope FROM preference_proposals WHERE proposal_id=?",
+                    (proposal_id,),
+                ).fetchone()
+                if proposal is None or tuple(map(str, proposal)) != (str(workspace_id), str(scope)):
+                    issues.append("preference_batch_proposals")
+                    break
+            if "preference_batch_proposals" in issues:
+                break
+    except (TypeError, ValueError, json.JSONDecodeError, sqlite3.Error):
+        issues.append("preference_batch_proposals_unreadable")
 
     return not issues, tuple(dict.fromkeys(issues))
 

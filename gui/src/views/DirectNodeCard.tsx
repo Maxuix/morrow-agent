@@ -1,4 +1,5 @@
 import type { NodeViewWire } from '../api/types'
+import { NodeExecutionBadge } from '../components/NodeExecutionBadge'
 import { StatusDot } from '../components/StatusDot'
 import type { RevisionNodeInfo } from './lib/graph'
 
@@ -32,6 +33,7 @@ export function DirectNodeCard({
       }`}
     >
       <StatusDot status={status} className="text-sm" />
+      <NodeExecutionBadge execution={nodeView?.execution} />
       <span className="font-mono text-xs text-secondary">{revisionNode.node_id}</span>
       {revisionNode.model !== null && (
         <span className="text-xs text-secondary">{revisionNode.model}</span>

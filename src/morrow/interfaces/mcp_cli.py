@@ -326,9 +326,9 @@ def mcp_refresh(
         definition = service.show(server_id, scope, scope_id=scope_id)
         previous = journal.get_mcp_catalog(scope, server_id, scope_id=scope_id)
         catalog = asyncio.run(
-            McpCatalogService(workspace_root=directory.resolve()).refresh(
-                definition, previous=previous
-            )
+            McpCatalogService(
+                workspace_root=directory.resolve(), credential_store=application.credentials
+            ).refresh(definition, previous=previous)
         )
         journal.put_mcp_server(definition, catalog=catalog)
         _emit(project_server(definition, catalog), as_json=as_json)

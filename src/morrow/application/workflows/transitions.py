@@ -18,7 +18,6 @@ from morrow.core.application import (
     ApplicationErrorCode,
 )
 from morrow.core.models import utc_now
-from morrow.core.workflows.contracts import ArtifactBinding
 from morrow.core.workflows.runs import NodeRun, WorkflowRun, WorkflowStatus
 
 EventSink = Callable[[str, str, str, dict], None]
@@ -40,6 +39,11 @@ class WorkflowTransitionService:
         # already in a larger transaction, the event row joins that transaction
         # and its subscriber hint is deferred until the outer commit.
         self.event_sink = event_sink
+        # Optional in-process pause wake (P04): the scheduler injects its
+        # NodePauseControl so every pause acceptance path — plan-change, run
+        # commands, replan review — wakes live leaf drivers immediately. The
+        # durable pause fact stays the authority; the hint is best-effort.
+        self.pause_control = None
 
     def _emit_run(self, run: WorkflowRun) -> None:
         if self.event_sink is None:
@@ -134,33 +138,53 @@ class WorkflowTransitionService:
     def resume_blocked_node(self, node_run_id: str) -> NodeRun:
         return self._node_to(node_run_id, WorkflowStatus.RUNNING)
 
-    def bind_node_inputs(self, node_run_id: str, bindings: tuple[ArtifactBinding, ...]) -> None:
-        """Durably bind one node's declared input Artifacts in one transaction.
+    def _node_terminal(self, node_run_id: str, target: WorkflowStatus) -> NodeRun:
+        if target is WorkflowStatus.COMPLETED:
+            return self._complete_node_settling_segment(node_run_id)
+        return self._node_to(node_run_id, target, terminal=True)
 
-        The journal remains the authority: it verifies each declared binding,
-        the exact producer output and the immutable-binding rule, so replay of
-        an identical set is a no-op and a fault can never leave a partial
-        input set behind.
+    def _complete_node_settling_segment(self, node_run_id: str) -> NodeRun:
+        """Complete the node and settle its active segment in one transaction.
+
+        No other code path closes a segment as ``completed``: without this
+        settle, the ending execution segment of every completed node lingers
+        as ``active`` forever, so run views cannot show a terminal segment and
+        a completed node still looks continuable to the pause/continuation
+        admission path.
         """
 
-        if not bindings:
-            return
-        node = self._require_node(node_run_id)
-
-        def work(txn) -> None:
-            for binding in bindings:
-                txn.workflows.bind_artifact(
+        def work(txn) -> tuple[NodeRun, bool]:
+            current = txn.workflows.get_node(self.workspace_id, node_run_id)
+            if current is None:
+                raise ValueError("Workflow NodeRun is missing")
+            if current.status is WorkflowStatus.COMPLETED:
+                return current, False
+            updated = txn.workflows.save_node(
+                current.model_copy(
+                    update={
+                        "status": WorkflowStatus.COMPLETED,
+                        "row_version": current.row_version + 1,
+                        "completed_at": self.clock(),
+                    }
+                ),
+                expected_row_version=current.row_version,
+            )
+            segment = txn.workflows.current_segment(node_run_id)
+            if segment is not None and segment.status == "active":
+                txn.workflows.close_segment(
                     self.workspace_id,
-                    node.workflow_run_id,
-                    binding,
-                    node_run_id=node_run_id,
-                    direction="input",
+                    segment.segment_id,
+                    status="completed",
+                    expected_row_version=segment.row_version,
                 )
+            return updated, True
 
-        self.journal.transact(work)
-
-    def _node_terminal(self, node_run_id: str, target: WorkflowStatus) -> NodeRun:
-        return self._node_to(node_run_id, target, terminal=True)
+        updated, changed = self.journal.transact(work)
+        if changed:
+            # Mirrors _node_to: an idempotent re-complete must not emit a
+            # second completion event.
+            self._emit_node(updated)
+        return updated
 
     def _node_to(
         self, node_run_id: str, target: WorkflowStatus, *, terminal: bool = False
@@ -250,11 +274,21 @@ class WorkflowTransitionService:
 
     # Pause/Drain control -----------------------------------------------------
 
-    def request_pause(self, workflow_run_id: str) -> WorkflowRun:
+    def request_pause(
+        self,
+        workflow_run_id: str,
+        *,
+        command_id: str | None = None,
+        reason: str = "user_interrupt",
+    ) -> WorkflowRun:
         """Record the durable pause fact; a running run starts draining.
 
-        The blocked form records only the fact and leaves unknown evidence
-        untouched; a pending user-cancel intent owns its blocked run instead.
+        A user pause also durably accepts one ``PauseIntentFact`` cycle in the
+        same transaction, keyed by ``command_id`` when the caller has one.
+        Internal boundaries pass ``reason="node_boundary"`` and never wake
+        drivers. The blocked form records only the fact and leaves unknown
+        evidence untouched; a pending user-cancel intent owns its blocked run
+        instead.
         """
 
         def work(txn) -> WorkflowRun:
@@ -304,15 +338,66 @@ class WorkflowTransitionService:
                     ApplicationErrorCode.INVALID,
                     f"a {current.status.value} Workflow cannot be paused",
                 )
-            return txn.workflows.save_run(
+            updated = txn.workflows.save_run(
                 current.model_copy(update=update), expected_row_version=current.row_version
             )
+            if command_id is not None:
+                from morrow.core.contracts import PauseIntentFact
+                from morrow.core.execution_pause import PauseIntentRequest, WorkflowPausePoint
+
+                request = PauseIntentRequest(
+                    command_id=command_id,
+                    owner="workflow_run",
+                    owner_id=workflow_run_id,
+                    reason=reason,
+                )
+                existing = txn.workflows.execution_pause.find_pause_point_by_command(
+                    self.workspace_id, request
+                )
+                if existing is None:
+                    generation = txn.workflows.execution_pause.next_control_generation(
+                        self.workspace_id, owner="workflow_run", owner_id=workflow_run_id
+                    )
+                    now = self.clock()
+                    txn.workflows.execution_pause.insert_pause_point(
+                        WorkflowPausePoint(
+                            pause_point_id=f"pause_{workflow_run_id}_{generation}",
+                            workspace_id=self.workspace_id,
+                            fact=PauseIntentFact(
+                                control_generation=generation,
+                                command_id=command_id,
+                                owner="workflow_run",
+                                owner_id=workflow_run_id,
+                                reason=reason,
+                                lifecycle="requested",
+                                requested_at=now,
+                            ),
+                            node_run_id=None,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                    )
+            return updated
 
         before = self._require_run(workflow_run_id)
         updated = self.journal.transact(work)
         if updated.row_version != before.row_version:
             self._emit_run(updated)
+            if reason in {"user_interrupt", "provider_failure", "process_interrupt"}:
+                self._wake_drivers(workflow_run_id)
         return updated
+
+    def _wake_drivers(self, workflow_run_id: str) -> None:
+        """Best-effort in-process wake after the durable pause fact commits."""
+        control = self.pause_control
+        if control is None:
+            return
+        try:
+            control.wake_run(workflow_run_id)
+        except Exception:
+            # A missed hint only delays the wake; the durable pause fact and
+            # the driver's next control check stay authoritative.
+            return
 
     def resume_run(self, workflow_run_id: str) -> WorkflowRun:
         """Atomically clear the pause fact; a paused/draining run runs again.
@@ -345,16 +430,25 @@ class WorkflowTransitionService:
     def complete_drain(self, workflow_run_id: str) -> WorkflowRun:
         """A draining run with no Active nodes becomes paused.
 
-        No admission can commit while the pause fact stands, so the active-node
-        read and the status write cannot race a queued→running flip.
+        With execution segments (P02/P04), a user-paused RUNNING node whose
+        current segment is already ``interrupted`` has parked at its safe
+        point: it no longer blocks the drain. A RUNNING node with an active
+        segment still does.
         """
 
         current = self._require_run(workflow_run_id)
         if current.status is not WorkflowStatus.DRAINING:
             return current
         nodes = self.journal.workflows.list_nodes(self.workspace_id, workflow_run_id)
-        if any(node.status in (WorkflowStatus.RUNNING, WorkflowStatus.BLOCKED) for node in nodes):
-            return current
+        for node in nodes:
+            if node.status not in (WorkflowStatus.RUNNING, WorkflowStatus.BLOCKED):
+                continue
+            if node.status is WorkflowStatus.BLOCKED:
+                return current
+            segments = self.journal.workflows.segments_for_node(self.workspace_id, node.node_run_id)
+            latest = segments[-1] if segments else None
+            if latest is None or latest.status == "active":
+                return current
         updated = current.model_copy(
             update={"status": WorkflowStatus.PAUSED, "row_version": current.row_version + 1}
         )

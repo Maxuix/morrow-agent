@@ -211,7 +211,7 @@ class AgentRunObservabilityPort(Protocol):
 
 
 class SkillRunJournalPort(Protocol):
-    """v14 immutable Skill evidence attached to one AgentRun."""
+    """Immutable Skill evidence attached to one AgentRun."""
 
     def put_skill_selection(
         self, workspace_id: str, selection: SkillSelection
@@ -237,7 +237,7 @@ class SkillRunJournalPort(Protocol):
 
 
 class SkillDraftUsageJournalPort(Protocol):
-    """v15 generated Draft, validation and observational Usage records."""
+    """Generated Draft, validation and observational Usage records."""
 
     def put_skill_draft(self, workspace_id: str, draft: SkillDraft) -> SkillDraft: ...
 
@@ -289,7 +289,7 @@ class SkillDraftUsageJournalPort(Protocol):
 
 
 class McpCatalogJournalPort(Protocol):
-    """v16 MCP desired-state, Catalog and reserved run-evidence surface."""
+    """MCP desired-state, Catalog and reserved run-evidence surface."""
 
     def put_mcp_server(
         self, definition: McpServerDefinition, *, catalog: McpCatalogSnapshot | None = None

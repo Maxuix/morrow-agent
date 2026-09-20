@@ -167,7 +167,10 @@ def test_run_uses_the_real_session_builder_with_a_scripted_provider(monkeypatch,
 
     assert result.exit_code == 0, result.output
     records = [json.loads(line) for line in result.output.splitlines()]
+    # turn.started, awaiting_model, model_responding, text.delta, turn.completed.
     assert [record["kind"] for record in records] == [
+        "agent_event",
+        "agent_event",
         "agent_event",
         "agent_event",
         "agent_event",

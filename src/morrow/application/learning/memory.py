@@ -5,6 +5,7 @@ from __future__ import annotations
 from morrow.application.api_context import ApplicationCommandContext
 from morrow.application.learning.inbox import _offset
 from morrow.application.learning.lifecycle import MemoryLifecycleService
+from morrow.application.learning.memory_terms import rebuild_project_knowledge_terms
 from morrow.core.application import ApplicationError, ApplicationErrorCode, QueryPage
 from morrow.core.domain import validate_prefixed_id
 from morrow.core.learning_memory import ProjectKnowledgeCategory, ProjectKnowledgeStatus
@@ -82,7 +83,8 @@ class MemoryApplicationService:
             lambda: self.journal.list_project_knowledge_revisions(
                 self.workspace_id,
                 head.knowledge_id,
-                limit=500 if revision is not None else LEARNING_QUERY_MAX_TIMELINE,
+                limit=1 if revision is not None else LEARNING_QUERY_MAX_TIMELINE,
+                revision=revision,
             )
         )
         selected = (
@@ -126,7 +128,8 @@ class MemoryApplicationService:
         selections = self.context._query(
             lambda: self.journal.list_memory_selections(
                 self.workspace_id,
-                limit=min(500, offset + limit),
+                limit=limit,
+                offset=offset,
             )
         )
         refs = self._selection_agent_runs(selections)
@@ -135,9 +138,9 @@ class MemoryApplicationService:
                 selection,
                 agent_run_ids=refs.get(selection.selection_id, ()),
             )
-            for selection in selections[offset : offset + limit]
+            for selection in selections
         )
-        next_cursor = str(offset + len(page)) if offset + len(page) < len(selections) else None
+        next_cursor = str(offset + len(page)) if len(page) == limit else None
         return QueryPage(page, next_cursor)
 
     def get_selection(self, selection_id: str) -> MemorySelectionView | None:
@@ -156,6 +159,15 @@ class MemoryApplicationService:
         return MemorySelectionView(
             selection=selection,
             agent_run_ids=refs.get(selection.selection_id, ()),
+        )
+
+    def rebuild_index(self, *, page_size: int = 500) -> int:
+        """Rebuild the workspace's derived Memory search index atomically."""
+
+        return self.context._translate(
+            lambda: self.journal.transact(
+                lambda txn: rebuild_project_knowledge_terms(txn, self.workspace_id, limit=page_size)
+            )
         )
 
     def disable_knowledge(self, command):

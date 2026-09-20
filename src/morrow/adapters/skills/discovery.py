@@ -122,10 +122,9 @@ def _inspect_version_dir(
             skill_id,
             (f"version directory name {version_dir.name!r} does not match envelope version_id",),
         )
-    # Older catalog fixtures may omit scope_id; a managed package published by
-    # Morrow always carries it. Reject an explicit mismatch without breaking
-    # read-only packages whose scope is supplied by the configured root.
-    if envelope.get("scope_id") is not None and envelope.get("scope_id") != scope_id:
+    # A package may be published without a scope; the configured read-only
+    # root supplies that scope for the discovered projection.
+    if envelope["scope_id"] is not None and envelope["scope_id"] != scope_id:
         return PackageLoadError(
             version_dir,
             skill_id,

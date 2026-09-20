@@ -142,8 +142,6 @@ class LearningCandidateType(StrEnum):
     PROFILE = "profile"
     PROJECT_KNOWLEDGE = "project_knowledge"
     SKILL_CANDIDATE = "skill_candidate"
-    WORKFLOW_FEEDBACK = "workflow_feedback"
-    ORCHESTRATION_POLICY_CANDIDATE = "orchestration_policy_candidate"
 
 
 class LearningCandidateOperation(StrEnum):
@@ -263,12 +261,10 @@ from morrow.core.learning_payloads import (  # noqa: E402
     CandidatePayload,
     LearningCandidateDraft,
     LearningPayload,
-    OrchestrationPolicyCandidatePayload,
     ProfileCandidatePayload,
     ProjectKnowledgeCandidatePayload,
     ProjectKnowledgeCategory,
     SkillCandidatePayload,
-    WorkflowFeedbackCandidatePayload,
 )
 
 
@@ -707,12 +703,10 @@ __all__ = [
     "LEARNING_KNOWLEDGE_ID_PREFIX",
     "LEARNING_KNOWLEDGE_REVISION_ID_PREFIX",
     "LEARNING_KNOWLEDGE_STATEMENT_MAX_CHARS",
-    "OrchestrationPolicyCandidatePayload",
     "ProfileCandidatePayload",
     "ProjectKnowledgeCandidatePayload",
     "ProjectKnowledgeCategory",
     "SkillCandidatePayload",
-    "WorkflowFeedbackCandidatePayload",
     "learning_safety_codes",
     "scan_learning_text",
 ]

@@ -191,72 +191,42 @@ async def test_sibling_failure_closes_admitted_leaves_even_with_server_driver_se
         result = await asyncio.wait_for(
             fx.runtime.scheduler.run(run.workflow_run_id, cancelled_is_user=cancelled_is_user), 15
         )
-        assert result.status is WorkflowStatus.FAILED
+        assert result.status is WorkflowStatus.PAUSED
         admitted = [node for node in nodes(fx, run) if node.agent_run_id]
         assert len(admitted) == 2
         for node in admitted:
             assert not fx.journal.has_open_turn_submission(WS, node.conversation_session_id)
             leaf = fx.journal.get_task_run(WS, node.leaf_task_run_id)
-            assert leaf.status in {TaskRunStatus.FAILED, TaskRunStatus.CANCELLED}
+            assert leaf.status is TaskRunStatus.OPEN
             transitions = fx.journal.list_task_transitions(WS, node.leaf_task_run_id)
             assert (
                 sum(
                     t.to_status in {TaskRunStatus.FAILED, TaskRunStatus.CANCELLED}
                     for t in transitions
                 )
-                == 1
+                == 0
             )
+            assert all(
+                segment.status == "interrupted"
+                for segment in fx.journal.workflows.segments_for_node(WS, node.node_run_id)
+            )
+        from morrow.application.execution_pause import ExecutionPauseService
+
+        waiting.set()
+        ExecutionPauseService(
+            fx.journal, workspace_id=WS, id_source=fx.ids
+        ).store_continuation_input(
+            run.workflow_run_id,
+            command_id=f"cmd_resume_{str(cancelled_is_user).lower()}",
+        )
+        fx.runtime.transitions.resume_run(run.workflow_run_id)
+        resumed = await asyncio.wait_for(
+            fx.runtime.scheduler.recover(run.workflow_run_id, cancelled_is_user=cancelled_is_user),
+            15,
+        )
+        assert resumed.status is WorkflowStatus.COMPLETED
+        assert all(node.status is WorkflowStatus.COMPLETED for node in nodes(fx, run))
         assert not fx.runtime.scheduler._live_node_run_ids
-    finally:
-        fx.close()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("cancelled_is_user", [True, False])
-async def test_serial_fallback_signal_pauses_and_continues_without_losing_queued_work(
-    tmp_path, cancelled_is_user
-):
-    from morrow.core.workflows.replan import ReplanRequest
-    from test_stage7_serial_scheduler import ScriptBank
-
-    request = ReplanRequest(
-        target_node_id="summary", task_contract={"objective": "Use revised evidence"}
-    )
-    submission = AssistantMessage(
-        tool_calls=(
-            FunctionToolCall(
-                id="call_replan",
-                name="submit_node_result",
-                arguments='{"outputs": {}, "replan":' + request.model_dump_json() + "}",
-            ),
-        )
-    )
-    fx = DagFixture(tmp_path, bank=ScriptBank([[submission, "first reader complete"], ["unused"]]))
-    try:
-        # The fixture's executor has no workspace proof: the declared frontier
-        # must use the supported serial fallback, not parallel admission.
-        _, publication = publish(fx, lambda ref: fanout(ref, count=2, concurrency=2))
-        run = start(fx, publication.revision).run
-        paused = await fx.runtime.scheduler.run(
-            run.workflow_run_id, cancelled_is_user=cancelled_is_user
-        )
-        assert paused.status is WorkflowStatus.PAUSED
-        assert {n.node_id: n.status for n in nodes(fx, run)} == {
-            "reader_0": WorkflowStatus.COMPLETED,
-            "reader_1": WorkflowStatus.QUEUED,
-            "summary": WorkflowStatus.QUEUED,
-        }
-        proposals = fx.journal.workflows.list_replan_proposals(WS, run.workflow_run_id)
-        assert len(proposals) == 1 and proposals[0].status == "pending"
-        decision = fx.runtime.replan.decide(
-            proposals[0].proposal_id, approved=True, expected_row_version=1
-        )
-        child = await fx.runtime.scheduler.run(
-            decision.child_run_id, cancelled_is_user=cancelled_is_user
-        )
-        assert child.status is WorkflowStatus.COMPLETED
-        assert {n.node_id for n in nodes(fx, child)} == {"reader_1", "summary"}
-        assert fx.journal.count_lineage_agent_requests(WS, run.workflow_run_id) == 4
     finally:
         fx.close()
 

@@ -99,7 +99,13 @@ class CoreApiVerificationClient:
         origin: str | None = None,
         content_type: str | None = None,
     ) -> ApiResponse:
-        raw = json.dumps(body).encode("utf-8") if body is not None else b""
+        raw = (
+            body
+            if isinstance(body, bytes)
+            else json.dumps(body).encode("utf-8")
+            if body is not None
+            else b""
+        )
         headers = [(b"host", b"127.0.0.1")]
         auth = self.token if token is None else token
         if auth:
@@ -112,7 +118,7 @@ class CoreApiVerificationClient:
         route, _, query = path.partition("?")
         scope = {
             "type": "http",
-            "asgi": {"version": "3.0"},
+            "asgi": {"version": "3.0", "spec_version": "2.4"},
             "http_version": "1.1",
             "method": method,
             "scheme": "http",
@@ -168,7 +174,7 @@ class CoreApiVerificationClient:
         ]
         scope = {
             "type": "http",
-            "asgi": {"version": "3.0"},
+            "asgi": {"version": "3.0", "spec_version": "2.4"},
             "http_version": "1.1",
             "method": "POST",
             "scheme": "http",

@@ -180,17 +180,34 @@ export function structuralDiff(before: unknown, after: unknown, path = '$'): Dif
     for (const key of keys) result.push(...structuralDiff(before[key], after[key], `${path}.${key}`))
     return result
   }
-  return [{ path, before: display(before), after: display(after) }]
+  return [{ path, before: display(before, path), after: display(after, path) }]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function display(value: unknown): string {
+function display(value: unknown, path: string): string {
   if (value === undefined) return '∅'
-  const text = JSON.stringify(value)
+  const key = path.match(/\.([^.\[]+)(?:\[\d+\])?$/)?.[1] ?? ''
+  const text = JSON.stringify(sanitizeForDisplay(value, key))
   return text === undefined ? String(value) : text
+}
+
+function sanitizeForDisplay(value: unknown, key = ''): unknown {
+  if (/api[-_]?key|authorization|token|secret|password|credential/i.test(key)) return '已隐藏'
+  if (typeof value === 'string') {
+    return value
+      .replace(/Traceback \(most recent call last\):[\s\S]*/i, '详细异常已省略。')
+      .replace(/((?:api[-_]?key|authorization|token|secret|password)\s*[:=]\s*)[^\s,;]+/gi, '$1已隐藏')
+  }
+  if (Array.isArray(value)) return value.map(item => sanitizeForDisplay(item))
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([name, item]) => [name, sanitizeForDisplay(item, name)]),
+    )
+  }
+  return value
 }
 
 // Pending-graph (patch) flow helpers -------------------------------------------

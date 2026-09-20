@@ -592,29 +592,53 @@ def test_competing_workspace_publications_are_serialized_across_processes(
     assert loaded.presence.value == expected_presence
 
 
-def test_profile_v1_is_migrated_once_and_normal_loads_are_current_only(tmp_path):
-    workspace_id = "ws_profile_migration"
-    path = tmp_path / "workspaces" / workspace_id / "profile.yaml"
-    path.parent.mkdir(parents=True)
-    path.write_text(
-        yaml.safe_dump(
-            {
-                "schema_version": 1,
-                "revision": 4,
-                "profile": {"name": "migrated"},
-            },
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
+def test_removed_workspace_is_hidden_from_get_and_resolve_by_default(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    app.workspace_service.update_entry(identity.workspace_id, removed=True)
 
-    loaded = ProjectStateYamlStore(tmp_path).load_profile(workspace_id)
+    assert app.workspace_service.get(identity.workspace_id) is None
+    revived = app.workspace_service.get(identity.workspace_id, include_removed=True)
+    assert revived is not None and revived.workspace_id == identity.workspace_id
 
-    assert loaded.status is StateLoadStatus.OK
-    assert loaded.revision == 5
-    assert loaded.value.profile.name == "migrated"
-    assert yaml.safe_load(path.read_text(encoding="utf-8"))["schema_version"] == 2
-    assert (
-        yaml.safe_load(path.with_suffix(".yaml.bak").read_text(encoding="utf-8"))["schema_version"]
-        == 1
-    )
+    resolution = app.workspace_service.resolve(project)
+    assert resolution.status == "candidate"
+    assert resolution.identity is None
+    including_removed = app.workspace_service.resolve(project, include_removed=True)
+    assert including_removed.status == "existing"
+    assert including_removed.identity.workspace_id == identity.workspace_id
+
+
+def test_confirm_revives_removed_workspace_without_duplicate(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    app.workspace_service.update_entry(identity.workspace_id, removed=True)
+    assert app.workspace_service.listing()["items"] == []
+
+    reopened = app.workspace_service.confirm(app.workspace_service.resolve(project))
+
+    assert reopened.workspace_id == identity.workspace_id
+    items = app.workspace_service.listing()["items"]
+    assert [item["workspace_id"] for item in items] == [identity.workspace_id]
+    index = app.index_store.load().value
+    assert list(index.workspaces) == [identity.workspace_id]
+
+
+def test_cli_identity_rejects_removed_workspace_by_id_and_path(tmp_path):
+    from morrow.interfaces import approval_cli, workflow_cli
+
+    project = tmp_path / "project"
+    project.mkdir()
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    app.workspace_service.update_entry(identity.workspace_id, removed=True)
+
+    for identity_resolver in (workflow_cli._identity, approval_cli._identity):
+        with pytest.raises(WorkspaceError):
+            identity_resolver(app, identity.workspace_id, project)
+        with pytest.raises(WorkspaceError):
+            identity_resolver(app, None, project)

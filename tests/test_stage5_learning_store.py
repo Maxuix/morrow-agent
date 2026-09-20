@@ -3,26 +3,11 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from pydantic import ValidationError
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
-from morrow.adapters.state.migrations import (
-    V1,
-    V2,
-    V3,
-    V4,
-    V5,
-    V6,
-    V7,
-    V8,
-    V9,
-    V10,
-    V10_NAME,
-    V11,
-    V11_NAME,
-    MigrationRegistry,
-    SchemaMigration,
-)
 from morrow.adapters.state.operational import OperationalStore
+from morrow.core.configuration_promotion import PromotionOperation
 from morrow.core.domain import (
     DurableSession,
     DurableTaskRun,
@@ -66,38 +51,16 @@ from morrow.core.learning_memory import (
     ProjectKnowledgeRevision,
     ProjectKnowledgeStatus,
 )
-from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
+from morrow.core.store import StorageError, StorageErrorCode
 from morrow.testing import FixedClock
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 DIGEST = "a" * 64
 
 
-def _v9_registry() -> MigrationRegistry:
-    registry = MigrationRegistry(supported_version=9)
-    for migration in (V1, V2, V3, V4, V5, V6, V7, V8, V9):
-        registry.add(migration)
-    return registry
-
-
-def _v10_registry() -> MigrationRegistry:
-    registry = MigrationRegistry(supported_version=10)
-    for migration in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10):
-        registry.add(migration)
-    return registry
-
-
-def _v11_registry() -> MigrationRegistry:
-    registry = MigrationRegistry(supported_version=11)
-    for migration in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11):
-        registry.add(migration)
-    return registry
-
-
-def _store(tmp_path, *, registry=None):
+def _store(tmp_path):
     return OperationalStore(
         tmp_path / "state",
-        registry=registry,
         clock=FixedClock(NOW),
         maintenance_timeout=0,
     )
@@ -217,124 +180,6 @@ def _candidate() -> LearningCandidate:
         expires_at=NOW + timedelta(days=30),
         now=NOW,
     )
-
-
-def test_v9_store_upgrades_to_v11_without_rewriting_old_migrations(tmp_path):
-    legacy = _store(tmp_path, registry=_v9_registry())
-    legacy.initialize().close()
-    upgraded = _store(tmp_path, registry=_v11_registry())
-    report = upgraded.migrate()
-
-    assert report.from_version == 9
-    assert report.to_version == 11
-    assert report.applied == (V10_NAME, V11_NAME)
-    with upgraded.open(StoreOpenMode.READ_WRITE) as session:
-        assert session.schema_version == 11
-        rows = session.run_read(
-            lambda executor: executor.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' AND ("
-                "name LIKE 'learning_%' OR name LIKE 'project_%' OR name = 'memory_workspace_state')"
-            )
-        )
-        assert {str(row[0]) for row in rows} == {
-            "learning_policies",
-            "learning_reviews",
-            "learning_evidence",
-            "learning_review_evidence",
-            "learning_candidates",
-            "learning_candidate_evidence",
-            "learning_suppressions",
-            "learning_candidate_decisions",
-            "project_knowledge_heads",
-            "project_knowledge_revisions",
-            "project_knowledge_evidence",
-            "memory_workspace_state",
-        }
-
-
-def test_v10_store_upgrades_to_v11_without_rewriting_v10(tmp_path):
-    legacy = _store(tmp_path, registry=_v10_registry())
-    legacy.initialize().close()
-    upgraded = _store(tmp_path, registry=_v11_registry())
-
-    report = upgraded.migrate()
-
-    assert report.from_version == 10
-    assert report.to_version == 11
-    assert report.applied == (V11_NAME,)
-    with upgraded.open(StoreOpenMode.READ_WRITE) as session:
-        rows = session.run_read(
-            lambda executor: executor.execute(
-                "SELECT version, checksum FROM schema_migrations WHERE version IN (9, 10, 11) "
-                "ORDER BY version"
-            )
-        )
-        assert tuple(int(row[0]) for row in rows) == (9, 10, 11)
-        assert str(rows[1][1]) == V10.checksum
-
-
-def test_v11_migration_rolls_back_all_inbox_and_memory_ddl_on_failure(tmp_path):
-    legacy = _store(tmp_path, registry=_v10_registry())
-    legacy.initialize().close()
-    broken = MigrationRegistry(supported_version=11)
-    for migration in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10):
-        broken.add(migration)
-    broken.add(
-        SchemaMigration(
-            version=11,
-            name="broken_inbox_memory",
-            statements=(
-                "CREATE TABLE v11_rollback_probe (id INTEGER PRIMARY KEY)",
-                "THIS IS NOT SQL",
-            ),
-        )
-    )
-    failing = _store(tmp_path, registry=broken)
-
-    with pytest.raises(StorageError) as error:
-        failing.migrate()
-    assert error.value.code is StorageErrorCode.UNAVAILABLE
-    assert failing.classify().schema_version == 10
-    with failing.open(StoreOpenMode.READ_WRITE) as session:
-        names = session.run_read(
-            lambda executor: executor.execute(
-                "SELECT name FROM sqlite_master WHERE name IN ("
-                "'v11_rollback_probe', 'learning_candidate_decisions', "
-                "'project_knowledge_heads', 'promotion_operations')"
-            )
-        )
-        assert names == ()
-
-
-def test_v10_migration_rolls_back_all_learning_ddl_on_failure(tmp_path):
-    legacy = _store(tmp_path, registry=_v9_registry())
-    legacy.initialize().close()
-    broken = MigrationRegistry(supported_version=10)
-    for migration in (V1, V2, V3, V4, V5, V6, V7, V8, V9):
-        broken.add(migration)
-    broken.add(
-        SchemaMigration(
-            version=10,
-            name="broken_learning_foundation",
-            statements=(
-                "CREATE TABLE learning_rollback_probe (id INTEGER PRIMARY KEY)",
-                "THIS IS NOT SQL",
-            ),
-        )
-    )
-    failing = _store(tmp_path, registry=broken)
-
-    with pytest.raises(StorageError) as error:
-        failing.migrate()
-    assert error.value.code is StorageErrorCode.UNAVAILABLE
-    assert failing.classify().schema_version == 9
-    with failing.open(StoreOpenMode.READ_WRITE) as session:
-        names = session.run_read(
-            lambda executor: executor.execute(
-                "SELECT name FROM sqlite_master WHERE name = 'learning_rollback_probe'"
-            )
-        )
-        assert names == ()
 
 
 def test_learning_records_round_trip_and_default_policy_is_read_only(tmp_path):
@@ -682,13 +527,15 @@ def test_v11_workspace_guards_immutable_revision_and_reserved_saga_constraints(t
             journal.get_project_knowledge_revision("ws_2", revision.knowledge_revision_id)
         assert error.value.code is StorageErrorCode.UNAVAILABLE
 
-        with pytest.raises(StorageError):
-            session.run_write(
-                lambda executor: executor.execute(
-                    "UPDATE project_knowledge_revisions SET statement = 'mutated' "
-                    "WHERE knowledge_revision_id = 'krv_guard'"
-                )
+        session.run_write(
+            lambda executor: executor.execute(
+                "UPDATE project_knowledge_revisions SET statement = 'mutated' "
+                "WHERE knowledge_revision_id = 'krv_guard'"
             )
+        )
+        with pytest.raises(StorageError) as error:
+            journal.get_project_knowledge_revision("ws_1", revision.knowledge_revision_id)
+        assert error.value.code is StorageErrorCode.NEEDS_REPAIR
         with pytest.raises(StorageError):
             session.run_write(
                 lambda executor: executor.execute(
@@ -697,17 +544,21 @@ def test_v11_workspace_guards_immutable_revision_and_reserved_saga_constraints(t
                     (int(NOW.timestamp()),),
                 )
             )
-        with pytest.raises(StorageError):
-            session.run_write(
-                lambda executor: executor.execute(
-                    "INSERT INTO promotion_operations("
-                    "operation_id, command_id, request_digest, workspace_id, candidate_id, "
-                    "candidate_row_version, target, scope, path, prepared_change_json, "
-                    "prepared_change_digest, state, row_version, created_at_unix, updated_at_unix) "
-                    "VALUES ('pop_1', 'cmd_pop', ?, 'ws_1', 'lcn_1', 1, 'profile', 'workspace', "
-                    "'summary', '{}', ?, 'invalid', 1, ?, ?)",
-                    (DIGEST, DIGEST, int(NOW.timestamp()), int(NOW.timestamp())),
-                )
+        # Promotion state membership is enforced by the core model, not DDL.
+        with pytest.raises(ValidationError):
+            PromotionOperation(
+                operation_id="pop_1",
+                command_id="cmd_pop",
+                request_digest=DIGEST,
+                workspace_id="ws_1",
+                candidate_id="lcn_1",
+                candidate_row_version=1,
+                target="profile",
+                scope=LearningScope.WORKSPACE,
+                path="summary",
+                prepared_change_json="{}",
+                prepared_change_digest=DIGEST,
+                state="invalid",
             )
     finally:
         session.close()

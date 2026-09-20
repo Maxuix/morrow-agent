@@ -9,9 +9,13 @@ from morrow.application.configuration import (
     ConfigurationChangeStatus,
     ConfigurationCommand,
     PreparedConfigurationChange,
+    ProfileSaveResult,
+    ProfileSaveStatus,
     configuration_state_digest,
     render_configuration_preview,
+    validate_profile_candidate,
 )
+from morrow.core.domain import canonical_json_bytes, refuse_secret_material
 from morrow.core.models import Profile, StateLoadStatus, StatePresence, StateWriteStatus
 
 
@@ -61,8 +65,8 @@ class ConfigPatchService:
         except ValueError as exc:
             raise ConfigurationValidationError(str(exc)) from None
 
-    def _state(self, command: ConfigurationCommand) -> _State:
-        if command.scope != "workspace" or command.target != "profile":
+    def _state_for(self, scope: str, target: str) -> _State:
+        if scope != "workspace" or target != "profile":
             raise ConfigurationValidationError("配置服务只支持 workspace Profile")
         if self.session is not None and self.session.read_only:
             raise ConfigurationReadOnlyError("当前工作空间状态版本较新，只允许独立只读对话")
@@ -74,6 +78,9 @@ class ConfigPatchService:
             current.revision or 0,
             current.presence,
         )
+
+    def _state(self, command: ConfigurationCommand) -> _State:
+        return self._state_for(command.scope, command.target)
 
     @staticmethod
     def _normalize(value: object) -> str:
@@ -249,6 +256,62 @@ class ConfigPatchService:
             self.session.profile_revision = written.revision or 0
             self.session.profile_presence = presence
         return self._result(prepared.command, ConfigurationChangeStatus.APPLIED, written.revision)
+
+    @staticmethod
+    def _save_result(status: ProfileSaveStatus, revision: int) -> ProfileSaveResult:
+        return ProfileSaveResult(
+            status=status, scope="workspace", target="profile", revision=revision
+        )
+
+    @staticmethod
+    def _refuse_profile_secrets(candidate: Profile) -> None:
+        try:
+            refuse_secret_material(
+                canonical_json_bytes(candidate.model_dump(mode="json")),
+                label="项目画像",
+                profile="workflow_value_sensitive",
+            )
+        except ValueError:
+            raise ConfigurationValidationError("项目画像不能包含凭据或密钥") from None
+
+    def save_profile(
+        self, candidate: Profile, *, expected_revision: int, operation_id: str
+    ) -> ProfileSaveResult:
+        """Publish one complete Profile snapshot through the existing file owner.
+
+        A stale or advanced revision is an explicit conflict: this method never
+        raises the caller expected_revision on its own and never publishes twice,
+        so a retry after an interrupted receipt write cannot duplicate a revision.
+        """
+        if not operation_id.strip():
+            raise ConfigurationValidationError("operation_id 不能为空")
+        if isinstance(expected_revision, bool) or not isinstance(expected_revision, int):
+            raise ConfigurationValidationError("expected_revision 必须是非负整数")
+        if expected_revision < 0:
+            raise ConfigurationValidationError("expected_revision 必须是非负整数")
+        state = self._state_for("workspace", "profile")
+        if state.revision != expected_revision:
+            raise ConfigurationConflictError("Profile 版本已变化，请重新读取后再保存")
+        try:
+            validated = validate_profile_candidate(candidate)
+        except ValueError as exc:
+            raise ConfigurationValidationError(str(exc)) from None
+        self._refuse_profile_secrets(validated)
+        if state.presence is StatePresence.PRESENT and state.profile == validated:
+            return self._save_result(ProfileSaveStatus.UNCHANGED, state.revision)
+        written = self.project_store.write_profile(
+            self.workspace_id, validated, expected_revision=state.revision
+        )
+        if written.status is StateWriteStatus.REVISION_CONFLICT:
+            raise ConfigurationConflictError("配置版本已变化，请重试")
+        if written.status is not StateWriteStatus.OK:
+            raise ConfigurationStateError("配置写入失败")
+        revision = written.revision or 0
+        if self.session is not None:
+            self.session.profile = validated
+            self.session.profile_revision = revision
+            self.session.profile_presence = StatePresence.PRESENT
+        return self._save_result(ProfileSaveStatus.APPLIED, revision)
 
     def preflight(self, command: ConfigurationCommand) -> ConfigurationChangeResult:
         prepared = self.prepare(command)

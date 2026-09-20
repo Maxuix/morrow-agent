@@ -1298,10 +1298,17 @@ async def test_cancel_after_middle_node_commit_keeps_the_committed_node_complete
     real_drive = fx.runtime.scheduler._drive
     calls = 0
 
-    async def drive_then_cancel(session, text, *, client_message_id, prepared, resume=False):
+    async def drive_then_cancel(
+        session, text, *, client_message_id, prepared, resume=False, **extra
+    ):
         nonlocal calls
         result = await real_drive(
-            session, text, client_message_id=client_message_id, prepared=prepared, resume=resume
+            session,
+            text,
+            client_message_id=client_message_id,
+            prepared=prepared,
+            resume=resume,
+            **extra,
         )
         calls += 1
         if calls == 1:
@@ -1335,10 +1342,17 @@ async def test_cancel_after_last_node_commit_still_finalizes_success(fx):
     real_drive = fx.runtime.scheduler._drive
     calls = 0
 
-    async def drive_then_cancel(session, text, *, client_message_id, prepared, resume=False):
+    async def drive_then_cancel(
+        session, text, *, client_message_id, prepared, resume=False, **extra
+    ):
         nonlocal calls
         result = await real_drive(
-            session, text, client_message_id=client_message_id, prepared=prepared, resume=resume
+            session,
+            text,
+            client_message_id=client_message_id,
+            prepared=prepared,
+            resume=resume,
+            **extra,
         )
         calls += 1
         if calls == 2:

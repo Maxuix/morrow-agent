@@ -147,6 +147,8 @@ async def test_orchestrator_stream_exposes_events_before_terminal_result():
 
     assert [item.type for item in items[:-1]] == [
         "turn.started",
+        "status.changed",
+        "status.changed",
         "text.delta",
         "text.delta",
         "turn.completed",

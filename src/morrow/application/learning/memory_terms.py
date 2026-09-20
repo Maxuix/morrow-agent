@@ -98,18 +98,35 @@ def refresh_project_knowledge_terms(
 
 
 def rebuild_project_knowledge_terms(txn, workspace_id: str, *, limit: int = 500) -> int:
-    """Rebuild all bounded head projections and return the number of heads visited."""
+    """Rebuild every head projection and return the number of heads visited.
+
+    The caller supplies the page size so a maintenance command can stay
+    bounded without silently leaving later heads or stale rows behind.  The
+    clear-and-rebuild work runs in the caller's transaction and therefore
+    rolls back as one unit if a durable source is malformed.
+    """
 
     if isinstance(limit, bool) or not 1 <= limit <= MEMORY_TERM_REVISION_PAGE:
         raise ValueError("memory term rebuild limit is invalid")
-    heads = txn.list_project_knowledge_heads(
-        workspace_id,
-        include_deleted=True,
-        limit=limit,
-    )
-    for head in heads:
-        refresh_project_knowledge_terms(txn, workspace_id, head)
-    return len(heads)
+    txn.clear_memory_search_terms(workspace_id)
+    visited = 0
+    offset = 0
+    while True:
+        heads = txn.list_project_knowledge_heads(
+            workspace_id,
+            include_deleted=True,
+            limit=limit,
+            offset=offset,
+        )
+        if not heads:
+            break
+        for head in heads:
+            refresh_project_knowledge_terms(txn, workspace_id, head)
+        visited += len(heads)
+        offset += len(heads)
+        if len(heads) < limit:
+            break
+    return visited
 
 
 def retrieve_memory_term_candidates(

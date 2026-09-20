@@ -5,27 +5,6 @@ from datetime import UTC, datetime
 import pytest
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
-from morrow.adapters.state.migrations import (
-    V1,
-    V2,
-    V3,
-    V4,
-    V5,
-    V6,
-    V7,
-    V8,
-    V9,
-    V10,
-    V11,
-    V12_NAME,
-    V13_NAME,
-    V14_NAME,
-    V15_NAME,
-    V16_NAME,
-    V17_NAME,
-    MigrationRegistry,
-    SchemaMigration,
-)
 from morrow.adapters.state.operational import OperationalStore
 from morrow.core.learning import ProjectKnowledgeCategory
 from morrow.core.memory_selection import (
@@ -36,10 +15,8 @@ from morrow.core.memory_selection import (
     MemorySelectionReasonCode,
 )
 from morrow.core.store import (
-    SUPPORTED_SCHEMA_VERSION,
     StorageError,
     StorageErrorCode,
-    StoreOpenMode,
 )
 from morrow.testing import FixedClock
 from test_stage5_learning_store import (
@@ -47,8 +24,6 @@ from test_stage5_learning_store import (
     _evidence,
     _review,
     _seed_subjects,
-    _store,
-    _v11_registry,
 )
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -177,84 +152,6 @@ def test_memory_selection_models_are_bounded_and_deterministic():
             estimated_chars=1,
             rendered_content_digest="c" * 64,
         )
-
-
-def test_v11_store_upgrades_to_v13_without_rewriting_v11(tmp_path):
-    legacy = _store(tmp_path, registry=_v11_registry())
-    legacy.initialize().close()
-    upgraded = _store(tmp_path)
-
-    report = upgraded.migrate()
-
-    assert report.from_version == 11
-    assert report.to_version == SUPPORTED_SCHEMA_VERSION
-    assert report.applied == (
-        V12_NAME,
-        V13_NAME,
-        V14_NAME,
-        V15_NAME,
-        V16_NAME,
-        V17_NAME,
-        "agent_run_completion_truth",
-        "agent_run_request_evidence",
-        "agent_run_long_horizon_observability",
-        "agent_run_retry_progress",
-        "durable_runtime_control_queue",
-        "agent_definition_foundation",
-        "workflow_revision_artifact_contracts",
-        "workflow_node_request_cap",
-        "workflow_pause_drain_lineage",
-        "workflow_editor_drafts",
-        "workflow_global_replan",
-        "workflow_feedback_evaluation",
-        "compaction_request_accounting",
-    )
-    with upgraded.open(StoreOpenMode.READ_WRITE) as session:
-        assert session.schema_version == SUPPORTED_SCHEMA_VERSION
-        tables = session.run_read(
-            lambda executor: executor.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ("
-                "'memory_selections', 'memory_selection_items', 'memory_search_terms') "
-                "ORDER BY name"
-            )
-        )
-        assert tables == (
-            ("memory_search_terms",),
-            ("memory_selection_items",),
-            ("memory_selections",),
-        )
-
-
-def test_v12_migration_rolls_back_selection_ddl_on_failure(tmp_path):
-    legacy = _store(tmp_path, registry=_v11_registry())
-    legacy.initialize().close()
-    broken = MigrationRegistry(supported_version=12)
-    for migration in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11):
-        broken.add(migration)
-    broken.add(
-        SchemaMigration(
-            version=12,
-            name="broken_memory_selection",
-            statements=(
-                "CREATE TABLE v12_rollback_probe (id INTEGER PRIMARY KEY)",
-                "THIS IS NOT SQL",
-            ),
-        )
-    )
-    failing = _store(tmp_path, registry=broken)
-
-    with pytest.raises(StorageError) as error:
-        failing.migrate()
-    assert error.value.code is StorageErrorCode.UNAVAILABLE
-    assert failing.classify().schema_version == 11
-    with failing.open(StoreOpenMode.READ_WRITE) as session:
-        names = session.run_read(
-            lambda executor: executor.execute(
-                "SELECT name FROM sqlite_master WHERE name IN ("
-                "'v12_rollback_probe', 'memory_selections', 'memory_search_terms')"
-            )
-        )
-        assert names == ()
 
 
 def test_memory_selection_and_terms_round_trip_with_workspace_guards(tmp_path):

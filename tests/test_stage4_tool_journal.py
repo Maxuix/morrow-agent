@@ -21,6 +21,7 @@ from morrow.core.domain import (
     sha256_digest,
 )
 from morrow.core.execution import (
+    ApprovalDecisionError,
     ApprovalResolution,
     DurableApproval,
     DurableToolExecution,
@@ -396,7 +397,7 @@ def test_tool_execution_intermediate_and_completed_states_survive_restart(tmp_pa
         assert restored.result_envelope.summary == {"bytes": 4}
 
 
-def test_sql_rejects_consumed_unapproved_approval(tmp_path):
+def test_consume_rejects_unapproved_approval(tmp_path):
     _store, session, journal = _open_journal(tmp_path)
     try:
         _seed_run(journal)
@@ -407,12 +408,8 @@ def test_sql_rejects_consumed_unapproved_approval(tmp_path):
             _approval(intent), approved=False, expected_row_version=1, now=now
         )
         journal.put_approval("ws_a", denied)
-        with pytest.raises(StorageError):
-            session.run_write(
-                lambda executor: executor.execute(
-                    "UPDATE approvals SET consumed_at_unix = 1 WHERE approval_id = 'apr_1'"
-                )
-            )
+        with pytest.raises(ApprovalDecisionError):
+            consume_approval(denied, expected_row_version=denied.row_version, now=now)
         assert journal.get_approval("ws_a", "apr_1").consumed_at is None
     finally:
         session.close()

@@ -7,21 +7,6 @@ from datetime import UTC, datetime
 import pytest
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
-from morrow.adapters.state.migrations import (
-    V1,
-    V2,
-    V3,
-    V4,
-    V5,
-    V6,
-    V7,
-    V8,
-    V9,
-    V10,
-    V11,
-    V12,
-    MigrationRegistry,
-)
 from morrow.adapters.state.operational import OperationalStore
 from morrow.adapters.state.preference_journal import SqlitePreferenceJournal
 from morrow.core.domain import DurableTurn
@@ -38,7 +23,6 @@ from morrow.core.store import (
     SUPPORTED_SCHEMA_VERSION,
     StorageError,
     StorageErrorCode,
-    StoreOpenMode,
 )
 from morrow.testing import FixedClock
 from test_stage5_learning_store import _seed_subjects
@@ -110,40 +94,12 @@ def test_v13_schema_is_created_with_preference_tables(tmp_path):
     )
     assert {row[0] for row in names} == {
         "preference_evidence",
-        "preference_proposal_evidence",
         "preference_proposals",
         "preference_review_jobs",
-        "preference_write_batch_proposals",
         "preference_write_batches",
     }
     assert session.schema_version == SUPPORTED_SCHEMA_VERSION
     session.close()
-
-
-def test_v13_migration_rolls_back_all_preference_ddl_on_failure(tmp_path):
-    registry = MigrationRegistry(supported_version=12)
-    for migration in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12):
-        registry.add(migration)
-    legacy = OperationalStore(tmp_path / "state", registry=registry, clock=FixedClock(NOW))
-    legacy.initialize().close()
-
-    def fail(point: str) -> None:
-        if point == "before_migration_commit":
-            raise RuntimeError("injected migration failure")
-
-    upgraded = OperationalStore(
-        tmp_path / "state", failure_injector=fail, clock=FixedClock(NOW), maintenance_timeout=0
-    )
-    with pytest.raises(RuntimeError):
-        upgraded.migrate()
-    with upgraded.open(StoreOpenMode.READ_WRITE) as session:
-        assert session.schema_version == 12
-        tables = session.run_read(
-            lambda executor: executor.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'preference_%'"
-            )
-        )
-        assert tables == ()
 
 
 def test_job_and_exactly_one_current_user_evidence_are_transactional(tmp_path):

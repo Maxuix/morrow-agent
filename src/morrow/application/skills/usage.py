@@ -115,6 +115,7 @@ class SkillUsageService:
             FinishReason.ERROR: SkillUsageStatus.FAILED,
             FinishReason.CANCELLED: SkillUsageStatus.CANCELLED,
             FinishReason.STEERED: SkillUsageStatus.INTERRUPTED,
+            FinishReason.INTERRUPTED: SkillUsageStatus.INTERRUPTED,
         }[terminal.finish_reason]
         recorded: list[SkillUsage] = []
         try:
@@ -151,6 +152,7 @@ class SkillUsageService:
         version_id: str | None = None,
         agent_run_id: str | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[SkillUsage, ...]:
         return self.journal.list_skill_usages(
             self.workspace_id,
@@ -158,6 +160,7 @@ class SkillUsageService:
             version_id=version_id,
             agent_run_id=agent_run_id,
             limit=limit,
+            offset=offset,
         )
 
     def compare(

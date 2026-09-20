@@ -90,6 +90,29 @@ describe('runControlActions', () => {
     expect(paused.cancel.reason).toContain('恢复')
   })
 
+  it('continue: only a failed run, narrowed by the fetched eligibility', () => {
+    for (const status of WORKFLOW_STATUSES) {
+      const state = runControlActions(makeRun({ status }), ROOT_LOADED)
+      expect(state.continue.enabled).toBe(status === 'failed')
+    }
+    // Without a fetched assessment the server still owns the final verdict.
+    expect(
+      runControlActions(makeRun({ status: 'failed' }), ROOT_LOADED, null).continue.enabled,
+    ).toBe(true)
+    expect(
+      runControlActions(makeRun({ status: 'failed' }), ROOT_LOADED, {
+        eligible: true,
+        reasons: [],
+      }).continue.enabled,
+    ).toBe(true)
+    const blocked = runControlActions(makeRun({ status: 'failed' }), ROOT_LOADED, {
+      eligible: false,
+      reasons: ['last failure stop_code=internal is not a vouched Provider-layer fault'],
+    })
+    expect(blocked.continue.enabled).toBe(false)
+    expect(blocked.continue.reason).toContain('internal')
+  })
+
   it('retry: requires a failed parent and a loaded root task row', () => {
     for (const status of WORKFLOW_STATUSES) {
       const state = runControlActions(makeRun({ status }), ROOT_LOADED)
@@ -155,14 +178,13 @@ describe('rerunResultMessage', () => {
     }
   }
 
-  it('surfaces the new accounting root and the execution node count', () => {
+  it('confirms retry without exposing internal run identifiers', () => {
     const message = rerunResultMessage(makeResult())
-    expect(message).toContain('wrun_bbb')
-    expect(message).toContain('新预算根')
-    expect(message).toContain('执行 3 个节点')
+    expect(message).toBe('已开始重跑失败节点。')
+    expect(message).not.toContain('wrun_')
   })
 
-  it('labels a full rerun as not inheriting prior outputs', () => {
-    expect(rerunResultMessage(makeResult({ full: true }))).toContain('不继承先前节点输出')
+  it('distinguishes the full rerun confirmation', () => {
+    expect(rerunResultMessage(makeResult({ full: true }))).toBe('已开始完整重跑。')
   })
 })

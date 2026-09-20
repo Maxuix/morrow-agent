@@ -6,11 +6,11 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import AliasChoices, ConfigDict, Field, field_validator, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from morrow.core.domain import canonical_json_bytes, validate_prefixed_id
 from morrow.core.mcp import MCP_MAX_SERVER_BYTES, McpServerDefinition
-from morrow.core.models import ProtocolModel, utc_now
+from morrow.core.models import ChatSettings, ProtocolModel, utc_now
 from morrow.core.orchestration import OrchestrationPolicy
 
 from .identity import validate_skill_id, validate_skv_id
@@ -96,7 +96,7 @@ class SkillBinding(ProtocolModel):
 class ExtensionDocument(ProtocolModel):
     """Common shape shared by independent global and workspace YAML documents."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=False)
 
     schema_version: Literal[EXTENSION_SCHEMA_VERSION] = EXTENSION_SCHEMA_VERSION
     scope: Literal["global", "workspace"]
@@ -105,10 +105,11 @@ class ExtensionDocument(ProtocolModel):
     updated_at: datetime = Field(default_factory=utc_now)
     bindings: tuple[SkillBinding, ...] = Field(
         default_factory=tuple,
-        validation_alias=AliasChoices("bindings", "skills", "skill_bindings"),
+        validation_alias="skills",
         serialization_alias="skills",
     )
     mcp: ExtensionMcpSection = Field(default_factory=ExtensionMcpSection)
+    chat_settings: ChatSettings = Field(default_factory=ChatSettings)
     orchestration: tuple[OrchestrationPolicy, ...] = Field(default=(), max_length=32)
 
     @field_validator("scope_id")
@@ -157,10 +158,6 @@ class ExtensionDocument(ProtocolModel):
             if server.scope != self.scope or server.scope_id != self.scope_id:
                 raise ValueError("MCP server scope must match its Extension document")
         return self
-
-    @property
-    def skill_bindings(self) -> tuple[SkillBinding, ...]:
-        return self.bindings
 
     @property
     def skills(self) -> tuple[SkillBinding, ...]:

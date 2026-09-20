@@ -16,7 +16,7 @@ from prompt_toolkit import PromptSession
 
 from morrow.adapters.credentials.keyring import CredentialAccessError, environment_credential
 from morrow.adapters.local.sandbox import default_sandbox_backend
-from morrow.adapters.registry import PRESETS
+from morrow.adapters.registry import DEFAULT_PROVIDER_PRESET, PRESETS
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
@@ -55,6 +55,7 @@ from morrow.core.permissions import (
 from morrow.core.recovery import RecoveryResolution
 from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.interfaces.approval_cli import approval_app
+from morrow.interfaces.attach_cli import register as _register_attach
 from morrow.interfaces.gui_cli import register as _register_gui
 from morrow.interfaces.learning_cli import learning_app, memory_app
 from morrow.interfaces.management_cli import management_app
@@ -101,10 +102,11 @@ app.add_typer(mcp_app, name="mcp")
 app.add_typer(agent_app, name="agent")
 app.add_typer(workflow_app, name="workflow")
 _register_serve(app)
+_register_attach(app)
 _register_gui(app)
 
 
-def _secret(provider_id: str = "opencode-go") -> str:
+def _secret(provider_id: str = DEFAULT_PROVIDER_PRESET) -> str:
     configured = environment_credential(provider_id)
     if configured:
         return configured
@@ -242,7 +244,7 @@ async def _headless_stream(session_app, prompt: str):
 def _headless_ids(session_app, terminal_event):
     if terminal_event is None:
         # Slash commands, preflight failures and stream failures do not admit a
-        # new AgentRun. Never attribute their terminal record to an older one.
+        # new AgentRun. Never attribute their terminal record to a previous one.
         return None, None, None, None
     session = getattr(session_app, "session", None)
     persistence = getattr(session_app, "persistence", None)
@@ -400,7 +402,7 @@ def _run_workspace(
         typer.echo("尚未配置模型，开始 Provider 引导。")
         secret = _secret()
         try:
-            application.provider_service.add("opencode-go", secret)
+            application.provider_service.add(DEFAULT_PROVIDER_PRESET, secret)
         except CredentialAccessError as exc:
             _echo_credential_error(exc)
             raise typer.Exit(code=2) from None
@@ -495,7 +497,11 @@ def provider_list(
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
     service = build_application(state_root=state_root).provider_service
-    config = service.list()
+    try:
+        config = service.list()
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
     for provider_id, provider in config.providers.items():
         typer.echo(f"{provider_id}\t{provider.adapter}\t{provider.base_url}")
 
@@ -539,7 +545,7 @@ def provider_presets() -> None:
 @provider_app.command("add")
 def provider_add(
     provider_id: str | None = typer.Argument(None),
-    preset: str = typer.Option("opencode-go", "--preset", help=_preset_option_help()),
+    preset: str = typer.Option(DEFAULT_PROVIDER_PRESET, "--preset", help=_preset_option_help()),
     provider_name: str | None = typer.Option(None, "--name"),
     adapter: str | None = typer.Option(None, "--adapter"),
     base_url: str | None = typer.Option(None, "--base-url"),
@@ -660,7 +666,11 @@ def model_list(
     provider: str | None = typer.Option(None, "--provider"),
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
-    config = build_application(state_root=state_root).provider_service.list()
+    try:
+        config = build_application(state_root=state_root).provider_service.list()
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
     for provider_id, value in config.providers.items():
         if provider and provider != provider_id:
             continue
@@ -685,10 +695,17 @@ def model_show(
 ) -> None:
     try:
         provider_id, model_id = _split_model_target(model_target, model_id)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from None
+    try:
         service = build_application(state_root=state_root).provider_service
         provider = service.provider(provider_id)
         model = provider.models[model_id]
-    except (KeyError, ValueError):
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from None
+    except KeyError:
         typer.echo(f"未知模型: {provider_id}/{model_id}", err=True)
         raise typer.Exit(code=2) from None
     typer.echo(f"provider: {provider_id}")
@@ -781,7 +798,11 @@ def model_remove(
 def model_current(
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
-    current = build_application(state_root=state_root).provider_service.current_model()
+    try:
+        current = build_application(state_root=state_root).provider_service.current_model()
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
     typer.echo(str(current) if current else "未配置 active_model")
 
 

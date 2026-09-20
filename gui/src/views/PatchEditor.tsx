@@ -14,6 +14,7 @@ import type {
 } from '../api/types'
 import { EmptyState } from '../components/EmptyState'
 import { WorkflowEditor } from './WorkflowEditor'
+import { WorkflowDiagnostics } from './editor/WorkflowDiagnostics'
 import {
   buildPatchDraft,
   canApplyPatch,
@@ -25,6 +26,7 @@ import {
   sourceFromRevision,
 } from './lib/editor'
 import { RISK_REASON_LABELS, shortId } from './lib/labels'
+import { safeErrorMessage } from './editor/diagnostics'
 
 /**
  * Edit-pending flow (roadmap §6.3): the paused parent run is drained, the
@@ -92,7 +94,7 @@ export function PatchEditor({
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setCatalogsError(error instanceof Error ? error.message : 'Editor Catalog 加载失败')
+          setCatalogsError(safeErrorMessage(error, 'Editor Catalog 加载失败'))
         }
       })
       .finally(() => {
@@ -147,7 +149,7 @@ export function PatchEditor({
     } catch (error) {
       if (patchRef.current === snapshot) {
         setPreview(null)
-        setPreviewError(patchApplyErrorMessage(error))
+        setPreviewError(safeErrorMessage(patchApplyErrorMessage(error), '补丁预览失败'))
       }
     } finally {
       setPreviewing(false)
@@ -162,7 +164,7 @@ export function PatchEditor({
     try {
       setApplied(await client.applyPatch(patch, commandId('patch_apply')))
     } catch (error) {
-      setApplyError(patchApplyErrorMessage(error))
+      setApplyError(safeErrorMessage(patchApplyErrorMessage(error), '应用补丁失败'))
       if (error instanceof ApiError) setApplyDiagnostics(error.diagnostics)
     } finally {
       setApplying(false)
@@ -181,7 +183,7 @@ export function PatchEditor({
         </span>
         <span className="font-mono text-xs text-secondary">{shortId(run.workflow_run_id)}</span>
         <span className="text-xs text-secondary">
-          补丁通过后父运行终止为 superseded，子运行从 running 继续
+          应用后继续执行剩余步骤
         </span>
         {catalogsLoading && (
           <span className="text-xs text-secondary">正在加载 Agent/Contract 目录…</span>
@@ -276,22 +278,7 @@ export function PatchEditor({
                     <p className="text-xs text-secondary">补丁校验未通过：</p>
                     {preview.diagnostics.length === 0 ? (
                       <p className="mt-1 text-xs text-failed">未提供具体诊断。</p>
-                    ) : (
-                      <ul className="mt-1 flex flex-col gap-0.5">
-                        {preview.diagnostics.map((item) => (
-                          <li
-                            key={`${item.code}:${item.edge_id}`}
-                            className={
-                              item.severity === 'error'
-                                ? 'text-xs text-failed'
-                                : 'text-xs text-blocked'
-                            }
-                          >
-                            {item.message}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                    ) : <WorkflowDiagnostics diagnostics={preview.diagnostics} />}
                   </div>
                 )}
                 {preview !== null && preview.valid && (
@@ -353,20 +340,7 @@ export function PatchEditor({
                   <div role="alert" className="mt-2 rounded-[8px] border border-blocked px-2 py-1">
                     <p className="text-xs text-failed">{applyError}</p>
                     {applyDiagnostics.length > 0 && (
-                      <ul className="mt-1 flex flex-col gap-0.5">
-                        {applyDiagnostics.map((item) => (
-                          <li
-                            key={`${item.code}:${item.edge_id}`}
-                            className={
-                              item.severity === 'error'
-                                ? 'text-xs text-failed'
-                                : 'text-xs text-blocked'
-                            }
-                          >
-                            {item.message}
-                          </li>
-                        ))}
-                      </ul>
+                      <WorkflowDiagnostics diagnostics={applyDiagnostics} />
                     )}
                   </div>
                 )}

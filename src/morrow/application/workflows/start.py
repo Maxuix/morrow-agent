@@ -205,6 +205,12 @@ class WorkflowStartService:
                 ApplicationErrorCode.INVALID,
                 "Workflow revision is not published; publish the definition first",
             )
+        if self.journal.workflows.get_task_plan_provenance(
+            self.workspace_id, command.workflow_revision_id
+        ):
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID, "task plans require start_workflow_plan"
+            )
         if revision.workflow_definition_id != command.workflow_definition_id:
             raise ApplicationError(
                 ApplicationErrorCode.INVALID,

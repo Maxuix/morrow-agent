@@ -9,7 +9,6 @@ Ordinary Direct Sessions never receive this collaborator.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -18,17 +17,28 @@ from morrow.application.artifacts import ArtifactService
 from morrow.application.tasks import TaskOutcomeAssembler
 from morrow.application.workflows.artifacts import ensure_workflow_payload
 from morrow.application.workflows.capture import CHANGE_CAPTURE_ROLE, VALIDATION_REPORT_ROLE
+from morrow.application.workflows.deliveries import (
+    DeliveryError,
+    WorkflowDeliveryReader,
+    publish_delivery_snapshots,
+    read_submission_marker,
+    write_submission_marker,
+)
 from morrow.application.workflows.evidence import text_result_from_assistant
 from morrow.application.workflows.outputs import EffectiveOutputResolver
-from morrow.application.workflows.submit import parse_submitted_payload, submission_digest
+from morrow.application.workflows.submit import (
+    delivery_request_payload,
+    parse_submitted_payload,
+    submission_digest,
+)
 from morrow.core.application import ApplicationError, ApplicationErrorCode
-from morrow.core.artifacts import ArtifactError, ArtifactErrorCode, ArtifactKind, ArtifactState
+from morrow.core.artifacts import ArtifactError, ArtifactErrorCode, ArtifactState
 from morrow.core.domain import (
     TASK_TRANSITION_ID_PREFIX,
+    ArtifactReference,
     DurableTaskRunTransition,
     TaskOutcomeTrigger,
     TaskRunStatus,
-    canonical_json_bytes,
 )
 from morrow.core.faults import InjectedFault
 from morrow.core.models import FinishReason
@@ -36,10 +46,13 @@ from morrow.core.workflows.contracts import (
     CAPTURE_OUTPUT_KINDS,
     CAPTURE_SCHEMA_VERSION,
     SUBMISSION_OUTPUT_KINDS,
+    SUBMIT_NODE_RESULT_NAME,
+    SUBMIT_SCHEMA_V1,
     ArtifactBinding,
     ChangeCapture,
     ContractRef,
     ImplementationPatch,
+    NodeSubmissionMarker,
     TestReport,
     TestReportItem,
     capture_artifact_id,
@@ -64,6 +77,18 @@ class WorkflowLeafContext:
     leaf_session_id: str
     leaf_task_run_id: str
     effective_node_generation_request_cap: int | None
+    #: Submission protocol frozen with the run's revision; a v1 revision must
+    #: rebuild exactly its original submit tool schema after a crash.
+    submission_protocol_version: int = 1
+
+
+@dataclass(frozen=True)
+class SegmentContinuation:
+    """Accepted continuation facts carried into the next Turn admission."""
+
+    command_id: str
+    input: str | None = None
+    control_generation: int | None = None
 
 
 class WorkflowLeafHooks:
@@ -80,6 +105,7 @@ class WorkflowLeafHooks:
         id_source,
         clock: Callable[[], datetime],
         parallel_read_digest: str | None = None,
+        continuation: SegmentContinuation | None = None,
     ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
@@ -91,6 +117,17 @@ class WorkflowLeafHooks:
         self.outputs = EffectiveOutputResolver(journal, workspace_id=workspace_id)
         self.parallel_read_digest = parallel_read_digest
         self.read_contract_drift = False
+        # Composed by the Scheduler from the same frozen capability policy the
+        # node tools use; None means this node has no workspace read boundary
+        # and can therefore register no delivery files.
+        self.workspace_root = None
+        #: Snapshot references of the last submission; the submit tool handler
+        #: attaches them to its own ToolExecution so the durable reference scan
+        #: (Doctor/Cleanup) sees every delivered byte, not just a JSON id.
+        self.submission_artifact_refs: tuple[ArtifactReference, ...] = ()
+        # P04: pending continuation facts for an already-running node; the
+        # next Turn admission binds the successor segment atomically.
+        self.continuation = continuation
 
     # Admission --------------------------------------------------------------
 
@@ -137,8 +174,7 @@ class WorkflowLeafHooks:
             item.node_id
             for item in txn.workflows.list_execution_nodes(self.workspace_id, run.workflow_run_id)
         }
-        legacy_initial = not execution_ids and run.run_relation == "initial"
-        if ctx.node.node_id not in execution_ids and not legacy_initial:
+        if ctx.node.node_id not in execution_ids:
             raise ApplicationError(
                 ApplicationErrorCode.INVALID,
                 "Workflow node is outside the immutable execution set",
@@ -257,14 +293,73 @@ class WorkflowLeafHooks:
                 direction="input",
             )
 
-    def admit_node_in_txn(self, txn, *, agent_run_id: str) -> None:
-        """Atomically bind the queued NodeRun's leaf references inside Turn admission.
+    def create_turn_in_txn(self, txn, turn) -> None:
+        """Create the leaf's durable Turn row inside the submission transaction.
 
-        The WorkflowTransitionService remains the sole writer; nested
-        transactions join this Turn admission transaction.
+        First admission keeps the strict workflow guard (queued node). A
+        continuation Turn on a running node validates instead that the turn
+        carries exactly the accepted continuation command bound to the run's
+        suspended pause cycle; the successor segment then binds atomically in
+        the same transaction (P04.1). The storage-layer relaxation lives in
+        this lane-owned hook, not in the shared journal.
         """
 
         ctx = self.context
+        if self.continuation is None:
+            txn.create_workflow_turn(self.workspace_id, ctx.node_run_id, turn)
+            return
+        node = txn.workflows.get_node(self.workspace_id, ctx.node_run_id)
+        run = (
+            txn.workflows.get_run(self.workspace_id, node.workflow_run_id)
+            if node is not None
+            else None
+        )
+        if (
+            node is None
+            or node.status is not WorkflowStatus.RUNNING
+            or run is None
+            or run.status.terminal
+        ):
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "a continuation Turn requires a running node on an active run",
+            )
+        point = txn.workflows.execution_pause.latest_pause_point(
+            self.workspace_id, owner="workflow_run", owner_id=node.workflow_run_id
+        )
+        if (
+            point is None
+            or point.fact.lifecycle not in ("suspended", "resumed")
+            or point.continuation_command_id != turn.client_message_id
+        ):
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "the Turn does not carry the accepted continuation command",
+            )
+        # Same insert the strict workflow guard uses internally; the user-task
+        # guard does not apply to a workflow-owned leaf Task (integration note
+        # for the coordinator: consider a first-class
+        # create_workflow_continuation_turn on the shared journal).
+        txn._conversation_journal._create_turn(self.workspace_id, turn)
+
+    def admit_node_in_txn(self, txn, *, agent_run_id: str, turn_id: str | None = None) -> None:
+        """Bind node admission or continuation segments inside Turn admission.
+
+        The WorkflowTransitionService remains the sole writer; nested
+        transactions join this Turn admission transaction. A queued node takes
+        the first-admission path (leaf references plus its first execution
+        segment); a running node takes the continuation path, which keeps the
+        historical ``NodeRun.agent_run_id`` binding untouched and appends the
+        successor execution segment atomically with the new Turn/AgentRun
+        (P02/P04, spec 3.2.1).
+        """
+
+        ctx = self.context
+        current = self.transitions.get_node(ctx.node_run_id)
+        if current is not None and current.status is not WorkflowStatus.QUEUED:
+            self._admit_continuation_segment_in_txn(txn, agent_run_id=agent_run_id, turn_id=turn_id)
+            self.transitions.mark_run_running(ctx.workflow_run_id)
+            return
         self.transitions.admit_node(
             ctx.node_run_id,
             conversation_session_id=ctx.leaf_session_id,
@@ -273,7 +368,62 @@ class WorkflowLeafHooks:
             effective_node_generation_request_cap=ctx.effective_node_generation_request_cap,
             parallel_read_digest=self.parallel_read_digest,
         )
+        self._bind_first_segment_in_txn(txn, agent_run_id=agent_run_id, turn_id=turn_id)
         self.transitions.mark_run_running(ctx.workflow_run_id)
+
+    def _bind_first_segment_in_txn(self, txn, *, agent_run_id: str, turn_id: str | None) -> None:
+        """Bind the node's first execution segment idempotently (P02.3)."""
+        ctx = self.context
+        if txn.workflows.first_segment(self.workspace_id, ctx.node_run_id) is not None:
+            return
+        now = self.clock()
+        from morrow.core.workflows.segments import WorkflowNodeSegment
+
+        txn.workflows.append_segment(
+            WorkflowNodeSegment(
+                segment_id=self.id_source.new_id("seg"),
+                workspace_id=self.workspace_id,
+                workflow_run_id=ctx.workflow_run_id,
+                node_run_id=ctx.node_run_id,
+                ordinal=1,
+                leaf_session_id=ctx.leaf_session_id,
+                leaf_task_run_id=ctx.leaf_task_run_id,
+                agent_run_id=agent_run_id,
+                turn_id=turn_id,
+                status="active",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+    def _admit_continuation_segment_in_txn(
+        self, txn, *, agent_run_id: str, turn_id: str | None
+    ) -> None:
+        """Accept the successor execution segment inside the continuation Turn txn."""
+
+        ctx = self.context
+        continuation = self.continuation
+        if continuation is None:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "a running node only admits continuation Turns with accepted continuation facts",
+            )
+        from morrow.application.execution_pause import accept_continuation_in_txn
+
+        accept_continuation_in_txn(
+            txn,
+            workspace_id=self.workspace_id,
+            command_id=continuation.command_id,
+            workflow_run_id=ctx.workflow_run_id,
+            node_run_id=ctx.node_run_id,
+            leaf_session_id=ctx.leaf_session_id,
+            leaf_task_run_id=ctx.leaf_task_run_id,
+            agent_run_id=agent_run_id,
+            turn_id=turn_id,
+            continuation_input=continuation.input,
+            clock=self.clock,
+            new_segment_id=lambda: self.id_source.new_id("seg"),
+        )
 
     def check_request_admission(self) -> None:
         """Deadline gate at the durable purpose=agent request-admission seam."""
@@ -322,17 +472,25 @@ class WorkflowLeafHooks:
                 f"output_contract_unsatisfied: {exc}",
             ) from None
 
-    def submit_node_result(self, arguments) -> dict[str, object]:
-        """Validate and publish one structured submission for this NodeRun."""
+    def submit_node_result(self, arguments, *, call_id: str | None = None) -> dict[str, object]:
+        """Validate and publish one submission for this NodeRun.
+
+        A v1 revision keeps its exact original flow and receipt. A v2 revision
+        additionally registers explicitly named delivery files: every file is
+        read and verified first, its byte-exact snapshot is published next, and
+        the submission marker is written last. A completed identical request is
+        answered from its marker without reading the workspace again.
+        """
 
         ctx = self.context
+        protocol_version = ctx.submission_protocol_version
+        if arguments.schema_version != protocol_version:
+            raise ToolExecutionError(ToolErrorCode.INVALID_ARGUMENTS, "unsupported schema_version")
         declared = {
             contract.slot: contract
             for contract in ctx.node.output_contracts
             if contract.kind in SUBMISSION_OUTPUT_KINDS
         }
-        if arguments.schema_version != 1:
-            raise ToolExecutionError(ToolErrorCode.INVALID_ARGUMENTS, "unsupported schema_version")
         parsed: dict[str, object] = {}
         for slot, raw in arguments.outputs.items():
             contract = declared.get(slot)
@@ -358,20 +516,38 @@ class WorkflowLeafHooks:
                 "required structured slots are missing: " + ",".join(missing),
             )
         self._require_in_scope_evidence(arguments.evidence_refs)
+        self.submission_artifact_refs = ()
+        deliverables = self._declared_deliverables(arguments)
+        request_payload = (
+            delivery_request_payload(deliverables) if protocol_version != SUBMIT_SCHEMA_V1 else None
+        )
         digest = submission_digest(
-            parsed, arguments.summary, arguments.evidence_refs, arguments.replan
+            parsed,
+            arguments.summary,
+            arguments.evidence_refs,
+            arguments.replan,
+            request_payload,
         )
         marker_id = node_submission_artifact_id(ctx.node_run_id)
-        prior = self.artifacts.get(marker_id)
-        if prior is not None and prior.state is ArtifactState.AVAILABLE:
-            read = self.artifacts.read(marker_id, max_bytes=prior.byte_size)
-            recorded = json.loads(read.content.decode("utf-8"))
-            if recorded.get("digest") == digest:
-                return {"submitted": True, "digest": digest, "reused": True}
+        stored = self.artifacts.get(marker_id)
+        if stored is not None and stored.state is ArtifactState.AVAILABLE:
+            recorded = read_submission_marker(self.artifacts, node_run_id=ctx.node_run_id)
+            if recorded is None:
+                raise ToolExecutionError(
+                    ToolErrorCode.PUBLISH_FAILED,
+                    "the recorded submission of this node cannot be read",
+                )
+            if recorded.digest == digest:
+                self.submission_artifact_refs = self._marker_snapshot_refs(recorded)
+                return self._submission_receipt(recorded, digest=digest, reused=True)
             raise ToolExecutionError(
                 ToolErrorCode.CONFLICT,
                 "a conflicting structured submission already exists for this node",
             )
+        reads = ()
+        if request_payload:
+            reads = self._read_deliveries(deliverables)
+        execution_id = self._submission_execution_id(call_id)
         try:
             for slot, payload in parsed.items():
                 ensure_workflow_payload(
@@ -383,22 +559,36 @@ class WorkflowLeafHooks:
                     producer_node_run_id=ctx.node_run_id,
                     output_slot=slot,
                 )
-            self.artifacts.publish_bytes(
-                canonical_json_bytes(
-                    {
-                        "digest": digest,
-                        "slots": sorted(parsed),
-                        "replan": arguments.replan.model_dump(mode="json")
-                        if arguments.replan
-                        else None,
-                    }
-                ),
-                kind=ArtifactKind.TASK_SUMMARY,
+            descriptors = (
+                publish_delivery_snapshots(
+                    self.artifacts,
+                    reads,
+                    node_run_id=ctx.node_run_id,
+                    session_id=ctx.leaf_session_id,
+                    task_run_id=ctx.leaf_task_run_id,
+                    tool_execution_id=execution_id,
+                )
+                if reads
+                else ()
+            )
+            marker = NodeSubmissionMarker(
+                schema_version=protocol_version,
+                digest=digest,
+                slots=tuple(sorted(parsed)),
+                replan=arguments.replan.model_dump(mode="json") if arguments.replan else None,
+                deliverables=descriptors,
+                tool_execution_id=execution_id,
+            )
+            write_submission_marker(
+                self.artifacts,
+                marker,
+                node_run_id=ctx.node_run_id,
+                protocol_version=protocol_version,
                 session_id=ctx.leaf_session_id,
                 task_run_id=ctx.leaf_task_run_id,
-                artifact_id=marker_id,
-                excerpt="structured node result submission",
             )
+        except DeliveryError as exc:
+            raise ToolExecutionError(ToolErrorCode.PUBLISH_FAILED, str(exc)) from None
         except ArtifactError as exc:
             if exc.code is ArtifactErrorCode.CONFLICT:
                 raise ToolExecutionError(
@@ -406,7 +596,96 @@ class WorkflowLeafHooks:
                     "a conflicting structured submission already exists for this node",
                 ) from None
             raise ToolExecutionError(ToolErrorCode.PUBLISH_FAILED, exc.message) from None
-        return {"submitted": True, "digest": digest, "reused": False}
+        self.submission_artifact_refs = self._marker_snapshot_refs(marker)
+        return self._submission_receipt(marker, digest=digest, reused=False)
+
+    def _marker_snapshot_refs(self, marker: NodeSubmissionMarker) -> tuple[ArtifactReference, ...]:
+        """The submission marker and every delivered byte it names.
+
+        The submitting ToolExecution owns all of them, so the durable reference
+        scan (Doctor/Cleanup) sees real ownership instead of a JSON id alone.
+        """
+
+        refs: list[ArtifactReference] = []
+        seen: set[tuple[str, str]] = set()
+        marker_ref = (
+            node_submission_artifact_id(self.context.node_run_id),
+            "submission_marker",
+        )
+        seen.add(marker_ref)
+        refs.append(ArtifactReference(artifact_id=marker_ref[0], role=marker_ref[1]))
+        for item in marker.deliverables:
+            candidates = [(item.artifact_id, "delivery")]
+            candidates.extend(
+                (resource.artifact_id, "delivery_resource") for resource in item.resources
+            )
+            for identity, role in candidates:
+                if (identity, role) in seen:
+                    continue
+                seen.add((identity, role))
+                refs.append(ArtifactReference(artifact_id=identity, role=role))
+        return tuple(refs)
+
+    def _declared_deliverables(self, arguments) -> dict:
+        """Reject a delivery slot this node never declared; v1 has no map."""
+
+        requested = getattr(arguments, "deliverables", None) or {}
+        if not requested:
+            return {}
+        declared = {contract.slot for contract in self.context.node.output_contracts}
+        for slot in requested:
+            if slot not in declared:
+                raise ToolExecutionError(
+                    ToolErrorCode.INVALID_ARGUMENTS,
+                    f"undeclared delivery slot '{slot}'",
+                )
+        return dict(requested)
+
+    def _read_deliveries(self, deliverables) -> tuple:
+        if self.workspace_root is None:
+            raise ToolExecutionError(
+                ToolErrorCode.INVALID_ARGUMENTS,
+                "此节点没有可用的工作区读取边界，无法登记交付文件",
+            )
+        reader = WorkflowDeliveryReader(self.workspace_root, workspace_id=self.workspace_id)
+        try:
+            return reader.read_all(deliverables)
+        except DeliveryError as exc:
+            raise ToolExecutionError(ToolErrorCode.INVALID_ARGUMENTS, str(exc)) from None
+
+    def _submission_execution_id(self, call_id: str | None) -> str | None:
+        """The submitting ToolExecution, when its durable row is already visible."""
+
+        if not call_id:
+            return None
+        try:
+            executions = self._node_executions()
+        except ApplicationError:
+            return None
+        for item in executions:
+            if item.call_id == call_id and item.tool_name == SUBMIT_NODE_RESULT_NAME:
+                return item.tool_execution_id
+        return None
+
+    def _submission_receipt(self, marker: NodeSubmissionMarker, *, digest: str, reused: bool):
+        receipt: dict[str, object] = {
+            "submitted": True,
+            "digest": digest,
+            "reused": reused,
+        }
+        if marker.schema_version != SUBMIT_SCHEMA_V1 or marker.deliverables:
+            receipt["deliverables"] = [
+                {
+                    "slot": item.slot,
+                    "path": item.path,
+                    "name": item.name,
+                    "mime": item.mime,
+                    "artifact_id": item.artifact_id,
+                    "byte_size": item.byte_size,
+                }
+                for item in marker.deliverables
+            ]
+        return receipt
 
     def _require_in_scope_evidence(self, refs: tuple[str, ...]) -> None:
         if not refs:
@@ -662,6 +941,11 @@ class WorkflowLeafHooks:
             raise RuntimeError("Workflow leaf TaskRun is missing for the active turn")
         if terminal.finish_reason is FinishReason.STEERED:
             return False
+        if terminal.finish_reason is FinishReason.INTERRUPTED:
+            # A user pause closes the Turn, not the node's business task
+            # (D02/D05): the leaf TaskRun stays open so the continuation turn
+            # is accepted on the same identity. No output binding runs.
+            return False
         if terminal.finish_reason is FinishReason.STOP:
             target = TaskRunStatus.READY_FOR_ACCEPTANCE
             reason = "workflow_leaf_completed"
@@ -711,22 +995,18 @@ class WorkflowLeafHooks:
             ),
             expected_row_version=task.row_version,
         )
-        marker = self.artifacts.get(node_submission_artifact_id(ctx.node_run_id))
-        if marker is not None and marker.state is ArtifactState.AVAILABLE:
-            recorded = json.loads(
-                self.artifacts.read(marker.artifact_id, max_bytes=marker.byte_size).content
-            )
-            if recorded.get("replan") is not None:
-                txn.workflows.put_replan_signal(
-                    ReplanSignal(
-                        signal_id="rsig_" + ctx.node_run_id.removeprefix("nrun_"),
-                        workspace_id=self.workspace_id,
-                        workflow_run_id=ctx.workflow_run_id,
-                        node_run_id=ctx.node_run_id,
-                        request=ReplanRequest.model_validate(recorded["replan"]),
-                        created_at=self.clock(),
-                    )
+        recorded = read_submission_marker(self.artifacts, node_run_id=ctx.node_run_id)
+        if recorded is not None and recorded.replan is not None:
+            txn.workflows.put_replan_signal(
+                ReplanSignal(
+                    signal_id="rsig_" + ctx.node_run_id.removeprefix("nrun_"),
+                    workspace_id=self.workspace_id,
+                    workflow_run_id=ctx.workflow_run_id,
+                    node_run_id=ctx.node_run_id,
+                    request=ReplanRequest.model_validate(recorded.replan),
+                    created_at=self.clock(),
                 )
+            )
         if ctx.node.conversation_scope == "invoking_session" and target in {
             TaskRunStatus.CANCELLED,
             TaskRunStatus.FAILED,

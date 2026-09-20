@@ -1,11 +1,10 @@
-"""Production tests for the Stage 4 v1 Operational Store foundation."""
+"""Production tests for the current Operational Store schema."""
 
 from __future__ import annotations
 
 import multiprocessing
 import os
 import random
-import shutil
 import sqlite3
 import stat
 import threading
@@ -14,36 +13,25 @@ from pathlib import Path
 import pytest
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
-from morrow.adapters.state.migrations import (
-    V1,
-    V2,
-    V3,
-    V4,
-    V5,
-    V6,
-    V7,
-    V8,
-    MigrationRegistry,
-    SchemaMigration,
-)
 from morrow.adapters.state.operational import (
     SQLITE_HEADER,
     BusyRetryPolicy,
     OperationalStore,
+    _apply_session_pragmas,
     is_busy_or_locked,
     posix_mode,
     run_with_busy_retry,
 )
+from morrow.adapters.state.schema_reconcile import reconcile_schema
 from morrow.adapters.state.yaml import (
     GlobalConfigYamlStore,
     ProjectStateYamlStore,
     WorkspaceIndexYamlStore,
 )
 from morrow.bootstrap import build_application
-from morrow.core.models import StateLoadStatus
+from morrow.core.models import Profile, StateLoadStatus, StateWriteStatus
 from morrow.core.store import (
     APPLICATION_ID,
-    APPLICATION_NAME,
     ARTIFACTS_DIRNAME,
     BACKUPS_DIRNAME,
     DATABASE_NAME,
@@ -63,31 +51,6 @@ from morrow.core.store import (
 from morrow.services.workspace import DataRoot
 from morrow.testing import FixedClock
 
-STAGE3_FIXTURE = Path(__file__).parent / "fixtures" / "stage3_data_root"
-V5_PROBE = SchemaMigration(
-    version=5,
-    name="test_probe_records",
-    statements=(
-        """
-        CREATE TABLE probe_parents (
-            id INTEGER PRIMARY KEY
-        )
-        """,
-        """
-        CREATE TABLE probe_children (
-            id INTEGER PRIMARY KEY,
-            parent_id INTEGER NOT NULL REFERENCES probe_parents(id)
-        )
-        """,
-        """
-        CREATE TABLE probe_records (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        )
-        """,
-    ),
-)
-
 
 def _retry(busy_timeout_ms: int = 0) -> BusyRetryPolicy:
     return BusyRetryPolicy(
@@ -95,25 +58,6 @@ def _retry(busy_timeout_ms: int = 0) -> BusyRetryPolicy:
         sleep=lambda _delay: None,
         rng=random.Random(0),
     )
-
-
-def _registry(*extra: SchemaMigration, supported: int | None = None) -> MigrationRegistry:
-    registry = MigrationRegistry(supported_version=supported or (extra[-1].version if extra else 1))
-    registry.add(V1)
-    extra_versions = {item.version for item in extra}
-    if registry.supported_version >= 2 and 2 not in extra_versions:
-        registry.add(V2)
-    if registry.supported_version >= 3 and 3 not in extra_versions:
-        registry.add(V3)
-    if registry.supported_version >= 4 and 4 not in extra_versions:
-        registry.add(V4)
-    for migration in extra:
-        registry.add(migration)
-    return registry
-
-
-def _v1_registry() -> MigrationRegistry:
-    return _registry()
 
 
 def _store(root: Path, **kwargs) -> OperationalStore:
@@ -128,12 +72,6 @@ def _initialized(tmp_path: Path, **kwargs) -> tuple[Path, OperationalStore]:
     store = _store(root, **kwargs)
     store.initialize().close()
     return root, store
-
-
-def _copy_stage3_fixture(tmp_path: Path) -> Path:
-    destination = tmp_path / "stage3-state"
-    shutil.copytree(STAGE3_FIXTURE, destination, ignore=shutil.ignore_patterns("README.md"))
-    return destination
 
 
 def _assert_sanitized(error: StorageError, *forbidden: str) -> None:
@@ -155,9 +93,7 @@ def _hold_write_transaction(root: str, ready, release) -> None:
             # The competing interpreter must reach its operation while this lock
             # is held, even if importing application modules on the host is slow.
             assert release.wait(timeout=180)
-            executor.execute(
-                "UPDATE store_identity SET application_name = application_name WHERE singleton = 1"
-            )
+            executor.execute("UPDATE sessions SET updated_at_unix = updated_at_unix")
 
         session.run_write(work)
 
@@ -176,22 +112,6 @@ def _hold_maintenance_then_exit(root: str, ready) -> None:
     os._exit(17)
 
 
-def _migrate_v2(root: str, result) -> None:
-    try:
-        report = _store(Path(root)).migrate()
-        result.put(("ok", report.to_version))
-    except StorageError as exc:
-        result.put((exc.code.value, None))
-
-
-def _migrate_and_exit(root: str, fault: str) -> None:
-    def injector(point: str) -> None:
-        if point == fault:
-            os._exit(17)
-
-    _store(Path(root), failure_injector=injector).migrate()
-
-
 def _cleanup_processes(*processes) -> None:
     for process in processes:
         if process.is_alive():
@@ -208,8 +128,7 @@ def _touch_identity(root: str, count: int, ready, start) -> None:
         for _ in range(count):
             session.run_write(
                 lambda executor: executor.execute(
-                    "UPDATE store_identity SET application_name = application_name "
-                    "WHERE singleton = 1"
+                    "UPDATE sessions SET updated_at_unix = updated_at_unix"
                 )
             )
 
@@ -265,35 +184,139 @@ def test_create_reopen_and_layout_permissions(tmp_path):
         assert int(_pragma(session, "synchronous")) == 2
         assert int(_pragma(session, "foreign_keys")) == 1
         assert int(_pragma(session, "trusted_schema")) == 0
-        row = session.run_read(
+        identity_table = session.run_read(
             lambda executor: executor.execute(
-                "SELECT application_name, schema_version FROM store_identity WHERE singleton = 1"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='store_identity'"
             )
         )
-        assert row == ((APPLICATION_NAME, SUPPORTED_SCHEMA_VERSION),)
+        assert identity_table == ()
 
     again = store.initialize()
     again.close()
     assert store.classify().ok
 
 
+def test_new_store_uses_only_the_current_schema_without_migration_ledger(tmp_path):
+    _root, store = _initialized(tmp_path)
+    with store.open(StoreOpenMode.READ_ONLY) as session:
+        objects = session.run_read(
+            lambda executor: executor.execute(
+                "SELECT type, name FROM sqlite_master WHERE name IN ("
+                "'schema_migrations', 'store_identity', 'command_receipts',"
+                "'turn_submit_receipts', 'task_command_receipts', 'application_command_receipts',"
+                "'chat_control_receipts', 'recovery_receipts', 'workflow_evaluations',"
+                "'workflow_feedback', 'workflow_policy_candidates') ORDER BY type, name"
+            )
+        )
+        assert objects == (("table", "command_receipts"),)
+        assert session.run_read(
+            lambda executor: executor.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            )
+        ) == ((83,),)
+        assert (
+            session.run_read(
+                lambda executor: executor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='trigger'"
+                )
+            )
+            == ()
+        )
+        assert session.schema_version == SUPPORTED_SCHEMA_VERSION
+
+
+def test_additive_reconciliation_restores_missing_objects_without_backup(tmp_path):
+    _root, store = _initialized(tmp_path)
+    with sqlite3.connect(store.layout.database) as raw:
+        raw.execute("DROP TABLE command_receipts")
+        preview = reconcile_schema(raw, apply=False)
+        assert "table:command_receipts" in preview.pending_changes
+        assert not preview.changed
+
+    assert list(store.layout.backups_dir.glob("*.sqlite")) == []
+    with store.open(StoreOpenMode.READ_WRITE) as session:
+        assert session.schema_version == SUPPORTED_SCHEMA_VERSION
+        assert session.run_read(
+            lambda executor: executor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='command_receipts'"
+            )
+        ) == (("command_receipts",),)
+    assert list(store.layout.backups_dir.glob("*.sqlite")) == []
+
+
+def test_unknown_older_schema_is_rejected_without_mutation(tmp_path):
+    _root, store = _initialized(tmp_path)
+    raw = sqlite3.connect(store.layout.database)
+    raw.execute("PRAGMA user_version = 41")
+    raw.commit()
+    raw.close()
+    before = store.layout.database.read_bytes()
+
+    classified = store.classify()
+    assert classified.health is StoreHealth.UNSUPPORTED_SCHEMA
+    assert classified.error_code is StorageErrorCode.UNSUPPORTED_SCHEMA
+    with pytest.raises(StorageError) as error:
+        store.open(StoreOpenMode.READ_WRITE)
+    assert error.value.code is StorageErrorCode.UNSUPPORTED_SCHEMA
+    assert store.layout.database.read_bytes() == before
+
+
+def test_legacy_migration_ledger_is_ignored_at_the_current_version(tmp_path):
+    _root, store = _initialized(tmp_path)
+    raw = sqlite3.connect(store.layout.database)
+    raw.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, checksum TEXT)")
+    raw.commit()
+    raw.close()
+
+    classified = store.classify()
+    assert classified.ok
+    with store.open(StoreOpenMode.READ_WRITE) as session:
+        assert session.health is StoreHealth.OK
+    assert store.layout.database.exists()
+
+
+def test_session_pragmas_prime_schema_before_disabling_trusted_schema():
+    connection = sqlite3.connect(":memory:", isolation_level=None)
+    statements: list[str] = []
+    connection.set_trace_callback(statements.append)
+    try:
+        _apply_session_pragmas(connection, busy_timeout_ms=250)
+        normalized = [statement.strip().lower() for statement in statements]
+        schema_index = normalized.index("select name from sqlite_master")
+        synchronous_index = normalized.index("pragma synchronous = full")
+        trusted_index = normalized.index("pragma trusted_schema = off")
+        assert schema_index < trusted_index
+        assert synchronous_index < trusted_index
+        assert connection.execute("PRAGMA trusted_schema").fetchone() == (0,)
+    finally:
+        connection.close()
+
+
 def test_create_is_idempotent_and_leaves_yaml_untouched(tmp_path):
-    root = _copy_stage3_fixture(tmp_path)
+    root = tmp_path / "state"
+    global_store = GlobalConfigYamlStore(root)
+    index_store = WorkspaceIndexYamlStore(root)
+    project_store = ProjectStateYamlStore(root)
+    assert (
+        global_store.update(lambda value: value, expected_revision=0).status is StateWriteStatus.OK
+    )
+    assert (
+        index_store.update(lambda value: value, expected_revision=0).status is StateWriteStatus.OK
+    )
+    assert (
+        project_store.write_profile("ws_current", Profile(name="current")).status
+        is StateWriteStatus.OK
+    )
+    yaml_files = {path: path.read_bytes() for path in root.rglob("*.yaml")}
     store = _store(root)
     store.initialize().close()
     store.initialize().close()
-    original = [
-        path.relative_to(STAGE3_FIXTURE)
-        for path in STAGE3_FIXTURE.rglob("*")
-        if path.is_file() and path.name != "README.md"
-    ]
-    for relative in original:
-        assert (root / relative).read_bytes() == (STAGE3_FIXTURE / relative).read_bytes()
-    assert GlobalConfigYamlStore(root).load().status is StateLoadStatus.OK
-    assert WorkspaceIndexYamlStore(root).load().status is StateLoadStatus.OK
-    profile = ProjectStateYamlStore(root).load_profile("ws_stage3")
+    assert {path: path.read_bytes() for path in yaml_files} == yaml_files
+    assert global_store.load().status is StateLoadStatus.OK
+    assert index_store.load().status is StateLoadStatus.OK
+    profile = project_store.load_profile("ws_current")
     assert profile.status is StateLoadStatus.OK
-    assert profile.value.profile.name == "stage3-fixture"
+    assert profile.value.profile.name == "current"
 
 
 def test_empty_file_is_repair_and_is_not_recreated(tmp_path):
@@ -328,27 +351,28 @@ def test_foreign_sqlite_file_is_left_intact(tmp_path):
     assert store.layout.database.read_bytes() == before
 
 
-def test_future_schema_is_refused_and_left_intact(tmp_path):
+def test_future_schema_is_readable_but_write_refused_and_left_intact(tmp_path):
     root, store = _initialized(tmp_path)
     raw = sqlite3.connect(store.layout.database)
     future_version = SUPPORTED_SCHEMA_VERSION + 1
     raw.execute(f"PRAGMA user_version = {future_version}")
-    raw.execute(
-        "UPDATE store_identity SET schema_version = ? WHERE singleton = 1",
-        (future_version,),
-    )
     raw.commit()
     raw.close()
     before = store.layout.database.read_bytes()
     classified = store.classify()
     assert classified.health is StoreHealth.FUTURE_SCHEMA
+    with store.open(StoreOpenMode.READ_ONLY) as session:
+        assert session.health is StoreHealth.FUTURE_SCHEMA
+        assert session.schema_version == future_version
+        assert session.run_read(lambda executor: executor.execute("SELECT 1")) == ((1,),)
     with pytest.raises(StorageError) as error:
         store.open(StoreOpenMode.READ_WRITE)
     assert error.value.code is StorageErrorCode.FUTURE_SCHEMA
+    assert "backup" in str(error.value).casefold()
     assert store.layout.database.read_bytes() == before
 
 
-def test_identity_and_user_version_mismatch_is_repair(tmp_path):
+def test_unknown_old_user_version_is_unsupported(tmp_path):
     root, store = _initialized(tmp_path)
     raw = sqlite3.connect(store.layout.database)
     raw.execute("PRAGMA user_version = 6")
@@ -356,20 +380,11 @@ def test_identity_and_user_version_mismatch_is_repair(tmp_path):
     raw.close()
     before = store.layout.database.read_bytes()
     classified = store.classify()
-    assert classified.error_code is StorageErrorCode.NEEDS_REPAIR
+    assert classified.error_code is StorageErrorCode.UNSUPPORTED_SCHEMA
     with pytest.raises(StorageError) as error:
-        store.migrate()
-    assert error.value.code is StorageErrorCode.NEEDS_REPAIR
+        store.open(StoreOpenMode.READ_WRITE)
+    assert error.value.code is StorageErrorCode.UNSUPPORTED_SCHEMA
     assert store.layout.database.read_bytes() == before
-
-
-def test_checksum_mismatch_is_repair(tmp_path):
-    root, store = _initialized(tmp_path)
-    raw = sqlite3.connect(store.layout.database)
-    raw.execute("UPDATE schema_migrations SET checksum = 'deadbeef' WHERE version = 1")
-    raw.commit()
-    raw.close()
-    assert store.classify().error_code is StorageErrorCode.NEEDS_REPAIR
 
 
 def test_valid_header_corruption_is_diagnose_repair_and_left_intact(tmp_path):
@@ -408,7 +423,7 @@ def test_run_read_cannot_write(tmp_path):
     with store.open(StoreOpenMode.READ_WRITE) as session, pytest.raises(StorageError):
         session.run_read(
             lambda executor: executor.execute(
-                "UPDATE store_identity SET schema_version = 1 WHERE singleton = 1"
+                "UPDATE sessions SET updated_at_unix = updated_at_unix"
             )
         )
 
@@ -572,8 +587,7 @@ def test_begin_immediate_contention_is_typed_busy(tmp_path):
         ):
             session.run_write(
                 lambda executor: executor.execute(
-                    "UPDATE store_identity SET application_name = application_name "
-                    "WHERE singleton = 1"
+                    "UPDATE sessions SET updated_at_unix = updated_at_unix"
                 )
             )
         assert error.value.code is StorageErrorCode.BUSY
@@ -598,9 +612,6 @@ def test_maintenance_lock_excludes_a_second_process(tmp_path):
             raise AssertionError("second process acquired the maintenance lock")
         assert error.value.code is StorageErrorCode.BUSY
         _assert_sanitized(error.value, str(root))
-        with pytest.raises(StorageError) as migrate_error:
-            _store(root, registry=_registry(V5_PROBE, supported=5)).migrate()
-        assert migrate_error.value.code is StorageErrorCode.BUSY
         with pytest.raises(StorageError) as backup_error:
             store.backup()
         assert backup_error.value.code is StorageErrorCode.BUSY
@@ -628,117 +639,12 @@ def test_dead_maintenance_lock_owner_releases_the_os_lock(tmp_path):
         assert store.layout.maintenance_lock.exists()
 
 
-def test_ordered_checksummed_migration_rolls_back_a_failed_step(tmp_path):
-    root, store = _initialized(tmp_path, registry=_v1_registry())
-    good = _store(root)
-    report = good.migrate()
-    assert report.from_version == 1
-    assert report.to_version == SUPPORTED_SCHEMA_VERSION
-    assert report.applied == (
-        "durable_session_conversation",
-        "tool_execution_approval",
-        "recovery_reports",
-        "task_run_lifecycle_and_outcomes",
-        "artifact_store_and_references",
-        "context_checkpoints_and_session_lineage",
-        "application_events_and_command_receipts",
-        "capability_grants_and_permission_snapshots",
-        "learning_foundation",
-        "learning_inbox_project_knowledge",
-        "memory_selection_and_terms",
-        "preference_v2_foundation",
-        "skill_catalog_foundation",
-        "skill_drafts_and_usage",
-        "mcp_control_catalog_and_snapshots",
-        "agent_run_observability",
-        "agent_run_completion_truth",
-        "agent_run_request_evidence",
-        "agent_run_long_horizon_observability",
-        "agent_run_retry_progress",
-        "durable_runtime_control_queue",
-        "agent_definition_foundation",
-        "workflow_revision_artifact_contracts",
-        "workflow_node_request_cap",
-        "workflow_pause_drain_lineage",
-        "workflow_editor_drafts",
-        "workflow_global_replan",
-        "workflow_feedback_evaluation",
-        "compaction_request_accounting",
-    )
-    assert report.backup_name
-    assert (store.layout.backups_dir / report.backup_name).is_file()
-
-    broken_root, _broken_store = _initialized(tmp_path / "broken", registry=_v1_registry())
-    broken = SchemaMigration(
-        version=9,
-        name="broken_step",
-        statements=("THIS IS NOT SQL",),
-    )
-    broken_registry = MigrationRegistry(supported_version=9)
-    for migration in (V1, V2, V3, V4):
-        broken_registry.add(migration)
-    broken_registry.add(V5)
-    broken_registry.add(V6)
-    broken_registry.add(V7)
-    broken_registry.add(V8)
-    broken_registry.add(broken)
-    with pytest.raises(StorageError) as error:
-        _store(broken_root, registry=broken_registry).migrate()
-    assert error.value.code is StorageErrorCode.UNAVAILABLE
-    reopened = _store(broken_root)
-    assert reopened.classify().schema_version == 8
-
-
-def test_interrupted_migration_before_commit_leaves_previous_version(tmp_path):
-    root, _store_obj = _initialized(tmp_path, registry=_v1_registry())
-    context = multiprocessing.get_context("spawn")
-    process = context.Process(target=_migrate_and_exit, args=(str(root), "before_migration_commit"))
-    process.start()
-    try:
-        process.join(timeout=60)
-        assert process.exitcode == 17
-    finally:
-        _cleanup_processes(process)
-    store = _store(root)
-    assert store.classify().schema_version == 1
-    assert store.layout.database.exists()
-
-
-def test_migration_versus_writer_does_not_rewrite_the_file(tmp_path):
-    root, _store_obj = _initialized(tmp_path, registry=_v1_registry())
-    before = Path(root, STORE_DIRNAME, DATABASE_NAME).read_bytes()
-    context = multiprocessing.get_context("spawn")
-    ready = context.Event()
-    release = context.Event()
-    result = context.Queue()
-    holder = context.Process(target=_hold_write_transaction, args=(str(root), ready, release))
-    migrator = context.Process(target=_migrate_v2, args=(str(root), result))
-    holder.start()
-    try:
-        assert ready.wait(timeout=60)
-        migrator.start()
-        status, version = result.get(timeout=60)
-        assert status == StorageErrorCode.BUSY.value
-        assert version is None
-        assert Path(root, STORE_DIRNAME, DATABASE_NAME).read_bytes() == before
-        release.set()
-        holder.join(timeout=60)
-        migrator.join(timeout=60)
-        assert holder.exitcode == 0
-        assert migrator.exitcode == 0
-    finally:
-        release.set()
-        _cleanup_processes(holder, migrator)
-        result.close()
-    assert _store(root).classify().schema_version == 1
-
-
 def test_sidecar_permissions_after_write(tmp_path):
     root, store = _initialized(tmp_path)
     with store.open(StoreOpenMode.READ_WRITE) as session:
         session.run_write(
             lambda executor: executor.execute(
-                "UPDATE store_identity SET application_name = application_name WHERE singleton = 1"
+                "UPDATE sessions SET updated_at_unix = updated_at_unix"
             )
         )
     for sidecar in (store.layout.wal, store.layout.shm):
@@ -752,7 +658,7 @@ def test_read_only_filesystem_refuses_writes(tmp_path):
     with store.open(StoreOpenMode.READ_WRITE) as session:
         session.run_write(
             lambda executor: executor.execute(
-                "UPDATE store_identity SET application_name = application_name WHERE singleton = 1"
+                "UPDATE sessions SET updated_at_unix = updated_at_unix"
             )
         )
     store.layout.database.chmod(0o400)
@@ -766,12 +672,7 @@ def test_read_only_filesystem_refuses_writes(tmp_path):
         assert error.value.code is StorageErrorCode.UNAVAILABLE
         with store.open(StoreOpenMode.READ_ONLY) as session:
             assert session.mode is StoreOpenMode.READ_ONLY
-            name = session.run_read(
-                lambda executor: executor.execute(
-                    "SELECT application_name FROM store_identity WHERE singleton = 1"
-                )
-            )
-            assert name[0][0] == APPLICATION_NAME
+            assert _pragma(session, "application_id") == APPLICATION_ID
     finally:
         store.layout.store_dir.chmod(0o700)
         store.layout.database.chmod(0o600)

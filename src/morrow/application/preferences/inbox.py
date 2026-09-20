@@ -95,6 +95,8 @@ class PreferenceInbox:
         *,
         status: PreferenceProposalStatus | str | None = PreferenceProposalStatus.PROPOSED,
         job_id: str | None = None,
+        session_id: str | None = None,
+        task_run_ids: tuple[str, ...] | None = None,
         cursor: str | None = None,
         limit: int = 50,
     ) -> QueryPage[PreferenceProposalView]:
@@ -104,6 +106,8 @@ class PreferenceInbox:
             self.workspace_id,
             status=selected_status,
             job_id=job_id,
+            session_id=session_id,
+            task_run_ids=task_run_ids,
             limit=limit,
             offset=offset,
         )
@@ -161,6 +165,16 @@ class PreferenceInbox:
         expected_target_revision: int | None = None,
         edit: str | PreferenceOperation | Mapping[str, object] | None = None,
     ) -> PreferenceInboxDecisionResult:
+        replay = self._replay_accept(
+            (proposal_id,),
+            command_id,
+            {proposal_id: edit},
+            {proposal_id: expected_row_version},
+            expected_document_revision,
+            expected_target_revision=expected_target_revision,
+        )
+        if replay is not None:
+            return replay
         preview = self.preview(proposal_id, edit=edit)
         self._assert_preview_tokens(
             preview,
@@ -190,6 +204,15 @@ class PreferenceInbox:
     ) -> PreferenceInboxDecisionResult:
         if not 1 <= len(proposal_ids) <= 8 or len(set(proposal_ids)) != len(proposal_ids):
             raise PreferenceInboxError("operation_count", "Preference accept-many batch is invalid")
+        replay = self._replay_accept(
+            tuple(proposal_ids),
+            command_id,
+            edits or {},
+            expected_row_versions or {},
+            expected_document_revision,
+        )
+        if replay is not None:
+            return replay
         previews = tuple(
             self.preview(proposal_id, edit=(edits or {}).get(proposal_id))
             for proposal_id in proposal_ids
@@ -252,6 +275,60 @@ class PreferenceInbox:
     def reject_and_suppress(self, proposal_id: str, **kwargs) -> PreferenceInboxDecisionResult:
         kwargs["suppress"] = True
         return self.reject(proposal_id, **kwargs)
+
+    def _replay_accept(
+        self,
+        proposal_ids,
+        command_id,
+        edits,
+        expected_rows,
+        expected_document,
+        *,
+        expected_target_revision=None,
+    ) -> PreferenceInboxDecisionResult | None:
+        """Recover the Writer saga even if the transport receipt was never saved."""
+        if command_id is None or self.writer is None:
+            return None
+        batch = self.journal.get_preference_write_batch_by_command(self.workspace_id, command_id)
+        if batch is None:
+            return None
+        if batch.proposal_ids != proposal_ids or (
+            expected_document is not None and expected_document != batch.expected_document_revision
+        ):
+            raise PreferenceInboxError("conflict", "Preference command identity has changed")
+        operations = []
+        for identity in proposal_ids:
+            proposal = self.journal.get_preference_proposal(self.workspace_id, identity)
+            if proposal is None:
+                raise PreferenceInboxError("missing_reference", "Preference proposal is missing")
+            original_row = proposal.row_version
+            if proposal.decision_command_id == command_id:
+                original_row -= 1
+            if expected_rows.get(identity) not in (None, original_row) or (
+                expected_target_revision is not None
+                and expected_target_revision != proposal.expected_target_revision
+            ):
+                raise PreferenceInboxError("stale", "Preference preview identity has changed")
+            operations.append(self._operation(proposal, edits.get(identity)))
+        try:
+            prepared = self.writer.prepare(
+                batch.scope,
+                batch.expected_document_revision,
+                command_id,
+                tuple(operations),
+                proposal_ids=proposal_ids,
+            )
+            result = self.writer.apply(prepared)
+        except PreferenceWriterError as exc:
+            raise PreferenceInboxError(
+                exc.code, "Preference proposal could not be applied"
+            ) from exc
+        return PreferenceInboxDecisionResult(
+            tuple(self.journal.get_preference_proposal(self.workspace_id, i) for i in proposal_ids),
+            batch_id=result.batch.batch_id,
+            document_revision=result.document.revision,
+            replayed=result.replayed,
+        )
 
     def _accept_previews(
         self,

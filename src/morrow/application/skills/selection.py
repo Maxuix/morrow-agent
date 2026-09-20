@@ -301,7 +301,7 @@ class SkillSelectionService:
         """Persist selected catalog facts inside the same new-run admission.
 
         This keeps composition/recovery free of Catalog reads while still
-        satisfying the v14 version foreign keys for packages installed by a
+        satisfying the version foreign keys for packages installed by a
         process that did not have an operational journal open at install time.
         """
 

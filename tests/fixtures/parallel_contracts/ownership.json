@@ -1,0 +1,199 @@
+{
+  "description": "Per-file unique owners for the four-lane parallel repair. Priority over the broader module lists in old subplans. Unlisted files that may be shared require a coordinator decision first; workers never edit other lanes' files and never edit the developing main checkout via absolute links.",
+  "contract_version": "1.0.0",
+  "owners": {
+    "coordinator": {
+      "role": "总控（本 session）：计划状态、公共装配、契约、集成",
+      "existing_files": [
+        ".agent/PLAN.md",
+        ".agent/TODO.md",
+        ".agent/TRACKER.md",
+        ".agent/LOG.md",
+        ".agent/subplans/README.md",
+        ".agent/archive/subplans/workflow-codex-interrupt-durable-history-2026-09-09/1-contracts-baseline.md",
+        ".agent/archive/subplans/workflow-codex-interrupt-durable-history-2026-09-09/11-restart-migration.md",
+        ".agent/archive/subplans/workflow-codex-interrupt-durable-history-2026-09-09/12-acceptance-release.md",
+        ".agent/archive/subplans/workflow-codex-interrupt-durable-history-2026-09-09/parallel/README.md",
+        ".agent/archive/subplans/workflow-codex-interrupt-durable-history-2026-09-09/parallel/DISPATCH.md",
+        ".agent/archive/subplans/workflow-codex-interrupt-durable-history-2026-09-09/parallel/COORDINATION.md",
+        "tests/fixtures/parallel_contracts/README.md",
+        "tests/fixtures/parallel_contracts/wire-fixtures.json",
+        "tests/fixtures/parallel_contracts/ownership.json",
+        "src/morrow/core/contracts.py",
+        "src/morrow/server/composition.py",
+        "src/morrow/server/app.py",
+        "src/morrow/server/host.py",
+        "src/morrow/server/commands.py",
+        "src/morrow/server/planning.py",
+        "src/morrow/adapters/state/journal.py",
+        "src/morrow/core/store.py",
+        "tests/conftest.py",
+        "tests/fixtures/core_api_client.py",
+        "tests/test_stage8_core_api.py",
+        "gui/src/api/chat.ts",
+        "gui/src/api/activity.ts",
+        "gui/src/api/client.ts",
+        "gui/src/api/types.ts",
+        "docs/reviews/workflow-resumable-chat-history-repair-plan-2026-09-09.md",
+        "gui/src/views/AppShell.tsx"
+      ],
+      "new_file_prefixes": [
+        "tests/fixtures/parallel_contracts/",
+        "tests/parallel_contracts/",
+        "tests/fixtures/parallel_gates.py",
+        "tests/fixtures/cross_process.py",
+        "tests/test_workflow_interrupt_continuation.py",
+        "gui/src/api/contracts.ts",
+        "docs/acceptance/workflow-codex-interrupt-durable-history.md",
+        "docs/acceptance/workflow-codex-interrupt-durable-history-p01.md",
+        "gui/src/api/contracts.test.ts"
+      ]
+    },
+    "A": {
+      "role": "运行时中断与任务接续（P02→P03→P04）",
+      "existing_files": [
+        "src/morrow/runtime/agent.py",
+        "src/morrow/runtime/tool_cycle.py",
+        "src/morrow/runtime/session.py",
+        "src/morrow/application/turn_lifecycle.py",
+        "src/morrow/adapters/state/workflow_journal.py",
+        "src/morrow/adapters/state/workflow_ownership.py",
+        "src/morrow/application/workflows/scheduler.py",
+        "src/morrow/application/workflows/transitions.py",
+        "src/morrow/application/workflows/plan_change.py",
+        "src/morrow/application/workflows/plan_admission.py",
+        "src/morrow/application/workflows/leaf.py",
+        "src/morrow/application/execution.py",
+        "src/morrow/application/execution_gate.py",
+        "tests/test_stage7_workflow_store.py",
+        "tests/test_workflow_session_ownership.py",
+        "tests/test_workflow_pause_continue_repair.py",
+        "tests/test_stage7_serial_scheduler.py",
+        "tests/test_stage7_isolated_workflow_slice.py",
+        "tests/test_stage7_multi_agent_pipeline.py"
+      ],
+      "new_file_prefixes": [
+        "tests/parallel_runtime/",
+        "src/morrow/core/execution_pause.py",
+        "src/morrow/core/workflows/segments.py",
+        "src/morrow/application/execution_pause.py",
+        "src/morrow/adapters/state/execution_pause_journal.py",
+        "docs/acceptance/workflow-codex-interrupt-durable-history-p02.md",
+        "docs/acceptance/workflow-codex-interrupt-durable-history-p03.md",
+        "docs/acceptance/workflow-codex-interrupt-durable-history-p04.md",
+        ".agent/parallel/status/A.md"
+      ]
+    },
+    "B": {
+      "role": "规划暂停与请求生命周期（P05）",
+      "existing_files": [
+        "src/morrow/core/workflows/planning.py",
+        "src/morrow/application/workflows/task_planning.py",
+        "src/morrow/application/workflows/planning_model.py",
+        "src/morrow/adapters/state/planning_journal.py",
+        "tests/test_workflow_task_planning.py"
+      ],
+      "new_file_prefixes": [
+        "tests/parallel_planning/",
+        "docs/acceptance/workflow-codex-interrupt-durable-history-p05.md",
+        ".agent/parallel/status/B.md"
+      ]
+    },
+    "C": {
+      "role": "持久轨迹、活动与回放后端（P06→P07→P08）",
+      "existing_files": [
+        "src/morrow/application/chat_timeline.py",
+        "src/morrow/application/chat_workflows.py",
+        "src/morrow/adapters/state/chat_timeline_journal.py",
+        "src/morrow/server/chat.py",
+        "src/morrow/server/replies.py",
+        "src/morrow/server/workflow_stream.py",
+        "src/morrow/server/activities.py",
+        "src/morrow/server/activity_projection.py",
+        "tests/test_stage8_chat_timeline.py",
+        "tests/test_stage8_chat_workflows.py",
+        "tests/test_activity_stream.py",
+        "tests/test_activity_contracts.py",
+        "tests/test_workflow_stage_stream.py",
+        "tests/test_workflow_consistency.py"
+      ],
+      "new_file_prefixes": [
+        "tests/parallel_trajectory/",
+        "src/morrow/core/chat_trajectory.py",
+        "src/morrow/application/timeline_index.py",
+        "docs/acceptance/workflow-codex-interrupt-durable-history-p06.md",
+        "docs/acceptance/workflow-codex-interrupt-durable-history-p07.md",
+        "docs/acceptance/workflow-codex-interrupt-durable-history-p08.md",
+        ".agent/parallel/status/C.md"
+      ]
+    },
+    "D": {
+      "role": "主聊天控制与完整轨迹前端（P09→P10）",
+      "existing_files": [
+        "gui/src/views/ChatWorkspace.tsx",
+        "gui/src/views/ChatComposer.tsx",
+        "gui/src/views/RunControls.tsx",
+        "gui/src/views/ActivityTimeline.tsx",
+        "gui/src/views/ChatMessage.tsx",
+        "gui/src/views/lib/execution.ts",
+        "gui/src/state/chat.ts",
+        "gui/src/state/activity.ts",
+        "gui/src/state/taskPlan.ts"
+      ],
+      "new_file_prefixes": [
+        "gui/src/parallel-fixtures/",
+        "docs/acceptance/workflow-codex-interrupt-durable-history-p09.md",
+        "docs/acceptance/workflow-codex-interrupt-durable-history-p10.md",
+        ".agent/parallel/status/D.md",
+        "gui/src/views/lib/transcript.ts",
+        "gui/src/views/lib/transcript.test.ts"
+      ]
+    }
+  },
+  "shared_rules": [
+    "每个 existing_files 路径必须在 C0 树中真实存在（test_ownership 校验）。",
+    "一条线需要改其他线的文件时：写入本线 status 的 integration_notes，交总控发版本化补丁。",
+    "gui/src/api/contracts.ts 与 src/morrow/core/contracts.py 为冻结协议；扩展需总控提升契约版本。",
+    "worker 只更新自己的 .agent/parallel/status/<lane>.md 与 pNN 报告；公共 PLAN/TODO/TRACKER/LOG/subplans 归总控。",
+    "集成备案（2026-09-09 总控）：gui/src/views/lib/transcript(.test).ts 为 D 线 P10 新增私有文件，正式归 D；gui/src/views/AppShell.tsx 为共享挂载入口归总控；tests/test_workflow_interrupt_continuation.py 的复现 xfail 已随集成全部翻转为常绿测试。"
+  ],
+  "lanes": {
+    "A": {
+      "worktree": "/Users/ruirui/Documents/Project/Agent/developing-A",
+      "initial_branch": "feat/workflow-execution-segments",
+      "final_branch": "feat/workflow-task-continuation",
+      "subplan_order": [
+        "P02",
+        "P03",
+        "P04"
+      ]
+    },
+    "B": {
+      "worktree": "/Users/ruirui/Documents/Project/Agent/developing-B",
+      "initial_branch": "fix/planning-pause-lifecycle",
+      "final_branch": "fix/planning-pause-lifecycle",
+      "subplan_order": [
+        "P05"
+      ]
+    },
+    "C": {
+      "worktree": "/Users/ruirui/Documents/Project/Agent/developing-C",
+      "initial_branch": "feat/chat-trajectory-storage",
+      "final_branch": "feat/chat-trajectory-replay",
+      "subplan_order": [
+        "P06",
+        "P07",
+        "P08"
+      ]
+    },
+    "D": {
+      "worktree": "/Users/ruirui/Documents/Project/Agent/developing-D",
+      "initial_branch": "feat/chat-pause-continue-controls",
+      "final_branch": "feat/chat-unified-trajectory-ui",
+      "subplan_order": [
+        "P09",
+        "P10"
+      ]
+    }
+  }
+}

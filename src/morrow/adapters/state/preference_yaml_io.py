@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import errno
-import hashlib
 import os
 import shutil
 import tempfile
@@ -35,13 +34,6 @@ def fsync_directory(path: Path) -> None:
                 raise
     finally:
         os.close(descriptor)
-
-
-def raw_digest(raw: object) -> str:
-    if raw is None:
-        return hashlib.sha256(b"").hexdigest()
-    encoded = yaml.safe_dump(raw, allow_unicode=True, sort_keys=True).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def read_raw(path: Path) -> dict | None:
@@ -114,7 +106,6 @@ __all__ = [
     "PreferenceYamlIoError",
     "backup",
     "fsync_directory",
-    "raw_digest",
     "read_raw",
     "with_revision",
     "write_bytes",

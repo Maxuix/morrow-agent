@@ -55,6 +55,11 @@ class AgentRunPolicyOverrides(_RuntimePolicyModel):
     unknown_model_fallback_chars: int | None = Field(default=None, gt=0, le=AGENT_MAX_REQUEST_CHARS)
     max_tool_result_chars: int | None = Field(default=None, gt=0, le=AGENT_MAX_TOOL_RESULT_CHARS)
     max_validation_errors: int | None = Field(default=None, gt=0, le=AGENT_MAX_VALIDATION_ERRORS)
+
+
+class LongHorizonPolicyOverrides(_RuntimePolicyModel):
+    """Optional user tuning for the current long-horizon model-context policy."""
+
     compaction_enabled: bool | None = None
     reserve_tokens: int | None = Field(default=None, gt=0, le=AGENT_MAX_RESERVE_TOKENS)
     keep_recent_tokens: int | None = Field(default=None, gt=0, le=AGENT_MAX_KEEP_RECENT_TOKENS)
@@ -102,6 +107,7 @@ class RuntimePolicyOverrides(_RuntimePolicyModel):
     """Optional section in the user-owned global ``config.yaml``."""
 
     agent_run: AgentRunPolicyOverrides | None = None
+    long_horizon: LongHorizonPolicyOverrides | None = None
     reviews: ReviewPolicyOverrides | None = None
 
 
@@ -126,6 +132,7 @@ __all__ = [
     "AGENT_MAX_VALIDATION_ERRORS",
     "AGENT_RUN_POLICY_SCHEMA_VERSION",
     "AgentRunPolicyOverrides",
+    "LongHorizonPolicyOverrides",
     "PI_DEFAULT_GREP_MAX_LINE_CHARS",
     "PI_DEFAULT_KEEP_RECENT_TOKENS",
     "PI_DEFAULT_MAX_PROVIDER_RETRY_DELAY_SECONDS",

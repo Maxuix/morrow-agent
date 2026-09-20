@@ -60,8 +60,8 @@ async def test_doctor_detects_candidate_evidence_and_suppression_target_drift(tm
         )
         session.run_write(
             lambda executor: executor.execute(
-                "DELETE FROM learning_candidate_evidence WHERE candidate_id = ?",
-                (candidate.candidate_id,),
+                "UPDATE learning_candidates SET evidence_ids_json = ? WHERE candidate_id = ?",
+                ('["lev_missing"]', candidate.candidate_id),
             )
         )
 
@@ -103,7 +103,6 @@ async def test_stage5_sqlite_backup_preserves_learning_state_in_isolation(tmp_pa
             "learning_reviews",
             "learning_evidence",
             "learning_candidates",
-            "learning_candidate_evidence",
             "project_knowledge_heads",
             "memory_workspace_state",
         )
@@ -115,7 +114,6 @@ async def test_stage5_sqlite_backup_preserves_learning_state_in_isolation(tmp_pa
         assert counts["learning_reviews"] == 1
         assert counts["learning_evidence"] >= 1
         assert counts["learning_candidates"] == 1
-        assert counts["learning_candidate_evidence"] == 1
         assert counts["project_knowledge_heads"] == 1
         assert counts["memory_workspace_state"] == 1
     finally:

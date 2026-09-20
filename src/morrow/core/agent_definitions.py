@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 from pydantic import Field, field_validator, model_validator
 
 from morrow.core.domain import canonical_json_bytes, refuse_secret_material, sha256_digest
+from morrow.core.execution_selections import GenerationChoice
 from morrow.core.models import ModelRef, ProtocolModel
 
 DefinitionId = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")]
@@ -38,6 +39,8 @@ class AgentDefinitionSource(ProtocolModel):
         description="Maximum admitted agent model calls, including tool follow-ups and retries.",
     )
     model_selection: ModelRef | Literal["invoking_active"] = "invoking_active"
+    # Optional explicit generation choice (D06/D05).
+    generation_selection: GenerationChoice | None = None
     derived_from_version_id: VersionId | None = None
     derived_from_definition_id: DefinitionId | None = None
     derived_from_source_hash: Digest | None = None
@@ -94,16 +97,7 @@ class AgentDefinitionSource(ProtocolModel):
 
     @property
     def content_hash(self) -> str:
-        payload = self.model_dump(mode="json")
-        # Exclude null provenance fields so existing immutable hashes stay stable.
-        for field in (
-            "derived_from_version_id",
-            "derived_from_definition_id",
-            "derived_from_source_hash",
-        ):
-            if payload[field] is None:
-                del payload[field]
-        return sha256_digest(canonical_json_bytes(payload))
+        return sha256_digest(canonical_json_bytes(self.model_dump(mode="json")))
 
 
 class AgentDefinitionDocument(ProtocolModel):

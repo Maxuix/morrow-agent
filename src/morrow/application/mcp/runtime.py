@@ -635,8 +635,8 @@ def rehydrate_mcp_run(
             agent_run_id=agent_run_id,
             server_id=review.server_id,
             config_digest=launch.config_digest,
-            catalog_digest=launch.catalog_digest or "0" * 64,
-            toolset_digest=launch.toolset_digest or "0" * 64,
+            catalog_digest=launch.catalog_digest,
+            toolset_digest=launch.toolset_digest,
         ):
             raise McpRuntimeError("review_drift", "rehydrate")
 
@@ -669,7 +669,6 @@ def rehydrate_mcp_run(
                 McpLaunchRisk.OUTSIDE_WORKSPACE in definition.requested_launch_risks
                 or definition.cwd_policy is McpCwdPolicy.ABSOLUTE
             )
-            or launch.toolset_digest is None
         ):
             raise McpRuntimeError("snapshot_drift", "rehydrate")
         allowed_entries = tuple(
@@ -814,8 +813,8 @@ def register_mcp_tools(
                 agent_run_id=agent_run_id,
                 server_id=current.definition.server_id,
                 config_digest=current.launch_snapshot.config_digest,
-                catalog_digest=current.launch_snapshot.catalog_digest or "0" * 64,
-                toolset_digest=current.launch_snapshot.toolset_digest or "0" * 64,
+                catalog_digest=current.launch_snapshot.catalog_digest,
+                toolset_digest=current.launch_snapshot.toolset_digest,
                 allow_unconfined_host=allow_unconfined_host,
             )
             if (

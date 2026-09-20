@@ -58,7 +58,7 @@ def workflow_task_outcome(**fields) -> TaskOutcome:
 def select_workflow_snapshot_carry_forward(transitions, outcomes) -> TaskOutcome | None:
     """The one marked Workflow snapshot bound to the root's latest READY transition.
 
-    An intervening ordinary snapshot carries no markers, and an older Workflow
+    An intervening ordinary snapshot carries no markers, and a previous Workflow
     snapshot never matches a newer READY transition after resume + Direct work.
     """
 

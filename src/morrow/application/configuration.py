@@ -20,7 +20,7 @@ from morrow.core.domain import (
     sha256_digest,
 )
 from morrow.core.execution import tool_declaration
-from morrow.core.models import StatePresence, ToolEffect
+from morrow.core.models import Profile, StatePresence, ToolEffect
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.tool_arguments import MAX_STRING_CHARS, SCHEMA_DIALECT
 from morrow.runtime.tools import RegisteredTool, ToolErrorCode, ToolExecutionError, make_tool
@@ -30,6 +30,9 @@ ConfigurationTarget = Literal["profile"]
 ConfigurationOperation = Literal["set", "unset", "append", "remove", "reset"]
 PROFILE_PATHS = frozenset({"name", "summary", "goals", "tech_stack", "constraints", "conventions"})
 PROFILE_LIST_PATHS = frozenset({"goals", "tech_stack", "constraints", "conventions"})
+PROFILE_NAME_MAX_CHARS = 2_048
+PROFILE_SUMMARY_MAX_CHARS = 2_048
+PROFILE_LIST_ITEM_MAX_CHARS = 512
 
 
 def _configuration_string(*, max_length: int, minimum: int = 1) -> dict[str, object]:
@@ -146,6 +149,57 @@ def _validate_profile_fields(model: BaseModel, *, validate_values: bool = True) 
         raise ValueError("Profile 配置值超出长度限制")
 
 
+def _profile_text(value: object, *, maximum: int, label: str, required: bool) -> str | None:
+    """Keep stored text verbatim; never truncate, only locate an invalid field."""
+    if value is None:
+        if required:
+            raise ValueError(f"{label}不能为空")
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{label}必须是文本")
+    if not value.strip():
+        if required:
+            raise ValueError(f"{label}不能为空")
+        return None
+    if len(value) > maximum:
+        raise ValueError(f"{label}超出 {maximum} 字符限制")
+    return value
+
+
+def _profile_items(values: object, *, label: str) -> list[str]:
+    if not isinstance(values, (list, tuple)):
+        raise ValueError(f"{label}必须是条目列表")
+    items: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        text = _profile_text(item, maximum=PROFILE_LIST_ITEM_MAX_CHARS, label=label, required=True)
+        normalized = " ".join(text.split()).casefold()
+        if normalized in seen:
+            raise ValueError(f"{label}已存在相同条目")
+        seen.add(normalized)
+        items.append(text)
+    return items
+
+
+def validate_profile_candidate(candidate: Profile) -> Profile:
+    """Validate one complete form snapshot; existing over-long text is reported, not trimmed."""
+    return Profile(
+        name=_profile_text(
+            candidate.name, maximum=PROFILE_NAME_MAX_CHARS, label="项目名称", required=True
+        ),
+        summary=_profile_text(
+            candidate.summary,
+            maximum=PROFILE_SUMMARY_MAX_CHARS,
+            label="项目概述",
+            required=False,
+        ),
+        tech_stack=_profile_items(candidate.tech_stack, label="技术栈"),
+        goals=_profile_items(candidate.goals, label="项目目标"),
+        constraints=_profile_items(candidate.constraints, label="项目约束"),
+        conventions=_profile_items(candidate.conventions, label="项目约定"),
+    )
+
+
 class UpdateConfigurationArguments(BaseModel):
     """Flat, strict Provider arguments for workspace Profile operations."""
 
@@ -208,6 +262,22 @@ class ConfigurationChangeResult(BaseModel):
     operation: ConfigurationOperation
     path: str | None = None
     revision: int | None = None
+
+
+class ProfileSaveStatus(StrEnum):
+    APPLIED = "applied"
+    UNCHANGED = "unchanged"
+
+
+class ProfileSaveResult(BaseModel):
+    """Outcome of one complete Profile snapshot save; never carries document text."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    status: ProfileSaveStatus
+    scope: ConfigurationScope
+    target: ConfigurationTarget
+    revision: int = Field(ge=0)
 
 
 def configuration_state_digest(presence: StatePresence, value: BaseModel | None) -> str:

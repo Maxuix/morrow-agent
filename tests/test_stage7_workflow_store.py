@@ -621,124 +621,16 @@ def test_workflow_revision_tamper_is_error_but_desired_ahead_is_warning(state):
     assert report.health.value == "ok" and any(
         i.code == "workflow_desired_ahead" for i in report.issues
     )
-    with pytest.raises(StorageError):
-        handle.run_write(
-            lambda ex: ex.execute("UPDATE workflow_revisions SET content_hash=?", ("f" * 64,))
-        )
+    handle.run_write(
+        lambda ex: ex.execute("UPDATE workflow_revisions SET content_hash=?", ("f" * 64,))
+    )
+    assert OperationalDoctor(store).inspect("ws_one").health.value == "needs_repair"
     handle.run_write(
         lambda ex: ex.execute(
             "UPDATE workflow_definition_heads SET body_json=json_set(body_json, '$.workflow_revision_id', 'wrev_missing')"
         )
     )
     assert OperationalDoctor(store).inspect("ws_one").health.value == "needs_repair"
-
-
-def test_previous_current_migration_defaults_and_future_refusal(tmp_path):
-    from morrow.adapters.state.migrations import MigrationRegistry, production_registry
-    from morrow.core.domain import TaskOutcome, TextSafetyProfile, canonical_json_bytes
-    from morrow.core.store import StoreHealth
-
-    old = MigrationRegistry(supported_version=23)
-    production = production_registry()
-    for migration in production.pending(0):
-        if migration.version <= 23:
-            old.add(migration)
-    root = tmp_path / "v23"
-    with OperationalStore(root, registry=old).initialize() as handle:
-        handle.run_write(
-            lambda ex: ex.execute(
-                "INSERT INTO sessions(session_id, workspace_id, lifecycle, health, conversation_position, created_at_unix, updated_at_unix) VALUES('ses_old','ws_one','active','ok',0,1,1)"
-            )
-        )
-        handle.run_write(
-            lambda ex: ex.execute(
-                "INSERT INTO task_runs(task_run_id, session_id, workspace_id, status, row_version, attempt, created_at_unix, updated_at_unix) VALUES('task_old','ses_old','ws_one','open',1,1,1,1)"
-            )
-        )
-        old_outcome = TaskOutcome(
-            **{
-                **outcome_fields(),
-                "summary": "Older safe outcome",
-                "session_id": "ses_old",
-                "task_run_id": "task_old",
-                "task_status": TaskRunStatus.OPEN,
-            }
-        )
-        raw = canonical_json_bytes(
-            old_outcome.model_dump(mode="json", exclude={"text_safety_profile"})
-        )
-        handle.run_write(
-            lambda ex: ex.execute(
-                "INSERT INTO task_outcomes(outcome_id, workspace_id, session_id, task_run_id, version, trigger, task_status, payload_json, payload_bytes, created_at_unix, artifact_refs_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    "out_one",
-                    "ws_one",
-                    "ses_old",
-                    "task_old",
-                    1,
-                    "snapshot",
-                    "open",
-                    raw.decode(),
-                    len(raw),
-                    int(NOW.timestamp()),
-                    "[]",
-                ),
-            )
-        )
-        handle.run_write(
-            lambda ex: ex.execute(
-                "INSERT INTO artifacts(artifact_id, workspace_id, session_id, task_run_id, kind, sensitivity, state, retention, sha256, byte_size, excerpt, provenance_json, row_version, created_at_unix, updated_at_unix) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    "art_old",
-                    "ws_one",
-                    "ses_old",
-                    "task_old",
-                    "task_summary",
-                    "redacted",
-                    "missing",
-                    "standard",
-                    "a" * 64,
-                    0,
-                    "Older safe excerpt",
-                    "[]",
-                    1,
-                    1,
-                    1,
-                ),
-            )
-        )
-    store = OperationalStore(root)
-    assert store.migrate().applied == (
-        "workflow_revision_artifact_contracts",
-        "workflow_node_request_cap",
-        "workflow_pause_drain_lineage",
-        "workflow_editor_drafts",
-        "workflow_global_replan",
-        "workflow_feedback_evaluation",
-        "compaction_request_accounting",
-    )
-    with store.open(StoreOpenMode.READ_WRITE) as handle:
-        assert (
-            SqliteOperationalJournal(handle).get_task_run("ws_one", "task_old").purpose
-            == TaskRunPurpose.USER
-        )
-        journal = SqliteOperationalJournal(handle)
-        assert (
-            journal.get_task_outcome("ws_one", "out_one").text_safety_profile
-            == TextSafetyProfile.LEGACY_STRICT
-        )
-        assert (
-            journal.get_artifact("ws_one", "art_old").text_safety_profile
-            == TextSafetyProfile.LEGACY_STRICT
-        )
-        from morrow.core.store import SUPPORTED_SCHEMA_VERSION
-
-        future = SUPPORTED_SCHEMA_VERSION + 1
-        handle.run_write(lambda ex: ex.execute(f"PRAGMA user_version={future}"))
-        handle.run_write(
-            lambda ex: ex.execute("UPDATE store_identity SET schema_version=?", (future,))
-        )
-    assert store.classify().health is StoreHealth.FUTURE_SCHEMA
 
 
 def test_cancel_intent_and_blocked_recovery_are_monotonic(state):

@@ -40,7 +40,7 @@ from morrow.runtime.session import Session
 from morrow.testing import make_context_builder, seed_user_turn
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
-TEST_MODEL = ModelRef(provider_id="opencode-go", model_id="deepseek-v4-flash")
+TEST_MODEL = ModelRef(provider_id="volcengine", model_id="glm-5.3-flash")
 
 
 def _expected(case) -> PreferenceReviewOutput:
@@ -199,7 +199,7 @@ async def test_adherence_probe_uses_current_session_shape():
             del model, messages
             return "ADHERE-01"
 
-    model = ModelRef(provider_id="opencode-go", model_id="deepseek-v4-flash")
+    model = ModelRef(provider_id="volcengine", model_id="glm-5.3-flash")
 
     assert await _adherence_probe(MarkerProvider(), model, make_context_builder(), 1)
 
@@ -281,19 +281,20 @@ async def test_live_case_reviewer_error_becomes_sanitized_miss():
 @pytest.mark.live
 @pytest.mark.asyncio
 async def test_live_preference_v2_scores_natural_language_and_next_run_adherence(tmp_path):
-    credential = os.environ.get("MORROW_OPENCODE_GO_API_KEY")
+    credential = os.environ.get("MORROW_VOLCENGINE_API_KEY")
     if not credential:
-        pytest.skip("set MORROW_OPENCODE_GO_API_KEY for the explicit Preference v2 Live checklist")
-    model_id = os.environ.get("MORROW_PREFERENCE_MODEL_ID", "deepseek-v4-flash")
+        pytest.skip("set MORROW_VOLCENGINE_API_KEY for the explicit Preference v2 Live checklist")
+    model_id = os.environ.get("MORROW_PREFERENCE_MODEL_ID", "glm-5.3-flash")
     provider_config = ProviderConfig(
         adapter="openai-compatible",
         base_url=os.environ.get(
-            "MORROW_PREFERENCE_PROVIDER_BASE_URL", "https://opencode.ai/zen/go/v1"
+            "MORROW_PREFERENCE_PROVIDER_BASE_URL",
+            "https://ark.cn-beijing.volces.com/api/plan/v3",
         ),
         models={model_id: ProviderModelConfig(api_model_id=model_id)},
     )
     provider = make_openai_compatible(provider_config, credential)
-    model = ModelRef(provider_id="opencode-go", model_id=model_id)
+    model = ModelRef(provider_id="volcengine", model_id=model_id)
     reviewer = ModelPreferenceReviewer(provider)
     dataset = load_preference_evaluation_dataset()
 

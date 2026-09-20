@@ -15,7 +15,7 @@ class PreferenceYamlLoadStatus(StrEnum):
 
 
 class PreferenceYamlError(RuntimeError):
-    """Sanitized state/migration error; paths and YAML payloads never escape."""
+    """Sanitized state error; paths and YAML payloads never escape."""
 
     def __init__(self, code: str, message: str = "Preference YAML operation failed") -> None:
         super().__init__(message)
@@ -32,22 +32,12 @@ class PreferenceYamlLoad:
     status: PreferenceYamlLoadStatus
     value: GlobalConfig | WorkspacePreferenceDocument | None
     revision: int
-    source_schema_version: int | None
+    schema_version: int | None
     presence: str | None = None
     error: str | None = None
 
 
-@dataclass(frozen=True)
-class PreferenceMigrationPlan:
-    scope: str
-    source_revision: int
-    source_schema_version: int
-    source_digest: str
-    value: GlobalConfig | WorkspacePreferenceDocument
-
-
 __all__ = [
-    "PreferenceMigrationPlan",
     "PreferenceYamlConflict",
     "PreferenceYamlError",
     "PreferenceYamlLoad",

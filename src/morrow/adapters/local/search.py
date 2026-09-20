@@ -6,6 +6,7 @@ import fnmatch
 import json
 import os
 import re
+import select
 import shutil
 import stat
 import subprocess
@@ -22,6 +23,8 @@ from morrow.core.local_tools import (
 from morrow.runtime.truncation import PI_GREP_MAX_LINE_CHARS, truncate_line
 
 SEARCH_TIMEOUT_SECONDS = 10.0
+PYTHON_MAX_ENTRIES = 20_000
+PYTHON_MAX_DEPTH = 64
 PYTHON_MAX_FILES = 10_000
 PYTHON_MAX_BYTES = 32 * 1024 * 1024
 MAX_SNIPPET_CHARS = 512
@@ -143,65 +146,131 @@ class LocalSearchAdapter:
         # ``--`` as the regex and interpret the real pattern as a filesystem path.
         argv.extend(("--regexp", query.pattern, "--", relative_root))
         env = {"PATH": str(Path(rg_path).parent), "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8"}
+        deadline = self.monotonic() + SEARCH_TIMEOUT_SECONDS
         try:
-            completed = subprocess.run(
+            proc = subprocess.Popen(
                 argv,
                 cwd=workspace_root,
                 env=env,
                 shell=False,
-                capture_output=True,
-                timeout=SEARCH_TIMEOUT_SECONDS,
-                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
             )
         except FileNotFoundError as exc:
             raise SearchAdapterError("rg_unavailable", "rg 不可用") from exc
-        except subprocess.TimeoutExpired as exc:
-            raise SearchAdapterError("rg_timeout", "搜索超过本地时间上限") from exc
         except OSError as exc:
             raise SearchAdapterError("search_failed", "本地搜索启动失败") from exc
-        if completed.returncode not in (0, 1):
-            raise SearchAdapterError("search_failed", "本地搜索失败")
-        return self._parse_rg_output(
-            completed.stdout,
-            query=query,
-            relative_root=relative_root,
-            max_line_chars=max_line_chars,
-        )
+        try:
+            scan, complete = self._parse_rg_output(
+                self._rg_output_lines(proc, deadline),
+                query=query,
+                relative_root=relative_root,
+                max_line_chars=max_line_chars,
+            )
+        except BaseException:
+            proc.kill()
+            proc.wait()
+            raise
+        if not complete:
+            # Enough matches were collected before rg finished emitting; stop
+            # the scan instead of letting a high-match tree fill memory.
+            proc.terminate()
+            try:
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+        else:
+            proc.wait()
+            if proc.returncode not in (0, 1):
+                raise SearchAdapterError("search_failed", "本地搜索失败")
+        return scan
+
+    def _rg_output_lines(self, proc: subprocess.Popen, deadline: float):
+        """Yield rg stdout lines, bounding the wait by the search deadline.
+
+        Chunks are read with ``read1`` after a ``select`` so the deadline is
+        enforced even when ripgrep keeps emitting matches.
+        """
+
+        buffer = b""
+        while True:
+            remaining = deadline - self.monotonic()
+            if remaining <= 0:
+                raise SearchAdapterError("rg_timeout", "搜索超过本地时间上限")
+            ready, _, _ = select.select([proc.stdout], [], [], remaining)
+            if not ready:
+                raise SearchAdapterError("rg_timeout", "搜索超过本地时间上限")
+            chunk = proc.stdout.read1(65536)
+            if not chunk:
+                if buffer:
+                    yield buffer
+                return
+            buffer += chunk
+            while b"\n" in buffer:
+                line, buffer = buffer.split(b"\n", 1)
+                yield line + b"\n"
 
     def _parse_rg_output(
         self,
-        output: bytes,
+        lines,
         *,
         query: SearchQuery,
         relative_root: str,
         max_line_chars: int | None,
-    ) -> SearchScan:
+    ) -> tuple[SearchScan, bool]:
         contexts: dict[tuple[str, int], str] = {}
         match_records: list[tuple[str, int, int, str]] = []
-        for raw_line in output.splitlines():
+        last_match: tuple[str, int] | None = None
+        after_lines: set[int] = set()
+        complete = True
+        for raw_line in lines:
             try:
                 event = json.loads(raw_line.decode("utf-8", errors="replace"))
             except (TypeError, ValueError, json.JSONDecodeError):
                 continue
             if event.get("type") not in {"match", "context"}:
+                if match_records and len(match_records) >= query.max_results:
+                    complete = False
+                    break
                 continue
             data = event.get("data") or {}
             path_data = data.get("path") or {}
             path_text = path_data.get("text")
             line_number = data.get("line_number")
-            lines = data.get("lines") or {}
+            lines_data = data.get("lines") or {}
             if not isinstance(path_text, str) or not isinstance(line_number, int):
                 continue
             relative = _normalize_rg_path(path_text, relative_root)
-            snippet = str(lines.get("text", "")).rstrip("\r\n")
+            snippet = str(lines_data.get("text", "")).rstrip("\r\n")
             contexts[(relative, line_number)] = _snippet(snippet, max_line_chars)
+            cap_reached = len(match_records) >= query.max_results
             if event.get("type") != "match":
+                # Past the cap only the trailing match's after-context window
+                # still matters; anything else ends the scan early.
+                if cap_reached and last_match is not None:
+                    if (
+                        relative == last_match[0]
+                        and last_match[1] < line_number <= last_match[1] + query.context_lines
+                    ):
+                        after_lines.add(line_number)
+                        if len(after_lines) >= query.context_lines:
+                            complete = False
+                            break
+                    else:
+                        complete = False
+                        break
                 continue
+            if cap_reached:
+                complete = False
+                break
             submatches = data.get("submatches") or []
             column = int(submatches[0].get("start", 0)) + 1 if submatches else 1
             match_records.append(
                 (relative, line_number, column, _snippet(snippet, max_line_chars) or " ")
             )
+            last_match = (relative, line_number)
+            after_lines = set()
         matches: list[SearchMatch] = []
         for relative, line_number, column, snippet in match_records:
             before = tuple(
@@ -231,7 +300,7 @@ class LocalSearchAdapter:
             matches=tuple(matches),
             truncated=len(matches) >= query.max_results,
             budget_reason="max_matches" if len(matches) >= query.max_results else None,
-        )
+        ), complete
 
     def _search_python(
         self,
@@ -248,7 +317,8 @@ class LocalSearchAdapter:
             query.pattern if effective_case is SearchCase.SENSITIVE else query.pattern.casefold()
         )
         matches: list[SearchMatch] = []
-        stack = [search_root]
+        stack = [(search_root, 0)]
+        scanned_entries = 0
         scanned_files = 0
         scanned_bytes = 0
         deadline = self.monotonic() + SEARCH_TIMEOUT_SECONDS
@@ -258,14 +328,28 @@ class LocalSearchAdapter:
             if self.monotonic() >= deadline:
                 truncated, reason = True, "timeout"
                 break
-            directory = stack.pop()
+            directory, depth = stack.pop()
             try:
-                entries = sorted(
-                    os.scandir(directory), key=lambda item: (item.name.casefold(), item.name)
-                )
+                entries = []
+                with os.scandir(directory) as iterator:
+                    for entry in iterator:
+                        scanned_entries += 1
+                        if scanned_entries > PYTHON_MAX_ENTRIES:
+                            truncated, reason = True, "max_entries"
+                            break
+                        if self.monotonic() >= deadline:
+                            truncated, reason = True, "timeout"
+                            break
+                        entries.append(entry)
+                if truncated:
+                    break
+                entries.sort(key=lambda item: (item.name.casefold(), item.name))
             except OSError:
                 continue
             for entry in entries:
+                if self.monotonic() >= deadline:
+                    truncated, reason = True, "timeout"
+                    break
                 relative = _relative_path(workspace_root, Path(entry.path))
                 if _ignored(relative, workspace_root):
                     continue
@@ -275,7 +359,10 @@ class LocalSearchAdapter:
                     continue
                 if stat.S_ISDIR(metadata.st_mode):
                     if entry.name not in {".git", ".morrow"}:
-                        stack.append(Path(entry.path))
+                        if depth >= PYTHON_MAX_DEPTH:
+                            truncated, reason = True, "max_depth"
+                            break
+                        stack.append((Path(entry.path), depth + 1))
                     continue
                 if scanned_files >= PYTHON_MAX_FILES:
                     truncated, reason = True, "max_files"
@@ -298,9 +385,13 @@ class LocalSearchAdapter:
                     truncated, reason = True, "max_bytes"
                     break
                 try:
-                    raw = read_path.read_bytes()
+                    with read_path.open("rb") as source:
+                        raw = source.read(remaining + 1)
                 except OSError:
                     continue
+                if len(raw) > remaining:
+                    truncated, reason = True, "max_bytes"
+                    break
                 scanned_files += 1
                 scanned_bytes += len(raw)
                 if b"\x00" in raw:

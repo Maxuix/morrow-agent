@@ -227,8 +227,7 @@
       "classification": "covered",
       "positive_selectors": [
         "tests/test_stage4_artifacts.py::test_artifact_publication_is_atomic_private_and_restart_readable",
-        "tests/test_stage4_backup.py::test_backup_contains_database_manifest_artifacts_and_detects_changed_restore_bytes",
-        "tests/test_operational_store.py::test_ordered_checksummed_migration_rolls_back_a_failed_step"
+        "tests/test_stage4_backup.py::test_backup_contains_database_manifest_artifacts_and_detects_changed_restore_bytes"
       ],
       "failure_selectors": [
         "tests/test_operational_store.py::test_valid_header_corruption_is_diagnose_repair_and_left_intact",
@@ -282,8 +281,7 @@
         "tests/test_configuration_tool.py::test_service_maps_revision_conflict_and_write_failure_without_projection_changes"
       ],
       "recovery_selectors": [
-        "tests/test_stage5_memory_agent_run.py::test_recovery_agent_run_reuses_selection_after_memory_revision_changes",
-        "tests/test_current_preference_yaml.py::test_global_facade_migrates_once_then_runtime_reads_current_only"
+        "tests/test_stage5_memory_agent_run.py::test_recovery_agent_run_reuses_selection_after_memory_revision_changes"
       ],
       "acceptance_sources": ["docs/acceptance/stage5-acceptance.md"],
       "platform_conditions": [],

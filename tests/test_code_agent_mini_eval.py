@@ -1979,7 +1979,7 @@ def test_pi_agent_command_pins_policy_resources_and_selected_model() -> None:
         "--mode",
         "json",
         "--provider",
-        "opencode-go",
+        "volcengine",
         "--model",
         "fixture-model",
     ]

@@ -10,17 +10,22 @@ SOURCE_ROOT = Path(__file__).parents[1] / "src" / "morrow"
 
 def _imports(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    return {
-        node.module
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module is not None
-    }
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
+            modules.add(node.module)
+        elif isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+    return modules
 
 
 def test_core_does_not_depend_on_outer_layers():
     forbidden = ("morrow.adapters", "morrow.application", "morrow.interfaces", "morrow.runtime")
+    core_files = sorted((SOURCE_ROOT / "core").rglob("*.py"))
 
-    for path in (SOURCE_ROOT / "core").glob("*.py"):
+    assert core_files, "core boundary check must inspect at least one Python module"
+
+    for path in core_files:
         violations = sorted(module for module in _imports(path) if module.startswith(forbidden))
         assert violations == [], f"{path.name} imports outer layers: {violations}"
 

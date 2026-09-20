@@ -103,9 +103,8 @@ class ModelRequestObservation(ProtocolModel):
     dropped_record_count: int = Field(default=0, ge=0)
     tool_rounds: int = Field(default=0, ge=0)
     tool_calls: int = Field(default=0, ge=0)
-    # These fields are bounded accounting facts, not prompt or tool payloads.  They are optional
-    # so observations written before schema v20 remain readable without being backfilled.
-    policy_schema_version: int | None = Field(default=None, ge=1, le=2)
+    # This bounded accounting fact is part of every current observation.
+    policy_schema_version: Literal[2] = 2
     estimated_context_tokens: int | None = Field(default=None, ge=0)
     context_window_tokens: int | None = Field(default=None, gt=0)
     reserve_tokens: int | None = Field(default=None, gt=0)
@@ -204,9 +203,8 @@ class AgentRunTerminalMetrics(ProtocolModel):
     usage: ModelUsage = Field(default_factory=ModelUsage.unavailable)
     cost: ModelCost = Field(default_factory=ModelCost.unavailable)
     tool_terminal_counts: ToolTerminalCounts = Field(default_factory=ToolTerminalCounts)
-    # The terminal row keeps only bounded aggregates of the v2 accounting decision.  Individual
-    # request rows retain the per-attempt current value and decision.
-    policy_schema_version: int | None = Field(default=None, ge=1, le=2)
+    # The terminal row keeps the bounded aggregate of the current v2 accounting decision.
+    policy_schema_version: Literal[2] = 2
     max_context_tokens: int | None = Field(default=None, ge=0)
     last_context_tokens: int | None = Field(default=None, ge=0)
     context_window_tokens: int | None = Field(default=None, gt=0)

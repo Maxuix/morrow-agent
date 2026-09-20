@@ -555,7 +555,7 @@ async def test_error_replay_uses_receipt_terminal_when_metrics_are_missing(tmp_p
         ]
         assert first[-1].payload["stop_code"] == "provider_auth"
         products.persistence.store_session.run_write(
-            lambda executor: executor.execute("DELETE FROM agent_run_terminal_metrics")
+            lambda executor: executor.execute("UPDATE agent_runs SET terminal_metrics_json=NULL")
         )
 
         replay = [
@@ -591,7 +591,7 @@ async def test_old_cancelled_replay_does_not_borrow_a_newer_stop_turn(tmp_path: 
         cancelled = await cancelled_task
         assert cancelled[-1].payload["finish_reason"] == FinishReason.CANCELLED.value
         products.persistence.store_session.run_write(
-            lambda executor: executor.execute("DELETE FROM agent_run_terminal_metrics")
+            lambda executor: executor.execute("UPDATE agent_runs SET terminal_metrics_json=NULL")
         )
 
         provider.release.set()

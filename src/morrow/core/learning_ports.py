@@ -195,6 +195,7 @@ class LearningJournalPort(TransactionalJournalPort, Protocol):
         status: LearningCandidateStatus | None = None,
         candidate_type: LearningCandidateType | None = None,
         origin_review_id: str | None = None,
+        task_run_ids: tuple[str, ...] | None = None,
         fingerprint: str | None = None,
         semantic_key: str | None = None,
         expires_before: datetime | None = None,
@@ -209,6 +210,7 @@ class LearningJournalPort(TransactionalJournalPort, Protocol):
         status: LearningCandidateStatus | None = None,
         candidate_type: LearningCandidateType | None = None,
         origin_review_id: str | None = None,
+        task_run_ids: tuple[str, ...] | None = None,
         expires_after: datetime | None = None,
     ) -> int: ...
 

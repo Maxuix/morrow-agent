@@ -8,14 +8,13 @@ from datetime import datetime
 
 from morrow.adapters.state.transaction import SqliteJournalBackend
 from morrow.core.domain import canonical_json_bytes
-from morrow.core.recovery import RecoveryReceipt, RecoveryReport, RecoveryResolution
+from morrow.core.recovery import RecoveryReceipt, RecoveryReport
 from morrow.core.store import StorageError, StorageErrorCode
 
 _REPORT_COLUMNS = (
     "report_id, workspace_id, session_id, turn_id, agent_run_id, status, "
     "payload_json, payload_bytes, created_at_unix, resolved_at_unix"
 )
-_RECEIPT_COLUMNS = "session_id, command_id, request_digest, report_id, item_id, resolution"
 
 
 def _unix(value: datetime) -> int:
@@ -146,9 +145,9 @@ class SqliteRecoveryJournal:
         if not self.session_exists(workspace_id, session_id):
             return None
         row = self.backend.read_one(
-            f"SELECT {_RECEIPT_COLUMNS} FROM recovery_receipts "
-            "WHERE session_id = ? AND command_id = ?",
-            (session_id, command_id),
+            "SELECT payload_json FROM command_receipts "
+            "WHERE receipt_kind='recovery' AND workspace_id=? AND receipt_key=?",
+            (workspace_id, f"{session_id}:{command_id}"),
         )
         return _receipt_from_row(row) if row is not None else None
 
@@ -157,14 +156,16 @@ class SqliteRecoveryJournal:
             if not self.session_exists(workspace_id, receipt.session_id):
                 raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
             self.backend.executor().execute(
-                f"INSERT INTO recovery_receipts({_RECEIPT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO command_receipts(receipt_kind,workspace_id,session_id,receipt_key,"
+                "command_id,request_digest,payload_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
+                    "recovery",
+                    workspace_id,
                     receipt.session_id,
+                    f"{receipt.session_id}:{receipt.command_id}",
                     receipt.command_id,
                     receipt.request_digest,
-                    receipt.report_id,
-                    receipt.item_id,
-                    receipt.resolution.value,
+                    receipt.model_dump_json(),
                 ),
             )
             loaded = self.get_recovery_receipt(workspace_id, receipt.session_id, receipt.command_id)
@@ -186,11 +187,9 @@ def _report_from_row(row: tuple[object, ...]) -> RecoveryReport:
 
 
 def _receipt_from_row(row: tuple[object, ...]) -> RecoveryReceipt:
-    return RecoveryReceipt(
-        session_id=str(row[0]),
-        command_id=str(row[1]),
-        request_digest=str(row[2]),
-        report_id=str(row[3]),
-        item_id=str(row[4]) if row[4] is not None else None,
-        resolution=RecoveryResolution(str(row[5])),
-    )
+    try:
+        return RecoveryReceipt.model_validate_json(str(row[0]))
+    except (TypeError, ValueError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "operational recovery receipt is invalid"
+        ) from exc

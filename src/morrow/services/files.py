@@ -1043,14 +1043,6 @@ class WorkspaceMutationService:
         key = (run.run_id, _durable_capture_call_id(call_id))
         self._captures.setdefault(key, []).append(draft)
 
-    def clear_previews(self, run_id: str | None = None) -> None:
-        if run_id is None:
-            self._previews.clear()
-        else:
-            to_delete = [key for key in self._previews if key[0] == run_id]
-            for key in to_delete:
-                self._previews.pop(key, None)
-
     def apply(
         self,
         plan: MutationPlan,
@@ -1302,6 +1294,8 @@ class WorkspaceMutationService:
         source = self.files.read_source_text(plan.relative_path)
         if plan.before is None or source.revision.sha256 != plan.before.revision.sha256:
             raise LocalFileError("conflict", "目标文件已发生变化")
+        if stat.S_IMODE(source.mode) != stat.S_IMODE(plan.before.mode):
+            raise LocalFileError("conflict", "目标文件权限已发生变化")
         if source.text == plan.desired_text:
             return MutationPlan(**{**plan.__dict__, "status": MutationStatus.UNCHANGED})
         return plan
@@ -1561,15 +1555,6 @@ class WorkspaceMutationService:
             ),
             destination_path=plan.destination_relative_path,
         )
-
-
-def _parent_paths(existing_parent: Path, missing: list[str]) -> tuple[Path, ...]:
-    paths: list[Path] = []
-    current = existing_parent
-    for part in reversed(missing[:-1]):
-        current = current / part
-        paths.append(current)
-    return tuple(reversed(paths))
 
 
 def _relative_path(root: Path, path: Path) -> str:

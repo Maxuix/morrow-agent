@@ -4,6 +4,7 @@ import os
 
 import pytest
 
+from morrow.adapters.local.filesystem import FileSystemAdapter
 from morrow.core.local_tools import LocalFileKind
 from morrow.services.files import LocalFileError, WorkspaceFileService, WorkspacePathResolver
 
@@ -234,3 +235,26 @@ def test_find_files_uses_stable_paths_and_does_not_leak_external_symlinks(tmp_pa
 
     assert result.paths == ("src/main.py",)
     assert "outside.py" not in str(result.model_dump())
+
+
+def test_read_bytes_rejects_symlink_parent_component(tmp_path):
+    adapter = FileSystemAdapter()
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    note = real_dir / "note.txt"
+    note.write_text("confined\n", encoding="utf-8")
+    assert adapter.read_bytes(note, max_bytes=1024) == b"confined\n"
+    (tmp_path / "escape").symlink_to(real_dir, target_is_directory=True)
+
+    with pytest.raises(LocalFileError) as error:
+        adapter.read_bytes(tmp_path / "escape" / "note.txt", max_bytes=1024)
+    assert error.value.code == "read_failed"
+
+
+def test_open_directory_chain_rejects_symlink_intermediate_component(tmp_path):
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    (tmp_path / "link").symlink_to(real_dir, target_is_directory=True)
+
+    with pytest.raises(OSError):
+        FileSystemAdapter._open_directory_chain(tmp_path, tmp_path / "link")

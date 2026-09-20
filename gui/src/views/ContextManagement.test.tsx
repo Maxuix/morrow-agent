@@ -2,8 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { ApiClient } from '../api/client'
 import type { ManagedSkill, ResolvedContext, SkillDraft } from '../api/management'
-import { contextSummary } from './ContextBar'
-import { ResolvedContextView } from './ContextDrawer'
+import { contextSummary, ResolvedContextView } from './inspector/ContextInspector'
 import { DraftCard, partitionSkills } from './SkillManager'
 
 const resolved: ResolvedContext = {
@@ -17,13 +16,18 @@ const resolved: ResolvedContext = {
 }
 
 describe('Context/Learning/Skill management contract', () => {
+  it('keeps missing session context in an honest empty state', () => {
+    const html = renderToStaticMarkup(<ResolvedContextView value={{ ...resolved, status: 'not_started', agent_run_id: null, task_run_id: null }} />)
+    expect(html).toContain('暂无运行上下文')
+    expect(html).not.toContain('上下文加载失败，请刷新重试')
+  })
+
   it('shows actually resolved rules, scopes and immutable Knowledge revisions', () => {
     const html = renderToStaticMarkup(<ResolvedContextView value={resolved} />)
     expect(html).toContain('Original frozen rule')
     expect(html).toContain('Historical selected knowledge')
-    expect(html).toContain('arun_old')
+    expect(html).toContain('运行范围')
     expect(html).toContain('r1')
-    expect(html).toContain('编辑影响之后的解析')
     expect(contextSummary(resolved)).toContain('见已解析规则')
     expect(contextSummary(resolved)).toContain('待确认学习 3')
     expect(contextSummary(resolved)).toContain('约定 1')
@@ -48,7 +52,7 @@ describe('Context/Learning/Skill management contract', () => {
     const draft: SkillDraft = { draft: { draft_id: 'sdf_demo', name: 'Generated report', status: 'validated', row_version: 1, revision: 1, tree_digest: 'digest', evidence_refs: ['lcn_demo'], accepted_version_id: null, parent_draft_id: null }, validation: { valid: true, findings: [] }, diff: null }
     const html = renderToStaticMarkup(<DraftCard item={draft} mutate={async () => true} />)
     expect(html).toContain('Generated report · Draft')
-    expect(html).toContain('接受只发布不可变版本')
+    expect(html).toContain('接受并发布版本')
     expect(html).not.toContain('启用 Skill')
     const invalid = renderToStaticMarkup(<DraftCard item={{ ...draft, validation: { valid: false, findings: [] } }} mutate={async () => true} />)
     expect(invalid).toMatch(/disabled="">接受并发布版本/)

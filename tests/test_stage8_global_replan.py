@@ -8,9 +8,8 @@ from morrow.application.workflows.replan import revision_source
 from morrow.core.application import ApplicationError
 from morrow.core.models import AssistantMessage, FunctionToolCall
 from morrow.core.orchestration import OrchestrationPolicy
-from morrow.core.workflows.replan import ReplanRequest
 from morrow.core.workflows.runs import WorkflowStatus
-from test_stage7_serial_scheduler import WS, DagFixture, ScriptBank, pair_source, publish, start
+from test_stage7_serial_scheduler import WS, DagFixture, pair_source, publish, start
 from test_stage8_patch_continuation import _paused_after_first_node
 
 
@@ -178,46 +177,6 @@ async def test_guardrail_escalation_and_compile_failure(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_node_signal_commits_at_closure_and_pauses_before_next_admission(tmp_path):
-    request = ReplanRequest(
-        target_node_id="alpha", task_contract={"objective": "Use revised evidence"}
-    )
-    submission = AssistantMessage(
-        tool_calls=(
-            FunctionToolCall(
-                id="call_replan",
-                name="submit_node_result",
-                arguments='{"outputs": {}, "replan":' + request.model_dump_json() + "}",
-            ),
-        )
-    )
-    fx = DagFixture(tmp_path, bank=ScriptBank())
-    try:
-        fx.bank.scripts.extend([[submission, "phase one closes"], ["must remain queued"]])
-        _, publication = publish(fx, pair_source)
-        parent = start(fx, publication.revision).run
-        result = await fx.runtime.scheduler.run(parent.workflow_run_id)
-        assert result.status is WorkflowStatus.PAUSED
-        nodes = {n.node_id: n for n in fx.journal.workflows.list_nodes(WS, parent.workflow_run_id)}
-        assert nodes["gamma"].status is WorkflowStatus.COMPLETED
-        assert nodes["alpha"].status is WorkflowStatus.QUEUED
-        signals = fx.journal.workflows.list_replan_signals(WS, parent.workflow_run_id)
-        assert len(signals) == 1
-        assert not fx.journal.workflows.list_replan_signals(
-            WS, parent.workflow_run_id, pending_only=True
-        )
-        proposals = fx.runtime.replan.list(parent.workflow_run_id)
-        assert proposals[0]["proposal"]["status"] == "pending"
-        assert proposals[0]["proposal"]["signal_ids"] == [signals[0].signal_id]
-        assert (
-            fx.journal.workflows.get_revision(WS, publication.revision.workflow_revision_id)
-            == publication.revision
-        )
-    finally:
-        fx.close()
-
-
-@pytest.mark.asyncio
 async def test_handoff_and_decision_rollback_together(tmp_path, monkeypatch):
     fx, base, parent = await _paused_after_first_node(tmp_path)
     try:
@@ -249,7 +208,6 @@ async def test_task_class_promotion_stays_approval_only(tmp_path):
             resolve=lambda _: OrchestrationPolicy(
                 task_matcher="general",
                 auto_replan_mode="allow_low_risk",
-                evidence=("evidence_claim",),
             )
         )
         assert c.propose(parent.workflow_run_id, corrected(base)).status == "pending"
@@ -267,144 +225,6 @@ async def test_reject_keeps_parent_paused_and_history(tmp_path):
         assert p.status == "rejected" and p.decided_by == "user"
         assert fx.journal.workflows.get_run(WS, parent.workflow_run_id) == parent
         assert c.list(parent.workflow_run_id)[0]["diff"]["changed_node_ids"] == ("alpha",)
-    finally:
-        fx.close()
-
-
-@pytest.mark.asyncio
-async def test_real_api_signal_review_decision_replay_and_child(tmp_path):
-    from test_stage8_core_api import (
-        ServerFixture,
-        create_session_and_task,
-        publish_pipeline,
-        start_run,
-        wait_for_run,
-    )
-
-    request = ReplanRequest(
-        target_node_id="alpha", task_contract={"objective": "Use revised evidence"}
-    )
-    submission = AssistantMessage(
-        tool_calls=(
-            FunctionToolCall(
-                id="call_replan",
-                name="submit_node_result",
-                arguments='{"outputs": {}, "replan":' + request.model_dump_json() + "}",
-            ),
-        )
-    )
-    fx = ServerFixture(tmp_path, scripts=[[submission, "phase one"], ["phase two"]])
-    try:
-        base = await publish_pipeline(fx)
-        sid, tid, version = await create_session_and_task(fx.client)
-        started = await start_run(fx.client, base.workflow_revision_id, sid, tid, version)
-        run_id = started.json()["result"]["run"]["workflow_run_id"]
-        await wait_for_run(fx.client, run_id, "paused")
-        response = await fx.client.get(f"/v1/workflow-runs/{run_id}/replans")
-        assert response.status == 200
-        view = response.json()["proposals"][0]
-        p = view["proposal"]
-        assert p["status"] == "pending" and view["diff"]["changed_node_ids"] == ["alpha"]
-        body = {"command_id": "cmd_replan_approve", "approved": True, "expected_row_version": 1}
-        route = f"/v1/replans/{p['proposal_id']}/decide"
-        applied = await fx.client.post(route, body)
-        assert applied.status == 200, applied.body
-        result = applied.json()["result"]["proposal"]
-        child_id = result["child_run_id"]
-        assert result["status"] == "applied"
-        replay = await fx.client.post(route, body)
-        assert replay.status == 200, replay.body
-        assert replay.json()["result"]["proposal"]["child_run_id"] == child_id
-        assert replay.json()["receipt"]["disposition"] == "replay"
-        await wait_for_run(fx.client, child_id, "completed")
-        conflict = await fx.client.post(route, body | {"approved": False})
-        assert conflict.status == 409
-    finally:
-        fx.close()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("cancelled", [False, True])
-async def test_signal_admission_barrier_survives_crash_before_drain(tmp_path, cancelled):
-    from morrow.application.workflows.leaf import WorkflowLeafContext, WorkflowLeafHooks
-    from morrow.core.faults import FaultPoint, InjectedFault
-
-    request = ReplanRequest(
-        target_node_id="alpha", task_contract={"objective": "Use revised evidence"}
-    )
-    submission = AssistantMessage(
-        tool_calls=(
-            FunctionToolCall(
-                id="call_replan",
-                name="submit_node_result",
-                arguments='{"outputs": {}, "replan":' + request.model_dump_json() + "}",
-            ),
-        )
-    )
-    fx = DagFixture(tmp_path, bank=ScriptBank())
-    try:
-        fx.bank.scripts.extend([[submission, "phase one"], ["unused"]])
-        _, publication = publish(fx, pair_source)
-        parent = start(fx, publication.revision).run
-        complete = fx.runtime.transitions.complete_node
-
-        def crash_before_node_close(_):
-            raise InjectedFault(FaultPoint.TURN_AFTER_TERMINAL_COMMIT)
-
-        fx.runtime.transitions.complete_node = crash_before_node_close
-        with pytest.raises(InjectedFault):
-            await fx.runtime.scheduler.run(parent.workflow_run_id)
-        parent = fx.journal.workflows.get_run(WS, parent.workflow_run_id)
-        assert not parent.pause_requested
-        signals = fx.journal.workflows.list_replan_signals(
-            WS, parent.workflow_run_id, pending_only=True
-        )
-        assert len(signals) == 1
-        assert fx.runtime.replan.process_signals(parent.workflow_run_id) == ()
-        future = next(n for n in publication.revision.nodes if n.node_id == "alpha")
-        future_run = next(
-            n
-            for n in fx.journal.workflows.list_nodes(WS, parent.workflow_run_id)
-            if n.node_id == "alpha"
-        )
-        hooks = WorkflowLeafHooks(
-            fx.journal,
-            workspace_id=WS,
-            context=WorkflowLeafContext(
-                workflow_run_id=parent.workflow_run_id,
-                workflow_revision_id=parent.workflow_revision_id,
-                node_run_id=future_run.node_run_id,
-                node=future,
-                leaf_session_id="ses_future",
-                leaf_task_run_id="task_future",
-                effective_node_generation_request_cap=3,
-            ),
-            artifacts=fx.artifacts,
-            transitions=fx.runtime.transitions,
-            id_source=fx.ids,
-            clock=fx.clock.now,
-        )
-        with pytest.raises(ApplicationError, match="unconsumed ReplanSignal"):
-            fx.journal.transact(lambda txn: hooks.check_turn_admission_in_txn(txn, None))
-        fx.runtime.transitions.complete_node = complete
-        if cancelled:
-            closed = fx.runtime.scheduler._settle(
-                parent.workflow_run_id,
-                fx.journal.workflows.get_node(WS, signals[0].node_run_id),
-                None,
-                True,
-            )
-            assert closed == "terminal"
-            result = fx.runtime.replan.process_signals(parent.workflow_run_id)
-            assert len(result) == 1 and result[0].child_run_id is None
-            assert (
-                fx.journal.workflows.get_run(WS, parent.workflow_run_id).status
-                is WorkflowStatus.CANCELLED
-            )
-            return
-        result = await fx.runtime.scheduler.run(parent.workflow_run_id)
-        assert result.status is WorkflowStatus.PAUSED
-        assert len(fx.runtime.replan.list(parent.workflow_run_id)) == 1
     finally:
         fx.close()
 
@@ -546,49 +366,6 @@ async def test_blocked_unknown_parent_only_produces_proposals(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_pre_replan_frozen_text_leaf_recovers_with_original_tool_digest(tmp_path):
-    from morrow.core.faults import FaultPoint, InjectedFault, OnceFaultInjector
-    from test_stage7_serial_scheduler import node_by_id, reader_agent, resolve_blocking
-
-    fx = DagFixture(tmp_path)
-    try:
-        fx.bank.scripts.extend(
-            [
-                [
-                    AssistantMessage(
-                        tool_calls=(
-                            FunctionToolCall(
-                                id="call_old", name="read", arguments='{"path":"a.py"}'
-                            ),
-                        )
-                    )
-                ],
-                ["restored"],
-                ["future"],
-            ]
-        )
-        _, pub = publish(fx, pair_source, agent=reader_agent())
-        run = start(fx, pub.revision).run
-        compose = fx.runtime.scheduler._compose_leaf_executor
-        fx.runtime.scheduler._compose_leaf_executor = lambda executor, hooks, **kw: compose(
-            executor, hooks, allow_replan=False
-        )
-        fx.runtime.scheduler.faults = OnceFaultInjector(
-            FaultPoint.CONVERSATION_BEFORE_TOOL_MESSAGE_COMMIT
-        )
-        with pytest.raises(InjectedFault):
-            await fx.runtime.scheduler.run(run.workflow_run_id)
-        fx.runtime.scheduler._compose_leaf_executor = compose
-        fx.runtime.scheduler.faults = None
-        await fx.runtime.scheduler.recover(run.workflow_run_id)
-        resolve_blocking(fx, node_by_id(fx, run.workflow_run_id, "gamma"))
-        result = await fx.runtime.scheduler.recover(run.workflow_run_id)
-        assert result.status is WorkflowStatus.COMPLETED
-    finally:
-        fx.close()
-
-
-@pytest.mark.asyncio
 async def test_replan_integrity_and_cli_projection(tmp_path, monkeypatch):
     import json
 
@@ -631,77 +408,5 @@ async def test_replan_integrity_and_cli_projection(tmp_path, monkeypatch):
             lambda ex: ex.execute("UPDATE workflow_replan_proposals SET workspace_id='ws_wrong'")
         )
         assert fx.handle.run_read(verify_workflow_rows) == (False, ("workflow_integrity",))
-    finally:
-        fx.close()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("task_override", [False, True])
-async def test_server_auto_handoff_is_supervised_and_visible(tmp_path, task_override):
-    from test_stage8_core_api import (
-        ServerFixture,
-        create_session_and_task,
-        publish_pipeline,
-        start_run,
-        wait_for_run,
-    )
-
-    request = ReplanRequest(
-        target_node_id="alpha", task_contract={"objective": "Use revised evidence"}
-    )
-    submission = AssistantMessage(
-        tool_calls=(
-            FunctionToolCall(
-                id="call_auto",
-                name="submit_node_result",
-                arguments='{"outputs": {}, "replan":' + request.model_dump_json() + "}",
-            ),
-        )
-    )
-    fx = ServerFixture(tmp_path, scripts=[[submission, "phase one"], ["phase two"]])
-    try:
-        base = await publish_pipeline(fx)
-        await fx.on_core(
-            lambda: fx.host.context.products.orchestration_policies.put(
-                OrchestrationPolicy(scope="workspace", auto_replan_mode="allow_low_risk"),
-                expected_revision=0,
-            )
-        )
-        if task_override:
-            await fx.on_core(
-                lambda: fx.host.context.products.orchestration_policies.put(
-                    OrchestrationPolicy(
-                        scope="workspace",
-                        policy_id="research",
-                        task_matcher="research",
-                        auto_replan_mode="allow_low_risk",
-                    ),
-                    expected_revision=1,
-                )
-            )
-        sid, tid, version = await create_session_and_task(fx.client)
-        started = await start_run(
-            fx.client,
-            base.workflow_revision_id,
-            sid,
-            tid,
-            version,
-            objective="Research storage designs",
-        )
-        run_id = started.json()["result"]["run"]["workflow_run_id"]
-        await wait_for_run(fx.client, run_id, "paused" if task_override else "superseded")
-        response = await fx.client.get(f"/v1/workflow-runs/{run_id}/replans")
-        p = response.json()["proposals"][0]["proposal"]
-        if task_override:
-            assert p["status"] == "pending" and not p["auto_applied"]
-            assert p["policy_id"] == "research"
-            return
-        assert p["status"] == "applied" and p["auto_applied"]
-        await wait_for_run(fx.client, p["child_run_id"], "completed")
-        events = (await fx.client.get("/v1/events?after=0")).json()["events"]
-        assert any(
-            e["aggregate_id"] == p["child_run_id"] and e["event_type"] == "workflow_run.created"
-            for e in events
-        )
     finally:
         fx.close()

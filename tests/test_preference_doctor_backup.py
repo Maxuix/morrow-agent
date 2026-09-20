@@ -32,7 +32,7 @@ def _state(tmp_path):
     return store, handle, journal
 
 
-def test_doctor_reports_bounded_preference_v13_counts_without_mutation(tmp_path):
+def test_doctor_reports_bounded_preference_counts_without_mutation(tmp_path):
     store, handle, _journal = _state(tmp_path)
     try:
         database_mtime = store.layout.database.stat().st_mtime_ns
@@ -43,7 +43,7 @@ def test_doctor_reports_bounded_preference_v13_counts_without_mutation(tmp_path)
         assert report.counts["preference_evidence"] == 1
         assert report.counts["preference_proposals"] == 0
         assert report.counts["preference_write_batches"] == 0
-        assert "preference_v13_links_and_lifecycle" in report.checks
+        assert "preference_links_and_lifecycle" in report.checks
         assert store.layout.database.stat().st_mtime_ns == database_mtime
         assert all("以后回答" not in issue.message for issue in report.issues)
     finally:
@@ -86,7 +86,7 @@ def test_preference_doctor_integrity_helper_detects_snapshot_tampering(tmp_path)
             )
         )
 
-        ok, codes = handle.run_read(OperationalDoctor._preference_v13_checks)
+        ok, codes = handle.run_read(OperationalDoctor._preference_checks)
 
         assert not ok
         assert "preference_job_snapshot" in codes
@@ -107,7 +107,7 @@ def test_preference_doctor_integrity_helper_detects_bad_lease(tmp_path):
 
         handle.run_write(tamper)
 
-        ok, codes = handle.run_read(OperationalDoctor._preference_v13_checks)
+        ok, codes = handle.run_read(OperationalDoctor._preference_checks)
 
         assert not ok
         assert "preference_job_lease_state" in codes

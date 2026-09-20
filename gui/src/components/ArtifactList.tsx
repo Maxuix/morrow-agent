@@ -9,6 +9,11 @@ const ARTIFACT_STATE_LABELS: Record<ArtifactWire['state'], string> = {
   corrupt: '损坏',
 }
 
+const RETENTION_LABELS: Record<string, string> = {
+  standard: '标准保留',
+  pinned: '已固定保留',
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
@@ -44,6 +49,9 @@ export function ArtifactList({
             )}
             <span className="text-xs text-secondary">
               {ARTIFACT_STATE_LABELS[artifact.state]}
+            </span>
+            <span className="text-xs text-secondary">
+              {RETENTION_LABELS[artifact.retention] ?? '保留策略已记录'}
             </span>
             <span className="font-mono text-xs text-secondary">
               {formatBytes(artifact.byte_size)}

@@ -1,15 +1,17 @@
 """Strict requests for the existing Context/Learning/Skill command services."""
 
+from __future__ import annotations
+
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
-from morrow.application.configuration import ConfigurationCommand
+from morrow.application.configuration import ConfigurationCommand, validate_profile_candidate
 from morrow.application.preferences.tool import ManagePreferencesArguments
 from morrow.core.domain import validate_prefixed_id
 from morrow.core.learning_memory import LearningConflictResolution
 from morrow.core.learning_payloads import CandidatePayload
-from morrow.core.models import ProtocolModel
+from morrow.core.models import Profile, ProtocolModel
 
 
 class CommandRequest(ProtocolModel):
@@ -42,12 +44,51 @@ class ProfileWriteRequest(CommandRequest):
     expected_revision: int = Field(ge=0)
 
 
+class ProfileSaveDocument(ProtocolModel):
+    """Complete form snapshot; every persisted field is submitted explicitly."""
+
+    name: str
+    summary: str | None = None
+    tech_stack: tuple[str, ...] = ()
+    goals: tuple[str, ...] = ()
+    constraints: tuple[str, ...] = ()
+    conventions: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def valid_snapshot(self) -> ProfileSaveDocument:
+        self.to_profile()
+        return self
+
+    def to_profile(self) -> Profile:
+        try:
+            return validate_profile_candidate(
+                Profile(
+                    name=self.name,
+                    summary=self.summary,
+                    tech_stack=list(self.tech_stack),
+                    goals=list(self.goals),
+                    constraints=list(self.constraints),
+                    conventions=list(self.conventions),
+                )
+            )
+        except ValueError as exc:
+            raise ValueError(str(exc)) from None
+
+
+class ProfileSaveRequest(CommandRequest):
+    """One atomic save of the whole workspace Profile document."""
+
+    expected_revision: int = Field(ge=0)
+    profile: ProfileSaveDocument
+
+
 class PreferenceDecisionRequest(CommandRequest):
     action: Literal["accept", "reject", "suppress"]
     expected_row_version: int = Field(ge=1)
     expected_document_revision: int = Field(ge=0)
     expected_target_revision: int | None = Field(default=None, ge=1)
     edit: str | None = Field(default=None, min_length=1, max_length=512)
+    reason: str | None = Field(default=None, max_length=256)
 
 
 class LearningDecisionRequest(CommandRequest):
@@ -56,6 +97,7 @@ class LearningDecisionRequest(CommandRequest):
     scope: Literal["workspace"] = "workspace"
     conflict_resolution: LearningConflictResolution = LearningConflictResolution.NONE
     final_payload: CandidatePayload | None = None
+    reason: str = Field(default="rejected_by_user", max_length=256)
 
 
 class KnowledgeLifecycleRequest(CommandRequest):
@@ -71,6 +113,7 @@ class SkillBindingRequest(CommandRequest):
 
 
 class SkillDraftRequest(CommandRequest):
+    reason: str = Field(default="rejected_by_user", min_length=1, max_length=256)
     action: Literal["edit", "validate", "accept", "reject"]
     expected_row_version: int = Field(ge=1)
     skill_md: str | None = Field(default=None, min_length=1, max_length=65536)
@@ -78,30 +121,3 @@ class SkillDraftRequest(CommandRequest):
 
 class SkillDraftCreateRequest(CommandRequest):
     candidate_id: str = Field(pattern=r"^lcn_[A-Za-z0-9_-]+$")
-
-
-class WorkflowFeedbackRequest(CommandRequest):
-    workflow_run_id: str = Field(pattern=r"^wrun_[A-Za-z0-9_-]+$")
-    kind: Literal[
-        "too_complex",
-        "missing_exploration",
-        "reviewer_useful",
-        "reviewer_not_useful",
-        "model_expensive",
-        "prefer_template",
-        "avoid_template",
-    ]
-    template: Literal["direct", "explore_implement_verify"] | None = None
-
-
-class WorkflowPolicyDecisionRequest(CommandRequest):
-    action: Literal["accept", "reject"]
-    expected_row_version: int = Field(ge=1)
-
-
-class WorkflowEvaluationRequest(CommandRequest):
-    multi_run_id: str = Field(pattern=r"^wrun_[A-Za-z0-9_-]+$")
-    direct_run_id: str | None = Field(default=None, pattern=r"^wrun_[A-Za-z0-9_-]+$")
-    direct_estimated_requests: int | None = Field(default=None, ge=0, le=1000000)
-    direct_quality: int | None = Field(default=None, ge=0, le=4)
-    multi_quality: int | None = Field(default=None, ge=0, le=4)

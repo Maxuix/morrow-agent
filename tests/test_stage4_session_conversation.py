@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from fixtures.stage4_v2 import write_v2_store
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.application.commands import CommandService
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.domain import (
     DurableConversationRecord,
+    DurableSession,
     SessionHealth,
     SessionLifecycle,
     TurnSubmitDisposition,
@@ -173,22 +173,29 @@ def test_process_local_dirty_new_still_requires_discard():
     assert Profile(name="x").name == "x"
 
 
-def test_v2_fixture_opens_and_lists_workspace_session(tmp_path):
-    root = tmp_path / "v2"
-    root.mkdir()
-    write_v2_store(root)
-    app = build_application(state_root=root, credentials=MemoryCredentialStore())
+def test_current_store_opens_and_lists_workspace_session(tmp_path):
+    root = tmp_path / "state"
     from morrow.adapters.state.journal import SqliteOperationalJournal
     from morrow.adapters.state.operational import OperationalStore
     from morrow.core.store import StoreOpenMode
 
     store = OperationalStore(root)
+    handle = store.initialize()
+    try:
+        SqliteOperationalJournal(handle).create_session(
+            DurableSession(session_id="ses_current", workspace_id="ws_current")
+        )
+    finally:
+        handle.close()
+    app = build_application(state_root=root, credentials=MemoryCredentialStore())
+
+    store = OperationalStore(root)
     with store.open(StoreOpenMode.READ_WRITE) as handle:
         assert handle.schema_version == SUPPORTED_SCHEMA_VERSION
         journal = SqliteOperationalJournal(handle)
-        listed = journal.list_sessions("ws_stage3")
-        assert [item.session_id for item in listed] == ["ses_v2fixture"]
-        assert journal.get_session("ws_other", "ses_v2fixture") is None
+        listed = journal.list_sessions("ws_current")
+        assert [item.session_id for item in listed] == ["ses_current"]
+        assert journal.get_session("ws_other", "ses_current") is None
     assert app.data_root.store_path.name == "operational.sqlite"
 
 

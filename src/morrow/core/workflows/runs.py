@@ -56,6 +56,20 @@ class WorkflowStatus(StrEnum):
         return self in {self.COMPLETED, self.FAILED, self.CANCELLED, self.SUPERSEDED}
 
 
+# Node runs live in the lifecycle subset: pause/resume is carried by segments and
+# pause points, never by run-level draining/paused/superseded states.
+NODE_STATUSES = frozenset(
+    {
+        WorkflowStatus.QUEUED,
+        WorkflowStatus.RUNNING,
+        WorkflowStatus.COMPLETED,
+        WorkflowStatus.FAILED,
+        WorkflowStatus.CANCELLED,
+        WorkflowStatus.BLOCKED,
+    }
+)
+
+
 def validate_run_transition(current: WorkflowStatus, target: WorkflowStatus) -> None:
     legal = {
         WorkflowStatus.QUEUED: {
@@ -135,7 +149,7 @@ class WorkflowRun(RunState):
 
     @property
     def effective_lineage_budget_root_run_id(self) -> str:
-        """Legacy rows predate the lineage column; an initial run is its own root."""
+        """An initial run is always its own lineage budget root."""
 
         return self.lineage_budget_root_run_id or self.workflow_run_id
 
@@ -196,6 +210,14 @@ class NodeRun(RunState):
         if type(value) is not int:
             raise ValueError("Node attempt must be an integer")
         return value
+
+    @model_validator(mode="after")
+    def node_status_subset(self):
+        # Nodes pause through segments/pause points, not through run-level
+        # draining/paused/superseded states.
+        if self.status not in NODE_STATUSES:
+            raise ValueError("Node status is limited to the node lifecycle subset")
+        return self
 
     @model_validator(mode="after")
     def admission_facts(self):

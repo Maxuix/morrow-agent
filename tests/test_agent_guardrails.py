@@ -107,7 +107,10 @@ async def test_provider_transient_retries_after_partial_stream_progress():
         AgentLoop(provider, MODEL, make_context_builder()).run_task(Session(session_id="s"), "go")
     )
     assert len(provider.stream_calls) == 2
-    assert [event.type for event in events].count("status.changed") == 1
+    statuses = [event.payload.get("status") for event in events if event.type == "status.changed"]
+    # One factual stage per attempt plus the retry wait. The scripted provider
+    # yields no incremental output, so "model_responding" never fabricates.
+    assert statuses == ["awaiting_model", "retrying", "awaiting_model"]
     assert events[-1].payload["finish_reason"] == "stop"
 
 
@@ -182,7 +185,20 @@ async def test_zero_progress_transient_retries_but_auth_never_retries():
         )
     )
     assert len(transient.stream_calls) == 4
-    assert [event.type for event in transient_events].count("status.changed") == 3
+    # One "awaiting_model" stage per attempt (4) plus one retry wait per retry
+    # boundary (3); the factual wait is now observable instead of silent.
+    transient_statuses = [
+        event.payload.get("status") for event in transient_events if event.type == "status.changed"
+    ]
+    assert transient_statuses == [
+        "awaiting_model",
+        "retrying",
+        "awaiting_model",
+        "retrying",
+        "awaiting_model",
+        "retrying",
+        "awaiting_model",
+    ]
     assert transient_events[-2].payload["stop_code"] == "provider_timeout"
 
     auth = _EventProvider([[_model_error(ModelErrorCode.AUTH)]])

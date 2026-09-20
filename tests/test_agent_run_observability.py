@@ -13,7 +13,6 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
-from morrow.adapters.state.migrations import MigrationRegistry, production_registry
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.application.backup import OperationalBackupService
 from morrow.application.doctor import OperationalDoctor
@@ -40,7 +39,11 @@ from morrow.core.models import (
     ModelUsage,
     UsageAvailability,
 )
-from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
+from morrow.core.store import (
+    StorageError,
+    StorageErrorCode,
+    StoreOpenMode,
+)
 from morrow.runtime.agent import AgentLoop
 from morrow.runtime.ids import RandomIdSource
 from morrow.runtime.session import Session
@@ -58,14 +61,13 @@ def _retry() -> BusyRetryPolicy:
     return BusyRetryPolicy(busy_timeout_ms=0, sleep=lambda _delay: None, rng=random.Random(0))
 
 
-def _open(tmp_path: Path, *, skill_usage=None, registry=None):
+def _open(tmp_path: Path, *, skill_usage=None):
     clock = FixedClock()
     store = OperationalStore(
         tmp_path / "state",
         retry_policy=_retry(),
         clock=clock,
         maintenance_timeout=0,
-        registry=registry,
     )
     handle = store.initialize()
     journal = SqliteOperationalJournal(handle)
@@ -115,69 +117,19 @@ def test_terminal_agent_run_records_selected_skill_usage_best_effort(tmp_path):
         handle.close()
 
 
-def test_fresh_v17_schema_contains_observation_tables(tmp_path):
+def test_fresh_schema_embeds_terminal_observation_on_agent_runs(tmp_path):
     handle, _journal, _session, _persistence = _open(tmp_path)
     try:
         objects = handle.run_read(
             lambda executor: executor.execute(
-                "SELECT type, name FROM sqlite_master WHERE name IN ("
-                "'agent_run_model_requests', 'agent_run_terminal_metrics') ORDER BY name"
+                "SELECT type, name FROM sqlite_master WHERE name = 'agent_run_model_requests'"
             )
         )
-        assert objects == (
-            ("table", "agent_run_model_requests"),
-            ("table", "agent_run_terminal_metrics"),
+        assert objects == (("table", "agent_run_model_requests"),)
+        columns = handle.run_read(
+            lambda executor: executor.execute("PRAGMA table_info(agent_runs)")
         )
-    finally:
-        handle.close()
-
-
-def test_v30_migration_preserves_existing_request_rows_and_relations(tmp_path):
-    registry = MigrationRegistry(supported_version=29)
-    for version in range(1, 30):
-        registry.add(production_registry().get(version))
-    handle, _, session, persistence = _open(tmp_path, registry=registry)
-    try:
-        persistence.submit_user(session, "hello", "cmsg_1", turn_id="turn_1", agent_run_id="arun_1")
-        admitted = persistence.admit_model_request(
-            agent_run_id="arun_1",
-            attempt_ordinal=1,
-            estimated_request_chars=30,
-            request_char_budget=1000,
-        )
-        persistence.settle_model_request(
-            admitted.model_request_id,
-            state="completed",
-            finish_reason=ModelFinishReason.STOP,
-            usage=ModelUsage(
-                availability="available", input_tokens=7, output_tokens=5, total_tokens=12
-            ),
-        )
-        before = handle.run_read(
-            lambda db: tuple(db.execute("SELECT * FROM agent_run_model_requests")[0])
-        )
-    finally:
-        handle.close()
-    store = OperationalStore(
-        tmp_path / "state", retry_policy=_retry(), clock=FixedClock(), maintenance_timeout=0
-    )
-    report = store.migrate()
-    assert report.from_version == 29 and report.to_version == 30
-    handle = store.open(StoreOpenMode.READ_WRITE)
-    try:
-        after = handle.run_read(
-            lambda db: tuple(db.execute("SELECT * FROM agent_run_model_requests")[0])
-        )
-        assert before == after
-        assert handle.run_read(lambda db: db.execute("PRAGMA foreign_key_check")) == ()
-        objects = handle.run_read(
-            lambda db: db.execute(
-                "SELECT name FROM sqlite_master WHERE tbl_name = 'agent_run_model_requests'"
-            )
-        )
-        names = {row[0] for row in objects}
-        assert "agent_run_model_requests_v29" not in names
-        assert len([name for name in names if "guard" in name]) == 2
+        assert {row[1] for row in columns} >= {"retry_progress_json", "terminal_metrics_json"}
     finally:
         handle.close()
 
@@ -550,9 +502,8 @@ def test_agent_run_observation_tampered_typed_json_fails_closed(tmp_path):
         )
         handle.run_write(
             lambda executor: executor.execute(
-                "UPDATE agent_run_terminal_metrics SET tool_terminal_counts_json = ? "
-                "WHERE agent_run_id = ?",
-                ('{"succeeded":0}', "arun_1"),
+                "UPDATE agent_runs SET terminal_metrics_json = ? WHERE agent_run_id = ?",
+                ("{", "arun_1"),
             )
         )
         with pytest.raises(StorageError) as error:
@@ -619,7 +570,8 @@ def test_backup_carries_agent_run_observation_rows(tmp_path):
         assert backup.verify(bundle).ok
         with sqlite3.connect(bundle / "database.sqlite") as connection:
             rows = connection.execute(
-                "SELECT COUNT(*), (SELECT COUNT(*) FROM agent_run_terminal_metrics) "
+                "SELECT COUNT(*), (SELECT COUNT(*) FROM agent_runs "
+                "WHERE terminal_metrics_json IS NOT NULL) "
                 "FROM agent_run_model_requests"
             ).fetchone()
         assert rows == (1, 1)

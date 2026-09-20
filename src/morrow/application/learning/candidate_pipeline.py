@@ -255,11 +255,6 @@ class LearningCandidatePipeline:
             and LearningEvidenceSourceKind.USER_TURN in sources
         ):
             return None
-        if draft.candidate_type in {
-            LearningCandidateType.WORKFLOW_FEEDBACK,
-            LearningCandidateType.ORCHESTRATION_POLICY_CANDIDATE,
-        }:
-            return None
         if has_positive_explicit_evidence:
             confidence = LearningConfidenceBand.HIGH
             basis = ("explicit_user_evidence",)

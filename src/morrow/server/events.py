@@ -13,42 +13,59 @@ import threading
 from collections.abc import Callable
 from datetime import datetime
 
-from morrow.core.application import ApplicationEvent
+from morrow.core.application import ApplicationError, ApplicationErrorCode, ApplicationEvent
 
 
 class EventHub:
-    """Fan-out of ``latest_cursor`` hints to subscribers on foreign event loops.
+    """Coalesced cursor hints: one queued value and one scheduled wake per subscriber."""
 
-    ``publish`` runs on the Core thread; subscriptions carry their owning loop
-    so notification crosses loop boundaries through ``call_soon_threadsafe``.
-    """
-
-    def __init__(self) -> None:
+    def __init__(self, *, max_subscribers=64) -> None:
         self._lock = threading.Lock()
-        self._subscribers: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Queue]] = {}
+        self._subscribers = {}
         self._next_token = 0
+        self.max_subscribers = max_subscribers
+        self.peak_scheduled = 0
 
-    def subscribe(self, loop: asyncio.AbstractEventLoop) -> tuple[int, asyncio.Queue]:
-        queue: asyncio.Queue = asyncio.Queue()
+    def subscribe(self, loop):
+        queue = asyncio.Queue(maxsize=1)
         with self._lock:
+            if len(self._subscribers) >= self.max_subscribers:
+                raise ApplicationError(ApplicationErrorCode.BUSY, "Subscription limit reached")
             self._next_token += 1
             token = self._next_token
-            self._subscribers[token] = (loop, queue)
+            self._subscribers[token] = [loop, queue, 0, False]
         return token, queue
 
-    def unsubscribe(self, token: int) -> None:
+    def unsubscribe(self, token):
         with self._lock:
             self._subscribers.pop(token, None)
 
-    def publish(self, latest_cursor: int) -> None:
+    def publish(self, latest_cursor):
         with self._lock:
-            subscribers = tuple(self._subscribers.values())
-        for loop, queue in subscribers:
-            try:
-                loop.call_soon_threadsafe(queue.put_nowait, latest_cursor)
-            except RuntimeError:
-                # Subscriber loop already closed; the next pull resyncs.
-                pass
+            for token, subscriber in tuple(self._subscribers.items()):
+                subscriber[2] = max(subscriber[2], latest_cursor)
+                if subscriber[3]:
+                    continue
+                subscriber[3] = True
+                try:
+                    subscriber[0].call_soon_threadsafe(self._deliver, token)
+                except RuntimeError:
+                    self._subscribers.pop(token, None)
+            self.peak_scheduled = max(
+                self.peak_scheduled, sum(s[3] for s in self._subscribers.values())
+            )
+
+    def _deliver(self, token):
+        # Runs on the receiving loop. Queue replacement never crosses threads.
+        with self._lock:
+            subscriber = self._subscribers.get(token)
+            if subscriber is None:
+                return
+            _, queue, latest, _ = subscriber
+            subscriber[3] = False
+        if queue.full():
+            latest = max(latest, queue.get_nowait())
+        queue.put_nowait(latest)
 
 
 class WorkflowEventEmitter:
@@ -68,6 +85,9 @@ class WorkflowEventEmitter:
         self.id_source = id_source
         self.clock = clock
         self.hub = hub
+        # In-process observers of every emitted lifecycle event; the Chat reply
+        # streams use this seam to refresh the owning sessions' projections.
+        self.subscribers: list[Callable[[str, str, str, dict], None]] = []
 
     def emit(
         self,
@@ -89,4 +109,6 @@ class WorkflowEventEmitter:
             ),
         )
         self.journal.after_commit(lambda: self.hub.publish(event.cursor))
+        for subscriber in tuple(self.subscribers):
+            subscriber(event_type, aggregate_kind, aggregate_id, payload)
         return event

@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import type { ApiClient } from '../api/client'
 import type { AgentRunObservationWire, NodeViewWire } from '../api/types'
 import { ArtifactList } from '../components/ArtifactList'
+import { NodeExecutionBadge } from '../components/NodeExecutionBadge'
 import { StatusDot } from '../components/StatusDot'
 import type { RevisionNodeInfo } from './lib/graph'
 import { formatTimestamp, shortId } from './lib/labels'
+import { WorkflowOutput } from './WorkflowOutput'
 
 function usageLine(observation: AgentRunObservationWire): string | null {
   const metrics = observation.terminal_metrics
@@ -71,6 +73,7 @@ export function NodeDetail({
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <StatusDot status={node.status} />
+        <NodeExecutionBadge execution={nodeView.execution} />
         <span className="font-mono text-xs text-secondary">{node.node_id}</span>
         {node.attempt > 1 && (
           <span className="rounded-[8px] border border-subtle px-1.5 py-0.5 font-mono text-xs text-secondary">
@@ -114,6 +117,38 @@ export function NodeDetail({
             {formatTimestamp(node.started_at)} / {formatTimestamp(node.completed_at)}
           </dd>
         </div>
+        {nodeView.execution !== undefined && nodeView.execution !== null && (
+          <>
+            <div className="flex gap-2">
+              <dt className="w-24 shrink-0 text-secondary">执行状态</dt>
+              <dd className="font-mono">{nodeView.execution.state}</dd>
+            </div>
+            {nodeView.execution.segment_id !== null && (
+              <div className="flex gap-2">
+                <dt className="w-24 shrink-0 text-secondary">segment</dt>
+                <dd className="font-mono">{shortId(nodeView.execution.segment_id)}</dd>
+              </div>
+            )}
+            {nodeView.execution.control_generation !== null && (
+              <div className="flex gap-2">
+                <dt className="w-24 shrink-0 text-secondary">控制代次</dt>
+                <dd className="font-mono">{nodeView.execution.control_generation}</dd>
+              </div>
+            )}
+            {nodeView.execution.reason !== null && (
+              <div className="flex gap-2">
+                <dt className="w-24 shrink-0 text-secondary">暂停原因</dt>
+                <dd className="font-mono">{nodeView.execution.reason}</dd>
+              </div>
+            )}
+            {nodeView.execution.settled_at !== null && (
+              <div className="flex gap-2">
+                <dt className="w-24 shrink-0 text-secondary">落定时间</dt>
+                <dd className="font-mono">{formatTimestamp(nodeView.execution.settled_at)}</dd>
+              </div>
+            )}
+          </>
+        )}
         {metrics !== null && (
           <div className="flex gap-2">
             <dt className="w-24 shrink-0 text-secondary">运行指标</dt>
@@ -135,6 +170,7 @@ export function NodeDetail({
             {nodeView.output_bindings.map((binding) => (
               <li key={binding.name}>
                 {binding.name} → {shortId(binding.artifact_id)}
+                <WorkflowOutput client={client} runId={node.workflow_run_id} artifactId={binding.artifact_id} label={binding.name}/>
               </li>
             ))}
           </ul>

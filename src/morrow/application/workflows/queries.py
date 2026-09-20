@@ -3,13 +3,102 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
+from morrow.application.workflows.builtins import resolve_builtin_placeholders
 from morrow.application.workflows.outputs import EffectiveOutputResolver
 from morrow.core.artifacts import ArtifactMetadata
+from morrow.core.contracts import ExecutionSegmentIdentity
 from morrow.core.execution import ToolExecutionState
+from morrow.core.execution_pause import WorkflowPausePoint
 from morrow.core.workflows.contracts import ArtifactBinding
 from morrow.core.workflows.definitions import WorkflowRevision
 from morrow.core.workflows.runs import NodeRun, WorkflowArtifactImport, WorkflowRun, WorkflowStatus
+
+#: Frozen execution-projection states for one node (BUG-GUI-002, P02).
+NODE_EXECUTION_STATES = ("running", "pausing", "paused", "needs_recovery")
+
+
+@dataclass(frozen=True)
+class NodeExecutionView:
+    """Per-node execution projection, separate from the business NodeRun status.
+
+    ``None`` (not projected) means the GUI falls back to the business status:
+    terminal/queued nodes never carry an execution state, so a paused parent
+    run can never paint a finished node as paused. While a pause is accepted,
+    the state is derived from the node's OWN segments; the run-level pause
+    point only supplies lifecycle/generation/reason.
+    """
+
+    state: str
+    segment_id: str | None = None
+    control_generation: int | None = None
+    reason: str | None = None
+    settled_at: datetime | None = None
+
+
+def project_node_execution(
+    *,
+    run: WorkflowRun,
+    node: NodeRun,
+    segments: tuple[ExecutionSegmentIdentity, ...],
+    pause_point: WorkflowPausePoint | None,
+) -> NodeExecutionView | None:
+    """Shared node execution projection for run views and plan admission."""
+    if node.status in (
+        WorkflowStatus.COMPLETED,
+        WorkflowStatus.FAILED,
+        WorkflowStatus.CANCELLED,
+        WorkflowStatus.QUEUED,
+    ):
+        return None
+    if node.status is WorkflowStatus.BLOCKED:
+        return NodeExecutionView(state="needs_recovery")
+    if node.status is not WorkflowStatus.RUNNING:
+        return None
+    lifecycle = pause_point.fact.lifecycle if pause_point is not None else None
+    pause_accepted = (
+        run.pause_requested
+        or run.status is WorkflowStatus.DRAINING
+        or lifecycle in ("requested", "quiescing", "suspended")
+    )
+    if not pause_accepted:
+        return NodeExecutionView(state="running")
+    generation = pause_point.fact.control_generation if pause_point is not None else None
+    reason = pause_point.fact.reason if pause_point is not None else None
+    latest = segments[-1] if segments else None
+    if latest is None:
+        # A pause was accepted but the node has no segment row: the barrier
+        # cannot prove where the turn parks; invite recovery, never guess.
+        return NodeExecutionView(state="needs_recovery")
+    if latest.status == "active" or lifecycle in ("requested", "quiescing"):
+        return NodeExecutionView(state="pausing", control_generation=generation, reason=reason)
+    if latest.status == "interrupted" and lifecycle == "suspended":
+        return NodeExecutionView(
+            state="paused",
+            segment_id=latest.segment_id,
+            control_generation=generation,
+            reason=latest.pause_reason or reason,
+            settled_at=(
+                (pause_point.fact.suspended_at if pause_point is not None else None)
+                or (pause_point.updated_at if pause_point is not None else None)
+            ),
+        )
+    # Contradictory segment facts (e.g. a completed segment under a running
+    # node) can never be projected as a coherent pause state.
+    return NodeExecutionView(state="needs_recovery")
+
+
+def node_execution_wire(view: NodeExecutionView | None) -> dict | None:
+    if view is None:
+        return None
+    return {
+        "state": view.state,
+        "segment_id": view.segment_id,
+        "control_generation": view.control_generation,
+        "reason": view.reason,
+        "settled_at": view.settled_at.isoformat() if view.settled_at is not None else None,
+    }
 
 
 @dataclass(frozen=True)
@@ -19,6 +108,7 @@ class WorkflowNodeView:
     artifacts: tuple[ArtifactMetadata, ...]
     approval_pending: bool = False
     agent_generation_request_count: int = 0
+    execution: NodeExecutionView | None = None
 
 
 @dataclass(frozen=True)
@@ -217,6 +307,8 @@ class WorkflowQueryService:
         views = []
         for identity in sorted(ids):
             source = self.workflow_builtins.get(identity) or desired.get(identity)
+            if identity in self.workflow_builtins:
+                source = resolve_builtin_placeholders(source, self.journal, self.workspace_id)
             origin = "builtin" if identity in self.workflow_builtins else "user"
             head = self.journal.workflows.get_head(self.workspace_id, identity)
             revision = (
@@ -254,6 +346,8 @@ class WorkflowQueryService:
     def get_workflow_definition(self, definition_id: str) -> WorkflowDefinitionView | None:
         desired, source_revision = self._desired_workflows()
         source = self.workflow_builtins.get(definition_id) or desired.get(definition_id)
+        if definition_id in self.workflow_builtins:
+            source = resolve_builtin_placeholders(source, self.journal, self.workspace_id)
         head = self.journal.workflows.get_head(self.workspace_id, definition_id)
         revision = (
             self.journal.workflows.get_revision(self.workspace_id, head.workflow_revision_id)
@@ -319,6 +413,9 @@ class WorkflowQueryService:
             return None
         revision = self.journal.workflows.get_revision(self.workspace_id, run.workflow_revision_id)
         declared_nodes = {item.node_id: item for item in revision.nodes}
+        pause_point = self.journal.workflows.execution_pause.latest_pause_point(
+            self.workspace_id, owner="workflow_run", owner_id=workflow_run_id
+        )
         nodes = []
         for node in self.journal.workflows.list_nodes(self.workspace_id, workflow_run_id):
             outputs = tuple(
@@ -343,6 +440,18 @@ class WorkflowQueryService:
                     approval_pending=self._approval_pending(node),
                     agent_generation_request_count=self.journal.count_node_agent_requests(
                         self.workspace_id, node.node_run_id
+                    ),
+                    execution=project_node_execution(
+                        run=run,
+                        node=node,
+                        segments=(
+                            self.journal.workflows.segments_for_node(
+                                self.workspace_id, node.node_run_id
+                            )
+                            if node.node_run_id
+                            else ()
+                        ),
+                        pause_point=pause_point,
                     ),
                 )
             )
@@ -418,6 +527,9 @@ class WorkflowQueryService:
             )
             if metadata is not None
         )
+        pause_point = self.journal.workflows.execution_pause.latest_pause_point(
+            self.workspace_id, owner="workflow_run", owner_id=node.workflow_run_id
+        )
         return WorkflowNodeView(
             node=node,
             output_bindings=outputs,
@@ -425,6 +537,16 @@ class WorkflowQueryService:
             approval_pending=self._approval_pending(node),
             agent_generation_request_count=self.journal.count_node_agent_requests(
                 self.workspace_id, node.node_run_id
+            ),
+            execution=project_node_execution(
+                run=run,
+                node=node,
+                segments=(
+                    self.journal.workflows.segments_for_node(self.workspace_id, node.node_run_id)
+                    if node.node_run_id
+                    else ()
+                ),
+                pause_point=pause_point,
             ),
         )
 

@@ -24,6 +24,7 @@ from morrow.core.domain import (
 )
 from morrow.core.models import ModelRef, ProtocolModel
 from morrow.core.workflows.contracts import (
+    SUBMIT_SCHEMA_VERSION,
     InputBinding,
     NodeOutputRef,
     OutputContract,
@@ -192,6 +193,10 @@ class CompiledWorkflow(WorkflowMetadata):
     terminal_nodes: tuple[SlotName, ...] = Field(min_length=1, max_length=128)
     budget: WorkflowBudget
     compiler_version: str = Field(min_length=1, max_length=64)
+    #: Submission protocol of this frozen revision. Revisions stored before
+    #: the v2 protocol carry no value and therefore stay on v1, so recovery
+    #: rebuilds their frozen submit tool schema byte for byte.
+    submission_protocol_version: int = Field(default=1, ge=1, le=SUBMIT_SCHEMA_VERSION, strict=True)
 
     @model_validator(mode="after")
     def graph_references(self):
@@ -242,6 +247,21 @@ def compiled_content_hash(candidate: CompiledWorkflow) -> str:
     return sha256_digest(canonical_json_bytes(normalized.model_dump(mode="json")))
 
 
+def legacy_compiled_content_hash(candidate: CompiledWorkflow) -> str:
+    """The pre-``submission_protocol_version`` digest of the same content.
+
+    Revisions were stored before the submission protocol became part of the
+    compiled model. Their recorded hash stays valid through this formula, so
+    old records load unchanged while a freshly compiled revision of the same
+    source carries the new identity.
+    """
+
+    body = {name: getattr(candidate, name) for name in CompiledWorkflow.model_fields}
+    normalized = CompiledWorkflow(**body)
+    payload = normalized.model_dump(mode="json", exclude={"submission_protocol_version"})
+    return sha256_digest(canonical_json_bytes(payload))
+
+
 class WorkflowRevision(CompiledWorkflow):
     workflow_revision_id: WorkflowRevisionId
     workspace_id: WorkspaceId
@@ -265,7 +285,12 @@ class WorkflowRevision(CompiledWorkflow):
 
     @model_validator(mode="after")
     def immutable_hash(self):
-        if self.content_hash != compiled_content_hash(self):
+        # A revision stored before the submission protocol joined the model
+        # keeps its recorded legacy hash; nothing rewrites stored evidence.
+        if self.content_hash not in (
+            compiled_content_hash(self),
+            legacy_compiled_content_hash(self),
+        ):
             raise ValueError("Workflow revision hash mismatch")
         if self.parent_workflow_revision_id == self.workflow_revision_id:
             raise ValueError("Workflow revision cannot parent itself")

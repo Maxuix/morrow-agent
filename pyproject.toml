@@ -20,6 +20,8 @@ dependencies = [
   # uvicorn's WebSocket backend for /v1/events/stream; without it the hint
   # channel 500s over real sockets (in-process ASGI tests never exercise it).
   "websockets>=13,<16",
+  "pillow>=12.2,<13",
+  "pypdfium2>=5,<6",
 ]
 
 [build-system]
@@ -50,7 +52,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+addopts = "-ra -m 'not live'"
 asyncio_mode = "auto"
 markers = [
   "live: explicit network and real-provider smoke tests (excluded by default)",

@@ -75,16 +75,17 @@ class SqliteConfigurationPromotionJournal:
         *,
         state: PromotionOperationState | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[PromotionOperation, ...]:
-        if not 1 <= limit <= 500:
+        if not 1 <= limit <= 500 or offset < 0:
             raise StorageError(StorageErrorCode.UNAVAILABLE, "promotion operation page is invalid")
         sql = f"SELECT {_OPERATION_COLUMNS} FROM promotion_operations WHERE workspace_id = ?"
         parameters: list[object] = [workspace_id]
         if state is not None:
             sql += " AND state = ?"
             parameters.append(state.value)
-        sql += " ORDER BY updated_at_unix ASC, operation_id ASC LIMIT ?"
-        parameters.append(limit)
+        sql += " ORDER BY updated_at_unix ASC, operation_id ASC LIMIT ? OFFSET ?"
+        parameters.extend((limit, offset))
         return tuple(
             _operation_from_row(row) for row in self.backend.read_all(sql, tuple(parameters))
         )
@@ -199,8 +200,9 @@ class SqliteConfigurationPromotionJournal:
         path: str | None = None,
         status: ConfigurationActivationStatus | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[ConfigurationActivation, ...]:
-        if not 1 <= limit <= 500:
+        if not 1 <= limit <= 500 or offset < 0:
             raise StorageError(
                 StorageErrorCode.UNAVAILABLE, "configuration activation page is invalid"
             )
@@ -215,8 +217,8 @@ class SqliteConfigurationPromotionJournal:
         if status is not None:
             sql += " AND status = ?"
             parameters.append(status.value)
-        sql += " ORDER BY created_at_unix ASC, activation_id ASC LIMIT ?"
-        parameters.append(limit)
+        sql += " ORDER BY created_at_unix ASC, activation_id ASC LIMIT ? OFFSET ?"
+        parameters.extend((limit, offset))
         return tuple(
             _activation_from_row(row) for row in self.backend.read_all(sql, tuple(parameters))
         )

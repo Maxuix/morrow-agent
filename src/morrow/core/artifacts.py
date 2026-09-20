@@ -55,6 +55,11 @@ class ArtifactKind(StrEnum):
     DIAGNOSTIC_REPORT = "diagnostic_report"
     TASK_SUMMARY = "task_summary"
     CONTEXT_SUMMARY = "context_summary"
+    #: One explicitly registered, byte-exact delivery file. It carries no
+    #: producer node/output slot: its NodeRun slot attribution lives in the
+    #: already verified submission marker, so the ordinary-file Artifact never
+    #: competes with the artifact_node_output uniqueness rule.
+    DELIVERABLE = "deliverable"
 
 
 class ArtifactSensitivity(StrEnum):

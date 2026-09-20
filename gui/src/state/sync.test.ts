@@ -248,12 +248,13 @@ function makeEvent(
 
 const instantSleep: Sleep = async () => {}
 
-function makeStore(core: FakeCore, options: { sleep?: Sleep } = {}): SyncStore {
-  const client = new ApiClient({ baseUrl: '', token: 'tok', fetchImpl: core.fetchImpl })
+function makeStore(core: FakeCore, options: { sleep?: Sleep; token?: string } = {}): SyncStore {
+  const token = options.token ?? 'tok'
+  const client = new ApiClient({ baseUrl: '', token, fetchImpl: core.fetchImpl })
   const wsFactory: WebSocketFactory = (url) => new FakeWebSocket(url)
   return new SyncStore({
     client,
-    token: 'tok',
+    token,
     wsFactory,
     sleep: options.sleep ?? instantSleep,
   })
@@ -305,6 +306,20 @@ describe('SyncStore', () => {
     lastSocket().serverSend({ type: 'hello', latest_cursor: 5 })
     await flush()
     expect(store.getState().connection).toBe('live')
+  })
+
+  it('opens the event stream without a token for the local GUI', async () => {
+    const core = new FakeCore()
+    core
+      .on('/v1/snapshot', () => ({
+        body: { cursor: 0, workflow_runs: [], pending_approvals: [] },
+      }))
+      .on('/v1/sessions', () => ({ body: { sessions: [], next_cursor: null } }))
+    const store = makeStore(core, { token: '' })
+
+    await store.start()
+
+    expect(lastSocket().url).toBe('/v1/events/stream')
   })
 
   it('pulls on a cursor hint and applies events in order, tolerating cursor gaps', async () => {
@@ -550,6 +565,24 @@ describe('SyncStore', () => {
     expect(core.urls).toContain('/v1/approvals?pending=true')
     expect(store.getState().pendingApprovals.size).toBe(0)
     expect(store.getState().connection).toBe('live')
+  })
+
+  it('drops a stale approvals response overtaken by a newer refresh', async () => {
+    const core = new FakeCore()
+    const pending: Array<(reply: { body: unknown }) => void> = []
+    core.on('/v1/approvals', () => new Promise<{ body: unknown }>(resolve => { pending.push(resolve) }))
+    const store = makeStore(core)
+    const first = store.refreshPendingApprovals()
+    const second = store.refreshPendingApprovals()
+    expect(pending).toHaveLength(2)
+    // The newer refresh lands first; the older in-flight response must not
+    // overwrite it and resurrect a resolved approval.
+    pending[1]({ body: { approvals: [makeApproval('ap_new')] } })
+    await second
+    pending[0]({ body: { approvals: [makeApproval('ap_stale')] } })
+    await first
+    expect(store.getState().pendingApprovals.has('ap_new')).toBe(true)
+    expect(store.getState().pendingApprovals.has('ap_stale')).toBe(false)
   })
 
   it('resyncs from scratch after a forced close: no lost and no duplicated state', async () => {

@@ -38,7 +38,7 @@ from morrow.services.files import (
     WorkspacePathResolver,
 )
 from morrow.services.process import ProcessExecutionService
-from morrow.services.sandbox import SandboxSnapshotService
+from morrow.services.sandbox import SandboxServiceError, SandboxSnapshotService
 from morrow.testing import ScriptedModelProvider, make_run_policy
 
 
@@ -381,6 +381,65 @@ async def test_production_auto_sandbox_registers_only_native_tools_and_keeps_rea
     assert not (project / "sandbox-only.txt").exists()
 
 
+def test_collect_scan_is_bounded_by_aggregate_caps_and_marks_truncated(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "main.py").write_text("print('ok')\n", encoding="utf-8")
+    service = SandboxSnapshotService(
+        _files(workspace), temp_parent=tmp_path, max_files=5, max_bytes=1024
+    )
+    session = service.prepare(workspace, run_id="run", call_id="command")
+    reads: list[str] = []
+    original = SandboxSnapshotService._read_file
+
+    def counted(cls, path, size, *, cancel_event=None):
+        reads.append(path.name)
+        return original(path, size, cancel_event=cancel_event)
+
+    monkeypatch.setattr(SandboxSnapshotService, "_read_file", classmethod(counted))
+    try:
+        for index in range(12):
+            (session.snapshot_root / f"generated-{index:02d}.txt").write_text(
+                f"data {index}\n", encoding="utf-8"
+            )
+        change_set = service.collect(session)
+    finally:
+        service.cleanup(session)
+
+    assert change_set.truncated is True
+    assert change_set.changes == ()
+    # The scan stops at the file cap instead of reading/hashing every file.
+    assert len(reads) <= 5
+
+
+def test_collect_scan_byte_cap_stops_reading_large_trees(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "main.py").write_text("x", encoding="utf-8")
+    service = SandboxSnapshotService(
+        _files(workspace), temp_parent=tmp_path, max_files=100, max_bytes=64
+    )
+    session = service.prepare(workspace, run_id="run", call_id="command")
+    reads: list[str] = []
+    original = SandboxSnapshotService._read_file
+
+    def counted(cls, path, size, *, cancel_event=None):
+        reads.append(path.name)
+        return original(path, size, cancel_event=cancel_event)
+
+    monkeypatch.setattr(SandboxSnapshotService, "_read_file", classmethod(counted))
+    try:
+        for index in range(8):
+            (session.snapshot_root / f"big-{index}.bin").write_bytes(b"x" * 64)
+        change_set = service.collect(session)
+    finally:
+        service.cleanup(session)
+
+    assert change_set.truncated is True
+    assert change_set.changes == ()
+    assert len(reads) <= 1
+
+
 def test_production_auto_sandbox_selects_workspace_and_runtime_toolchains(tmp_path):
     project = tmp_path / "project"
     project_bin = project / ".venv" / "bin"
@@ -487,3 +546,49 @@ print(json.dumps({{'outside': outside, 'home': home, 'home_read': home_read, 'pr
     assert not (workspace / "sandbox-created.txt").exists()
     assert result.sandbox_change_set_id is not None
     assert result.sandbox_changed_paths == ("sandbox-created.txt",)
+
+
+@pytest.mark.parametrize("limit", ["entries", "depth", "time"])
+def test_snapshot_traversal_limits_apply_to_prepare_and_collect(tmp_path, monkeypatch, limit):
+    from morrow.services import sandbox
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    service = SandboxSnapshotService(_files(workspace), temp_parent=tmp_path)
+    session = service.prepare(workspace, run_id="run", call_id="command")
+    for root in (workspace, session.snapshot_root):
+        (root / "a" / "b" / "c").mkdir(parents=True)
+        (root / "d").mkdir()
+    if limit == "entries":
+        monkeypatch.setattr(sandbox, "MAX_SNAPSHOT_ENTRIES", 2)
+    elif limit == "depth":
+        monkeypatch.setattr(sandbox, "MAX_SNAPSHOT_DEPTH", 1)
+    else:
+        ticks = iter(range(100))
+        monkeypatch.setattr(sandbox.time, "monotonic", lambda: next(ticks))
+        monkeypatch.setattr(sandbox, "MAX_SNAPSHOT_SCAN_SECONDS", 0.5)
+    try:
+        with pytest.raises(SandboxServiceError, match="上限"):
+            service.prepare(workspace, run_id="run", call_id="other")
+        change_set = service.collect(session)
+        assert change_set.truncated
+        assert change_set.changes == ()
+    finally:
+        service.cleanup(session)
+    assert not list(tmp_path.glob("morrow-sandbox-*"))
+
+
+def test_snapshot_file_growth_after_stat_is_rejected_without_unbounded_read(tmp_path, monkeypatch):
+    import io
+
+    sizes = []
+
+    class GrowingFile(io.BytesIO):
+        def read(self, size=-1):
+            sizes.append(size)
+            return super().read(size)
+
+    monkeypatch.setattr(Path, "open", lambda *a, **kw: GrowingFile(b"x" * 100))
+    with pytest.raises(SandboxServiceError, match="增长"):
+        SandboxSnapshotService._read_file(tmp_path / "growing", 4)
+    assert sizes == [5]

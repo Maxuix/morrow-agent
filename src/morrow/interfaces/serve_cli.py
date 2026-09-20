@@ -20,13 +20,26 @@ import uvicorn
 
 from morrow.bootstrap import build_application
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
+from morrow.interfaces.core_client import publish_connection
 from morrow.interfaces.workflow_cli import _identity
 from morrow.server.app import create_asgi_app
 from morrow.server.composition import make_context_builder
 from morrow.server.host import CoreHost
-from morrow.services.workspace import WorkspaceError, WorkspaceWriterLock
+from morrow.services.workspace import WorkspaceError
 
 _LOOPBACK_BINDS = {"127.0.0.1", "localhost", "::1"}
+
+
+def public_base_url(bind: str, port: int) -> str:
+    """Return the URL clients should open for a loopback bind."""
+
+    if bind == "::1":
+        host = "[::1]"
+    elif bind in {"127.0.0.1", "localhost"}:
+        host = "127.0.0.1"
+    else:
+        host = bind
+    return f"http://{host}:{port}"
 
 
 def _serve_core(
@@ -54,40 +67,47 @@ def _serve_core(
         )
     )
     try:
-        with WorkspaceWriterLock(application.data_root, identity.workspace_id):
+        try:
+            host.start()
+            listener = socket.socket(socket.AF_INET6 if bind == "::1" else socket.AF_INET)
             try:
-                host.start()
-                listener = socket.socket(socket.AF_INET6 if bind == "::1" else socket.AF_INET)
-                try:
-                    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    listener.bind((bind, port))
-                    listener.listen(socket.SOMAXCONN)
-                    bound_port = listener.getsockname()[1]
-                except OSError:
-                    listener.close()
-                    raise
-                asgi_app = create_asgi_app(host, auth_token=token, gui_static_dir=gui_static_dir)
-                display_host = "[::1]" if bind == "::1" else bind
-                announce(f"http://{display_host}:{bound_port}", token)
-                config = uvicorn.Config(
-                    asgi_app,
-                    log_level="warning",
-                    access_log=False,
-                )
-                server = uvicorn.Server(config)
-                try:
+                listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                listener.bind((bind, port))
+                listener.listen(socket.SOMAXCONN)
+                bound_port = listener.getsockname()[1]
+            except OSError:
+                listener.close()
+                raise
+            asgi_app = create_asgi_app(
+                host, auth_token=token, gui_static_dir=gui_static_dir, listen_port=bound_port
+            )
+            base_url = public_base_url(bind, bound_port)
+            announce(base_url, token)
+            config = uvicorn.Config(
+                asgi_app,
+                log_level="warning",
+                access_log=False,
+            )
+            server = uvicorn.Server(config)
+            try:
+                with publish_connection(
+                    application.data_root.root,
+                    identity.workspace_id,
+                    base_url,
+                    token,
+                ):
                     asyncio.run(server.serve(sockets=[listener]))
-                except KeyboardInterrupt:
-                    pass
-            finally:
-                host.stop()
+            except KeyboardInterrupt:
+                pass
+        finally:
+            host.stop()
     except WorkspaceError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
 
 def serve(
-    port: int = typer.Option(0, "--port", help="监听端口；0 表示自动分配。"),
+    port: int = typer.Option(0, "--port", min=0, max=65535, help="监听端口；0 表示自动分配。"),
     bind: str = typer.Option("127.0.0.1", "--bind", help="绑定地址；仅允许 loopback。"),
     workspace_id: str | None = typer.Option(None, "--workspace-id"),
     directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
@@ -102,7 +122,10 @@ def serve(
     """启动本地 Core API 服务器（前台、headless）。"""
 
     if bind not in _LOOPBACK_BINDS:
-        typer.echo("serve 仅允许绑定 loopback 地址（127.0.0.1/localhost/::1）。", err=True)
+        typer.echo(
+            "serve 仅允许绑定 loopback 地址（127.0.0.1/localhost/::1）。",
+            err=True,
+        )
         raise typer.Exit(code=2)
     application = build_application(state_root=state_root)
     try:
@@ -113,7 +136,7 @@ def serve(
 
     def announce(base_url: str, token: str) -> None:
         typer.echo(f"morrow serve listening: {base_url}")
-        typer.echo(f"session token: {token}")
+        typer.echo("CLI: morrow attach（通过私有连接文件认证）")
 
     _serve_core(
         application=application,

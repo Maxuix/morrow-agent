@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from morrow.adapters.mcp.stdio_client import McpAdapterError, McpStdioClient
+from morrow.application.mcp.credentials import resolve_environment
 from morrow.core.domain import canonical_json_bytes
 from morrow.core.mcp import (
     MCP_MAX_REMOTE_TOOLS,
@@ -166,9 +167,11 @@ class McpCatalogService:
         *,
         client_factory: Callable[..., McpStdioClient] = McpStdioClient,
         workspace_root: Path | None = None,
+        credential_store=None,
     ) -> None:
         self.client_factory = client_factory
         self.workspace_root = workspace_root
+        self.credential_store = credential_store
 
     async def refresh(
         self,
@@ -178,11 +181,21 @@ class McpCatalogService:
         environment: dict[str, str] | None = None,
     ) -> McpCatalogSnapshot:
         revision = (previous.revision + 1) if previous is not None else 1
+        if definition.credential_refs and environment is None:
+            if self.credential_store is None:
+                raise McpCatalogError(
+                    "credential_unavailable", "MCP credentials require an explicit store"
+                )
+            environment = resolve_environment(definition, self.credential_store)
+        extra = (
+            {"secrets": tuple((environment or {}).values())} if definition.credential_refs else {}
+        )
         try:
             client = self.client_factory(
                 definition,
                 workspace_root=self.workspace_root,
                 environment=environment,
+                **extra,
             )
             discovery = await client.discover()
         except McpAdapterError as exc:

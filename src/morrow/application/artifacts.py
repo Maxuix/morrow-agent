@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import Callable
+from contextlib import contextmanager
 from datetime import datetime
 
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
@@ -29,7 +31,6 @@ from morrow.core.artifacts import (
 )
 from morrow.core.domain import (
     ARTIFACT_ID_PREFIX,
-    ArtifactReference,
     TextSafetyProfile,
     canonical_json_bytes,
     refuse_secret_material,
@@ -38,7 +39,7 @@ from morrow.core.domain import (
 )
 from morrow.core.journal import ArtifactJournalPort
 from morrow.core.ports import IdSource
-from morrow.core.store import StorageError, StorageErrorCode
+from morrow.core.store import StorageError
 from morrow.core.workflows.contracts import (
     NODE_OUTPUT_PAYLOAD_TYPES,
     ContractRef,
@@ -111,6 +112,28 @@ class ArtifactService:
             excerpt=excerpt,
             artifact_id=artifact_id,
             already_redacted=already_redacted,
+        )
+
+    def publish_attachment_bytes(
+        self, content: bytes, *, session_id: str, artifact_id: str, role: str
+    ):
+        """User-input bytes have value-sensitive refusal; metadata keeps strict redaction.
+
+        This seam is owned by AttachmentService. It cannot select a Workflow contract or
+        expose the input in an Artifact excerpt, event, or command receipt.
+        """
+        refuse_secret_material(
+            content.decode("utf-8", errors="replace"),
+            label="attachment",
+            profile="workflow_value_sensitive",
+        )
+        return self._publish_bytes(
+            content,
+            kind=ArtifactKind.CONTEXT_SUMMARY,
+            session_id=session_id,
+            artifact_id=artifact_id,
+            excerpt="Attachment " + role,
+            attachment_input=True,
         )
 
     def publish_workflow_payload(
@@ -222,6 +245,7 @@ class ArtifactService:
         contract: ContractRef | None = None,
         producer_node_run_id: str | None = None,
         output_slot: str | None = None,
+        attachment_input: bool = False,
     ) -> ArtifactMetadata:
         if not isinstance(content, bytes):
             raise ArtifactError(ArtifactErrorCode.INVALID, "artifact content must be bytes")
@@ -237,7 +261,13 @@ class ArtifactService:
         if len(selected_excerpt.encode("utf-8")) > ARTIFACT_EXCERPT_MAX_BYTES:
             raise ArtifactBudgetError("artifact excerpt budget exceeded")
         try:
-            if text_safety_profile == TextSafetyProfile.WORKFLOW_VALUE_SENSITIVE:
+            if attachment_input:
+                refuse_secret_material(
+                    content.decode("utf-8", errors="replace"),
+                    label="attachment",
+                    profile="workflow_value_sensitive",
+                )
+            elif text_safety_profile == TextSafetyProfile.WORKFLOW_VALUE_SENSITIVE:
                 refuse_secret_material(content, label="Artifact", profile=text_safety_profile)
             elif already_redacted:
                 self._refuse_unredacted_secrets(content)
@@ -323,6 +353,22 @@ class ArtifactService:
         return self.journal.get_artifact(self.workspace_id, artifact_id)
 
     def read(self, artifact_id: str, *, max_bytes: int, start_byte: int = 0) -> ArtifactRead:
+        with self._read_scope(artifact_id, start_byte) as metadata:
+            content = self.filesystem.read(metadata, max_bytes=max_bytes, start_byte=start_byte)
+        return ArtifactRead(metadata=metadata, content=content)
+
+    async def read_async(
+        self, artifact_id: str, *, max_bytes: int, start_byte: int = 0
+    ) -> ArtifactRead:
+        """Keep metadata checks/repair on the owner; offload only file verification/read."""
+        with self._read_scope(artifact_id, start_byte) as metadata:
+            content = await asyncio.to_thread(
+                self.filesystem.read, metadata, max_bytes=max_bytes, start_byte=start_byte
+            )
+        return ArtifactRead(metadata=metadata, content=content)
+
+    @contextmanager
+    def _read_scope(self, artifact_id: str, start_byte: int):
         metadata = self.journal.get_artifact(self.workspace_id, artifact_id)
         if metadata is None:
             raise ArtifactError(ArtifactErrorCode.MISSING, "artifact metadata is missing")
@@ -336,7 +382,7 @@ class ArtifactService:
         if start_byte < 0 or start_byte > metadata.byte_size:
             raise ArtifactError(ArtifactErrorCode.INVALID, "artifact read offset is invalid")
         try:
-            content = self.filesystem.read(metadata, max_bytes=max_bytes, start_byte=start_byte)
+            yield metadata
         except ArtifactIntegrityError as exc:
             target = (
                 ArtifactState.MISSING
@@ -345,7 +391,6 @@ class ArtifactService:
             )
             self._try_mark(metadata, target)
             raise
-        return ArtifactRead(metadata=metadata, content=content)
 
     def finalize_staging(self, artifact_id: str) -> ArtifactMetadata:
         """Finish only a staging row whose already-published final bytes verify."""
@@ -406,23 +451,6 @@ class ArtifactService:
 
     def unpin(self, artifact_id: str) -> ArtifactMetadata:
         return self._change_retention(artifact_id, ArtifactRetention.STANDARD)
-
-    def link_tool_execution(self, artifact_id: str, tool_execution_id: str) -> object:
-        execution = self.journal.get_execution(self.workspace_id, tool_execution_id)
-        if execution is None:
-            raise StorageError(StorageErrorCode.NOT_FOUND, "operational execution is missing")
-        reference = ArtifactReference(artifact_id=artifact_id, role="tool_output")
-        if reference in execution.artifact_refs:
-            return execution
-        updated = execution.model_copy(
-            update={
-                "artifact_refs": (*execution.artifact_refs, reference),
-                "row_version": execution.row_version + 1,
-            }
-        )
-        return self.journal.save_execution(
-            self.workspace_id, updated, expected_row_version=execution.row_version
-        )
 
     def orphan_report(self) -> ArtifactOrphanReport:
         metadata = self.journal.list_artifacts(self.workspace_id)

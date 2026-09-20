@@ -13,7 +13,6 @@ from morrow.adapters.state.preference_yaml_types import (
     PreferenceYamlLoadStatus,
 )
 from morrow.application.preferences.queries import PreferenceQueries
-from morrow.application.preferences.recovery import PreferenceWriteRecovery
 from morrow.application.preferences.tool import (
     ManagePreferenceOperation,
     ManagePreferencesArguments,
@@ -132,7 +131,8 @@ def test_recovery_retries_batch_left_prepared_before_yaml(tmp_path):
     )
 
     yaml_store.failure_injector = None
-    result = PreferenceWriteRecovery(writer).recover_batch(prepared.batch.batch_id)
+    stored = writer.journal.get_preference_write_batch("ws_1", prepared.batch.batch_id)
+    result = writer.apply(stored)
     assert result.batch.status is PreferenceWriteBatchStatus.FINALIZED
     assert yaml_store.load_workspace("ws_1").revision == 1
     session.close()
@@ -163,7 +163,9 @@ def test_recovery_finishes_when_yaml_applied_before_sqlite_finalize(tmp_path, mo
         is PreferenceWriteBatchStatus.PREPARED
     )
 
-    result = PreferenceWriteRecovery(writer).recover_batch(prepared.batch.batch_id)
+    result = writer.apply(
+        preference_journal.get_preference_write_batch("ws_1", prepared.batch.batch_id)
+    )
     assert result.batch.status is PreferenceWriteBatchStatus.FINALIZED
     session.close()
     operational.layout.database.exists()

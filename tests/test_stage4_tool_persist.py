@@ -321,6 +321,27 @@ async def test_write_intent_stores_pre_effect_hashes(tmp_path):
         assert evidence[0].before_sha256 == before
         assert evidence[0].expected_after_sha256 == hashlib.sha256(b"new\n").hexdigest()
         assert evidence[0].expected_size == 4
+        # The generated file must be visible before any acceptance command.
+        from morrow.application.result_presentation import TaskResultProjector
+        from morrow.application.timeline_index import TimelineIndexService
+
+        index = TimelineIndexService(
+            journal,
+            "ws_1",
+            result_projector=TaskResultProjector(
+                journal, None, artifacts=None, workspace_id="ws_1"
+            ),
+        )
+        results = [
+            item
+            for item in index.snapshot_page(session.session_id, limit=50)["items"]
+            if item["kind"] == "result"
+        ]
+        assert len(results) == 1
+        result = results[0]["result"]
+        assert result["task_status"] == "ready_for_acceptance"
+        assert result["trigger"] == "snapshot"
+        assert [file["path"] for file in result["files"]] == ["notes.txt"]
         assert listed[0].state is ToolExecutionState.CLOSED
         assert listed[0].result_envelope is not None
         assert listed[0].result_envelope.ok is True

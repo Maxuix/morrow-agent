@@ -379,8 +379,12 @@ def _accept(
     as_json: bool,
 ) -> None:
     edit = statement if statement is not None else None
+    if as_json and not yes:
+        typer.echo("--json 需要与 --yes 一起使用（JSON 模式不执行交互确认）", err=True)
+        raise typer.Exit(code=2)
     preview = api.preview_preference_proposal(proposal_id, edit=edit)
-    _emit(preview, as_json=as_json)
+    if not as_json:
+        _emit(preview, as_json=as_json)
     _confirm_or_exit("确认接受这项 Preference proposal？", yes=yes)
     result = api.accept_preference_proposal(
         proposal_id,
@@ -487,9 +491,13 @@ def preference_inbox_accept_many(
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
     def action(api) -> None:
+        if as_json and not yes:
+            typer.echo("--json 需要与 --yes 一起使用（JSON 模式不执行交互确认）", err=True)
+            raise typer.Exit(code=2)
         previews = tuple(api.preview_preference_proposal(item) for item in proposal_ids)
-        for preview in previews:
-            _emit(preview, as_json=as_json)
+        if not as_json:
+            for preview in previews:
+                _emit(preview, as_json=as_json)
         _confirm_or_exit("确认批量接受这些 Preference proposals？", yes=yes)
         result = api.accept_preference_proposals(
             proposal_ids,

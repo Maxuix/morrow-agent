@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ApiError, type ApiClient } from '../api/client'
 import type {
+  RecoveryEligibilityWire,
   RerunResultWire,
   RunViewWire,
   TaskRunStatus,
@@ -9,7 +10,6 @@ import type {
   WorkflowStatus,
 } from '../api/types'
 import { commandId } from './lib/editor'
-import { shortId } from './lib/labels'
 
 /**
  * Run-control action row for the selected run.
@@ -21,7 +21,7 @@ import { shortId } from './lib/labels'
  * refetched here.
  */
 
-export type RunActionId = 'pause' | 'resume' | 'cancel' | 'retry' | 'rerun'
+export type RunActionId = 'continue' | 'pause' | 'resume' | 'cancel' | 'retry' | 'rerun'
 
 export interface RunActionState {
   enabled: boolean
@@ -43,11 +43,15 @@ const RERUN_TERMINAL_STATUSES: ReadonlySet<WorkflowStatus> = new Set([
 
 /**
  * Enablement matrix mirroring the server semantics:
+ * - continue: a failed run may take the restricted "从中断处继续" recovery;
+ *   the server re-validates the eligibility inside the command, and a
+ *   fetched assessment disables the button with its concrete reason;
  * - pause: running/draining without a pending pause request;
  * - resume: only a settled paused run (draining must settle first);
  * - cancel: running/draining; a paused run must be resumed first (server
  *   refuses cancelling it);
- * - retry: failed parent with the root task row loaded (partial rerun);
+ * - retry: failed parent with the root task row loaded (partial rerun — a
+ *   NEW child run, never a continuation of the failed one);
  * - rerun: any terminal parent (failed/cancelled/completed/superseded — a
  *   superseded run is still a terminal parent the runtime accepts) with the
  *   root task row loaded (full rerun).
@@ -55,9 +59,22 @@ const RERUN_TERMINAL_STATUSES: ReadonlySet<WorkflowStatus> = new Set([
 export function runControlActions(
   run: WorkflowRunWire,
   rootTaskStatus: TaskRunStatus | null,
+  recovery: Pick<RecoveryEligibilityWire, 'eligible' | 'reasons'> | null = null,
 ): RunActionStates {
   const { status, pause_requested: pauseRequested } = run
   const rootLoaded = rootTaskStatus !== null
+
+  const continueAction: RunActionState = (() => {
+    if (status !== 'failed') {
+      return disabled('仅失败的运行可从中断处继续')
+    }
+    if (recovery !== null) {
+      if (recovery.eligible) return enabledState
+      return disabled(recovery.reasons[0] ?? '该失败不满足受限恢复条件')
+    }
+    // The assessment has not loaded yet; the server owns the final verdict.
+    return enabledState
+  })()
 
   let pause: RunActionState
   if (status !== 'running' && status !== 'draining') {
@@ -82,7 +99,7 @@ export function runControlActions(
 
   let retry: RunActionState
   if (status !== 'failed') {
-    retry = disabled('仅运行失败后可重试失败节点')
+    retry = disabled('仅运行失败后可重跑失败节点')
   } else if (!rootLoaded) {
     retry = disabled('根任务未加载，无法重试')
   } else {
@@ -98,7 +115,7 @@ export function runControlActions(
     rerun = enabledState
   }
 
-  return { pause, resume, cancel, retry, rerun }
+  return { continue: continueAction, pause, resume, cancel, retry, rerun }
 }
 
 /**
@@ -125,10 +142,7 @@ export function actionErrorMessage(error: unknown): string {
 
 /** Result message: new accounting root, never an inherited-output reuse. */
 export function rerunResultMessage(result: RerunResultWire): string {
-  const root = result.full
-    ? '新预算根，不继承先前节点输出'
-    : '新预算根，重跑失败节点'
-  return `已创建子运行 ${shortId(result.child.workflow_run_id)}（${root}），执行 ${result.execution_node_ids.length} 个节点`
+  return result.full ? '已开始完整重跑。' : '已开始重跑失败节点。'
 }
 
 function ActionButton({
@@ -137,19 +151,22 @@ function ActionButton({
   pending,
   onClick,
   confirm = false,
+  description,
 }: {
   action: RunActionState
   label: string
   pending: boolean
   onClick: () => void
   confirm?: boolean
+  description?: string
 }) {
+  if (!action.enabled) return null
   return (
     <button
       type="button"
       disabled={!action.enabled || pending}
       onClick={onClick}
-      title={action.enabled ? undefined : (action.reason ?? undefined)}
+      title={description}
       className={`rounded-[8px] border px-2.5 py-1 text-xs transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 ${
         confirm
           ? 'border-failed bg-raised text-failed'
@@ -178,13 +195,34 @@ export function RunControls({
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [recovery, setRecovery] = useState<RecoveryEligibilityWire | null>(null)
 
   // A stale two-step cancel confirmation is confusing once the run moved on.
   useEffect(() => {
     setConfirmCancel(false)
   }, [run.status, run.row_version])
 
-  const actions = runControlActions(run, rootTask?.status ?? null)
+  // A failed run's "从中断处继续" availability comes from the same server
+  // eligibility the resume command re-validates in its transaction.
+  useEffect(() => {
+    setRecovery(null)
+    if (run.status !== 'failed') return
+    let cancelled = false
+    client
+      .recoveryEligibility(run.workflow_run_id)
+      .then((assessment) => {
+        if (!cancelled) setRecovery(assessment)
+      })
+      .catch(() => {
+        // Without an assessment the server-side verdict still guards the click.
+        if (!cancelled) setRecovery(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [client, run.status, run.workflow_run_id])
+
+  const actions = runControlActions(run, rootTask?.status ?? null, recovery)
   const busy = pendingAction !== null
 
   async function perform(action: RunActionId, work: () => Promise<string>): Promise<void> {
@@ -205,6 +243,16 @@ export function RunControls({
       client
         .pauseRun(run.workflow_run_id, commandId('pause'))
         .then(() => '已请求暂停，正在落定'),
+    )
+
+  // "从中断处继续" is the failed-run primary action: the same resume command
+  // performs the restricted recovery first, then the ordinary resume flow.
+  // A refused recovery surfaces the concrete reasons through the error banner.
+  const handleContinue = () =>
+    void perform('continue', () =>
+      client
+        .resumeRun(run.workflow_run_id, commandId('continue'))
+        .then(() => '已从中断处继续；同一运行正在恢复执行'),
     )
 
   const handleResume = () =>
@@ -249,6 +297,13 @@ export function RunControls({
     <div className="mt-3">
       <div className="flex flex-wrap items-center gap-1.5">
         <ActionButton
+          action={actions.continue}
+          label="从中断处继续"
+          description="复用已有结果，从中断处继续"
+          pending={busy}
+          onClick={handleContinue}
+        />
+        <ActionButton
           action={actions.pause}
           label="暂停"
           pending={busy}
@@ -267,19 +322,23 @@ export function RunControls({
           onClick={handleCancel}
           confirm={confirmCancel}
         />
+        {(actions.retry.enabled || actions.rerun.enabled) && <details><summary className="editor-button cursor-pointer">重跑</summary><div className="flex flex-col gap-2 p-2">
         <ActionButton
           action={actions.retry}
-          label="重试失败节点"
+          label="重跑失败节点"
+          description="重新执行失败步骤"
           pending={busy}
           onClick={() => createRerun(false)}
         />
         <ActionButton
           action={actions.rerun}
           label="完整重跑"
+          description="重新执行全部步骤，不复用结果"
           pending={busy}
           onClick={() => createRerun(true)}
         />
-        {onEditPending !== undefined && (
+        </div></details>}
+        {onEditPending !== undefined && editPendingEnabled && (
           <button
             type="button"
             disabled={!editPendingEnabled || busy}
@@ -297,6 +356,8 @@ export function RunControls({
           </button>
         )}
       </div>
+
+      {run.status === 'failed' && !actions.continue.enabled && actions.continue.reason && <details className="mt-2 text-xs text-secondary"><summary>无法继续的原因</summary><p>{actions.continue.reason}</p></details>}
       {error !== null && (
         <div role="alert" className="mt-2 rounded-[8px] border border-blocked px-2 py-1 text-xs text-failed">
           {error}

@@ -25,7 +25,6 @@ _ARTIFACT_COLUMNS = (
     "sha256, byte_size, excerpt, provenance_json, row_version, created_at_unix, updated_at_unix, "
     "text_safety_profile, contract_json, producer_node_run_id, output_slot"
 )
-_REFERENCE_COLUMNS = "artifact_id, workspace_id, owner_kind, owner_id, role, created_at_unix"
 
 
 def _unix(value: datetime) -> int:
@@ -34,6 +33,18 @@ def _unix(value: datetime) -> int:
 
 def _from_unix(value: object) -> datetime:
     return datetime.fromtimestamp(int(value), UTC)
+
+
+def _embedded_list(value: object, *, label: str) -> list[object]:
+    if value is None or value == "":
+        return []
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise StorageError(StorageErrorCode.NEEDS_REPAIR, f"{label} is corrupt") from exc
+    if not isinstance(parsed, list):
+        raise StorageError(StorageErrorCode.NEEDS_REPAIR, f"{label} is not a list")
+    return parsed
 
 
 class SqliteArtifactJournal:
@@ -210,52 +221,156 @@ class SqliteArtifactJournal:
     def list_references(
         self, workspace_id: str, artifact_id: str | None = None
     ) -> tuple[tuple[str, str, str, str], ...]:
-        sql = f"SELECT {_REFERENCE_COLUMNS} FROM artifact_references WHERE workspace_id = ?"
+        sql = "SELECT artifact_id, references_json FROM artifacts WHERE workspace_id = ?"
         parameters: list[object] = [workspace_id]
         if artifact_id is not None:
             sql += " AND artifact_id = ?"
             parameters.append(artifact_id)
         rows = self.backend.read_all(sql, tuple(parameters))
+        references: set[tuple[str, str, str, str]] = set()
+        for row in rows:
+            current_artifact_id = str(row[0])
+            for item in _embedded_list(row[1], label="artifact references"):
+                if not isinstance(item, dict):
+                    raise StorageError(
+                        StorageErrorCode.NEEDS_REPAIR, "artifact reference is not an object"
+                    )
+                try:
+                    references.add(
+                        (
+                            current_artifact_id,
+                            str(item["owner_kind"]),
+                            str(item["owner_id"]),
+                            str(item["role"]),
+                        )
+                    )
+                except (KeyError, TypeError) as exc:
+                    raise StorageError(
+                        StorageErrorCode.NEEDS_REPAIR, "artifact reference is incomplete"
+                    ) from exc
+        # Checkpoint rows retain their complete input for direct reconstruction;
+        # include them as a fallback for newly-created checkpoints and de-duplicate
+        # migrated v44 rows already copied into artifacts.references_json.
         checkpoint_sql = (
-            "SELECT artifact_id, workspace_id, checkpoint_id, role "
-            "FROM checkpoint_artifact_references WHERE workspace_id = ?"
+            "SELECT checkpoint_id, artifact_refs_json FROM context_checkpoints "
+            "WHERE workspace_id = ?"
         )
-        checkpoint_parameters: list[object] = [workspace_id]
+        checkpoint_rows = self.backend.read_all(checkpoint_sql, (workspace_id,))
+        for checkpoint_id, refs_json in checkpoint_rows:
+            for item in _embedded_list(refs_json, label="checkpoint artifact references"):
+                if not isinstance(item, dict):
+                    raise StorageError(
+                        StorageErrorCode.NEEDS_REPAIR,
+                        "checkpoint artifact reference is not an object",
+                    )
+                try:
+                    current_artifact_id = str(item["artifact_id"])
+                    if artifact_id is None or current_artifact_id == artifact_id:
+                        references.add(
+                            (
+                                current_artifact_id,
+                                "context_checkpoint",
+                                str(checkpoint_id),
+                                str(item["role"]),
+                            )
+                        )
+                except (KeyError, TypeError) as exc:
+                    raise StorageError(
+                        StorageErrorCode.NEEDS_REPAIR,
+                        "checkpoint artifact reference is incomplete",
+                    ) from exc
+        workflow_sql = (
+            "SELECT b.artifact_id, b.workflow_run_id, b.node_run_id, b.name FROM workflow_artifact_bindings b "
+            "JOIN workflow_runs r USING(workflow_run_id) WHERE r.workspace_id=?"
+        )
+        workflow_args = [workspace_id]
         if artifact_id is not None:
-            checkpoint_sql += " AND artifact_id = ?"
-            checkpoint_parameters.append(artifact_id)
-        checkpoint_rows = self.backend.read_all(checkpoint_sql, tuple(checkpoint_parameters))
-        references = [(str(row[0]), str(row[2]), str(row[3]), str(row[4])) for row in rows]
-        references.extend(
-            (str(row[0]), "context_checkpoint", str(row[2]), str(row[3])) for row in checkpoint_rows
+            workflow_sql += " AND b.artifact_id=?"
+            workflow_args.append(artifact_id)
+        references.update(
+            (row[0], "workflow", row[2] or row[1], row[3])
+            for row in self.backend.read_all(workflow_sql, tuple(workflow_args))
         )
-        if self.backend.schema_version() >= 24:
-            workflow_sql = (
-                "SELECT b.artifact_id, b.workflow_run_id, b.node_run_id, b.name FROM workflow_artifact_bindings b "
-                "JOIN workflow_runs r USING(workflow_run_id) WHERE r.workspace_id=?"
-            )
-            workflow_args = [workspace_id]
-            if artifact_id is not None:
-                workflow_sql += " AND b.artifact_id=?"
-                workflow_args.append(artifact_id)
-            references.extend(
-                (row[0], "workflow", row[2] or row[1], row[3])
-                for row in self.backend.read_all(workflow_sql, tuple(workflow_args))
-            )
-        if self.backend.schema_version() >= 26:
-            import_sql = (
-                "SELECT i.artifact_id, i.workflow_run_id, i.source_node_id, i.output_slot "
-                "FROM workflow_run_artifact_imports i JOIN workflow_runs r "
-                "USING(workflow_run_id) WHERE r.workspace_id=?"
-            )
-            import_args = [workspace_id]
-            if artifact_id is not None:
-                import_sql += " AND i.artifact_id=?"
-                import_args.append(artifact_id)
-            references.extend(
-                (row[0], "workflow_import", row[1], f"{row[2]}.{row[3]}")
-                for row in self.backend.read_all(import_sql, tuple(import_args))
-            )
+        import_sql = (
+            "SELECT i.artifact_id, i.workflow_run_id, i.source_node_id, i.output_slot "
+            "FROM workflow_run_artifact_imports i JOIN workflow_runs r "
+            "USING(workflow_run_id) WHERE r.workspace_id=?"
+        )
+        import_args = [workspace_id]
+        if artifact_id is not None:
+            import_sql += " AND i.artifact_id=?"
+            import_args.append(artifact_id)
+        references.update(
+            (row[0], "workflow_import", row[1], f"{row[2]}.{row[3]}")
+            for row in self.backend.read_all(import_sql, tuple(import_args))
+        )
+        attachment_sql = (
+            "SELECT attachment_id, blob_refs_json FROM chat_attachments "
+            "WHERE workspace_id=? AND state!='released'"
+        )
+        for attachment_identity, refs_json in self.backend.read_all(
+            attachment_sql, (workspace_id,)
+        ):
+            for item in _embedded_list(refs_json, label="attachment artifact references"):
+                if not isinstance(item, dict):
+                    raise StorageError(
+                        StorageErrorCode.NEEDS_REPAIR,
+                        "attachment artifact reference is not an object",
+                    )
+                try:
+                    current_artifact_id = str(item["artifact_id"])
+                    if artifact_id is None or current_artifact_id == artifact_id:
+                        references.add(
+                            (
+                                current_artifact_id,
+                                "chat_attachment",
+                                str(attachment_identity),
+                                str(item["role"]),
+                            )
+                        )
+                except (KeyError, TypeError) as exc:
+                    raise StorageError(
+                        StorageErrorCode.NEEDS_REPAIR,
+                        "attachment artifact reference is incomplete",
+                    ) from exc
+        mcp_sql = (
+            "SELECT tool_execution_id, mcp_artifact_links_json FROM tool_executions "
+            "WHERE workspace_id=?"
+        )
+        for execution_id, refs_json in self.backend.read_all(mcp_sql, (workspace_id,)):
+            for item in _embedded_list(refs_json, label="MCP Artifact links"):
+                if not isinstance(item, dict):
+                    raise StorageError(
+                        StorageErrorCode.NEEDS_REPAIR, "MCP Artifact link is not an object"
+                    )
+                try:
+                    current_artifact_id = item["artifact_id"]
+                    role = item["role"]
+                    if (
+                        not isinstance(current_artifact_id, str)
+                        or not current_artifact_id
+                        or not isinstance(role, str)
+                        or not role
+                    ):
+                        raise ValueError("MCP Artifact link identity is invalid")
+                except (KeyError, TypeError) as exc:
+                    raise StorageError(
+                        StorageErrorCode.NEEDS_REPAIR, "MCP Artifact link is incomplete"
+                    ) from exc
+                except ValueError as exc:
+                    raise StorageError(
+                        StorageErrorCode.NEEDS_REPAIR, "MCP Artifact link is invalid"
+                    ) from exc
+                if artifact_id is None or current_artifact_id == artifact_id:
+                    references.add((current_artifact_id, "mcp_result", str(execution_id), role))
+        planning_sql = "SELECT planning_binding_id, artifact_ids_json FROM workflow_planning_bindings WHERE workspace_id=?"
+        for binding_id, refs_json in self.backend.read_all(planning_sql, (workspace_id,)):
+            for current_artifact_id in _embedded_list(
+                refs_json, label="planning artifact references"
+            ):
+                current_artifact_id = str(current_artifact_id)
+                if artifact_id is None or current_artifact_id == artifact_id:
+                    references.add((current_artifact_id, "workflow_plan", str(binding_id), "input"))
         return tuple(sorted(references, key=lambda item: (item[0], item[1], item[2], item[3])))
 
     def replace_references(
@@ -268,29 +383,69 @@ class SqliteArtifactJournal:
         created_at: datetime,
     ) -> None:
         executor = self.backend.executor()
-        executor.execute(
-            "DELETE FROM artifact_references WHERE workspace_id = ? AND owner_kind = ? "
-            "AND owner_id = ?",
-            (workspace_id, owner_kind, owner_id),
-        )
+        grouped: dict[str, list[dict[str, object]]] = {}
         for reference in references:
+            artifact = self.backend.read_one(
+                "SELECT references_json, workspace_id FROM artifacts WHERE artifact_id=?",
+                (reference.artifact_id,),
+            )
+            if artifact is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "referenced Artifact is missing")
+            if str(artifact[1]) != workspace_id:
+                raise StorageError(
+                    StorageErrorCode.IDENTITY_MISMATCH,
+                    "referenced Artifact is outside the workspace",
+                )
+            grouped.setdefault(reference.artifact_id, []).append(
+                {
+                    "owner_kind": owner_kind,
+                    "owner_id": owner_id,
+                    "role": reference.role,
+                    "created_at_unix": _unix(created_at),
+                }
+            )
+        artifact_ids = {
+            str(row[0])
+            for row in self.backend.read_all(
+                "SELECT artifact_id FROM artifacts WHERE workspace_id=? AND references_json IS NOT NULL",
+                (workspace_id,),
+            )
+        }
+        artifact_ids.update(grouped)
+        for identity in artifact_ids:
+            row = self.backend.read_one(
+                "SELECT references_json FROM artifacts WHERE workspace_id=? AND artifact_id=?",
+                (workspace_id, identity),
+            )
+            if row is None:
+                continue
+            current = _embedded_list(row[0], label="artifact references")
+            current = [
+                item
+                for item in current
+                if not (
+                    isinstance(item, dict)
+                    and item.get("owner_kind") == owner_kind
+                    and item.get("owner_id") == owner_id
+                )
+            ]
+            current.extend(grouped.get(identity, ()))
+            # Keep one copy for a repeated ArtifactReference in a payload.
+            unique: list[object] = []
+            for item in current:
+                if item not in unique:
+                    unique.append(item)
             executor.execute(
-                f"INSERT INTO artifact_references({_REFERENCE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    reference.artifact_id,
-                    workspace_id,
-                    owner_kind,
-                    owner_id,
-                    reference.role,
-                    _unix(created_at),
-                ),
+                "UPDATE artifacts SET references_json=? WHERE workspace_id=? AND artifact_id=?",
+                (canonical_json_bytes(unique).decode("utf-8"), workspace_id, identity),
             )
 
     def validate_scope(self, workspace_id: str, metadata: ArtifactMetadata) -> None:
         if metadata.producer_node_run_id is not None:
             owner = self.backend.read_one(
-                "SELECT n.workspace_id, o.session_id, o.task_run_id FROM workflow_node_runs n "
-                "JOIN workflow_leaf_ownership o USING(node_run_id) WHERE n.node_run_id=?",
+                "SELECT n.workspace_id, n.leaf_session_id, n.leaf_task_run_id "
+                "FROM workflow_node_runs n WHERE n.node_run_id=? "
+                "AND n.leaf_session_id IS NOT NULL AND n.leaf_task_run_id IS NOT NULL",
                 (metadata.producer_node_run_id,),
             )
             if owner is None:

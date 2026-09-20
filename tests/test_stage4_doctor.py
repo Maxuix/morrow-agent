@@ -8,9 +8,16 @@ from datetime import UTC, datetime, timedelta
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
+from morrow.adapters.state.preset_preference_yaml import AgentPresetPreferenceYamlStore
 from morrow.application.api import OperationalApplicationService
 from morrow.application.artifacts import ArtifactService
 from morrow.application.doctor import OperationalDoctor
+from morrow.core.agent_presets import AgentPresetPreference, AgentPresetPreferenceDocument
+from morrow.core.agent_runs import (
+    ExactModelCapabilities,
+    ProviderRuntimeSnapshot,
+    SettingSource,
+)
 from morrow.core.artifacts import ArtifactKind
 from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.domain import (
@@ -20,9 +27,11 @@ from morrow.core.domain import (
     DurableTaskRun,
     DurableTurn,
     SessionLifecycle,
+    canonical_json_bytes,
     sha256_digest,
 )
-from morrow.core.models import ModelRef
+from morrow.core.execution_selections import ExplicitGenerationSelection
+from morrow.core.models import CredentialRef, GenerationOptions, ModelRef
 from morrow.core.permissions import (
     CapabilityGrant,
     CapabilityIsolation,
@@ -333,3 +342,128 @@ def test_doctor_refuses_symlink_data_root_without_traversing_artifacts(tmp_path,
     assert report.counts["orphan_candidates"] == 1
     assert report.counts["artifact_unsafe_refused"] == 1
     assert any(issue.code == "artifact_unsafe_refused" for issue in report.issues)
+
+
+def test_doctor_validates_preset_preferences_and_generation_evidence(tmp_path):
+    store = OperationalStore(
+        tmp_path / "state",
+        clock=FixedClock(),
+        retry_policy=BusyRetryPolicy(
+            busy_timeout_ms=0, sleep=lambda _delay: None, rng=random.Random(0)
+        ),
+        maintenance_timeout=0,
+    )
+    handle = store.initialize()
+    try:
+        journal = SqliteOperationalJournal(handle)
+        journal.create_session(
+            DurableSession(session_id="ses_1", workspace_id="ws_1"),
+            task=DurableTaskRun(task_run_id="task_1", session_id="ses_1", workspace_id="ws_1"),
+        )
+        preferences = AgentPresetPreferenceYamlStore(store.layout.data_root)
+        preferences.write(
+            "ws_1",
+            AgentPresetPreferenceDocument(
+                presets=(
+                    AgentPresetPreference(
+                        definition_id="builtin_general",
+                        model=ModelRef(provider_id="p", model_id="m"),
+                        generation=ExplicitGenerationSelection(mode="explicit", value="high"),
+                    ),
+                )
+            ),
+            expected_revision=0,
+        )
+        journal.create_turn(
+            "ws_1",
+            DurableTurn(
+                turn_id="turn_1",
+                session_id="ses_1",
+                task_run_id="task_1",
+                client_message_id="client-1",
+            ),
+        )
+        generation = GenerationOptions(reasoning_effort="high")
+        capabilities = ExactModelCapabilities(
+            adapter_id="fake",
+            model=ModelRef(provider_id="p", model_id="m"),
+            reasoning_efforts=("minimal", "low", "medium", "high"),
+            streaming_text=True,
+            tool_protocol="openai_function",
+            multiple_tool_calls=True,
+            structured_output=False,
+        )
+        journal.create_agent_run(
+            "ws_1",
+            DurableAgentRun(
+                agent_run_id="arun_1",
+                turn_id="turn_1",
+                session_id="ses_1",
+                snapshot=AgentRunSnapshot(
+                    model=ModelRef(provider_id="p", model_id="m"),
+                    provider_id="p",
+                    run_policy_digest=sha256_digest("policy"),
+                    tool_schema_digest=sha256_digest("tools"),
+                    permission_profile_digest=sha256_digest("profile"),
+                    runtime_instance_id="runtime-1",
+                    provider_runtime=ProviderRuntimeSnapshot(
+                        provider_id="p",
+                        adapter_id="fake",
+                        model=ModelRef(provider_id="p", model_id="m"),
+                        api_model_id="api-m",
+                        credential_ref=CredentialRef(ref="provider:p:test", version=1),
+                        capabilities=capabilities,
+                        config_digest=sha256_digest("config"),
+                        generation=generation,
+                        generation_digest=sha256_digest(
+                            canonical_json_bytes(generation.model_dump(mode="json"))
+                        ),
+                        settings_sources={
+                            "generation": SettingSource(scope="explicit", revision=0)
+                        },
+                    ),
+                ),
+            ),
+        )
+        report = OperationalDoctor(store).inspect("ws_1")
+        assert report.health.value == "ok"
+        assert report.counts["preset_preference_revision"] == 1
+        assert report.counts["preset_preferences"] == 1
+        assert report.counts["agent_run_generation_evidence"] == 1
+        assert not any(issue.code == "preset_preferences_invalid" for issue in report.issues)
+        assert not any(issue.code == "agent_run_generation_digest" for issue in report.issues)
+
+        # A corrupted generation digest is reported without mutating anything.
+        handle.run_write(
+            lambda executor: executor.execute(
+                "UPDATE agent_runs SET snapshot_json = json_set(snapshot_json, '$"
+                ".provider_runtime.generation_digest', ?) WHERE agent_run_id='arun_1'",
+                ("0" * 64,),
+            )
+        )
+        report = OperationalDoctor(store).inspect("ws_1")
+        assert any(issue.code == "agent_run_generation_digest" for issue in report.issues)
+    finally:
+        handle.close()
+
+
+def test_doctor_reports_invalid_preset_preference_yaml(tmp_path):
+    store = OperationalStore(
+        tmp_path / "state",
+        clock=FixedClock(),
+        retry_policy=BusyRetryPolicy(
+            busy_timeout_ms=0, sleep=lambda _delay: None, rng=random.Random(0)
+        ),
+        maintenance_timeout=0,
+    )
+    handle = store.initialize()
+    try:
+        journal = SqliteOperationalJournal(handle)
+        journal.create_session(DurableSession(session_id="ses_1", workspace_id="ws_1"))
+        path = store.layout.data_root / "workspaces" / "ws_1" / "agent-preset-preferences.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("revision: 0\npresets: [not-a-preset]\n", encoding="utf-8")
+        report = OperationalDoctor(store).inspect("ws_1")
+        assert any(issue.code == "preset_preferences_invalid" for issue in report.issues)
+    finally:
+        handle.close()

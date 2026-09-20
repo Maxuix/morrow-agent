@@ -13,7 +13,13 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from morrow.core.state_schema import (
     WORKSPACE_INDEX_SCHEMA_VERSION,
@@ -22,6 +28,10 @@ from morrow.core.state_schema import (
 
 CURRENT_SCHEMA_VERSION = 1
 WORKSPACE_DOCUMENT_SCHEMA_VERSION = WORKSPACE_PROFILE_SCHEMA_VERSION
+
+# Vendor-visible reasoning fragment bound (master plan P3.1): adapters clip
+# before emitting; the model contract rejects oversize fragments outright.
+REASONING_DELTA_MAX_CHARS = 2048
 
 TOOL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _COST_SOURCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
@@ -68,14 +78,42 @@ class SystemMessage(ProtocolModel):
         return _require_non_empty(value)
 
 
+class AttachmentRef(ProtocolModel):
+    version: Literal[1] = 1
+    attachment_id: str = Field(pattern=r"^att_[A-Za-z0-9_-]+$", max_length=128)
+    content_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    representation_id: str = Field(pattern=r"^art_[A-Za-z0-9_-]+$", max_length=128)
+    representation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class ProviderInputPart(ProtocolModel):
+    type: Literal["text", "image"]
+    text: str = ""
+    media_type: Literal["image/png", "image/jpeg", "image/webp"] = "image/png"
+    data: str = Field(default="", repr=False)
+    width: int | None = Field(default=None, ge=1)
+    height: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def image_dimensions_together(self) -> ProviderInputPart:
+        if (self.width is None) != (self.height is None):
+            raise ValueError("Image width and height must be provided together")
+        return self
+
+
 class UserMessage(ProtocolModel):
     role: Literal["user"] = "user"
     content: str
+    attachments: tuple[AttachmentRef, ...] = Field(default=(), max_length=8)
+    input_parts: tuple[ProviderInputPart, ...] = Field(default=(), exclude=True, repr=False)
 
-    @field_validator("content")
-    @classmethod
-    def non_empty_content(cls, value: str) -> str:
-        return _require_non_empty(value)
+    @model_validator(mode="after")
+    def non_empty_input(self):
+        if not self.content.strip() and not self.attachments:
+            raise ValueError("Message requires text or attachments")
+        if len({a.attachment_id for a in self.attachments}) != len(self.attachments):
+            raise ValueError("Duplicate attachment reference")
+        return self
 
 
 class FunctionToolCall(ProtocolModel):
@@ -236,9 +274,13 @@ class CostMetadata(ProtocolModel):
         return value
 
 
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+
+
 class ModelCapabilityOverrides(ProtocolModel):
     """Optional per-model restrictions persisted below one ProviderConfig."""
 
+    reasoning_efforts: tuple[ReasoningEffort, ...] | None = Field(default=None, max_length=7)
     streaming_text: bool | None = None
     tool_protocol: Literal["none", "openai_function"] | None = None
     multiple_tool_calls: bool | None = None
@@ -465,6 +507,9 @@ class FinishReason(StrEnum):
     STEERED = "steered"
     CANCELLED = "cancelled"
     ERROR = "error"
+    # Contract 1.0.0: a user pause interrupts the current turn only; the
+    # business task stays resumable. Never reuse CANCELLED for a pause.
+    INTERRUPTED = "interrupted"
 
 
 class AgentStopCode(StrEnum):
@@ -490,17 +535,60 @@ class AgentStopCode(StrEnum):
     VERIFIER_FAILED = "verifier_failed"
     COMPLETION_INCONCLUSIVE = "completion_inconclusive"
     INTERNAL = "internal"
+    # Contract 1.0.0 (TurnInterruptOutcome): the typed reason for a user pause.
+    USER_PAUSE = "user_pause"
+    PROCESS_INTERRUPTED = "process_interrupted"
+
+
+INTERRUPT_STOP_CODES = frozenset(
+    {
+        AgentStopCode.USER_PAUSE,
+        AgentStopCode.PROCESS_INTERRUPTED,
+        AgentStopCode.PROVIDER_AUTH,
+        AgentStopCode.PROVIDER_NETWORK,
+        AgentStopCode.PROVIDER_RATE_LIMIT,
+        AgentStopCode.PROVIDER_TIMEOUT,
+        AgentStopCode.INVALID_RESPONSE,
+        AgentStopCode.CONTEXT_BUDGET,
+        # A length-truncated model response is an uncommitted boundary: the
+        # committed facts before it stay valid, so a durable host may park the
+        # run for an explicit continuation instead of failing the task.
+        # Continuation must stay user-driven — never raise the cap or loop.
+        AgentStopCode.MODEL_OUTPUT_LIMIT,
+        AgentStopCode.INTERNAL,
+    }
+)
 
 
 class ModelEvent(MorrowModel):
-    kind: Literal["text_delta", "completed", "error"]
+    kind: Literal["text_delta", "activity", "reasoning_delta", "completed", "error"]
     text: str | None = None
+    # Bounded, content-free progress marker; never carries reasoning or fragments.
+    activity: Literal["reasoning", "tool_call"] | None = None
+    # Vendor-visible reasoning fragment (kind="reasoning_delta"): a string field
+    # the adapter explicitly recognized, size-bounded for transient display.
+    # Opaque, encrypted or non-string payloads never enter this field.
+    reasoning_text: str | None = None
+    reasoning_truncated: bool = False
     finish_reason: ModelFinishReason | None = None
     message: AssistantMessage | None = None
     failure: ModelFailure | None = None
     made_progress: bool = False
     usage: ModelUsage = Field(default_factory=ModelUsage.unavailable)
     cost: ModelCost = Field(default_factory=ModelCost.unavailable)
+
+    @model_validator(mode="after")
+    def _reasoning_delta_coherence(self) -> ModelEvent:
+        if self.kind == "reasoning_delta":
+            if not isinstance(self.reasoning_text, str) or not self.reasoning_text:
+                raise ValueError("reasoning_delta requires bounded reasoning_text")
+            if len(self.reasoning_text) > REASONING_DELTA_MAX_CHARS:
+                raise ValueError("reasoning_text exceeds the fragment bound")
+            if self.text is not None or self.activity is not None or self.message is not None:
+                raise ValueError("reasoning_delta carries only reasoning_text")
+        elif self.reasoning_text is not None or self.reasoning_truncated:
+            raise ValueError("reasoning_text requires kind=reasoning_delta")
+        return self
 
 
 class Profile(MorrowModel):
@@ -524,6 +612,20 @@ class ProviderModelConfig(MorrowModel):
     capabilities: ModelCapabilityOverrides | None = None
 
 
+class GenerationOptions(ProtocolModel):
+    """Allowlisted request controls; None retains the adapter's omission behavior."""
+
+    reasoning_effort: ReasoningEffort | None = None
+
+
+class ChatSettings(ProtocolModel):
+    """None inherits; an explicit empty generation object chooses adapter defaults."""
+
+    model: ModelRef | None = None
+    generation: GenerationOptions | None = None
+    permission: Literal["manual", "auto-safe", "auto-sandboxed", "full-access-manual"] | None = None
+
+
 class LastTestResult(MorrowModel):
     ok: bool
     tested_at: datetime = Field(default_factory=utc_now)
@@ -544,10 +646,12 @@ class WorkspaceIndexEntry(MorrowModel):
     path: str
     display_name: str
     git_root: str | None = None
+    last_used_at: datetime | None = None
+    removed: bool = False
 
 
 class WorkspaceIndex(MorrowModel):
-    schema_version: int = WORKSPACE_INDEX_SCHEMA_VERSION
+    schema_version: Literal[WORKSPACE_INDEX_SCHEMA_VERSION] = WORKSPACE_INDEX_SCHEMA_VERSION
     revision: int = 0
     updated_at: datetime = Field(default_factory=utc_now)
     workspaces: dict[str, WorkspaceIndexEntry] = Field(default_factory=dict)

@@ -16,3 +16,59 @@ src/morrow/gui_static/
 .env
 .env.*
 !.env.example
+.scratch/
+
+# Local agent instructions and implementation plans.
+.agent/
+.claude/
+.codex/
+.cursor/
+AGENTS*.md
+CLAUDE*.md
+GEMINI*.md
+*copilot*.md
+*.prompt.md
+*prompt*.md
+
+# Keep the published documentation limited to the project introduction and
+# the current architecture baseline.
+docs/*
+!docs/README.md
+!docs/ARCHITECTURE.md
+!docs/architecture/
+!docs/architecture/*.md
+
+# Generated acceptance/evaluation material and local test output.
+evals/
+scripts/*
+!scripts/build_release.py
+*.log
+*.pid
+*.jsonl
+
+# Local application state and database records.
+.morrow/
+**/.morrow/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.wal
+*.shm
+
+# Private or personal material kept only in the local workspace.
+resume/
+个人资料/
+personal/
+private/
+简历*.md
+面经*.md
+导学*.md
+项目事实*.md
+Morrow-项目使用手册.html
+
+# Screenshot provenance notes are local working material; the images used by
+# the public README remain allowed.
+assets/readme/README.md

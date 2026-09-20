@@ -256,7 +256,9 @@ async def test_log_sequences_are_monotonic_and_independent_of_agent_events():
     event_sequences = [event.sequence for event in events]
     record_sequences = [record.sequence for record in session.log.snapshot().records]
     assert record_sequences == sorted(record_sequences) == [1, 2, 3]
-    assert event_sequences == [1, 2, 3]
+    # The factual wait stages carry their own event sequences; log records stay
+    # independent of the public event numbering.
+    assert event_sequences == [1, 2, 3, 4, 5]
 
 
 async def _collect(aiter):

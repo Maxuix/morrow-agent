@@ -170,10 +170,6 @@ class SessionPersistence:
         return self.turn_state.agent_run_id
 
     @property
-    def current_permission_snapshot_id(self) -> str | None:
-        return self.turn_state.permission_snapshot_id
-
-    @property
     def open_report(self) -> RecoveryReport | None:
         return self.turn_state.open_report
 
@@ -309,6 +305,18 @@ class SessionPersistence:
         if self.current_agent_run_id is None:
             return None
         run = self.journal.get_agent_run(self.workspace_id, self.current_agent_run_id)
+        return run.snapshot if run is not None else None
+
+    def get_continuation_snapshot(self, session_id: str) -> AgentRunSnapshot | None:
+        """A closed interrupted turn still owns its frozen continuation configuration."""
+        from morrow.application.task_continuity import chat_continuation_point
+
+        point = chat_continuation_point(self.journal, self.workspace_id, session_id)
+        if point is None:
+            return None
+        run = self.journal.get_agent_run(
+            self.workspace_id, point.safety.interrupted_agent_run_id or ""
+        )
         return run.snapshot if run is not None else None
 
     def admit_model_request(self, **kwargs):

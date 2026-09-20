@@ -41,9 +41,6 @@ class WorkflowDraftService:
         self.workspace_id = workspace_id
         self.management = management
         self.id_source = id_source
-        from morrow.application.workflows.feedback import WorkflowFeedbackService
-
-        self.feedback = WorkflowFeedbackService(journal, workspace_id=workspace_id)
         self.model_available = model_available or (
             lambda model: model in management.agent_publication.catalog.models
         )
@@ -110,15 +107,18 @@ class WorkflowDraftService:
         draft = self.journal.workflows.get_draft(self.workspace_id, draft_id)
         return self._view(draft) if draft is not None else None
 
-    def list(self, *, limit: int = 100) -> tuple[WorkflowDraftView, ...]:
+    def list(self, *, limit: int = 100, after: str | None = None) -> tuple[WorkflowDraftView, ...]:
         if type(limit) is not int or limit < 1 or limit > 100:
             raise ValueError("Workflow Draft limit must be between 1 and 100")
         return tuple(
             self._view(value)
-            for value in self.journal.workflows.list_drafts(self.workspace_id)[:limit]
+            for value in self.journal.workflows.draft_page(
+                self.workspace_id, after=after, limit=limit
+            )
         )
 
     def update(self, draft_id: str, source, *, expected_row_version: int) -> WorkflowDraftView:
+        self._require_template_draft(draft_id)
         current = self.journal.workflows.get_draft(self.workspace_id, draft_id)
         if (
             current is not None
@@ -146,21 +146,7 @@ class WorkflowDraftService:
         )
 
         def work(txn):
-            saved = txn.workflows.save_draft(updated, expected_row_version=expected_row_version)
-            from morrow.application.workflows.feedback import task_type
-
-            self.feedback.capture_edit(
-                current.source,
-                source,
-                subject_kind="draft",
-                subject_id=draft_id,
-                sample_id=draft_id,
-                task_class=current.planner.features.task_type
-                if current.planner
-                else task_type(current.source.nodes[0].task_contract),
-                edit_id=f"{draft_id}:{updated.row_version}",
-            )
-            return saved
+            return txn.workflows.save_draft(updated, expected_row_version=expected_row_version)
 
         return self._view(self.journal.transact(work))
 
@@ -175,6 +161,7 @@ class WorkflowDraftService:
         )
 
     def reject(self, draft_id: str, *, expected_row_version: int) -> WorkflowDraftView:
+        self._require_template_draft(draft_id)
         current = self.journal.workflows.get_draft(self.workspace_id, draft_id)
         if (
             current is not None
@@ -201,6 +188,7 @@ class WorkflowDraftService:
         expected_row_version: int,
         command_id: str,
     ) -> WorkflowDraftFreeze:
+        self._require_template_draft(draft_id)
         current = self.journal.workflows.get_draft(self.workspace_id, draft_id)
         if current is None:
             raise ValueError("Workflow Draft is missing")
@@ -299,6 +287,14 @@ class WorkflowDraftService:
             frozen, expected_row_version=expected_row_version
         )
         return WorkflowDraftFreeze(stored, publication.revision)
+
+    def _require_template_draft(self, draft_id):
+        row = self.journal._backend.read_one(
+            "SELECT 1 FROM workflow_planning_bindings WHERE workspace_id=? AND current_draft_id=?",
+            (self.workspace_id, draft_id),
+        )
+        if row:
+            raise ValueError("task plans require the Session-scoped planning commands")
 
     def _require_mutable(self, draft_id: str, expected_row_version: int) -> WorkflowDraft:
         current = self.journal.workflows.get_draft(self.workspace_id, draft_id)

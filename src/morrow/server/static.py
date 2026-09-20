@@ -2,9 +2,9 @@
 
 These handlers are only mounted when the server is started with a GUI asset
 directory (`morrow gui`). The surface is read-only GET/HEAD, confined to the
-asset root with an extension allowlist; the session token stays a URL fragment
-that is never sent to the server, so the static surface needs no auth and
-carries no state. Content-hashed assets under ``assets/`` are immutable;
+asset root with an extension allowlist; GUI mode is local and the static
+surface needs no auth and carries no state. Content-hashed assets under
+``assets/`` are immutable;
 everything else is served ``no-cache`` so a GUI upgrade is never masked by a
 stale shell.
 """

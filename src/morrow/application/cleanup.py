@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from dataclasses import asdict
+
 from morrow.application.artifacts import ArtifactService
 from morrow.application.cleanup_fs import (
     CleanupCandidate,
@@ -12,7 +15,12 @@ from morrow.application.cleanup_fs import (
 )
 from morrow.core.artifacts import ArtifactMetadata
 from morrow.core.cleanup import OrphanCleanupReport
+from morrow.core.domain import canonical_json_bytes, sha256_digest
 from morrow.core.store import StorageError, StorageErrorCode
+
+
+class CleanupPreviewChanged(ValueError):
+    pass
 
 
 class ArtifactCleanupService:
@@ -46,54 +54,114 @@ class ArtifactCleanupService:
                         reasons=reasons,
                     )
 
-                removed = 0
-                quarantined = 0
-                for target in eligible:
-                    attempt = self._quarantine_one(layout, target)
-                    if attempt.status == "authority_preserved":
-                        refused += 1
-                        reasons.append("global_authority_preserved")
-                    elif attempt.status == "target_changed":
-                        refused += 1
-                        reasons.append("target_changed")
-                    elif attempt.status == "target_changed_quarantined":
-                        refused += 1
-                        if attempt.quarantine is None:
-                            reasons.append("target_changed_quarantined")
-                            continue
-                        restoration = self._restore_one(
-                            layout,
-                            attempt.quarantine,
-                            require_original_inode=False,
-                        )
-                        if restoration.status == "authority_preserved":
-                            reasons.append("global_authority_preserved")
-                            reasons.append("target_changed_quarantined")
-                        elif restoration.status == "restored_retained":
-                            reasons.append("target_changed")
-                            reasons.append("quarantine_retained")
-                        else:
-                            reasons.append("target_changed_quarantined")
-                    elif attempt.status != "quarantined" or attempt.quarantine is None:
-                        refused += 1
-                        reasons.append("unsafe_target_refused")
-                    else:
-                        quarantined += 1
-                        reasons.append("quarantine_retained")
-                return self._report(
-                    dry_run=False,
-                    inspected=len(candidates),
-                    eligible=len(eligible),
-                    removed=removed,
-                    quarantined=quarantined,
-                    refused=refused,
-                    reasons=reasons,
-                )
+                iterator = self._apply_targets(layout, candidates, eligible, refused, reasons)
+                while True:
+                    try:
+                        next(iterator)
+                    except StopIteration as result:
+                        return result.value
         except UnsafeArtifactLayout as exc:
             raise StorageError(
                 StorageErrorCode.UNAVAILABLE,
                 "Artifact cleanup path chain is unsafe",
             ) from exc
+
+    async def run_async(self, *, dry_run=True, expected_digest=None, with_digest=False):
+        """Scan off-loop; every authority check and quarantine transaction stays on owner."""
+        metadata, referenced = self._global_artifact_authority()
+        known = {item.artifact_id for item in metadata}
+        try:
+            with TrustedArtifactLayout.open(self.artifacts.filesystem) as layout:
+                candidates = await asyncio.to_thread(layout.scan, metadata, referenced)
+                eligible, refused, reasons = self._classify(candidates, known, referenced)
+                digest = sha256_digest(
+                    canonical_json_bytes(
+                        {
+                            "targets": [asdict(c) for c in candidates],
+                            "authority": sorted(
+                                (m.artifact_id, m.row_version, m.sha256) for m in metadata
+                            ),
+                            "references": sorted(referenced),
+                        }
+                    )
+                )
+                if expected_digest is not None and expected_digest != digest:
+                    raise CleanupPreviewChanged("cleanup preview changed")
+                if dry_run:
+                    report = self._report(
+                        dry_run=True,
+                        inspected=len(candidates),
+                        eligible=len(eligible),
+                        removed=0,
+                        quarantined=0,
+                        refused=refused,
+                        reasons=reasons,
+                    )
+                    return (report, digest) if with_digest else report
+                if (
+                    not self.artifacts.journal.supports_writes()
+                    or self.artifacts.journal.transaction_is_active()
+                ):
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE, "cleanup requires an idle writable owner"
+                    )
+                iterator = self._apply_targets(layout, candidates, eligible, refused, reasons)
+                while True:
+                    try:
+                        next(iterator)
+                    except StopIteration as result:
+                        return (result.value, digest) if with_digest else result.value
+                    await asyncio.sleep(0)
+        except UnsafeArtifactLayout as exc:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "Artifact cleanup path chain is unsafe"
+            ) from exc
+
+    def _apply_targets(self, layout, candidates, eligible, refused, reasons):
+        removed = 0
+        quarantined = 0
+        for target in eligible:
+            yield
+            attempt = self._quarantine_one(layout, target)
+            if attempt.status == "authority_preserved":
+                refused += 1
+                reasons.append("global_authority_preserved")
+            elif attempt.status == "target_changed":
+                refused += 1
+                reasons.append("target_changed")
+            elif attempt.status == "target_changed_quarantined":
+                refused += 1
+                if attempt.quarantine is None:
+                    reasons.append("target_changed_quarantined")
+                    continue
+                restoration = self._restore_one(
+                    layout,
+                    attempt.quarantine,
+                    require_original_inode=False,
+                )
+                if restoration.status == "authority_preserved":
+                    reasons.append("global_authority_preserved")
+                    reasons.append("target_changed_quarantined")
+                elif restoration.status == "restored_retained":
+                    reasons.append("target_changed")
+                    reasons.append("quarantine_retained")
+                else:
+                    reasons.append("target_changed_quarantined")
+            elif attempt.status != "quarantined" or attempt.quarantine is None:
+                refused += 1
+                reasons.append("unsafe_target_refused")
+            else:
+                quarantined += 1
+                reasons.append("quarantine_retained")
+        return self._report(
+            dry_run=False,
+            inspected=len(candidates),
+            eligible=len(eligible),
+            removed=removed,
+            quarantined=quarantined,
+            refused=refused,
+            reasons=reasons,
+        )
 
     def _quarantine_one(
         self, layout: TrustedArtifactLayout, target: CleanupCandidate

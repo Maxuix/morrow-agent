@@ -15,6 +15,7 @@ from morrow.core.models import (
     WorkspaceIdentity,
     WorkspaceIndexEntry,
     WorkspaceResolution,
+    utc_now,
 )
 from morrow.core.ports import IdSource, WorkspaceIndexStore
 from morrow.core.store import (
@@ -62,12 +63,6 @@ class DataRoot:
     @property
     def config_path(self) -> Path:
         return self.root / "config.yaml"
-
-    @property
-    def extensions_path(self) -> Path:
-        """Global Extension YAML path, kept separate from Preferences/Profile state."""
-
-        return self.root / "extensions.yaml"
 
     @property
     def index_path(self) -> Path:
@@ -209,9 +204,13 @@ class WorkspaceService:
         entries,
         *,
         exclude_workspace_id: str | None = None,
+        include_removed: bool = False,
     ) -> WorkspaceIndexEntry | None:
+        def active(entry) -> bool:
+            return include_removed or not entry.removed
+
         for entry in entries.workspaces.values():
-            if entry.workspace_id == exclude_workspace_id:
+            if entry.workspace_id == exclude_workspace_id or not active(entry):
                 continue
             registered = Path(entry.path)
             if registered.exists() and _same_existing_path(path, registered):
@@ -225,7 +224,7 @@ class WorkspaceService:
                 return entry
         if git_root:
             for entry in entries.workspaces.values():
-                if entry.workspace_id == exclude_workspace_id:
+                if entry.workspace_id == exclude_workspace_id or not active(entry):
                     continue
                 registered = Path(entry.path)
                 if registered.exists() and _same_existing_path(git_root, registered):
@@ -236,7 +235,7 @@ class WorkspaceService:
         current = path
         while current != current.parent:
             for entry in entries.workspaces.values():
-                if entry.workspace_id == exclude_workspace_id:
+                if entry.workspace_id == exclude_workspace_id or not active(entry):
                     continue
                 registered = Path(entry.path)
                 if registered.exists() and _same_existing_path(current, registered):
@@ -244,12 +243,12 @@ class WorkspaceService:
             current = current.parent
         return None
 
-    def get(self, workspace_id: str) -> WorkspaceIdentity | None:
+    def get(self, workspace_id: str, *, include_removed: bool = False) -> WorkspaceIdentity | None:
         """Look up one registered workspace identity by exact ID."""
 
         entries = self._entries()
         entry = entries.workspaces.get(workspace_id)
-        if entry is None:
+        if entry is None or (entry.removed and not include_removed):
             return None
         return WorkspaceIdentity(
             workspace_id=entry.workspace_id,
@@ -258,11 +257,11 @@ class WorkspaceService:
             git_root=entry.git_root,
         )
 
-    def resolve(self, path: Path) -> WorkspaceResolution:
+    def resolve(self, path: Path, *, include_removed: bool = False) -> WorkspaceResolution:
         normalized = self.normalize_path(path)
         git_root = self.git_root(normalized)
         entries = self._entries()
-        entry = self._find_entry(normalized, git_root, entries)
+        entry = self._find_entry(normalized, git_root, entries, include_removed=include_removed)
         if entry:
             return WorkspaceResolution(
                 status="existing",
@@ -276,7 +275,8 @@ class WorkspaceService:
         stale_similar = [
             item.workspace_id
             for item in entries.workspaces.values()
-            if not Path(item.path).exists()
+            if (include_removed or not item.removed)
+            and not Path(item.path).exists()
             and item.display_name.casefold() == _safe_display_name(normalized).casefold()
         ]
         return WorkspaceResolution(
@@ -290,9 +290,15 @@ class WorkspaceService:
         )
 
     def confirm(
-        self, resolution: WorkspaceResolution, *, display_name: str | None = None
+        self,
+        resolution: WorkspaceResolution,
+        *,
+        display_name: str | None = None,
+        validate_path=None,
     ) -> WorkspaceIdentity:
         if resolution.status == "existing" and resolution.identity:
+            if validate_path is not None:
+                validate_path(Path(resolution.identity.path))
             return resolution.identity
         if not resolution.candidate:
             raise WorkspaceError("无可确认的工作空间候选")
@@ -301,9 +307,23 @@ class WorkspaceService:
         def claim(current):
             normalized = self.normalize_path(Path(candidate.path))
             git_root = self.git_root(normalized)
-            existing = self._find_entry(normalized, git_root, current)
+            if validate_path is not None:
+                validate_path(git_root or normalized)
+            existing = self._find_entry(normalized, git_root, current, include_removed=True)
             if existing:
-                return None, existing
+                if not existing.removed:
+                    return None, existing
+                # Reopening a removed workspace revives it in place instead of
+                # registering a duplicate identity for the same path.
+                revived = existing.model_copy(update={"removed": False, "last_used_at": utc_now()})
+                return (
+                    current.model_copy(
+                        update={
+                            "workspaces": {**current.workspaces, existing.workspace_id: revived}
+                        }
+                    ),
+                    revived,
+                )
             canonical_path = git_root or normalized
             workspace_id = self.id_source.new_id("ws")
             entry = WorkspaceIndexEntry(
@@ -329,10 +349,21 @@ class WorkspaceService:
             git_root=entry.git_root,
         )
 
-    def relink(self, workspace_id: str, path: Path) -> WorkspaceIdentity:
+    def relink(
+        self,
+        workspace_id: str,
+        path: Path,
+        *,
+        expected_revision: int | None = None,
+        validate_path=None,
+    ) -> WorkspaceIdentity:
         def move(current):
+            if expected_revision is not None and current.revision != expected_revision:
+                raise WorkspaceError("Workspace list changed; refresh and retry")
             normalized = self.normalize_path(path)
             git_root = self.git_root(normalized)
+            if validate_path is not None:
+                validate_path(git_root or normalized)
             target = current.workspaces.get(workspace_id)
             if not target:
                 raise WorkspaceError(f"未知工作空间: {workspace_id}")
@@ -341,6 +372,7 @@ class WorkspaceService:
                 git_root,
                 current,
                 exclude_workspace_id=workspace_id,
+                include_removed=True,
             )
             if owner:
                 raise WorkspaceError("目标路径已经属于另一个工作空间")
@@ -366,4 +398,65 @@ class WorkspaceService:
             path=updated.path,
             display_name=updated.display_name,
             git_root=updated.git_root,
+        )
+
+    def listing(self) -> dict:
+        index = self._entries()
+        entries = sorted(
+            (entry for entry in index.workspaces.values() if not entry.removed),
+            key=lambda entry: entry.last_used_at.isoformat() if entry.last_used_at else "",
+            reverse=True,
+        )
+        return {
+            "revision": index.revision,
+            "items": [
+                {**entry.model_dump(mode="json"), "available": Path(entry.path).is_dir()}
+                for entry in entries
+            ],
+        }
+
+    def update_entry(
+        self,
+        workspace_id: str,
+        *,
+        expected_revision: int | None = None,
+        display_name: str | None = None,
+        removed: bool | None = None,
+        touch: bool = False,
+    ) -> WorkspaceIdentity:
+        if display_name is not None:
+            display_name = display_name.strip()
+            if (
+                not display_name
+                or len(display_name) > 120
+                or any(ord(c) < 32 for c in display_name)
+            ):
+                raise WorkspaceError("Workspace name must contain 1–120 printable characters")
+
+        def change(current):
+            if expected_revision is not None and current.revision != expected_revision:
+                raise WorkspaceError("Workspace list changed; refresh and retry")
+            entry = current.workspaces.get(workspace_id)
+            if entry is None:
+                raise WorkspaceError("Unknown workspace")
+            changes = {}
+            if display_name is not None:
+                changes["display_name"] = display_name
+            if removed is not None:
+                changes["removed"] = removed
+            if touch:
+                changes["last_used_at"] = utc_now()
+            updated = entry.model_copy(update=changes)
+            return current.model_copy(
+                update={"workspaces": {**current.workspaces, workspace_id: updated}}
+            ), updated
+
+        result, entry = self.index_store.transact(change)
+        if result.status.value != "ok" or entry is None:
+            raise WorkspaceError("Workspace update failed; refresh and retry")
+        return WorkspaceIdentity(
+            workspace_id=entry.workspace_id,
+            path=entry.path,
+            display_name=entry.display_name,
+            git_root=entry.git_root,
         )

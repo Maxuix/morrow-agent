@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NodeViewWire, WorkflowStatus } from '../../api/types'
-import { buildGraphLayout, isDirectRun, parseRevision } from './graph'
+import { buildGraphLayout, isDirectRun, layeredPositions, parseRevision } from './graph'
 
 function revisionDump(nodes: unknown[], edges: unknown[] = []): Record<string, unknown> {
   return { name: 'test-workflow', nodes, edges }
@@ -125,5 +125,45 @@ describe('buildGraphLayout', () => {
     const a = layout.nodes.find((node) => node.id === 'a')
     expect(a?.data.approval_pending).toBe(true)
     expect(a?.data.attempt).toBe(3)
+  })
+
+  it('marks nodes without run state as `planned` when asked (plan review)', () => {
+    const layout = buildGraphLayout(diamond, [], { unexecutedStatus: 'planned' })
+    for (const node of layout.nodes) expect(node.data.status).toBe('planned')
+    // Run views keep the queued default: a revision node without a NodeRun is queued.
+    expect(buildGraphLayout(diamond, []).nodes.every((node) => node.data.status === 'queued')).toBe(true)
+  })
+})
+
+describe('layeredPositions', () => {
+  const diamondEdges = [
+    { from_node_id: 'a', to_node_id: 'b' },
+    { from_node_id: 'a', to_node_id: 'c' },
+    { from_node_id: 'b', to_node_id: 'd' },
+    { from_node_id: 'c', to_node_id: 'd' },
+  ]
+
+  it('layers the diamond by longest dependency depth, rows ordered by node_id', () => {
+    const positions = layeredPositions(['a', 'b', 'c', 'd'], diamondEdges)
+    expect(positions.get('a')).toEqual({ layer: 0, row: 0 })
+    expect(positions.get('b')).toEqual({ layer: 1, row: 0 })
+    expect(positions.get('c')).toEqual({ layer: 1, row: 1 })
+    expect(positions.get('d')).toEqual({ layer: 2, row: 0 })
+  })
+
+  it('ignores edges referencing missing endpoints and keeps cycle members at layer 0', () => {
+    const positions = layeredPositions(['x', 'y'], [
+      { from_node_id: 'x', to_node_id: 'ghost' },
+      { from_node_id: 'x', to_node_id: 'y' },
+      { from_node_id: 'y', to_node_id: 'x' }, // cycle
+    ])
+    expect(positions.get('x')).toEqual({ layer: 0, row: 0 })
+    expect(positions.get('y')).toEqual({ layer: 0, row: 1 })
+  })
+
+  it('does not move nodes when only their labels change (topology is the input)', () => {
+    const before = layeredPositions(['a', 'b', 'c', 'd'], diamondEdges)
+    const after = layeredPositions(['a', 'b', 'c', 'd'], diamondEdges)
+    expect([...before.entries()]).toEqual([...after.entries()])
   })
 })

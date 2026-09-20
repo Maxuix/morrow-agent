@@ -34,6 +34,12 @@ async def test_complete_line_is_visible_before_provider_completes_and_is_not_rep
     loop = AgentLoop(provider, ModelRef(provider_id="p", model_id="m"), make_context_builder())
     stream = loop.run_task(session, "go")
     assert (await anext(stream)).type == "turn.started"
+    awaiting = await anext(stream)
+    assert awaiting.type == "status.changed" and awaiting.payload["status"] == "awaiting_model"
+    responding = await anext(stream)
+    assert (
+        responding.type == "status.changed" and responding.payload["status"] == "model_responding"
+    )
     first = await anext(stream)
     assert first.type == "text.delta" and first.payload["text"] == "first line\n"
     assert first.payload["attempt_ordinal"] == 1

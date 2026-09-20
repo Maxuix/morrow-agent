@@ -10,6 +10,7 @@ from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.application.configuration import (
     ConfigurationChangeStatus,
     ConfigurationCommand,
+    ProfileSaveStatus,
     UpdateConfigurationArguments,
     make_configuration_tool,
 )
@@ -299,6 +300,83 @@ def test_reset_preserves_tombstone_and_session_projections(tmp_path):
     )
     assert unchanged.status == ConfigurationChangeStatus.UNCHANGED
     assert unchanged.revision == profile_reset.revision
+
+
+def test_profile_save_publishes_one_snapshot_and_reaches_the_next_context(tmp_path):
+    app, identity, session, service = _products(tmp_path)
+    candidate = Profile(
+        name="Morrow",
+        summary="当前工程的简要描述",
+        tech_stack=["Python 3.12", "React 19"],
+        goals=["统一入口"],
+        constraints=["不得写入凭据"],
+        conventions=["Ruff line-length 100"],
+    )
+
+    result = service.save_profile(candidate, expected_revision=0, operation_id="cmd_save_1")
+
+    assert result.model_dump(mode="json") == {
+        "status": ProfileSaveStatus.APPLIED,
+        "scope": "workspace",
+        "target": "profile",
+        "revision": 1,
+    }
+    stored = app.project_store.load_profile(identity.workspace_id)
+    assert stored.revision == 1
+    assert stored.presence is StatePresence.PRESENT
+    assert stored.value.profile == candidate
+    assert session.profile == candidate
+    assert session.profile_revision == 1
+    state = "\n".join(
+        message.content
+        for message in make_context_builder().build(session, purpose="structured").messages
+    )
+    assert "Morrow" in state
+    assert "Ruff line-length 100" in state
+
+    unchanged = service.save_profile(candidate, expected_revision=1, operation_id="cmd_save_2")
+
+    assert unchanged.status is ProfileSaveStatus.UNCHANGED
+    assert unchanged.revision == 1
+    assert app.project_store.load_profile(identity.workspace_id).revision == 1
+
+
+def test_profile_save_conflict_validation_and_failed_publication_change_nothing(
+    tmp_path, monkeypatch
+):
+    app, identity, session, service = _products(tmp_path, profile=Profile(name="demo"))
+    candidate = Profile(name="Morrow", tech_stack=["Ruff"])
+
+    with pytest.raises(ConfigurationConflictError):
+        service.save_profile(candidate, expected_revision=7, operation_id="cmd_stale")
+    assert app.project_store.load_profile(identity.workspace_id).value.profile == Profile(
+        name="demo"
+    )
+
+    for invalid in (
+        Profile(name="   "),
+        Profile(name="x" * 2049),
+        Profile(name="Morrow", goals=["先给结论", " 先给结论 "]),
+        Profile(name="Morrow", tech_stack=["y" * 513]),
+        Profile(name="Morrow", summary="api_key: sk-abcdefghijklmnopqrstuvwx"),
+    ):
+        with pytest.raises(ConfigurationValidationError):
+            service.save_profile(invalid, expected_revision=1, operation_id="cmd_invalid")
+    assert app.project_store.load_profile(identity.workspace_id).revision == 1
+
+    monkeypatch.setattr(
+        app.project_store,
+        "write_profile",
+        lambda *args, **kwargs: StateWriteResult(status=StateWriteStatus.FAILED),
+    )
+    with pytest.raises(ConfigurationStateError):
+        service.save_profile(candidate, expected_revision=1, operation_id="cmd_fail")
+    monkeypatch.undo()
+
+    stored = app.project_store.load_profile(identity.workspace_id)
+    assert stored.revision == 1
+    assert stored.value.profile == Profile(name="demo")
+    assert session.profile == Profile(name="demo")
 
 
 def test_preflight_has_no_write_and_rejects_missing_or_read_only_state(tmp_path):

@@ -13,7 +13,6 @@ from morrow.core.domain import (
     DurableSession,
     DurableTaskRun,
     DurableTaskRunTransition,
-    TaskCommandDisposition,
     TaskCommandReceipt,
     TaskOutcome,
     TaskOutcomeEvidenceKind,
@@ -40,10 +39,6 @@ _TRANSITION_COLUMNS = (
 _OUTCOME_COLUMNS = (
     "outcome_id, workspace_id, session_id, task_run_id, version, trigger, task_status, "
     "payload_json, payload_bytes, created_at_unix, artifact_refs_json"
-)
-_RECEIPT_COLUMNS = (
-    "command_id, workspace_id, session_id, task_run_id, operation, request_digest, "
-    "disposition, result_task_run_id, outcome_id, task_status, row_version, created_at_unix"
 )
 
 
@@ -510,16 +505,13 @@ class SqliteTaskJournal:
 
     def get_command_receipt(self, workspace_id: str, command_id: str) -> TaskCommandReceipt | None:
         row = self.backend.read_one(
-            f"SELECT {_RECEIPT_COLUMNS} FROM task_command_receipts WHERE command_id = ?",
-            (command_id,),
+            "SELECT payload_json FROM command_receipts "
+            "WHERE receipt_kind='task_command' AND workspace_id=? AND receipt_key=?",
+            (workspace_id, command_id),
         )
         if row is None:
             return None
         receipt = _receipt_from_row(row)
-        if receipt.workspace_id != workspace_id:
-            raise StorageError(
-                StorageErrorCode.UNAVAILABLE, "operational task command is outside the workspace"
-            )
         return receipt
 
     def put_command_receipt(
@@ -562,19 +554,17 @@ class SqliteTaskJournal:
                         StorageErrorCode.UNAVAILABLE, "operational task command outcome is invalid"
                     )
             self.backend.executor().execute(
-                f"INSERT INTO task_command_receipts({_RECEIPT_COLUMNS}) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO command_receipts(receipt_kind,workspace_id,session_id,receipt_key,"
+                "command_id,request_digest,payload_json,revision,created_at_unix) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    receipt.command_id,
+                    "task_command",
                     receipt.workspace_id,
                     receipt.session_id,
-                    receipt.task_run_id,
-                    receipt.operation,
+                    receipt.command_id,
+                    receipt.command_id,
                     receipt.request_digest,
-                    receipt.disposition.value,
-                    receipt.result_task_run_id,
-                    receipt.outcome_id,
-                    receipt.task_status.value if receipt.task_status is not None else None,
+                    receipt.model_dump_json(),
                     receipt.row_version,
                     _unix(receipt.created_at),
                 ),
@@ -710,17 +700,9 @@ def _artifact_refs_from_raw(raw: object) -> tuple[ArtifactReference, ...]:
 
 
 def _receipt_from_row(row: tuple[object, ...]) -> TaskCommandReceipt:
-    return TaskCommandReceipt(
-        command_id=str(row[0]),
-        workspace_id=str(row[1]),
-        session_id=str(row[2]),
-        task_run_id=str(row[3]) if row[3] is not None else None,
-        operation=str(row[4]),
-        request_digest=str(row[5]),
-        disposition=TaskCommandDisposition(str(row[6])),
-        result_task_run_id=str(row[7]) if row[7] is not None else None,
-        outcome_id=str(row[8]) if row[8] is not None else None,
-        task_status=TaskRunStatus(str(row[9])) if row[9] is not None else None,
-        row_version=int(row[10]) if row[10] is not None else None,
-        created_at=_from_unix(row[11]),
-    )
+    try:
+        return TaskCommandReceipt.model_validate_json(str(row[0]))
+    except (TypeError, ValueError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "operational task command receipt is invalid"
+        ) from exc

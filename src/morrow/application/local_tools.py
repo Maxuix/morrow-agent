@@ -36,6 +36,7 @@ from morrow.core.models import ToolEffect
 from morrow.core.store import StorageError
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.tool_arguments import SCHEMA_DIALECT
+from morrow.runtime.tool_output import current_output_listener
 from morrow.runtime.tools import (
     ApprovalPreviewBudget,
     RegisteredTool,
@@ -733,6 +734,7 @@ def make_bash_tool(process: ProcessExecutionService) -> RegisteredTool:
                 approval_verdict=context.approval_verdict,
                 truncation_max_bytes=context.truncation_max_bytes,
                 truncation_max_lines=context.truncation_max_lines,
+                output_listener=current_output_listener(),
             )
         except ProcessServiceError as exc:
             raise _tool_error(exc) from exc

@@ -58,6 +58,9 @@ APPROVAL_PREVIEW_LINE_LIMIT = 200
 APPROVAL_PREVIEW_LINES_LIMIT = 8
 EXPECTED_SHAPE_LIMIT = 128
 _EXPECTED_SHAPE_PATTERN = re.compile(r"^[A-Za-z0-9_.:,-]{1,128}$")
+REASON_LIMIT = 64
+_REASON_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_DIAGNOSTIC_PATH_PATTERN = re.compile(r"^[A-Za-z0-9_$.\[\]-]{1,128}$")
 
 
 def policy_denial_message(tool_name: str, reason_codes=()) -> str:
@@ -164,6 +167,7 @@ def tool_error_envelope(
     *,
     details: list[dict[str, str]] | None = None,
     expected: str | None = None,
+    reason: str | None = None,
 ) -> str:
     bounded = " ".join(str(message).split())[:ENVELOPE_MESSAGE_LIMIT]
     error: dict = {"code": code.value, "message": bounded}
@@ -175,6 +179,8 @@ def tool_error_envelope(
         and _EXPECTED_SHAPE_PATTERN.fullmatch(expected) is not None
     ):
         error["expected"] = expected
+    if isinstance(reason, str) and _REASON_PATTERN.fullmatch(reason) is not None:
+        error["reason"] = reason
     return _dump({"ok": False, "error": error})
 
 
@@ -694,6 +700,10 @@ class ToolExecutionOutcome:
     artifact_refs: tuple[ArtifactReference, ...] = ()
     mcp_result_artifact_refs: tuple[ArtifactReference, ...] = ()
     artifact_content: bytes | None = field(default=None, repr=False, compare=False)
+    # Stable argument-validation evidence for loop diagnostics (reason/path
+    # only; never raw argument values). Present on validation-class failures.
+    validation_reason: str | None = field(default=None, repr=False, compare=False)
+    validation_path: str | None = field(default=None, repr=False, compare=False)
 
 
 class ToolExecutor:
@@ -798,6 +808,7 @@ class ToolExecutor:
                 limit=limit,
                 details=list(exc.details[: self.run_policy.max_validation_errors]),
                 expected=exc.expected,
+                reason=exc.code,
             )
         except Exception:
             return self._error(
@@ -1206,18 +1217,33 @@ class ToolExecutor:
         expected: str | None = None,
         disposition: ToolExecutionDisposition | None = None,
         facts: tuple[ToolFact, ...] = (),
+        reason: str | None = None,
     ) -> ToolExecutionOutcome:
-        envelope = tool_error_envelope(code, message, details=details, expected=expected)
+        envelope = tool_error_envelope(
+            code, message, details=details, expected=expected, reason=reason
+        )
         if len(envelope) > limit and details:
-            envelope = tool_error_envelope(code, message, expected=expected)
+            envelope = tool_error_envelope(code, message, expected=expected, reason=reason)
         if len(envelope) > limit and expected:
-            envelope = tool_error_envelope(code, message)
+            envelope = tool_error_envelope(code, message, reason=reason)
         if len(envelope) > limit:
-            envelope = tool_error_envelope(code, "")
+            envelope = tool_error_envelope(code, "", reason=reason)
         if len(envelope) > limit:
             envelope = tool_error_envelope(ToolErrorCode.INTERNAL, "")
         if len(envelope) > limit:
             envelope = _dump({"ok": False})
+        first_path = None
+        if details:
+            candidate = details[0]
+            if isinstance(candidate, dict):
+                candidate_path = candidate.get("path")
+                if isinstance(candidate_path, str) and _DIAGNOSTIC_PATH_PATTERN.fullmatch(
+                    candidate_path
+                ):
+                    first_path = candidate_path
+        bounded_reason = (
+            reason if isinstance(reason, str) and _REASON_PATTERN.fullmatch(reason) else None
+        )
         return ToolExecutionOutcome(
             call_id=call.id,
             name=call.name,
@@ -1226,6 +1252,8 @@ class ToolExecutor:
             error_code=code,
             facts=facts,
             disposition=disposition,
+            validation_reason=bounded_reason,
+            validation_path=first_path,
         )
 
 

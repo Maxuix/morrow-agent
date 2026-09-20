@@ -190,7 +190,6 @@ def test_mcp_journal_round_trip_and_v16_tables(tmp_path: Path) -> None:
     assert {row[0] for row in tables} == {
         "mcp_catalog_revisions",
         "mcp_catalog_tools",
-        "mcp_result_artifact_links",
         "mcp_run_launch_snapshots",
         "mcp_run_tool_snapshots",
         "mcp_servers",

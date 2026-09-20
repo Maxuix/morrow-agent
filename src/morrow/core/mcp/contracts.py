@@ -490,8 +490,8 @@ class McpLaunchSnapshot(ProtocolModel):
     server_id: str
     config_revision: int = Field(ge=1)
     config_digest: str
-    catalog_revision: int | None = Field(default=None, ge=1)
-    catalog_digest: str | None = None
+    catalog_revision: int = Field(ge=1)
+    catalog_digest: str
     transport: McpTransport = McpTransport.STDIO
     argv_digest: str
     executable_digest: str
@@ -501,9 +501,7 @@ class McpLaunchSnapshot(ProtocolModel):
     credential_risk: bool = False
     outside_workspace_risk: bool = False
     allowlisted_remote_tools: tuple[str, ...] = ()
-    # Optional keeps v16 rows written before the runtime bridge decodable. New
-    # prepared runs always populate it and fail closed when it is absent.
-    toolset_digest: str | None = None
+    toolset_digest: str
     created_at: datetime = Field(default_factory=utc_now)
 
     @field_validator(
@@ -526,8 +524,8 @@ class McpLaunchSnapshot(ProtocolModel):
         "executable_digest",
     )
     @classmethod
-    def valid_snapshot_digest(cls, value: str | None) -> str | None:
-        if value is not None and not MCP_DIGEST_PATTERN.fullmatch(value):
+    def valid_snapshot_digest(cls, value: str) -> str:
+        if not MCP_DIGEST_PATTERN.fullmatch(value):
             raise ValueError("MCP launch snapshot digest is invalid")
         return value
 

@@ -101,23 +101,7 @@ _REQUEST_COLUMNS = (
     "estimated_context_tokens, context_window_tokens, reserve_tokens, keep_recent_tokens, "
     "accounting_basis, compaction_required"
 )
-_METRICS_COLUMNS = (
-    "agent_run_id, workspace_id, finish_reason, stop_code, model_attempts, retry_count, "
-    "tool_rounds, tool_calls, max_estimated_request_chars, request_char_budget, "
-    "cleared_cycle_count, dropped_turn_count, dropped_cycle_count, dropped_record_count, "
-    "usage_availability, input_tokens, output_tokens, total_tokens, cost_availability, "
-    "cost_amount_minor, cost_currency, cost_source, tool_terminal_counts_json, "
-    "validation_outcome, completion_outcome, completion_basis, completion_reason_code, "
-    "finalized_at_unix, policy_schema_version, max_context_tokens, last_context_tokens, "
-    "context_window_tokens, reserve_tokens, keep_recent_tokens, accounting_basis, "
-    "compaction_count, overflow_recovery_count"
-)
 _REQUEST_VALUE_COUNT = 35
-_METRICS_VALUE_COUNT = 37
-_RETRY_COLUMNS = (
-    "agent_run_id, workspace_id, consecutive_model_retries, total_retry_count, "
-    "summary_retry_count, updated_at_unix"
-)
 
 
 class SqliteObservabilityJournal:
@@ -152,7 +136,7 @@ class SqliteObservabilityJournal:
         tool_calls: int = 0,
         purpose: ModelRequestPurpose | str = ModelRequestPurpose.AGENT,
         prompt_evidence: PromptProfileEvidence | None = None,
-        policy_schema_version: int | None = None,
+        policy_schema_version: int = 2,
         estimated_context_tokens: int | None = None,
         context_window_tokens: int | None = None,
         reserve_tokens: int | None = None,
@@ -209,7 +193,11 @@ class SqliteObservabilityJournal:
             cap = run.snapshot.max_agent_generation_requests
             if cap is not None and candidate.purpose is ModelRequestPurpose.AGENT:
                 count = self.backend.read_one(
-                    "SELECT COUNT(*) FROM agent_run_model_requests WHERE agent_run_id=? AND purpose='agent'",
+                    "WITH RECURSIVE lineage(id) AS (SELECT ? UNION "
+                    "SELECT r.resume_of_agent_run_id FROM agent_runs r JOIN lineage l "
+                    "ON r.agent_run_id=l.id WHERE r.resume_of_agent_run_id IS NOT NULL) "
+                    "SELECT COUNT(*) FROM agent_run_model_requests WHERE agent_run_id IN "
+                    "(SELECT id FROM lineage) AND purpose='agent'",
                     (agent_run_id,),
                 )[0]
                 if count >= cap:
@@ -221,16 +209,14 @@ class SqliteObservabilityJournal:
                 workflow_row = self.backend.read_one(
                     "SELECT wr.body_json FROM workflow_runs wr "
                     "JOIN workflow_node_runs n ON n.workflow_run_id=wr.workflow_run_id "
-                    "JOIN workflow_agent_run_refs w ON w.node_run_id=n.node_run_id "
-                    "WHERE w.agent_run_id=?",
+                    "WHERE n.agent_run_id=?",
                     (agent_run_id,),
                 )
                 if workflow_row is not None:
                     workflow = WorkflowRun.model_validate_json(workflow_row[0])
                     lineage_count = self.backend.read_one(
                         "SELECT COUNT(*) FROM agent_run_model_requests r "
-                        "JOIN workflow_agent_run_refs w ON r.agent_run_id=w.agent_run_id "
-                        "JOIN workflow_node_runs n ON w.node_run_id=n.node_run_id "
+                        "JOIN workflow_node_runs n ON r.agent_run_id=n.agent_run_id "
                         "JOIN workflow_runs wr ON n.workflow_run_id=wr.workflow_run_id "
                         "WHERE wr.lineage_budget_root_run_id=? AND r.purpose='agent'",
                         (workflow.effective_lineage_budget_root_run_id,),
@@ -373,7 +359,7 @@ class SqliteObservabilityJournal:
         dropped_record_count: int | None = None,
         usage: ModelUsage | None = None,
         cost: ModelCost | None = None,
-        policy_schema_version: int | None = None,
+        policy_schema_version: int = 2,
         max_context_tokens: int | None = None,
         last_context_tokens: int | None = None,
         context_window_tokens: int | None = None,
@@ -399,7 +385,10 @@ class SqliteObservabilityJournal:
             selected_finish_reason
             in (FinishReason.STOP, FinishReason.STEERED, FinishReason.CANCELLED)
             and selected_stop_code is not None
-        ) or (selected_finish_reason is FinishReason.ERROR and selected_stop_code is None):
+        ) or (
+            selected_finish_reason in (FinishReason.ERROR, FinishReason.INTERRUPTED)
+            and selected_stop_code is None
+        ):
             raise StorageError(
                 StorageErrorCode.UNAVAILABLE,
                 "AgentRun terminal metrics finish facts are inconsistent",
@@ -492,8 +481,9 @@ class SqliteObservabilityJournal:
                     "AgentRun terminal metrics were already finalized differently",
                 )
             self.backend.executor().execute(
-                f"INSERT INTO agent_run_terminal_metrics({_METRICS_COLUMNS}) VALUES ({', '.join('?' for _ in range(_METRICS_VALUE_COUNT))})",
-                self._metrics_values(candidate),
+                "UPDATE agent_runs SET terminal_metrics_json=? "
+                "WHERE agent_run_id=? AND terminal_metrics_json IS NULL",
+                (candidate.model_dump_json(), agent_run_id),
             )
             stored = self._metrics_for_run(workspace_id, agent_run_id)
             if stored is None:
@@ -555,11 +545,11 @@ class SqliteObservabilityJournal:
         self, workspace_id: str, agent_run_id: str
     ) -> AgentRunRetryProgress | None:
         row = self.backend.read_one(
-            f"SELECT {_RETRY_COLUMNS} FROM agent_run_retry_progress "
-            "WHERE workspace_id = ? AND agent_run_id = ?",
+            "SELECT retry_progress_json FROM agent_runs r JOIN sessions s ON s.session_id=r.session_id "
+            "WHERE s.workspace_id = ? AND r.agent_run_id = ?",
             (workspace_id, agent_run_id),
         )
-        return _retry_progress_from_row(row) if row is not None else None
+        return _retry_progress_from_json(row[0]) if row is not None and row[0] is not None else None
 
     def record_retry_progress(
         self,
@@ -599,29 +589,13 @@ class SqliteObservabilityJournal:
                 ):
                     return current
                 self.backend.executor().execute(
-                    "UPDATE agent_run_retry_progress SET consecutive_model_retries = ?, "
-                    "total_retry_count = ?, summary_retry_count = ?, updated_at_unix = ? "
-                    "WHERE workspace_id = ? AND agent_run_id = ?",
-                    (
-                        candidate.consecutive_model_retries,
-                        candidate.total_retry_count,
-                        candidate.summary_retry_count,
-                        _unix(candidate.updated_at),
-                        workspace_id,
-                        agent_run_id,
-                    ),
+                    "UPDATE agent_runs SET retry_progress_json=? WHERE agent_run_id=?",
+                    (candidate.model_dump_json(), agent_run_id),
                 )
             else:
                 self.backend.executor().execute(
-                    f"INSERT INTO agent_run_retry_progress({_RETRY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)",
-                    (
-                        candidate.agent_run_id,
-                        candidate.workspace_id,
-                        candidate.consecutive_model_retries,
-                        candidate.total_retry_count,
-                        candidate.summary_retry_count,
-                        _unix(candidate.updated_at),
-                    ),
+                    "UPDATE agent_runs SET retry_progress_json=? WHERE agent_run_id=?",
+                    (candidate.model_dump_json(), agent_run_id),
                 )
             stored = self.get_retry_progress(workspace_id, agent_run_id)
             if stored is None:
@@ -719,11 +693,11 @@ class SqliteObservabilityJournal:
         self, workspace_id: str, agent_run_id: str
     ) -> AgentRunTerminalMetrics | None:
         row = self.backend.read_one(
-            f"SELECT {_METRICS_COLUMNS} FROM agent_run_terminal_metrics "
-            "WHERE workspace_id = ? AND agent_run_id = ?",
+            "SELECT r.terminal_metrics_json FROM agent_runs r JOIN sessions s ON s.session_id=r.session_id "
+            "WHERE s.workspace_id = ? AND r.agent_run_id = ?",
             (workspace_id, agent_run_id),
         )
-        if row is None:
+        if row is None or row[0] is None:
             return None
         run = self.get_agent_run(workspace_id, agent_run_id)
         if run is None:
@@ -731,7 +705,9 @@ class SqliteObservabilityJournal:
                 StorageErrorCode.NEEDS_REPAIR,
                 "AgentRun terminal observation subject is not safe to read",
             )
-        return _metrics_from_row(row, run=run, task_run_id=self._task_run_id(run))
+        return _metrics_from_json(
+            row[0], workspace_id=workspace_id, run=run, task_run_id=self._task_run_id(run)
+        )
 
     def _tool_executions(self, workspace_id: str, agent_run_id: str) -> tuple:
         if self.list_tool_executions is None:
@@ -746,57 +722,6 @@ class SqliteObservabilityJournal:
             if name in values:
                 values[name] += 1
         return ToolTerminalCounts(**values)
-
-    @staticmethod
-    def _metrics_values(metrics: AgentRunTerminalMetrics) -> tuple[object, ...]:
-        usage = metrics.usage
-        cost = metrics.cost
-        return (
-            metrics.agent_run_id,
-            metrics.workspace_id,
-            metrics.finish_reason.value,
-            metrics.stop_code.value if metrics.stop_code else None,
-            metrics.model_attempts,
-            metrics.retry_count,
-            metrics.tool_rounds,
-            metrics.tool_calls,
-            metrics.max_estimated_request_chars,
-            metrics.request_char_budget,
-            metrics.cleared_cycle_count,
-            metrics.dropped_turn_count,
-            metrics.dropped_cycle_count,
-            metrics.dropped_record_count,
-            usage.availability.value,
-            usage.input_tokens,
-            usage.output_tokens,
-            usage.total_tokens,
-            cost.availability.value,
-            cost.amount_minor,
-            cost.currency,
-            cost.source,
-            json.dumps(
-                metrics.tool_terminal_counts.model_dump(mode="json"),
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            ),
-            metrics.validation_outcome,
-            "not_run",
-            "not_completed",
-            # Reuse the existing nullable reason-code slot to avoid a migration for optional
-            # diagnostics. AgentLoop's observation finalization remains best-effort and fail-open.
-            metrics.stop_detail,
-            _unix(metrics.finalized_at),
-            metrics.policy_schema_version,
-            metrics.max_context_tokens,
-            metrics.last_context_tokens,
-            metrics.context_window_tokens,
-            metrics.reserve_tokens,
-            metrics.keep_recent_tokens,
-            metrics.accounting_basis.value if metrics.accounting_basis else None,
-            metrics.compaction_count,
-            metrics.overflow_recovery_count,
-        )
 
 
 def _usage_from_columns(
@@ -829,17 +754,26 @@ def _cost_from_columns(availability: object, amount_minor, currency, source) -> 
         ) from exc
 
 
-def _retry_progress_from_row(row: tuple[object, ...]) -> AgentRunRetryProgress:
+def _retry_progress_from_json(raw: object) -> AgentRunRetryProgress:
     try:
-        return AgentRunRetryProgress(
-            agent_run_id=str(row[0]),
-            workspace_id=str(row[1]),
-            consecutive_model_retries=int(row[2]),
-            total_retry_count=int(row[3]),
-            summary_retry_count=int(row[4]),
-            updated_at=_from_unix(row[5]),
-        )
-    except (IndexError, TypeError, ValueError) as exc:
+        if not isinstance(raw, str):
+            raise ValueError("retry progress payload must be text")
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise ValueError("retry progress payload must be an object")
+        if "updated_at_unix" in data:
+            value = AgentRunRetryProgress(
+                agent_run_id=str(data["agent_run_id"]),
+                workspace_id=str(data["workspace_id"]),
+                consecutive_model_retries=int(data["consecutive_model_retries"]),
+                total_retry_count=int(data["total_retry_count"]),
+                summary_retry_count=int(data["summary_retry_count"]),
+                updated_at=_from_unix(data["updated_at_unix"]),
+            )
+        else:
+            value = AgentRunRetryProgress.model_validate_json(raw)
+        return value
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise StorageError(
             StorageErrorCode.NEEDS_REPAIR, "AgentRun retry progress is not safe to read"
         ) from exc
@@ -869,7 +803,7 @@ def _request_from_row(row: tuple[object, ...]) -> ModelRequestObservation:
             cost=_cost_from_columns(row[21], row[22], row[23], row[24]),
             purpose=ModelRequestPurpose(str(row[25])),
             prompt_evidence=_optional_model(row[26], PromptProfileEvidence),
-            policy_schema_version=int(row[28]) if row[28] is not None else None,
+            policy_schema_version=int(row[28]),
             estimated_context_tokens=int(row[29]) if row[29] is not None else None,
             context_window_tokens=int(row[30]) if row[30] is not None else None,
             reserve_tokens=int(row[31]) if row[31] is not None else None,
@@ -925,7 +859,7 @@ def _metrics_from_row(
             tool_terminal_counts=counts,
             validation_outcome=str(row[23]),
             finalized_at=_from_unix(row[27]),
-            policy_schema_version=int(row[28]) if row[28] is not None else None,
+            policy_schema_version=int(row[28]),
             max_context_tokens=int(row[29]) if row[29] is not None else None,
             last_context_tokens=int(row[30]) if row[30] is not None else None,
             context_window_tokens=int(row[31]) if row[31] is not None else None,
@@ -938,6 +872,107 @@ def _metrics_from_row(
     except StorageError:
         raise
     except (IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "AgentRun terminal observation is not safe to read"
+        ) from exc
+
+
+def _metrics_from_json(
+    raw: object, *, workspace_id: str, run: DurableAgentRun, task_run_id: str
+) -> AgentRunTerminalMetrics:
+    """Load the compact JSON projection, accepting the v44 migration shape."""
+
+    try:
+        if not isinstance(raw, str):
+            raise ValueError("terminal metrics payload must be text")
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise ValueError("terminal metrics payload must be an object")
+        if "usage" in data and "cost" in data:
+            value = AgentRunTerminalMetrics.model_validate_json(raw)
+            if value.agent_run_id != run.agent_run_id or value.workspace_id != workspace_id:
+                raise ValueError("terminal metrics identity mismatch")
+            return value
+        counts_raw = data.get("tool_terminal_counts_json", "{}")
+        if isinstance(counts_raw, str):
+            counts_raw = json.loads(counts_raw)
+        counts = ToolTerminalCounts.model_validate(counts_raw, strict=True)
+        value = AgentRunTerminalMetrics(
+            agent_run_id=str(data["agent_run_id"]),
+            workspace_id=str(data["workspace_id"]),
+            session_id=run.session_id,
+            task_run_id=task_run_id,
+            turn_id=run.turn_id,
+            finish_reason=FinishReason(str(data["finish_reason"])),
+            stop_code=(AgentStopCode(str(data["stop_code"])) if data.get("stop_code") else None),
+            stop_detail=(
+                str(data["completion_reason_code"])
+                if data.get("completion_reason_code") is not None
+                else None
+            ),
+            model_attempts=int(data["model_attempts"]),
+            retry_count=int(data["retry_count"]),
+            tool_rounds=int(data["tool_rounds"]),
+            tool_calls=int(data["tool_calls"]),
+            max_estimated_request_chars=int(data["max_estimated_request_chars"]),
+            request_char_budget=int(data["request_char_budget"]),
+            cleared_cycle_count=int(data["cleared_cycle_count"]),
+            dropped_turn_count=int(data["dropped_turn_count"]),
+            dropped_cycle_count=int(data["dropped_cycle_count"]),
+            dropped_record_count=int(data["dropped_record_count"]),
+            usage=_usage_from_columns(
+                data["usage_availability"],
+                data.get("input_tokens"),
+                data.get("output_tokens"),
+                data.get("total_tokens"),
+            ),
+            cost=_cost_from_columns(
+                data["cost_availability"],
+                data.get("cost_amount_minor"),
+                data.get("cost_currency"),
+                data.get("cost_source"),
+            ),
+            tool_terminal_counts=counts,
+            validation_outcome=str(data.get("validation_outcome", "not_run")),
+            finalized_at=_from_unix(data["finalized_at_unix"]),
+            policy_schema_version=int(data.get("policy_schema_version", 2)),
+            max_context_tokens=(
+                int(data["max_context_tokens"])
+                if data.get("max_context_tokens") is not None
+                else None
+            ),
+            last_context_tokens=(
+                int(data["last_context_tokens"])
+                if data.get("last_context_tokens") is not None
+                else None
+            ),
+            context_window_tokens=(
+                int(data["context_window_tokens"])
+                if data.get("context_window_tokens") is not None
+                else None
+            ),
+            reserve_tokens=(
+                int(data["reserve_tokens"]) if data.get("reserve_tokens") is not None else None
+            ),
+            keep_recent_tokens=(
+                int(data["keep_recent_tokens"])
+                if data.get("keep_recent_tokens") is not None
+                else None
+            ),
+            accounting_basis=(
+                TokenAccountingBasis(str(data["accounting_basis"]))
+                if data.get("accounting_basis") is not None
+                else None
+            ),
+            compaction_count=int(data.get("compaction_count", 0)),
+            overflow_recovery_count=int(data.get("overflow_recovery_count", 0)),
+        )
+        if value.agent_run_id != run.agent_run_id or value.workspace_id != workspace_id:
+            raise ValueError("terminal metrics identity mismatch")
+        return value
+    except StorageError:
+        raise
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise StorageError(
             StorageErrorCode.NEEDS_REPAIR, "AgentRun terminal observation is not safe to read"
         ) from exc

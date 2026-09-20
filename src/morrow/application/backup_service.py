@@ -17,7 +17,11 @@ import yaml
 from filelock import FileLock, Timeout
 
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
-from morrow.adapters.state.extension_yaml import ExtensionYamlLoadStatus, ExtensionYamlStore
+from morrow.adapters.state.extension_yaml import (
+    EXTENSION_YAML_SCHEMA_VERSION,
+    ExtensionYamlLoadStatus,
+    ExtensionYamlStore,
+)
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
 from morrow.application.agent_definitions.integrity import verify_definition_rows
@@ -384,7 +388,10 @@ class BackupService:
             BackupReference(kind="definition_source", identifier=item.path, target=item.path)
             for item in definition_files
         )
-        schema_versions = {"operational": schema_version, "extension_yaml": 1}
+        schema_versions = {
+            "operational": schema_version,
+            "extension_yaml": EXTENSION_YAML_SCHEMA_VERSION,
+        }
         return BackupManifest(
             schema_version=schema_version,
             schema_versions=schema_versions,
@@ -431,7 +438,11 @@ class BackupService:
         for workspace_id, filename in (
             (ws, filename)
             for ws in self._workspace_ids_from_paths()
-            for filename in ("agent-definitions.yaml", "workflow-definitions.yaml")
+            for filename in (
+                "agent-definitions.yaml",
+                "workflow-definitions.yaml",
+                "agent-preset-preferences.yaml",
+            )
         ):
             relative = f"workspaces/{workspace_id}/{filename}"
             source = root / relative
@@ -481,8 +492,8 @@ class BackupService:
             payload = _parse_safe_yaml(raw)
             schema = _schema_int(payload)
             revision = _revision_int(payload)
-            if schema > _supported_configuration_schema(relative):
-                raise BackupError("configuration schema is newer than this client")
+            if schema != _supported_configuration_schema(relative):
+                raise BackupError("configuration schema is not the current version")
             if relative.endswith("extensions.yaml"):
                 extension_store = ExtensionYamlStore(staging, create=False)
                 destination = staging / relative
@@ -494,7 +505,7 @@ class BackupService:
                 )
                 if load.status is not ExtensionYamlLoadStatus.OK or load.value is None:
                     raise BackupError("Extension YAML is unavailable")
-                schema = load.source_schema_version or schema
+                schema = load.schema_version or schema
                 revision = load.revision
             else:
                 destination = staging / relative
@@ -673,7 +684,7 @@ class BackupService:
                     or _revision_int(payload) != item.revision
                 ):
                     raise ValueError
-                if item.schema_version > _supported_configuration_schema(item.path):
+                if item.schema_version != _supported_configuration_schema(item.path):
                     raise ValueError
                 if item.path.endswith("extensions.yaml"):
                     store = ExtensionYamlStore(root, create=False)
@@ -723,7 +734,8 @@ class BackupService:
                 user_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
                 if (
                     user_version != manifest.schema_version
-                    or user_version > SUPPORTED_SCHEMA_VERSION
+                    or user_version != SUPPORTED_SCHEMA_VERSION
+                    or manifest.schema_version != SUPPORTED_SCHEMA_VERSION
                 ):
                     issues.append("database_schema")
                 if not integrity:
@@ -856,7 +868,7 @@ def _revision_int(payload: dict[str, Any]) -> int:
 
 def _supported_configuration_schema(path: str) -> int:
     if path == "config.yaml":
-        return max(GLOBAL_CONFIG_SCHEMA_VERSION, 2)
+        return GLOBAL_CONFIG_SCHEMA_VERSION
     if path == "workspace-index.yaml":
         return WORKSPACE_INDEX_SCHEMA_VERSION
     if path.endswith("/preferences.yaml"):

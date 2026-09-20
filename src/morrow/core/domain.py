@@ -19,6 +19,7 @@ from morrow.core.agent_runs import AgentDefinitionRef, ProviderRuntimeSnapshot, 
 from morrow.core.models import (
     SECRET_NEEDLES,
     SECRET_TOKEN_PATTERN,
+    AttachmentRef,
     ModelRef,
     Profile,
     ProtocolModel,
@@ -500,7 +501,7 @@ def workflow_secret_spans(text: str) -> tuple[tuple[int, int], ...]:
 
 
 def refuse_preview_secret_material(text: str, *, label: str) -> None:
-    """Historical preview profile, centralized without changing legacy classification."""
+    """Strict preview profile, centralized without changing its classification."""
     if SECRET_TOKEN_PATTERN.search(text) or VALUE_SENSITIVE_SECRET_PATTERN.search(text):
         raise ValueError(f"{label} cannot contain secret material")
 
@@ -614,6 +615,8 @@ class FrozenRunPreference(ProtocolModel):
 class AgentRunSnapshot(ProtocolModel):
     """Immutable non-secret AgentRun evidence. Not a configuration authority."""
 
+    input_attachments: tuple[AttachmentRef, ...] = Field(default=(), max_length=8)
+
     definition_ref: AgentDefinitionRef | None = None
     max_agent_generation_requests: int | None = Field(default=None, gt=0, strict=True)
     conversation_session_id: str | None = Field(default=None, pattern=r"^ses_[A-Za-z0-9_-]+$")
@@ -625,7 +628,7 @@ class AgentRunSnapshot(ProtocolModel):
     tool_schema_digest: str
     permission_profile_digest: str
     runtime_instance_id: str
-    # Reference-only MCP evidence; full launch/tool rows stay in v16 tables.
+    # Reference-only MCP evidence; full launch/tool rows stay in dedicated tables.
     mcp_run_snapshot_ids: tuple[str, ...] = ()
     memory_selection_id: str | None = None
     memory_selection_digest: str | None = None
@@ -637,7 +640,7 @@ class AgentRunSnapshot(ProtocolModel):
     preference_refresh_status: Literal["ok", "degraded"] = "ok"
     preference_refresh_error: str | None = Field(default=None, max_length=128)
     # Skill selection/context are reference-only. Full context remains in the
-    # dedicated v14 rows and is verified when a Run projection is rebuilt.
+    # dedicated rows and is verified when a Run projection is rebuilt.
     skill_selection_ids: tuple[str, ...] = ()
     skill_selection_digest: str | None = None
     skill_context_ids: tuple[str, ...] = ()

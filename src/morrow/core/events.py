@@ -5,7 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from morrow.core.models import AgentEvent, AgentStopCode, FinishReason, utc_now
+from morrow.core.models import (
+    INTERRUPT_STOP_CODES,
+    AgentEvent,
+    AgentStopCode,
+    FinishReason,
+    utc_now,
+)
 
 PUBLIC_EVENT_TYPES = frozenset(
     {"turn.started", "status.changed", "text.delta", "tool.status", "error", "turn.completed"}
@@ -54,6 +60,13 @@ def lifecycle_is_valid(events: list[AgentEvent]) -> bool:
     if completion.payload.get("finish_reason") == FinishReason.ERROR.value:
         if len(errors) != 1 or events[-2] is not errors[0]:
             return False
+    elif completion.payload.get("finish_reason") == FinishReason.INTERRUPTED.value:
+        # A user pause never publishes an error event; the frozen literal pair
+        # (interrupted, user_pause) is part of the public event grammar.
+        if errors:
+            return False
+        if completion.payload.get("stop_code") not in INTERRUPT_STOP_CODES:
+            return False
     elif "stop_code" in completion.payload or errors:
         return False
     if errors and (
@@ -88,8 +101,10 @@ def completion_payload(
 ) -> dict[str, Any]:
     if reason == FinishReason.ERROR and stop_code is None:
         raise ValueError("error completion requires stop_code")
-    if reason != FinishReason.ERROR and stop_code is not None:
-        raise ValueError("only error completion carries stop_code")
+    if reason == FinishReason.INTERRUPTED and stop_code not in INTERRUPT_STOP_CODES:
+        raise ValueError("interrupted completion requires a resumable stop code")
+    if reason not in {FinishReason.ERROR, FinishReason.INTERRUPTED} and stop_code is not None:
+        raise ValueError("only error or interrupted completions carry stop_code")
     payload: dict[str, Any] = {
         "finish_reason": reason.value,
         "text": text,

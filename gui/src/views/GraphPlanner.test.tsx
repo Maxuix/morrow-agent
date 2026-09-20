@@ -21,7 +21,8 @@ describe('GraphPlanner review contract', () => {
     expect(policy.auto_run_mode).toBe('approval_only')
     expect(policy.auto_replan_mode).toBe('approval_only')
     expect(policy.budget_limits).toBeNull()
-    expect(plannerApprovalText('paired_evidence_missing')).toContain('手工运行')
+    expect(plannerApprovalText('approval_only')).toContain('每次确认')
+    expect(plannerApprovalText('user_policy')).toContain('自动运行')
   })
 
   it('renders structured explanation, original-draft label and the evidence gate', () => {
@@ -30,14 +31,14 @@ describe('GraphPlanner review contract', () => {
       features: { task_type: 'research', expected_scope: ['API', 'storage'], number_of_areas: 2, requires_code_write: false, requires_research: true, review_value: 'low', parallelizable_read_work: true, ambiguity: 'low', risk_level: 'low', expected_duration_class: 'short', user_requested_roles: [], user_excluded_roles: [], workspace_constraints: [] },
       brief: null, policy_id: 'research', policy_scope: 'workspace', policy_revision: 2,
       classification: 'model', diagnostics: ['graph_cycle: repaired'],
-      explanation: { mode: 'multi', reasons: ['Independent evidence collection'], starting_point: 'grammar', node_count: 3, writing_nodes: [], models: [{ provider_id: 'configured', model_id: 'model' }], budget, concurrency: 1, auto_run_eligible: false, auto_run_reason: 'paired_evidence_missing' },
+      explanation: { mode: 'multi', reasons: ['Independent evidence collection'], starting_point: 'grammar', node_count: 3, writing_nodes: [], models: [{ provider_id: 'configured', model_id: 'model' }], budget, concurrency: 1, auto_run_eligible: false, auto_run_reason: 'approval_only' },
     }
     const html = renderToStaticMarkup(<PlannerExplanation metadata={metadata} edited />)
     expect(html).toContain('图已编辑')
     expect(html).toContain('无上限')
     expect(html).toContain('configured/model')
     expect(html).toContain('graph_cycle: repaired')
-    expect(html).toContain('对照收益证据')
+    expect(html).toContain('每次确认')
   })
 
   it('submits stable draft/command identity and explicit controls through the authenticated API', async () => {

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import codecs
 import os
 import signal
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -93,8 +95,16 @@ class _HeadCaptureBuffer:
 class HostProcessAdapter:
     """Run one non-interactive command without inheriting the caller's environment."""
 
-    def __init__(self, *, termination_grace_seconds: float = 1.0) -> None:
+    def __init__(
+        self,
+        *,
+        termination_grace_seconds: float = 1.0,
+        drain_timeout_seconds: float = 2.0,
+    ) -> None:
+        if drain_timeout_seconds <= 0:
+            raise ProcessAdapterError("invalid_drain_timeout", "进程输出收尾预算无效")
         self.termination_grace_seconds = termination_grace_seconds
+        self.drain_timeout_seconds = drain_timeout_seconds
 
     async def run(
         self,
@@ -106,9 +116,16 @@ class HostProcessAdapter:
         environment: dict[str, str],
         output_limit: int,
         redaction_overlap: int = 0,
+        output_listener: Callable[[str, str], None] | None = None,
     ) -> ProcessOutput:
         if output_limit < 1:
             raise ProcessAdapterError("invalid_output_limit", "进程输出预算无效")
+        stdout_listener = (
+            (lambda text: output_listener("stdout", text)) if output_listener else None
+        )
+        stderr_listener = (
+            (lambda text: output_listener("stderr", text)) if output_listener else None
+        )
         started = time.monotonic()
         stdout_buffer = _TailBuffer(output_limit, redaction_overlap)
         stderr_buffer = _TailBuffer(output_limit, redaction_overlap)
@@ -132,15 +149,34 @@ class HostProcessAdapter:
             else:
                 process = await asyncio.create_subprocess_exec(*argv, **kwargs)
             readers = (
-                asyncio.create_task(self._drain(process.stdout, stdout_buffer, stdout_capture)),
-                asyncio.create_task(self._drain(process.stderr, stderr_buffer, stderr_capture)),
+                asyncio.create_task(
+                    self._drain(process.stdout, stdout_buffer, stdout_capture, stdout_listener)
+                ),
+                asyncio.create_task(
+                    self._drain(process.stderr, stderr_buffer, stderr_capture, stderr_listener)
+                ),
             )
             try:
-                await asyncio.wait_for(process.wait(), timeout=timeout_seconds)
+                await self._wait_main_exit(process, timeout_seconds)
             except TimeoutError:
                 timed_out = True
                 await self._terminate(process)
-            await asyncio.gather(*readers)
+            # The main process exiting does not mean the process group is
+            # empty: detached grandchildren may still hold the pipes, which
+            # would hang the bounded drain below forever.
+            if self._group_alive(process.pid):
+                await self._terminate(process)
+            try:
+                await asyncio.wait_for(asyncio.gather(*readers), timeout=self.drain_timeout_seconds)
+            except TimeoutError:
+                # A descendant escaped the group and still holds the pipe fd:
+                # kill the group outright, abandon the blocked reads and keep
+                # whatever output was already drained.
+                timed_out = True
+                await self._terminate(process, force=True)
+                for reader in readers:
+                    reader.cancel()
+                await asyncio.gather(*readers, return_exceptions=True)
         except asyncio.CancelledError:
             if process is not None:
                 await asyncio.shield(self._terminate(process))
@@ -203,36 +239,102 @@ class HostProcessAdapter:
         stream,
         buffer: _TailBuffer,
         capture: _HeadCaptureBuffer | None = None,
+        listener: Callable[[str], None] | None = None,
     ) -> None:
+        """Consume one pipe; optionally emit incrementally decoded text (P4.3).
+
+        The observer channel is bounded and non-blocking: decoding is
+        incremental (multibyte-safe), listener failures are swallowed and the
+        existing pipe consumption, timeouts and reaping are untouched.
+        """
         if stream is None:
             return
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         while True:
             chunk = await stream.read(64 * 1024)
             if not chunk:
+                tail = decoder.decode(b"", final=True)
+                if listener is not None:
+                    try:
+                        # Empty fragment signals end-of-stream so downstream
+                        # hold buffers can flush their bounded remainder.
+                        if tail:
+                            listener(tail)
+                        listener("")
+                    except Exception:
+                        pass
                 return
             buffer.add(chunk)
             if capture is not None:
                 capture.add(chunk)
+            if listener is not None:
+                text = decoder.decode(chunk)
+                if text:
+                    try:
+                        listener(text)
+                    except Exception:
+                        pass
 
-    async def _terminate(self, process) -> None:
+    @staticmethod
+    def _group_alive(pgid: int) -> bool:
+        """Probe the process group; members may survive the main process."""
+        if os.name != "posix":
+            return False
+        try:
+            os.killpg(pgid, 0)
+        except ProcessLookupError:
+            return False
+        except OSError:
+            return False
+        return True
+
+    @staticmethod
+    async def _wait_main_exit(process, timeout: float) -> int:
+        """Reap the main process, decoupled from pipe EOF.
+
+        ``asyncio.Process.wait()`` only resolves its waiters once every pipe
+        disconnects, so a grandchild inheriting a pipe fd would stall the wait
+        even though the main process already exited; ``returncode`` is set
+        promptly on actual exit (the child watcher reaps independently).
+        """
         if process.returncode is not None:
-            return
+            return process.returncode
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while process.returncode is None:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise TimeoutError
+            await asyncio.sleep(min(0.01, remaining))
+        return process.returncode
+
+    async def _terminate(self, process, *, force: bool = False) -> None:
+        # The main process may already be reaped while grandchildren in its
+        # process group still run, so never early-exit on returncode: the
+        # killpg probes below report an empty group instead.
         if os.name == "posix":
             try:
-                os.killpg(process.pid, signal.SIGTERM)
+                os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
             except ProcessLookupError:
                 return
             except OSError as exc:
                 raise ProcessAdapterError("cleanup_failed", "宿主进程清理失败") from exc
-        else:
+        elif process.returncode is None and not force:
             try:
                 process.terminate()
             except ProcessLookupError:
                 return
             except OSError as exc:
                 raise ProcessAdapterError("cleanup_failed", "宿主进程清理失败") from exc
+        elif process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                return
+            except OSError as exc:
+                raise ProcessAdapterError("cleanup_failed", "宿主进程清理失败") from exc
         try:
-            await asyncio.wait_for(process.wait(), timeout=self.termination_grace_seconds)
+            await self._wait_main_exit(process, self.termination_grace_seconds)
             return
         except TimeoutError:
             pass
@@ -251,6 +353,6 @@ class HostProcessAdapter:
             except OSError as exc:
                 raise ProcessAdapterError("cleanup_failed", "宿主进程清理失败") from exc
         try:
-            await asyncio.wait_for(process.wait(), timeout=self.termination_grace_seconds)
+            await self._wait_main_exit(process, self.termination_grace_seconds)
         except (TimeoutError, OSError) as exc:
             raise ProcessAdapterError("cleanup_failed", "宿主进程清理未完成") from exc

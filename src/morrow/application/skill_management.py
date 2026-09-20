@@ -23,10 +23,15 @@ class SkillManagementQueries:
             raise ValueError("Skill bindings are unavailable")
         return load.digest
 
-    def catalog(self, scope: str):
+    def catalog(self, scope: str, page=0, identity=None):
         scope_id = self.scope_id(scope)
         rows = []
-        for status in self.services.queries.list(scope_id=scope_id, limit=256):
+        statuses = (
+            (self.services.queries.show(identity, scope_id=scope_id),)
+            if identity
+            else self.services.queries.list(scope_id=scope_id, limit=51, offset=page * 50)
+        )
+        for status in statuses[:50]:
             versions = []
             for version in status.versions:
                 details = {
@@ -69,13 +74,22 @@ class SkillManagementQueries:
                 }
             )
         return management_wire(
-            {"skills": rows, "scope": scope, "binding_digest": self.binding_digest(scope)}
+            {
+                "skills": rows,
+                "scope": scope,
+                "binding_digest": self.binding_digest(scope),
+                "next_cursor": str((page + 1) * 50) if len(statuses) > 50 else None,
+            }
         )
 
-    def drafts(self, page=0):
+    def drafts(self, page=0, identity=None, status=None):
         service = self.services.drafts
         rows = []
-        drafts = service.list(limit=51, offset=page * 50)
+        drafts = (
+            (service.get(identity),)
+            if identity
+            else service.list(limit=51, offset=page * 50, status=status)
+        )
         for draft in drafts[:50]:
             details = {
                 "validation": None,

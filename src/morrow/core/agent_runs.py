@@ -16,11 +16,13 @@ from pydantic import Field, field_validator, model_validator
 from morrow.core.models import (
     CostMetadata,
     CredentialRef,
+    GenerationOptions,
     InputModality,
     ModelCapabilityOverrides,
     ModelRef,
     ProtocolModel,
     ProviderToolSupport,
+    ReasoningEffort,
     RunPolicy,
 )
 from morrow.core.prompt import ProjectInstructionSourceRef, project_source_selection_digest
@@ -37,6 +39,7 @@ class ProviderCapabilities(ProtocolModel):
     ``safe_request_chars`` mirrors policy input limits, not the config authority.
     """
 
+    reasoning_efforts: tuple[ReasoningEffort, ...] = Field(default=(), max_length=7)
     streaming_text: bool = True
     tool_protocol: CapabilityToolProtocol = "none"
     multiple_tool_calls: bool = False
@@ -65,6 +68,7 @@ class ExactModelCapabilities(ProtocolModel):
 
     adapter_id: str
     model: ModelRef
+    reasoning_efforts: tuple[ReasoningEffort, ...] = Field(default=(), max_length=7)
     streaming_text: bool
     tool_protocol: CapabilityToolProtocol
     multiple_tool_calls: bool
@@ -106,7 +110,11 @@ def exact_model_capabilities(
 
     def narrowed_input_types(model_value, default):
         if model_value is None:
-            return default
+            return (
+                tuple(t for t in default if t == "text")
+                if adapter_id == "openai-compatible"
+                else default
+            )
         allowed = set(model_value)
         return tuple(item for item in default if item in allowed)
 
@@ -116,6 +124,11 @@ def exact_model_capabilities(
     return ExactModelCapabilities(
         adapter_id=adapter_id,
         model=model,
+        reasoning_efforts=tuple(
+            value
+            for value in adapter.reasoning_efforts
+            if model_caps is not None and value in (model_caps.reasoning_efforts or ())
+        ),
         streaming_text=narrowed_bool(model_caps.streaming_text, adapter.streaming_text)
         if model_caps is not None
         else adapter.streaming_text,
@@ -144,13 +157,18 @@ def exact_model_capabilities(
         max_output_tokens=narrowed_limit(model_caps.max_output_tokens, adapter.max_output_tokens)
         if model_caps is not None
         else adapter.max_output_tokens,
-        input_types=narrowed_input_types(model_caps.input_types, adapter.input_types)
-        if model_caps is not None
-        else adapter.input_types,
+        input_types=narrowed_input_types(
+            model_caps.input_types if model_caps is not None else None, adapter.input_types
+        ),
         cost_metadata=selected_metadata(model_caps.cost_metadata, adapter.cost_metadata)
         if model_caps is not None
         else adapter.cost_metadata,
     )
+
+
+class SettingSource(ProtocolModel):
+    scope: Literal["explicit", "session", "workspace", "global", "adapter"]
+    revision: int = Field(ge=0)
 
 
 class ProviderRuntimeSnapshot(ProtocolModel):
@@ -170,6 +188,14 @@ class ProviderRuntimeSnapshot(ProtocolModel):
     capabilities: ExactModelCapabilities
     config_revision: int = Field(default=0, ge=0)
     config_digest: str
+    generation: GenerationOptions = Field(default_factory=GenerationOptions)
+    generation_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    settings_sources: dict[Literal["model", "generation", "permission"], SettingSource] = Field(
+        default_factory=dict, max_length=3
+    )
+    permission_preset: (
+        Literal["manual", "auto-safe", "auto-sandboxed", "full-access-manual"] | None
+    ) = None
 
     @field_validator("provider_id", "adapter_id", "api_model_id")
     @classmethod
@@ -332,6 +358,3 @@ class PreparedAgentRunSpec(ProtocolModel):
     @property
     def provider_support(self) -> ProviderToolSupport:
         return self.run_policy.provider_tool_support
-
-    def has_tools(self) -> bool:
-        return self.tool_count > 0 and self.run_policy.provider_tool_support.tool_protocol != "none"

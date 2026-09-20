@@ -40,10 +40,10 @@ async def test_malicious_webpage_origin_is_rejected(fx):
     assert evil_post.status == 403
     assert evil_post.json()["error"]["code"] == "forbidden"
     # A loopback GUI origin is accepted.
-    local = await fx.client.get("/v1/meta", origin="http://127.0.0.1:5173")
+    local = await fx.client.get("/v1/meta", origin="http://127.0.0.1:80")
     assert local.status == 200
     local_host = await fx.client.get("/v1/meta", origin="http://localhost:8080")
-    assert local_host.status == 200
+    assert local_host.status == 403
 
 
 async def test_mutations_require_json_content_type(fx):
@@ -92,7 +92,7 @@ async def test_permission_elevation_extra_fields_are_rejected(fx):
 
 async def test_oversized_and_malformed_bodies_are_rejected(fx):
     big = await fx.client.post("/v1/sessions", {"padding": "x" * (1024 * 1024 + 16)})
-    assert big.status == 400
+    assert big.status == 413
     # An empty JSON body is a valid empty object; a non-dict JSON body is not.
     empty = await fx.client.request_raw_json("/v1/sessions", "")
     assert empty.status == 200

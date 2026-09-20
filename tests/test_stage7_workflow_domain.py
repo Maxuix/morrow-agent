@@ -94,7 +94,14 @@ def revision(**changes):
 def source(**changes):
     value = candidate()
     data = value.model_dump(
-        exclude={"nodes", "entry_nodes", "terminal_nodes", "budget", "compiler_version"}
+        exclude={
+            "nodes",
+            "entry_nodes",
+            "terminal_nodes",
+            "budget",
+            "compiler_version",
+            "submission_protocol_version",
+        }
     )
     return WorkflowDefinitionSource(
         **{

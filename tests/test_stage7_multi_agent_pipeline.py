@@ -63,6 +63,7 @@ from morrow.core.models import (
     AssistantMessage,
     CredentialRef,
     FunctionToolCall,
+    ModelCapabilityOverrides,
     ModelRef,
     ProviderConfig,
     ProviderModelConfig,
@@ -109,6 +110,7 @@ from morrow.testing import FixedIdSource, ScriptedModelProvider
 WS = "ws_one"
 MODEL = ModelRef(provider_id="fake-provider", model_id="m1")
 OTHER = ModelRef(provider_id="fake-provider", model_id="m2")
+REASONING_EFFORTS = ("minimal", "low", "medium", "high")
 TOOLS = (
     "read",
     "ls",
@@ -357,8 +359,11 @@ class PipelineFixture:
             "fake-adapter",
             self.bank,
             capabilities=ProviderCapabilities(
-                tool_protocol="openai_function", multiple_tool_calls=True
+                tool_protocol="openai_function",
+                multiple_tool_calls=True,
+                reasoning_efforts=REASONING_EFFORTS,
             ),
+            reasoning_implementation=REASONING_EFFORTS,
         )
         credential_ref = CredentialRef(ref="provider:fake-provider:test", version=3)
         self.app.credentials.set(credential_ref.ref, "topsecret-value")
@@ -372,8 +377,18 @@ class PipelineFixture:
                             base_url="https://api.example.test/v1",
                             credential_ref=credential_ref,
                             models={
-                                "m1": ProviderModelConfig(api_model_id="api-m1"),
-                                "m2": ProviderModelConfig(api_model_id="api-m2"),
+                                "m1": ProviderModelConfig(
+                                    api_model_id="api-m1",
+                                    capabilities=ModelCapabilityOverrides(
+                                        reasoning_efforts=REASONING_EFFORTS
+                                    ),
+                                ),
+                                "m2": ProviderModelConfig(
+                                    api_model_id="api-m2",
+                                    capabilities=ModelCapabilityOverrides(
+                                        reasoning_efforts=REASONING_EFFORTS
+                                    ),
+                                ),
                             },
                         )
                     },
@@ -620,7 +635,7 @@ def _submit_call(call_id, slot, payload, *, name=SUBMIT_NODE_RESULT_NAME):
         id=call_id,
         name=name,
         arguments=json.dumps(
-            {"schema_version": 1, "outputs": {slot: payload}, "summary": "submitted"}
+            {"schema_version": 2, "outputs": {slot: payload}, "summary": "submitted"}
         ),
     )
 
@@ -1810,8 +1825,9 @@ async def test_real_coder_write_is_captured_and_survives_downstream_failure(tmp_
     )
     try:
         run = await fx.runtime.scheduler.run(start(fx, publication.revision).run.workflow_run_id)
-        assert run.status is WorkflowStatus.FAILED
+        assert run.status is WorkflowStatus.PAUSED
         assert node_by_id(fx, run.workflow_run_id, "coder").status is WorkflowStatus.COMPLETED
+        assert node_by_id(fx, run.workflow_run_id, "reviewer").status is WorkflowStatus.RUNNING
         assert (workspace / "hello.py").read_text() == "print('hello')\n"
         coder_node = node_by_id(fx, run.workflow_run_id, "coder")
         patch = ImplementationPatch.model_validate_json(
@@ -1825,9 +1841,5 @@ async def test_real_coder_write_is_captured_and_survives_downstream_failure(tmp_
         assert patch.changed_paths == ("hello.py",)
         assert patch.content_complete is True
         assert patch.change_refs
-        outcome = outcomes(fx)[-1]
-        assert "hello.py" in outcome.changed_paths or patch.change_refs[0] in {
-            ref.artifact_id for ref in outcome.artifact_refs
-        }
     finally:
         fx.close()

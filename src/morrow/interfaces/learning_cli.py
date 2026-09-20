@@ -651,6 +651,36 @@ def memory_show(
     )
 
 
+@memory_app.command("rebuild-index")
+def memory_rebuild_index(
+    page_size: int = typer.Option(
+        500,
+        "--page-size",
+        min=1,
+        max=500,
+        help="每批重建的 Knowledge head 数量。整个工作区会完整处理。",
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    def action(api) -> None:
+        rebuilt = api.rebuild_memory_index(page_size=page_size)
+        _cli_helpers()[2](
+            {"workspace_id": api.workspace_id, "heads_rebuilt": rebuilt},
+            as_json=as_json,
+        )
+
+    _run_state_command(
+        state_root=state_root,
+        workspace_id=workspace_id,
+        directory=directory,
+        write=True,
+        action=action,
+    )
+
+
 def _memory_mutation(
     api,
     knowledge_id: str,

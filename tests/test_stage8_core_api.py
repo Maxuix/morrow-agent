@@ -548,14 +548,23 @@ async def test_pause_resume_and_drain_through_the_api(fx):
     assert view["run"]["pause_requested"] is True
     gamma = next(node for node in view["nodes"] if node["node"]["node_id"] == "gamma")
     alpha = next(node for node in view["nodes"] if node["node"]["node_id"] == "alpha")
-    assert gamma["node"]["status"] == "completed"
+    # The pause interrupts gamma's turn after the approved tool result commits:
+    # gamma suspends at its execution segment instead of running to completion.
+    assert gamma["node"]["status"] == "running"
     assert alpha["node"]["status"] == "queued"
 
-    resumed = await fx.client.post(f"/v1/workflow-runs/{run_id}/resume", {})
+    resumed = await fx.client.post(
+        f"/v1/workflow-runs/{run_id}/resume", {"command_id": "cmd_resume_api"}
+    )
     assert resumed.status == 200, resumed.body
     assert resumed.json()["result"]["driving"] is True
     view = await wait_for_run(fx.client, run_id, "completed")
     assert view["run"]["result_status"] == "succeeded"
+    view = await fx.client.get(f"/v1/workflow-runs/{run_id}")
+    gamma = next(
+        node for node in view.json()["view"]["nodes"] if node["node"]["node_id"] == "gamma"
+    )
+    assert gamma["node"]["status"] == "completed"
 
     statuses = [
         (event["event_type"], event["payload"].get("status"))
@@ -994,21 +1003,10 @@ async def test_catalog_surfaces(fx):
 # CLI smoke ------------------------------------------------------------------------
 
 
-def test_serve_holds_writer_lock_until_core_stop(monkeypatch, tmp_path):
+def test_serve_always_stops_core_after_serving(monkeypatch, tmp_path):
     events = []
     application = SimpleNamespace(data_root=object())
     identity = SimpleNamespace(workspace_id="ws_lock")
-
-    class FakeLock:
-        def __init__(self, *_args):
-            pass
-
-        def __enter__(self):
-            events.append("lock")
-            return self
-
-        def __exit__(self, *_args):
-            events.append("unlock")
 
     class FakeHost:
         def __init__(self, _build):
@@ -1049,8 +1047,11 @@ def test_serve_holds_writer_lock_until_core_stop(monkeypatch, tmp_path):
 
     monkeypatch.setattr(serve_cli, "build_application", lambda **_kwargs: application)
     monkeypatch.setattr(serve_cli, "_identity", lambda *_args: identity)
-    monkeypatch.setattr(serve_cli, "WorkspaceWriterLock", FakeLock)
     monkeypatch.setattr(serve_cli, "make_context_builder", lambda *_args, **_kwargs: object())
+    from contextlib import nullcontext
+
+    application.data_root = SimpleNamespace(root=tmp_path)
+    monkeypatch.setattr(serve_cli, "publish_connection", lambda *_args: nullcontext())
     monkeypatch.setattr(serve_cli, "CoreHost", FakeHost)
     monkeypatch.setattr(serve_cli, "create_asgi_app", lambda *_args, **_kwargs: object())
     monkeypatch.setattr(serve_cli.socket, "socket", lambda *_args: FakeSocket())
@@ -1067,7 +1068,7 @@ def test_serve_holds_writer_lock_until_core_stop(monkeypatch, tmp_path):
         permission_mode=PermissionPreset.MANUAL,
     )
 
-    assert events == ["lock", "start", "serve", "stop", "unlock"]
+    assert events == ["start", "serve", "stop"]
 
 
 def test_serve_help_smoke():

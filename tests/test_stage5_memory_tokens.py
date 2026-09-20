@@ -91,6 +91,18 @@ def test_memory_terms_rebuild_retrieve_and_follow_knowledge_lifecycle(tmp_path):
 
         rebuilt = journal.transact(lambda txn: rebuild_project_knowledge_terms(txn, "ws_1"))
         assert rebuilt == 1
+        # The maintenance rebuild clears arbitrary stale projection rows and
+        # still visits all heads when using a deliberately small page.
+        journal.replace_memory_search_terms(
+            "ws_1",
+            "krv_1",
+            (built[0].model_copy(update={"token": "stale"}),),
+        )
+        rebuilt = journal.transact(
+            lambda txn: rebuild_project_knowledge_terms(txn, "ws_1", limit=1)
+        )
+        assert rebuilt == 1
+        assert all(term.token != "stale" for term in journal.list_memory_search_terms("ws_1"))
         api = OperationalApplicationService(
             journal=journal,
             workspace_id="ws_1",

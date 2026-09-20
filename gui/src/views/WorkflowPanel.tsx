@@ -1,9 +1,11 @@
+import { outcomeSummary } from './lib/outcomePresentation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ApiClient } from '../api/client'
 import type { RunViewWire, TaskRunWire, WorkflowRunWire } from '../api/types'
 import { EmptyState } from '../components/EmptyState'
 import { StatusDot } from '../components/StatusDot'
-import type { SyncStore, WorkflowRunProjection } from '../state/sync'
+import { useRunView } from '../state/runView'
+import type { SyncStore } from '../state/sync'
 import { budgetDisplay, preRunSummaryLine, type BudgetDisplay } from './lib/budget'
 import { buildGraphLayout, isDirectRun, parseRevision } from './lib/graph'
 import { RUN_RELATION_LABELS, shortId } from './lib/labels'
@@ -12,25 +14,14 @@ import { NodeDetail } from './NodeDetail'
 import { ReplanPanel } from './ReplanPanel'
 import { RunControls } from './RunControls'
 import { RunGraph } from './RunGraph'
+import { WorkflowOutput } from './WorkflowOutput'
 
 /**
- * Cheap change signature for a run projection: the run row version plus the
- * per-node row versions the store patches in place. Any status/node event
- * that touched the run moves this value, which schedules a view refetch.
- */
-export function runProjectionSignature(projection: WorkflowRunProjection | undefined): string {
-  if (projection === undefined) return 'absent'
-  const nodes = projection.view?.nodes.map((item) => item.node.row_version).join(',') ?? 'noview'
-  return `${projection.run.row_version}:${projection.run.status}:${nodes}`
-}
-
-const REFETCH_DEBOUNCE_MS = 150
-
-/**
- * Right panel: run selector (with lineage labels), run header, budget, and
- * the graph — Direct runs render as a linear card, multi-node runs as a
- * read-only React Flow canvas. The open run view is refetched (debounced)
- * whenever the sync store reports a change for that run; no polling loops.
+ * Run-record entry: run selector (with lineage labels), run header, budget,
+ * and the graph — Direct runs render as a linear card, multi-node runs as a
+ * read-only React Flow canvas. While the task-plan panel already leads with
+ * the same run's frozen topology (`hideGraph`), this section skips its own
+ * canvas and keeps only the details, so the same graph never renders twice.
  */
 export function WorkflowPanel({
   client,
@@ -38,19 +29,28 @@ export function WorkflowPanel({
   runs,
   onRunViewChange,
   onEditPending,
+  focusNodeId,
+  hideGraph = false,
+  initialRunId = null,
+  active = true,
 }: {
   client: ApiClient
   store: SyncStore
-  runs: WorkflowRunProjection[]
+  runs: import('../state/sync').WorkflowRunProjection[]
   onRunViewChange: (view: RunViewWire | null) => void
   /** Provided by a later slice; wiring the pause → edit-pending flow. */
   onEditPending?: (run: WorkflowRunWire, view: RunViewWire) => void
+  /** Node the viewer arrived from (execution-node sessions); selected until the user picks another. */
+  focusNodeId?: string | null
+  hideGraph?: boolean
+  /** Optional run identity supplied by an Inspector target. */
+  initialRunId?: string | null
+  /** Inactive Inspector tabs stay mounted but must not start run-view reads. */
+  active?: boolean
 }) {
-  const [chosenRunId, setChosenRunId] = useState<string | null>(null)
-  const [runView, setRunView] = useState<RunViewWire | null>(null)
+  const [chosenRunId, setChosenRunId] = useState<string | null>(initialRunId)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [rootTask, setRootTask] = useState<TaskRunWire | null>(null)
-  const fetchedSignature = useRef<string>('')
 
   const orderedRuns = useMemo(
     () =>
@@ -65,48 +65,16 @@ export function WorkflowPanel({
     orderedRuns.find((item) => item.run.workflow_run_id === chosenRunId) ?? orderedRuns[0] ?? null
   const selectedRunId = selectedRun?.run.workflow_run_id ?? null
 
-  // Fetch the run view on selection change, then keep it fresh off store
-  // events: a moved signature schedules a debounced refetch.
   useEffect(() => {
-    if (selectedRunId === null) {
-      setRunView(null)
-      onRunViewChange(null)
-      return
-    }
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | null = null
+    if (initialRunId !== null) setChosenRunId(initialRunId)
+  }, [initialRunId])
 
-    const refetch = () => {
-      const signature = runProjectionSignature(store.getState().workflowRuns.get(selectedRunId))
-      client
-        .getRunView(selectedRunId)
-        .then((view) => {
-          if (cancelled) return
-          fetchedSignature.current = signature
-          setRunView(view)
-          onRunViewChange(view)
-        })
-        .catch(() => {
-          // A transient failure leaves the previous view on screen; the next
-          // store event retries via the same signature check.
-        })
-    }
-    refetch()
-
-    const unsubscribe = store.subscribe(() => {
-      const signature = runProjectionSignature(store.getState().workflowRuns.get(selectedRunId))
-      if (signature === fetchedSignature.current || timer !== null) return
-      timer = setTimeout(() => {
-        timer = null
-        refetch()
-      }, REFETCH_DEBOUNCE_MS)
-    })
-    return () => {
-      cancelled = true
-      if (timer !== null) clearTimeout(timer)
-      unsubscribe()
-    }
-  }, [client, store, selectedRunId, onRunViewChange])
+  const runView = useRunView(client, store, selectedRunId, active)
+  const onRunViewChangeRef = useRef(onRunViewChange)
+  onRunViewChangeRef.current = onRunViewChange
+  useEffect(() => {
+    onRunViewChangeRef.current(runView)
+  }, [runView])
 
   // The root task row arrives via its own task events (not run events), so
   // keep it reactive off the store — and fetch it once when the store has
@@ -131,43 +99,55 @@ export function WorkflowPanel({
       }
     }
     sync()
-    const unsubscribe = store.subscribe(sync)
+    const unsubscribe = active ? store.subscribe(sync) : () => {}
     return () => {
       cancelled = true
       unsubscribe()
     }
-  }, [client, store, rootTaskRunId])
+  }, [active, client, store, rootTaskRunId])
+
+  // Graph mapping must stay above the empty-state return: hooks can never be
+  // conditional, and a run appearing later would otherwise add hook slots.
+  const graph = useMemo(() => (runView !== null ? parseRevision(runView.revision) : null), [runView])
+  const direct = graph !== null && isDirectRun(graph)
+  const layout = useMemo(
+    () => (graph !== null && !direct ? buildGraphLayout(graph, runView?.nodes ?? []) : null),
+    [graph, direct, runView],
+  )
 
   if (selectedRun === null) {
     return (
-      <section className="flex h-full flex-col overflow-y-auto" aria-label="工作流">
-        <EmptyState title="该任务暂无运行记录" hint="运行工作流后，这里会显示节点图与状态。" />
+      <section className="flex h-full flex-col overflow-y-auto" aria-label="运行记录">
+        <h2 className="px-4 pt-4 pb-2 text-xs font-medium tracking-wide text-secondary">运行记录</h2>
+        <EmptyState title="该任务暂无运行记录"  />
       </section>
     )
   }
 
-  const graph = runView !== null ? parseRevision(runView.revision) : null
   const budget: BudgetDisplay = budgetDisplay(
     runView?.agent_generation_request_count ?? 0,
     selectedRun.run.budget_snapshot.max_agent_generation_requests,
     runView?.lineage_agent_generation_request_count ?? 0,
   )
-  const direct = graph !== null && isDirectRun(graph)
-  const layout = graph !== null && !direct ? buildGraphLayout(graph, runView?.nodes ?? []) : null
+  const focusInGraph =
+    focusNodeId != null && graph !== null && graph.nodes.some((node) => node.node_id === focusNodeId)
   const effectiveSelectedNodeId =
-    selectedNodeId ?? (direct && graph !== null ? graph.nodes[0]?.node_id : null) ?? null
+    selectedNodeId ??
+    (focusInGraph ? focusNodeId : null) ??
+    (direct && graph !== null ? graph.nodes[0]?.node_id : null) ??
+    null
   const selectedNodeView =
     runView?.nodes.find((item) => item.node.node_id === effectiveSelectedNodeId) ?? null
   const selectedRevisionNode =
     graph?.nodes.find((node) => node.node_id === effectiveSelectedNodeId) ?? null
 
   return (
-    <section className="flex h-full flex-col overflow-y-auto" aria-label="工作流">
-      <h2 className="px-4 pt-4 pb-2 text-xs font-medium tracking-wide text-secondary">工作流</h2>
+    <section className="flex h-full flex-col overflow-y-auto" aria-label="运行记录">
+      <h2 className="px-4 pt-4 pb-2 text-xs font-medium tracking-wide text-secondary">运行记录</h2>
 
       {orderedRuns.length > 1 && (
         <ul aria-label="运行列表" className="flex flex-col gap-0.5 px-3 pb-2">
-          {orderedRuns.map((item) => (
+          {orderedRuns.map((item, index) => (
             <li key={item.run.workflow_run_id}>
               <button
                 type="button"
@@ -185,10 +165,10 @@ export function WorkflowPanel({
                 }`}
               >
                 <StatusDot status={item.run.status} />
-                <span className="font-mono">{shortId(item.run.workflow_run_id)}</span>
+                <span className="font-mono">第 {orderedRuns.length - index} 次运行</span>
                 <span className="ml-auto text-secondary">
                   {RUN_RELATION_LABELS[item.run.run_relation]}
-                  {item.run.parent_run_id !== null && ` ← ${shortId(item.run.parent_run_id)}`}
+
                 </span>
               </button>
             </li>
@@ -199,11 +179,17 @@ export function WorkflowPanel({
       <div className="flex flex-col gap-3 px-4 pb-4">
         <header className="rounded-[10px] border border-subtle bg-raised p-3">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="font-serif text-base font-medium">
+            <span className="font-serif text-base font-medium text-primary">
               {graph?.name ?? '未命名工作流'}
             </span>
             <StatusDot status={selectedRun.run.status} className="text-xs" />
-            <span className="font-mono text-xs text-secondary">
+          </div>
+            {selectedRun.run.pause_requested && (
+              <span className="rounded-[8px] border border-paused px-1.5 py-0.5 text-xs text-paused">
+                已请求暂停
+              </span>
+            )}
+          <details className="mt-2 text-xs text-secondary"><summary>运行详情</summary><span className="font-mono">
               {shortId(selectedRun.run.workflow_revision_id)}
             </span>
             {selectedRun.run.run_relation !== 'initial' && (
@@ -215,18 +201,12 @@ export function WorkflowPanel({
             )}
             {selectedRun.run.status === 'superseded' && (
               <span className="rounded-[8px] border border-paused px-1.5 py-0.5 text-xs text-secondary">
-                已被补丁取代（由子运行继续）
+                已由新运行接续
                 {selectedRun.run.superseded_reason !== null && (
                   <span className="ml-1 font-mono">{selectedRun.run.superseded_reason}</span>
                 )}
               </span>
             )}
-            {selectedRun.run.pause_requested && (
-              <span className="rounded-[8px] border border-paused px-1.5 py-0.5 text-xs text-paused">
-                已请求暂停
-              </span>
-            )}
-          </div>
           <div className="mt-2 font-mono text-xs text-secondary">
             模型请求 {budget.current}
             {budget.lineage !== null && ` · ${budget.lineage}`}
@@ -241,6 +221,7 @@ export function WorkflowPanel({
               结果：{selectedRun.run.result_status === 'succeeded' ? '成功' : '需要修订'}
             </div>
           )}
+          </details>
           <RunControls
             run={selectedRun.run}
             runView={runView}
@@ -255,6 +236,9 @@ export function WorkflowPanel({
         </header>
 
         <ReplanPanel key={selectedRun.run.workflow_run_id} client={client} run={selectedRun.run} />
+
+        {runView?.terminal_outcome && <section aria-label="Workflow 任务结果" className="rounded-lg border border-subtle p-3 text-sm"><p>{outcomeSummary(runView.terminal_outcome.summary, runView.terminal_outcome.task_status)}</p>{runView.terminal_outcome.unresolved_items.map((item,i)=><p key={i}>{item}</p>)}</section>}
+        {runView?.effective_outputs.map(output=><WorkflowOutput key={`${selectedRunId}:${output.binding.artifact_id}`} client={client} runId={selectedRunId!} artifactId={output.binding.artifact_id} label={`${output.node_id}.${output.output_slot}${output.inherited?'（继承）':''}`}/>)}
 
         {runView !== null && runView.inherited_artifacts.length > 0 && (
           <div className="rounded-[10px] border border-subtle bg-raised p-3 text-xs">
@@ -271,24 +255,24 @@ export function WorkflowPanel({
           </div>
         )}
 
-        {graph === null ? (
-          <EmptyState title="运行详情加载中…" />
-        ) : direct ? (
-          <DirectNodeCard
-            nodeView={selectedNodeView}
-            revisionNode={graph.nodes[0] as (typeof graph.nodes)[number]}
-            selected={effectiveSelectedNodeId === graph.nodes[0]?.node_id}
-            onSelect={() => setSelectedNodeId(graph.nodes[0]?.node_id ?? null)}
-          />
-        ) : (
-          layout !== null && (
-            <RunGraph
-              layout={layout}
-              selectedNodeId={effectiveSelectedNodeId}
-              onSelectNode={setSelectedNodeId}
+        {!hideGraph &&
+          (graph === null ? (
+            <EmptyState title="运行详情加载中…" />
+          ) : direct ? (
+            <DirectNodeCard
+              nodeView={selectedNodeView}
+              revisionNode={graph.nodes[0] as (typeof graph.nodes)[number]}
+              selected={effectiveSelectedNodeId === graph.nodes[0]?.node_id}
+              onSelect={() => setSelectedNodeId(graph.nodes[0]?.node_id ?? null)}
             />
-          )
-        )}
+          ) : (
+            layout !== null && (
+              <RunGraph
+                layout={layout}
+                onSelectNode={setSelectedNodeId}
+              />
+            )
+          ))}
 
         {effectiveSelectedNodeId !== null &&
           (selectedNodeView !== null ? (

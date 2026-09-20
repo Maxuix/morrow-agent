@@ -24,6 +24,7 @@ from morrow.core.agent_runs import (
 from morrow.core.domain import AgentRunSnapshot, canonical_json_bytes, sha256_digest
 from morrow.core.models import (
     CredentialRef,
+    GenerationOptions,
     ModelRef,
     ProviderConfig,
     ProviderModelConfig,
@@ -57,7 +58,7 @@ class PreparedAgentRunRuntime:
     agent_run_id: str | None = None
 
     def close(self) -> None:
-        """Compatibility cleanup hook; async consumers call :meth:`aclose`."""
+        """Synchronous no-op cleanup hook; async consumers call :meth:`aclose`."""
         return None
 
     async def aclose(self) -> None:
@@ -85,6 +86,9 @@ def build_prepared_spec(
     tools: tuple[ToolDefinition, ...],
     mcp_run_snapshot_ids: tuple[str, ...] = (),
     prompt_assembler=None,
+    generation: GenerationOptions | None = None,
+    settings_sources=None,
+    permission_preset=None,
 ) -> PreparedAgentRunSpec:
     """Freeze the sanitized evidence one AgentRun will be rebuilt from."""
     api_model_id = provider_config.models[model.model_id].api_model_id
@@ -97,6 +101,12 @@ def build_prepared_spec(
         credential_ref=provider_config.credential_ref,
         capabilities=exact_capabilities,
         config_revision=config_revision,
+        generation=generation or GenerationOptions(),
+        generation_digest=sha256_digest(
+            canonical_json_bytes((generation or GenerationOptions()).model_dump(mode="json"))
+        ),
+        settings_sources=settings_sources or {},
+        permission_preset=permission_preset,
         config_digest=sha256_digest(canonical_json_bytes(provider_config.model_dump(mode="json"))),
     )
     prompt_values = {}
@@ -129,11 +139,13 @@ class AgentRunPreparationService:
         self,
         *,
         global_store,
+        attachment_resolver=None,
         registry: AdapterRegistry,
         agent_policy: AgentPolicy,
         credential_resolver: Callable[[str, CredentialRef | None], str | None],
         frozen_credential_resolver: Callable[[str, CredentialRef | None], str | None] | None = None,
         estimate_request_chars,
+        make_estimate_request_tokens=None,
         tool_factory: Callable[[RunPolicy], ToolExecutor | None],
         injected: PreparedAgentRunRuntime | None = None,
         workspace_id: str | None = None,
@@ -142,13 +154,16 @@ class AgentRunPreparationService:
         | None = None,
         prompt_assembler=None,
         long_horizon_settings: LongHorizonPolicySettings | None = None,
+        permission_configurator=None,
     ) -> None:
         self.global_store = global_store
+        self.attachment_resolver = attachment_resolver
         self.registry = registry
         self.agent_policy = agent_policy
         self.credential_resolver = credential_resolver
         self.frozen_credential_resolver = frozen_credential_resolver or credential_resolver
         self.estimate_request_chars = estimate_request_chars
+        self.make_estimate_request_tokens = make_estimate_request_tokens
         self.tool_factory = tool_factory
         self.injected = injected
         self.workspace_id = workspace_id
@@ -156,6 +171,7 @@ class AgentRunPreparationService:
         self.mcp_rehydrate_factory = mcp_rehydrate_factory
         self.prompt_assembler = prompt_assembler
         self.long_horizon_settings = long_horizon_settings
+        self.permission_configurator = permission_configurator
 
     def prepare_new(
         self,
@@ -164,6 +180,9 @@ class AgentRunPreparationService:
         model: ModelRef | None = None,
         prompt_assembler=None,
         tool_transform=None,
+        generation: GenerationOptions | None = None,
+        settings_sources=None,
+        permission_preset=None,
     ) -> PreparedAgentRunRuntime:
         """Prepare the next new AgentRun from the current configuration.
 
@@ -199,6 +218,14 @@ class AgentRunPreparationService:
             model,
             model_config.capabilities,
         )
+        generation = generation or GenerationOptions()
+        if (
+            generation.reasoning_effort is not None
+            and generation.reasoning_effort not in exact.reasoning_efforts
+        ):
+            raise AgentRunPreparationError(
+                "Selected reasoning option is unavailable for this model"
+            )
         run_policy = self.agent_policy.resolve(
             model,
             tool_protocol=exact.tool_protocol,
@@ -211,8 +238,13 @@ class AgentRunPreparationService:
         context_builder = ContextBuilder(
             run_policy=run_policy,
             estimate_request_chars=self.estimate_request_chars,
+            estimate_request_tokens=self._estimate_request_tokens(model),
+            attachment_resolver=self.attachment_resolver,
+            input_types=exact.input_types,
             prompt_assembler=prompt_assembler,
         )
+        if self.permission_configurator is not None:
+            self.permission_configurator(permission_preset, credential)
         tool_executor = self.tool_factory(run_policy)
         mcp_run = None
         if self.mcp_factory is not None and agent_run_id is not None:
@@ -233,6 +265,9 @@ class AgentRunPreparationService:
             model=model,
             exact_capabilities=exact,
             config_revision=loaded.revision,
+            generation=generation,
+            settings_sources=settings_sources,
+            permission_preset=permission_preset,
             run_policy=run_policy,
             tools=tools,
             mcp_run_snapshot_ids=mcp_run.snapshot_ids if mcp_run is not None else (),
@@ -272,6 +307,17 @@ class AgentRunPreparationService:
             raise AgentRunPreparationError("AgentRun frozen evidence is incomplete")
         if run_policy_digest(snapshot.run_policy) != snapshot.run_policy_digest:
             raise AgentRunPreparationError("AgentRun run-policy evidence is inconsistent")
+        if frozen.generation_digest is not None and frozen.generation_digest != sha256_digest(
+            canonical_json_bytes(frozen.generation.model_dump(mode="json"))
+        ):
+            raise AgentRunPreparationError("Frozen generation options are inconsistent")
+        if frozen.generation.reasoning_effort is not None and (
+            frozen.generation_digest is None
+            or frozen.generation.reasoning_effort not in frozen.capabilities.reasoning_efforts
+            or frozen.generation.reasoning_effort
+            not in self.registry.capabilities(frozen.adapter_id).reasoning_efforts
+        ):
+            raise AgentRunPreparationError("Frozen generation mapping is unavailable")
         credential = self.frozen_credential_resolver(frozen.provider_id, frozen.credential_ref)
         if not credential:
             raise ProviderUnavailableError(
@@ -287,8 +333,13 @@ class AgentRunPreparationService:
         context_builder = ContextBuilder(
             run_policy=snapshot.run_policy,
             estimate_request_chars=self.estimate_request_chars,
+            estimate_request_tokens=self._estimate_request_tokens(frozen.model),
+            attachment_resolver=self.attachment_resolver,
+            input_types=frozen.capabilities.input_types,
             prompt_assembler=prompt_assembler or self.prompt_assembler,
         )
+        if self.permission_configurator is not None:
+            self.permission_configurator(frozen.permission_preset, credential)
         tool_executor = self.tool_factory(snapshot.run_policy)
         mcp_run = None
         if snapshot.mcp_run_snapshot_ids:
@@ -342,6 +393,11 @@ class AgentRunPreparationService:
             mcp_run=mcp_run,
             agent_run_id=agent_run_id,
         )
+
+    def _estimate_request_tokens(self, model: ModelRef):
+        if self.make_estimate_request_tokens is None:
+            return None
+        return self.make_estimate_request_tokens(model)
 
     def _merge_mcp_tools(
         self,

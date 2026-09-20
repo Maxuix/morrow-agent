@@ -11,23 +11,17 @@ sleeps.
 from __future__ import annotations
 
 import asyncio
-import json
 from datetime import timedelta
 
 import pytest
 from pydantic import ValidationError
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
-from morrow.adapters.state.migrations import (
-    MigrationRegistry,
-    SchemaMigration,
-    production_registry,
-)
 from morrow.adapters.state.operational import OperationalStore
 from morrow.core.application import ApplicationError
 from morrow.core.faults import FaultPoint, InjectedFault, OnceFaultInjector
 from morrow.core.models import AssistantMessage, FunctionToolCall, ToolApprovalDecision
-from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
+from morrow.core.store import StoreOpenMode
 from morrow.core.workflows.contracts import ArtifactBinding
 from morrow.core.workflows.runs import WorkflowRun, WorkflowStatus, validate_run_transition
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
@@ -119,147 +113,6 @@ def test_run_validators_bind_pause_fact_and_lineage():
         lineage_budget_root_run_id="wrun_one",
     )
     assert child.effective_lineage_budget_root_run_id == "wrun_one"
-
-
-# Migration ---------------------------------------------------------------------
-
-
-def _v25_registry() -> MigrationRegistry:
-    registry = MigrationRegistry(supported_version=25)
-    for migration in production_registry().pending(0):
-        if migration.version <= 25:
-            registry.add(migration)
-    return registry
-
-
-def _legacy_run_body() -> str:
-    """A genuine pre-v26 row body: no pause/lineage keys at all."""
-
-    body = _run(workflow_run_id="wrun_old", status="running").model_dump(mode="json")
-    for key in (
-        "pause_requested",
-        "run_relation",
-        "lineage_budget_root_run_id",
-        "parent_run_id",
-        "superseded_reason",
-    ):
-        del body[key]
-    return json.dumps(body)
-
-
-def test_migration_v26_backfills_legacy_rows_and_rebuilds_root_exclusivity(tmp_path):
-    root_dir = tmp_path / "v25"
-    with OperationalStore(root_dir, registry=_v25_registry()).initialize() as handle:
-        handle.run_write(
-            lambda ex: ex.execute(
-                "INSERT INTO sessions(session_id, workspace_id, lifecycle, health, conversation_position, created_at_unix, updated_at_unix) VALUES('ses_old','ws_one','active','ok',0,1,1)"
-            )
-        )
-        handle.run_write(
-            lambda ex: ex.execute(
-                "INSERT INTO task_runs(task_run_id, session_id, workspace_id, status, row_version, attempt, created_at_unix, updated_at_unix) VALUES('task_old','ses_old','ws_one','open',1,1,1,1)"
-            )
-        )
-        handle.run_write(
-            lambda ex: ex.execute(
-                "INSERT INTO workflow_revisions(workflow_revision_id, workspace_id, workflow_definition_id, revision, content_hash, body_json) VALUES('wrev_one','ws_one','pipeline',1,?,?)",
-                ("a" * 64, "{}"),
-            )
-        )
-        handle.run_write(
-            lambda ex: ex.execute(
-                "INSERT INTO workflow_runs VALUES(?,?,?,?,?,?)",
-                ("wrun_old", "ws_one", "wrev_one", "task_old", "running", _legacy_run_body()),
-            )
-        )
-    store = OperationalStore(root_dir)
-    assert store.migrate().applied == (
-        "workflow_pause_drain_lineage",
-        "workflow_editor_drafts",
-        "workflow_global_replan",
-        "workflow_feedback_evaluation",
-        "compaction_request_accounting",
-    )
-    with store.open(StoreOpenMode.READ_WRITE) as handle:
-        rows = handle.run_read(
-            lambda ex: ex.execute(
-                "SELECT status, pause_requested, run_relation, lineage_budget_root_run_id, parent_run_id FROM workflow_runs WHERE workflow_run_id='wrun_old'"
-            )
-        )
-        assert rows == (("running", 0, "initial", "wrun_old", None),)
-        tables = {
-            row[0]
-            for row in handle.run_read(
-                lambda ex: ex.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            )
-        }
-        assert "workflow_run_execution_nodes" in tables
-        assert "workflow_run_artifact_imports" in tables
-        # The legacy running row loads through the new model with derived facts.
-        journal = SqliteOperationalJournal(handle)
-        run = journal.workflows.get_run("ws_one", "wrun_old")
-        assert run.status is WorkflowStatus.RUNNING and not run.pause_requested
-        assert run.run_relation == "initial" and run.parent_run_id is None
-        assert run.effective_lineage_budget_root_run_id == "wrun_old"
-        # The rebuilt partial unique index still blocks a second active root,
-        # including the new draining/paused statuses.
-        for status in ("queued", "running", "blocked", "draining", "paused"):
-            with pytest.raises(StorageError):
-                handle.run_write(
-                    lambda ex, status=status: ex.execute(
-                        "INSERT INTO workflow_runs VALUES(?,?,?,?,?,?,?,?,?,?)",
-                        (
-                            f"wrun_dup_{status}",
-                            "ws_one",
-                            "wrev_one",
-                            "task_old",
-                            status,
-                            0,
-                            "initial",
-                            f"wrun_dup_{status}",
-                            None,
-                            "{}",
-                        ),
-                    )
-                )
-
-
-def test_rebuild_migration_verification_rolls_back_and_restores_pragmas(tmp_path):
-    root_dir = tmp_path / "framework"
-    with OperationalStore(root_dir, registry=_v25_registry()).initialize():
-        pass
-    bad = SchemaMigration(
-        version=26,
-        name="bad_rebuild",
-        statements=(
-            "CREATE TABLE stray_orphans (run_id TEXT NOT NULL REFERENCES workflow_runs(workflow_run_id))",
-            "INSERT INTO stray_orphans VALUES('wrun_missing')",
-        ),
-        requires_foreign_keys_off=True,
-        requires_rebuild_verification=True,
-    )
-    broken = _v25_registry()
-    broken.supported_version = 26
-    broken.add(bad)
-    with pytest.raises(StorageError) as excinfo:
-        OperationalStore(root_dir, registry=broken).migrate()
-    assert excinfo.value.code is StorageErrorCode.NEEDS_REPAIR
-    # Nothing landed: the store is still v25 and healthy...
-    assert OperationalStore(root_dir).classify().schema_version == 25
-    # ...and the real v26 migration succeeds afterwards (a distinct fixed clock
-    # keeps the pre-migration backup name apart from the failed attempt's).
-    from morrow.testing import FixedClock
-
-    assert OperationalStore(root_dir, clock=FixedClock()).migrate().applied == (
-        "workflow_pause_drain_lineage",
-        "workflow_editor_drafts",
-        "workflow_global_replan",
-        "workflow_feedback_evaluation",
-        "compaction_request_accounting",
-    )
-
-
-# Scheduler: Pause/Drain/Resume --------------------------------------------------
 
 
 def test_pause_idle_running_run_completes_drain_in_control_transaction(fx):
@@ -366,19 +219,27 @@ async def test_pause_on_blocked_run_survives_resolve_and_drains_without_admissio
     blocked = await fx.runtime.scheduler.recover(run_id)
     assert blocked.status is WorkflowStatus.BLOCKED
     # Pause on a blocked run records only the fact; unknown evidence is untouched.
-    paused = fx.runtime.transitions.request_pause(run_id)
+    paused = fx.runtime.transitions.request_pause(run_id, command_id="cmd_pause_blocked")
     assert paused.status is WorkflowStatus.BLOCKED and paused.pause_requested
     assert node_by_id(fx, run_id, "gamma").status is WorkflowStatus.BLOCKED
 
     resolve_blocking(fx, node_by_id(fx, run_id, "gamma"))
     drained = await fx.runtime.scheduler.recover(run_id)
-    # Resolve-success under a standing pause drains: the blocked node finishes,
-    # the queued sibling is never admitted, and the run pauses.
+    # Resolve-success under a standing pause: the recovered turn suspends at
+    # its first control checkpoint (the node stays running at its suspended
+    # segment), the queued sibling is never admitted, and the run pauses.
     assert drained.status is WorkflowStatus.PAUSED and drained.pause_requested
-    assert node_by_id(fx, run_id, "gamma").status is WorkflowStatus.COMPLETED
+    assert node_by_id(fx, run_id, "gamma").status is WorkflowStatus.RUNNING
     alpha = node_by_id(fx, run_id, "alpha")
     assert alpha.status is WorkflowStatus.QUEUED and alpha.agent_run_id is None
 
+    # Product resume sequence: bind the resume command to the suspended
+    # pause cycle, clear the pause fact, then recover into the continuation.
+    from morrow.application.execution_pause import ExecutionPauseService
+
+    ExecutionPauseService(fx.journal, workspace_id=WS).store_continuation_input(
+        run_id, command_id="cmd_resume_blocked", text=None
+    )
     fx.runtime.transitions.resume_run(run_id)
     final = await fx.runtime.scheduler.recover(run_id)
     assert final.status is WorkflowStatus.COMPLETED
@@ -400,7 +261,7 @@ class _GatedApprovalPort:
 
 
 @pytest.mark.asyncio
-async def test_approval_pending_node_drains_then_denial_maps_terminally(tmp_path):
+async def test_pause_wakes_approval_wait_denial_stays_old_segment_history(tmp_path):
     fixture = DagFixture(tmp_path)
     try:
         port = _GatedApprovalPort(approved=False)
@@ -447,12 +308,15 @@ async def test_approval_pending_node_drains_then_denial_maps_terminally(tmp_path
         alpha = next(item for item in view.nodes if item.node.node_id == "alpha")
         assert alpha.node.status is WorkflowStatus.RUNNING and alpha.approval_pending
 
-        # Denial resolves through the fixed failure mapping; no drain deadlock.
+        # The pause wakes the approval wait without resolving it (A05): the
+        # turn ends interrupted and the run settles paused at alpha's suspended
+        # segment. The later denial only lands as old-segment history; the
+        # terminal failure mapping is deferred to the resumed continuation.
         port.release.set()
         run = await drive
-        assert run.status is WorkflowStatus.FAILED
+        assert run.status is WorkflowStatus.PAUSED
         assert run.pause_requested
-        assert node_by_id(fixture, run_id, "alpha").status is WorkflowStatus.FAILED
+        assert node_by_id(fixture, run_id, "alpha").status is WorkflowStatus.RUNNING
     finally:
         fixture.close()
 

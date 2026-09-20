@@ -23,8 +23,7 @@ MAINTENANCE_LOCK_NAME = "operational-store.lock"
 
 APPLICATION_ID = 0x4D4F5257
 APPLICATION_NAME = "morrow-operational-store"
-SUPPORTED_SCHEMA_VERSION = 30
-RESERVED_SCHEMA_VERSIONS = frozenset(range(1, 31))
+SUPPORTED_SCHEMA_VERSION = 49
 BUSY_TIMEOUT_MS = 250
 WRITE_RETRY_ATTEMPTS = 8
 DIRECTORY_MODE = 0o700
@@ -42,6 +41,7 @@ class StoreHealth(StrEnum):
     OK = "ok"
     NEEDS_REPAIR = "needs_repair"
     READ_ONLY = "read_only"
+    UNSUPPORTED_SCHEMA = "unsupported_schema"
     FUTURE_SCHEMA = "future_schema"
 
 
@@ -52,6 +52,7 @@ class StorageErrorCode(StrEnum):
     IDENTITY_MISMATCH = "identity_mismatch"
     NEEDS_REPAIR = "needs_repair"
     NOT_FOUND = "not_found"
+    UNSUPPORTED_SCHEMA = "unsupported_schema"
     UNAVAILABLE = "unavailable"
 
 
@@ -112,15 +113,6 @@ class StoreIdentity:
     user_version: int
     application_name: str | None
     schema_version: int | None
-
-
-@dataclass(frozen=True)
-class MigrationReport:
-    from_version: int
-    to_version: int
-    applied: tuple[str, ...]
-    health: StoreHealth
-    backup_name: str | None = None
 
 
 @dataclass(frozen=True)

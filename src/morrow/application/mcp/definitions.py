@@ -123,6 +123,10 @@ def validate_enable_policy(
             raise McpDefinitionError("tool_missing", "MCP allowlist contains an undiscovered tool")
         if entry.status is not McpToolCatalogStatus.READY:
             raise McpDefinitionError("tool_unavailable", "MCP allowlist contains an unusable tool")
+        if mapping is not None and entry.risk_mapping != mapping:
+            raise McpDefinitionError(
+                "catalog_mismatch", "Refresh MCP Catalog after changing local mappings"
+            )
         if mapping is None or not mapping.enabled:
             raise McpDefinitionError(
                 "risk_mapping_required", "MCP tools require local risk mappings"
@@ -194,6 +198,33 @@ class McpDefinitionService:
             load.value,
             after,
             None,
+            after_server,
+        )
+
+    def prepare_update(self, definition, *, scope, scope_id=None):
+        """Explicit configuration edits always disable until refreshed and enabled."""
+        load = self.load(scope, scope_id=scope_id)
+        if load.value is None or load.status is not ExtensionYamlLoadStatus.OK:
+            raise McpDefinitionError("yaml_unavailable")
+        current = self.show(definition.server_id, scope, scope_id=scope_id)
+        after_server = _scoped_server(
+            definition, scope=scope, scope_id=scope_id, enabled=False, revision=current.revision + 1
+        )
+        after = _with_servers(
+            load.value,
+            tuple(
+                after_server if s.server_id == definition.server_id else s
+                for s in load.value.mcp.servers
+            ),
+        )
+        return PreparedMcpChange(
+            "update",
+            scope,
+            scope_id,
+            definition.server_id,
+            load.value,
+            after,
+            current,
             after_server,
         )
 

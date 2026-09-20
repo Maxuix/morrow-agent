@@ -18,6 +18,7 @@ from morrow.adapters.models.openai_compatible import (
     discover_openai_compatible_models,
     estimate_request_chars,
     make_openai_compatible,
+    make_request_token_estimator,
 )
 from morrow.adapters.models.preference_reviewer import ModelPreferenceReviewer
 from morrow.adapters.registry import AdapterRegistry
@@ -31,6 +32,7 @@ from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore, OperationalStoreSession
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
 from morrow.adapters.state.preference_yaml_types import PreferenceYamlLoadStatus
+from morrow.adapters.state.preset_preference_yaml import AgentPresetPreferenceYamlStore
 from morrow.adapters.state.yaml import (
     GlobalConfigYamlStore,
     ProjectStateYamlStore,
@@ -100,11 +102,17 @@ from morrow.application.workflows.drafts import WorkflowDraftService
 from morrow.application.workflows.management import WorkflowManagementService
 from morrow.application.workflows.publication import WorkflowCompilationService
 from morrow.application.workflows.queries import WorkflowQueryService
-from morrow.core.agent_runs import AgentDefinitionRef, exact_model_capabilities
+from morrow.core.agent_presets import LoadedPresetPreference
+from morrow.core.agent_runs import (
+    AgentDefinitionRef,
+    ProviderCapabilities,
+    exact_model_capabilities,
+)
 from morrow.core.artifacts import ArtifactKind
 from morrow.core.capabilities import (
     AccessScope,
     ApprovalMode,
+    PermissionPreset,
     PermissionProfile,
     ProcessIsolation,
     WorkspaceCapability,
@@ -118,6 +126,7 @@ from morrow.core.models import (
     StatePresence,
 )
 from morrow.core.permissions import UNCONFINED_HOST_WARNING_DIGEST, CapabilityName
+from morrow.core.ports import ModelContentObserver
 from morrow.core.preference_documents import PreferenceDocument
 from morrow.core.preference_models import PreferenceScope
 from morrow.core.runtime_policy import REVIEW_MAX_TIMEOUT_SECONDS
@@ -267,7 +276,7 @@ def build_skill_services(
         available_tools=available_tools,
         available_mcp_servers=available_mcp_servers,
     )
-    queries = SkillQueries(catalog, bindings, journal=journal)
+    queries = SkillQueries(catalog, bindings)
     selection = SkillSelectionService(
         catalog,
         bindings,
@@ -397,6 +406,13 @@ def build_application(
         tool_protocol="openai_function",
         multiple_tool_calls=True,
         discovery=discover_openai_compatible_models,
+        capabilities=ProviderCapabilities(
+            tool_protocol="openai_function",
+            multiple_tool_calls=True,
+            input_types=("text", "image"),
+            reasoning_efforts=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
+        ),
+        reasoning_implementation=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
     )
     credential_store = credentials or KeyringCredentialStore()
     application_id_source = id_source or RandomIdSource()
@@ -438,11 +454,12 @@ def build_operational_services(
     handle: OperationalStoreSession,
     write: bool,
     workspace_root: Path | None = None,
+    journal=None,
 ) -> OperationalServices:
     """Compose the operational domain services used by interactive and headless interfaces."""
 
     store = OperationalStore(app.data_root.root)
-    journal = SqliteOperationalJournal(handle)
+    journal = journal or SqliteOperationalJournal(handle)
     artifact_files = FilesystemArtifactStore(store.layout)
     if write:
         artifact_files.ensure_layout()
@@ -638,6 +655,11 @@ def build_session_application(
     permission_profile: PermissionProfile | None = None,
     metrics_enabled: bool = True,
     resume_session_id: str | None = None,
+    store_session=None,
+    journal=None,
+    activity_observer: ModelContentObserver | None = None,
+    pause_control=None,
+    persist_session: bool = True,
 ):
     inspection = app.workspace_state_service.inspect(identity.workspace_id)
     profile_result = inspection.profile
@@ -795,15 +817,17 @@ def build_session_application(
         settings=app.runtime_policy.long_horizon,
     )
     context_builder = ContextBuilder(
+        input_types=exact_capabilities.input_types,
         run_policy=run_policy,
         estimate_request_chars=estimate_request_chars,
+        estimate_request_tokens=make_request_token_estimator(model),
         prompt_assembler=prompt_assembler,
     )
     handle = None
     preference_service = None
     try:
-        handle = _open_operational_store(app)
-        preference_journal = SqliteOperationalJournal(handle)
+        handle = store_session or _open_operational_store(app)
+        preference_journal = journal or SqliteOperationalJournal(handle)
         preference_writer = PreferenceWriter(
             generic_preferences,
             preference_journal,
@@ -828,8 +852,14 @@ def build_session_application(
             handle=handle,
             write=True,
             workspace_root=workspace_capability.root,
+            journal=preference_journal,
         )
         journal = operational.journal
+        from morrow.application.attachments import hydrate_attachment_message
+
+        context_builder.attachment_resolver = lambda message: hydrate_attachment_message(
+            operational.artifacts, message
+        )
         from morrow.adapters.skills.managed_store import ManagedSkillPackageStore
 
         script_packages = ManagedSkillPackageStore(app.data_root.root)
@@ -853,6 +883,55 @@ def build_session_application(
             ),
             secrets=(active_credential,) if active_credential else (),
         )
+
+        def configure_run_permission(preset, credential):
+            nonlocal permission_profile, capability_policy, process, active_credential
+            nonlocal skill_scripts, sandbox_capability
+            selected = (
+                PermissionProfile.from_preset(PermissionPreset(preset))
+                if preset
+                else session.permission_profile
+            )
+            sandbox_capability = sandbox_backend.probe()
+            native = selected.process_isolation is ProcessIsolation.NATIVE_SANDBOX
+            if native and not sandbox_capability.supported:
+                raise ValueError("原生沙箱不可用；请选择其他权限模式")
+            active_credential = credential
+            if native:
+                toolchain_roots, toolchain_bins = _sandbox_toolchain_paths(
+                    workspace_capability.root
+                )
+                process = ProcessExecutionService(
+                    files,
+                    adapter=NativeSandboxProcessAdapter(
+                        workspace_capability.root,
+                        sandbox,
+                        sandbox_backend,
+                        toolchain_roots=toolchain_roots,
+                        toolchain_bin_paths=toolchain_bins,
+                    ),
+                    secrets=(credential,) if credential else (),
+                    requires_host=False,
+                    requires_sandbox=True,
+                )
+            else:
+                process = ProcessExecutionService(
+                    files, secrets=(credential,) if credential else ()
+                )
+            permission_profile = selected
+            session.permission_profile = selected
+            capability_policy = CapabilityPolicy(
+                selected, workspace_capability, sandbox_available=sandbox_capability.supported
+            )
+            skill_scripts = SkillScriptExecutionService(
+                script_packages,
+                workspace_id=identity.workspace_id,
+                journal=journal,
+                artifacts=operational.artifacts,
+                adapter_factory=make_skill_script_adapter,
+                sandbox_available=native and sandbox_capability.supported,
+                secrets=(credential,) if credential else (),
+            )
 
         def make_tools(policy):
             if policy.provider_tool_support.tool_protocol != "openai_function":
@@ -902,7 +981,15 @@ def build_session_application(
             return definitions, catalogs
 
         def mcp_client_factory(definition):
-            return McpStdioClient(definition, workspace_root=workspace_capability.root)
+            from morrow.application.mcp.credentials import resolve_environment
+
+            environment = resolve_environment(definition, app.credentials)
+            return McpStdioClient(
+                definition,
+                workspace_root=workspace_capability.root,
+                environment=environment,
+                secrets=tuple(environment.values()),
+            )
 
         def mcp_normalizer_factory(_server_id):
             def publish(content, mime_type, role):
@@ -953,7 +1040,7 @@ def build_session_application(
             catalogs = {}
             for definition in definitions:
                 launch = launches_by_server.get(definition.server_id)
-                if launch is None or launch.catalog_revision is None:
+                if launch is None:
                     continue
                 catalog = journal.get_mcp_catalog(
                     definition.scope,
@@ -997,6 +1084,8 @@ def build_session_application(
             id_source=app.id_source,
             tool_executor=tool_executor,
             runtime_control=runtime_control,
+            activity_observer=activity_observer,
+            pause_control=pause_control,
         )
         skill_services = build_skill_services(
             app,
@@ -1056,13 +1145,16 @@ def build_session_application(
             run_policy=run_policy,
         )
         preparation = AgentRunPreparationService(
+            attachment_resolver=context_builder.attachment_resolver,
             global_store=app.global_store,
             registry=app.registry,
             agent_policy=app.runtime_policy.agent_run,
             credential_resolver=app.provider_service.credential_resolver,
             frozen_credential_resolver=app.provider_service.resolve_frozen_credential,
             estimate_request_chars=estimate_request_chars,
+            make_estimate_request_tokens=make_request_token_estimator,
             tool_factory=make_tools,
+            permission_configurator=configure_run_permission,
             injected=injected_prepared,
             workspace_id=identity.workspace_id,
             mcp_factory=prepare_mcp,
@@ -1073,7 +1165,10 @@ def build_session_application(
         if resume_session_id:
             persistence.restore_into(session)
         else:
-            if journal.get_session(identity.workspace_id, session.session_id) is None:
+            if (
+                persist_session
+                and journal.get_session(identity.workspace_id, session.session_id) is None
+            ):
                 stamp = journal.now()
                 journal.create_session(
                     DurableSession(
@@ -1187,6 +1282,15 @@ def build_session_application(
             leaf_session.profile_revision = loaded.revision or 0
             leaf_session.profile_presence = loaded.presence or StatePresence.MISSING
 
+        preset_preference_store = AgentPresetPreferenceYamlStore(app.data_root.root)
+
+        def load_agent_preference(definition_id: str):
+            # Read-only lookup for node admission; a missing file is the default
+            # inherit behavior and never a write trigger.
+            document = preset_preference_store.load(identity.workspace_id)
+            preference = document.preference_for(definition_id)
+            return LoadedPresetPreference(preference, document.revision) if preference else None
+
         workflow_runtime = build_workflow_runtime(
             journal,
             handle,
@@ -1199,6 +1303,7 @@ def build_session_application(
             clock=journal.now,
             skill_selection=skill_services.selection,
             preference_loader=load_run_preferences,
+            agent_preference_loader=load_agent_preference,
             initialize_context=initialize_leaf_context,
             mutation=mutation,
             change_capture=ChangeArtifactCapture(operational.artifacts, mutation),
@@ -1287,19 +1392,6 @@ def build_session_application(
         orchestration_policies = OrchestrationPolicyService(
             ExtensionYamlStore(app.data_root.root), workspace_id=identity.workspace_id
         )
-        from morrow.application.workflows.evaluation import WorkflowEvaluationService
-        from morrow.application.workflows.feedback import WorkflowFeedbackService
-
-        feedback = WorkflowFeedbackService(
-            journal,
-            workspace_id=identity.workspace_id,
-            policies=orchestration_policies,
-            artifacts=operational.artifacts,
-            active_model=model,
-        )
-        workflow_drafts.feedback = feedback
-        workflow_runtime.patches.feedback = feedback
-        orchestration_policies.evaluation = WorkflowEvaluationService(feedback)
         workflow_runtime.replan.policies = orchestration_policies
         workflow_runtime.replan.active_model = model
 
@@ -1346,6 +1438,7 @@ def build_session_application(
             orchestration_policies=orchestration_policies,
         )
     except BaseException:
-        handle.close()
+        if store_session is None and handle is not None:
+            handle.close()
         raise
     return products

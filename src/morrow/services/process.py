@@ -85,9 +85,77 @@ class SecretRedactor:
             flags.append("invalid_utf8")
         return text, tuple(dict.fromkeys(flags)), count
 
+    def release_cut(self, text: str, hold_chars: int) -> int:
+        """Largest cut at or before ``len(text) - hold_chars`` with no secret straddling it.
+
+        Exact matching can only redact a whole secret, so a cut that leaves a
+        secret head in the releasable prefix would leak that fragment.  Move the
+        cut back before the start of any straddling secret; the extra held text
+        is still released (and redacted) once the whole secret has arrived.
+        """
+
+        cut = len(text) - hold_chars
+        while cut > 0:
+            adjusted = False
+            for secret in self._exact:
+                for width in range(min(len(secret) - 1, cut), 0, -1):
+                    if text[cut - width : cut] == secret[:width]:
+                        cut -= width
+                        adjusted = True
+                        break
+                if adjusted:
+                    break
+            if not adjusted:
+                return cut
+        return cut
+
+
+_STREAM_HOLD_CHARS = 64
+
 
 class ProcessExecutionService:
     """Prepare and execute an explicitly requested, approval-gated Host command."""
+
+    def _stream_hold_chars(self) -> int:
+        """Hold back at least one whole longest secret so split secrets stay hidden."""
+
+        return max(_STREAM_HOLD_CHARS, self.redactor.max_secret_length)
+
+    def _incremental_redacted_listener(self, listener):
+        """Wrap a realtime output sink with exact-secret redaction (P4.3).
+
+        A bounded tail is held back so secrets split across chunks stay
+        hidden; on stream end the remainder is redacted and released.
+        """
+        hold_chars = self._stream_hold_chars()
+        hold = {"stdout": "", "stderr": ""}
+
+        def emit(stream_name: str, text: str) -> None:
+            if text == "":
+                # End-of-stream signal: flush the bounded held remainder.
+                if hold[stream_name]:
+                    redacted, _, _ = self.redactor.redact(
+                        hold[stream_name].encode("utf-8", errors="replace")
+                    )
+                    hold[stream_name] = ""
+                    if redacted:
+                        listener(stream_name, redacted)
+                return
+            pending = hold[stream_name] + text
+            if len(pending) <= hold_chars:
+                hold[stream_name] = pending
+                return
+            cut = self.redactor.release_cut(pending, hold_chars)
+            if cut <= 0:
+                hold[stream_name] = pending
+                return
+            releasable = pending[:cut]
+            hold[stream_name] = pending[cut:]
+            redacted, _, _ = self.redactor.redact(releasable.encode("utf-8", errors="replace"))
+            if redacted:
+                listener(stream_name, redacted)
+
+        return emit
 
     def __init__(
         self,
@@ -220,6 +288,7 @@ class ProcessExecutionService:
         approval_verdict,
         truncation_max_bytes: int | None = None,
         truncation_max_lines: int | None = None,
+        output_listener=None,
     ) -> tuple[CommandResult, object, bytes]:
         environment = self._minimal_environment()
         pi_truncation = truncation_max_bytes is not None or truncation_max_lines is not None
@@ -251,6 +320,11 @@ class ProcessExecutionService:
                 environment=environment,
                 output_limit=output_limit,
                 redaction_overlap=self.redactor.max_secret_length,
+                output_listener=(
+                    self._incremental_redacted_listener(output_listener)
+                    if output_listener is not None
+                    else None
+                ),
             )
         except ProcessAdapterError as exc:
             raise ProcessServiceError(exc.code, exc.message) from exc

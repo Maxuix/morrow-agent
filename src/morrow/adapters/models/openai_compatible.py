@@ -8,9 +8,18 @@ import math
 from collections.abc import AsyncIterator, Mapping
 from urllib.parse import urlsplit
 
+from morrow.core.activity import ThinkingCapability
+from morrow.core.image_tokens import (
+    estimate_image_part_tokens,
+    iter_image_parts,
+    messages_without_image_payloads,
+    select_image_token_algorithm,
+)
 from morrow.core.models import (
+    REASONING_DELTA_MAX_CHARS,
     AssistantMessage,
     FunctionToolCall,
+    GenerationOptions,
     Message,
     ModelCompletion,
     ModelCost,
@@ -25,6 +34,7 @@ from morrow.core.models import (
     ToolDefinition,
     ToolMessage,
     UsageAvailability,
+    UserMessage,
     provider_error_message,
 )
 from morrow.core.providers import DiscoveredModel
@@ -92,7 +102,30 @@ def serialize_message(message: Message) -> dict:
             "tool_call_id": message.tool_call_id,
             "content": message.content,
         }
+    if isinstance(message, UserMessage) and message.attachments:
+        if not message.input_parts:
+            raise ValueError("Attachment input has not been resolved")
+        return {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": part.text}
+                if part.type == "text"
+                else {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{part.media_type};base64,{part.data}"},
+                }
+                for part in message.input_parts
+            ],
+        }
     return {"role": message.role, "content": message.content}
+
+
+def generation_fields(options: GenerationOptions | None) -> dict:
+    if options is None:
+        return {}
+    if not isinstance(options, GenerationOptions):
+        raise ValueError("Generation options must use the typed contract")
+    return options.model_dump(exclude_none=True)
 
 
 def serialize_tool(tool: ToolDefinition) -> dict:
@@ -106,6 +139,14 @@ def serialize_tool(tool: ToolDefinition) -> dict:
     }
 
 
+def _serialize_for_estimate(message: Message) -> dict:
+    """Estimate-only wire: unresolved attachment refs stay as text, never crash."""
+
+    if isinstance(message, UserMessage) and message.attachments and not message.input_parts:
+        return {"role": "user", "content": message.content}
+    return serialize_message(message)
+
+
 def estimate_request_chars(
     messages: tuple[Message, ...], tools: tuple[ToolDefinition, ...] = ()
 ) -> int:
@@ -115,6 +156,44 @@ def estimate_request_chars(
         payload["tools"] = [serialize_tool(tool) for tool in tools]
         payload["tool_choice"] = "auto"
     return len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+
+
+def estimate_text_request_chars(
+    messages: tuple[Message, ...], tools: tuple[ToolDefinition, ...] = ()
+) -> int:
+    """Wire size with image Base64 removed; used as the unknown-window text budget."""
+
+    return estimate_request_chars(messages_without_image_payloads(messages), tools)
+
+
+def make_request_token_estimator(model: ModelRef):
+    """Assemble a model-aware request token estimator.
+
+    Text tokens are UTF-8 bytes / 4 of the OpenAI-compatible wire without image
+    payloads. Image tokens use the algorithm published for that exact model, or
+    the conservative pixel fallback when no algorithm is known.
+    """
+
+    algorithm = select_image_token_algorithm(model)
+
+    def estimate(messages: tuple[Message, ...], tools: tuple[ToolDefinition, ...]) -> int:
+        stripped = messages_without_image_payloads(messages)
+        payload: dict = {"messages": [_serialize_for_estimate(message) for message in stripped]}
+        if tools:
+            payload["tools"] = [serialize_tool(tool) for tool in tools]
+            payload["tool_choice"] = "auto"
+        wire_bytes = len(
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        )
+        text_tokens = math.ceil(wire_bytes / 4) if wire_bytes else 0
+        image_tokens = sum(
+            estimate_image_part_tokens(part, algorithm=algorithm)
+            for part in iter_image_parts(messages)
+        )
+        return max(1, text_tokens + image_tokens)
+
+    estimate.image_token_algorithm = algorithm
+    return estimate
 
 
 _FINISH_REASONS: dict[str, ModelFinishReason] = {
@@ -343,6 +422,35 @@ def _is_transient_provider_internal(error: BaseException) -> bool:
     )
 
 
+def _is_transport_failure(error: BaseException) -> bool:
+    """Recognize stream disconnects, including SDK wrappers without HTTP status."""
+    return (
+        isinstance(error, (ConnectionError, OSError, _ProviderStreamEndedEarly))
+        or any(
+            marker in type(error).__name__.casefold()
+            for marker in (
+                "connect",
+                "network",
+                "proxy",
+                "transport",
+                "remoteprotocol",
+                "readerror",
+                "writeerror",
+            )
+        )
+        or any(
+            marker in str(error).casefold()
+            for marker in (
+                "peer closed connection",
+                "incomplete chunked read",
+                "connection reset by peer",
+                "server disconnected",
+                "connection closed before",
+            )
+        )
+    )
+
+
 def _classify_error_code(error: BaseException) -> ModelErrorCode:
     errors = _error_chain(error)
     for item in errors:
@@ -389,14 +497,7 @@ def _classify_error_code(error: BaseException) -> ModelErrorCode:
         for item in errors
     ):
         return ModelErrorCode.TIMEOUT
-    if any(
-        isinstance(item, (ConnectionError, OSError))
-        or any(
-            marker in type(item).__name__.casefold()
-            for marker in ("connect", "network", "proxy", "transport")
-        )
-        for item in errors
-    ):
+    if any(_is_transport_failure(item) for item in errors):
         return ModelErrorCode.NETWORK
     if any(isinstance(item, (TypeError, ValueError)) for item in errors):
         return ModelErrorCode.INVALID_RESPONSE
@@ -413,6 +514,7 @@ def classify_failure(error: BaseException, *, phase: str | None = None) -> Model
     code = _classify_error_code(error)
     has_provider_signal = _has_terminal_provider_limit(errors) or any(
         _provider_status(item) is not None
+        or _is_transport_failure(item)
         or isinstance(item, (TimeoutError, ConnectionError, OSError, _ProviderStreamEndedEarly))
         or any(
             marker in type(item).__name__.casefold()
@@ -492,6 +594,12 @@ async def discover_openai_compatible_models(config, credential: str) -> tuple[Di
 
 
 class OpenAICompatibleProvider:
+    # Four-state thinking visibility (master plan P3.1): recognized vendor
+    # string reasoning fields are projected as visible_text without requiring
+    # any user-facing debug switch; opaque payloads stay activity-only. An
+    # adapter that receives explicit summaries would declare "summary".
+    reasoning_visibility: ThinkingCapability = "visible_text"
+
     def __init__(
         self,
         base_url: str,
@@ -502,6 +610,7 @@ class OpenAICompatibleProvider:
         connect_timeout: float = 20.0,
         first_token_timeout: float = 45.0,
         completion_timeout: float = REVIEW_MAX_TIMEOUT_SECONDS,
+        chunk_timeout_seconds: float | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.credential = credential
@@ -510,6 +619,11 @@ class OpenAICompatibleProvider:
         self.connect_timeout = connect_timeout
         self.first_token_timeout = first_token_timeout
         self.completion_timeout = completion_timeout
+        # None reuses the first-token budget: one idle ceiling for the whole
+        # stream keeps the configuration surface minimal.
+        self.chunk_timeout_seconds = (
+            first_token_timeout if chunk_timeout_seconds is None else chunk_timeout_seconds
+        )
         self._client = None
 
     def _get_client(self):
@@ -533,7 +647,10 @@ class OpenAICompatibleProvider:
         model: ModelRef,
         messages: list[Message],
         tools: tuple[ToolDefinition, ...] = (),
+        *,
+        generation: GenerationOptions | None = None,
     ) -> AsyncIterator[ModelEvent]:
+        options = generation_fields(generation)
         accumulator = StreamAccumulator()
         response = None
         usage = ModelUsage.unavailable()
@@ -541,18 +658,26 @@ class OpenAICompatibleProvider:
         completed_reason: ModelFinishReason | None = None
         finish_seen = False
         finish_signal: str | None = None
+        # One bounded activity marker per kind: fragments and reasoning stay
+        # internal, only their arrival is observable progress evidence.
+        emitted_activity: set[str] = set()
         try:
             request: dict = {
                 "model": self.api_model_ids.get(model.model_id, model.model_id),
                 "messages": [serialize_message(message) for message in messages],
                 "stream": True,
                 "stream_options": {"include_usage": True},
+                **options,
             }
             if tools:
                 request["tools"] = [serialize_tool(tool) for tool in tools]
                 request["tool_choice"] = "auto"
             try:
-                async with asyncio.timeout(self.connect_timeout):
+                # Streaming reasoning models can hold the response headers for
+                # many seconds while thinking server-side: the create() call
+                # must be bounded by the first-token budget, not by the tighter
+                # connect guard (live-verified against glm-5.3-flash, P7).
+                async with asyncio.timeout(max(self.connect_timeout, self.first_token_timeout)):
                     response = await self._get_client().chat.completions.create(**request)
             except TimeoutError:
                 yield ModelEvent(
@@ -573,7 +698,10 @@ class OpenAICompatibleProvider:
                         async with asyncio.timeout(self.first_token_timeout):
                             chunk = await anext(iterator)
                     else:
-                        chunk = await anext(iterator)
+                        # Inter-chunk idle budget: a stalled stream must not
+                        # hold the turn beyond the configured chunk ceiling.
+                        async with asyncio.timeout(self.chunk_timeout_seconds):
+                            chunk = await anext(iterator)
                 except StopAsyncIteration:
                     break
                 except TimeoutError:
@@ -584,7 +712,8 @@ class OpenAICompatibleProvider:
                             origin=ModelFailureOrigin.PROVIDER,
                             retryable=True,
                             message=provider_error_message(
-                                ModelErrorCode.TIMEOUT, phase="first_token"
+                                ModelErrorCode.TIMEOUT,
+                                phase="first_token" if first else "chunk",
                             ),
                         ),
                         made_progress=accumulator.made_progress,
@@ -629,8 +758,31 @@ class OpenAICompatibleProvider:
                     if text:
                         accumulator.add_text(text)
                         yield ModelEvent(kind="text_delta", text=text)
-                    for fragment in getattr(delta, "tool_calls", None) or []:
+                    tool_fragments = getattr(delta, "tool_calls", None) or []
+                    if tool_fragments and "tool_call" not in emitted_activity:
+                        emitted_activity.add("tool_call")
+                        yield ModelEvent(kind="activity", activity="tool_call")
+                    for fragment in tool_fragments:
                         accumulator.add_tool_fragment(fragment)
+                    reasoning = (
+                        getattr(delta, "reasoning_content", None)
+                        or getattr(delta, "reasoning", None)
+                        or getattr(delta, "reasoning_text", None)
+                    )
+                    if reasoning and "reasoning" not in emitted_activity:
+                        emitted_activity.add("reasoning")
+                        yield ModelEvent(kind="activity", activity="reasoning")
+                    if isinstance(reasoning, str) and reasoning:
+                        # Recognized vendor string field → visible_text (P3.1
+                        # four-state mapping): one bounded fragment per delta.
+                        # Non-string values stay opaque and keep the
+                        # activity-only path above; nothing is decoded.
+                        clipped = reasoning[:REASONING_DELTA_MAX_CHARS]
+                        yield ModelEvent(
+                            kind="reasoning_delta",
+                            reasoning_text=clipped,
+                            reasoning_truncated=len(clipped) < len(reasoning),
+                        )
                 finish = getattr(choice, "finish_reason", None)
                 if finish is not None:
                     accumulator.set_finish(finish)

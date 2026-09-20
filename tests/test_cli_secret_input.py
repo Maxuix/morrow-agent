@@ -27,7 +27,7 @@ def test_secret_rejects_noninteractive_input(monkeypatch, stdin):
     assert error.value.code == "secure_input_unavailable"
 
 
-@pytest.mark.parametrize("provider_id", ["opencode-go", "custom-provider"])
+@pytest.mark.parametrize("provider_id", ["volcengine", "custom-provider"])
 def test_secret_environment_credential_does_not_require_terminal(monkeypatch, provider_id):
     key = f"MORROW_{provider_id.upper().replace('-', '_')}_API_KEY"
     monkeypatch.setenv(key, "synthetic-test-credential")
@@ -83,7 +83,7 @@ def test_provider_add_noninteractive_exits_without_prompt_or_write(monkeypatch):
         lambda **_kwargs: SimpleNamespace(provider_service=SimpleNamespace(add=_unexpected_prompt)),
     )
 
-    result = CliRunner().invoke(cli.app, ["provider", "add", "--preset", "opencode-go"])
+    result = CliRunner().invoke(cli.app, ["provider", "add", "--preset", "volcengine"])
 
     assert result.exit_code == 2, result.output
     assert "交互终端" in result.output

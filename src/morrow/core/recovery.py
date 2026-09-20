@@ -55,6 +55,49 @@ class RecoveryReportStatus(StrEnum):
     QUARANTINED = "quarantined"
 
 
+class RecoveryDisplayState(StrEnum):
+    """Stable UI states for the read-only recovery projection.
+
+    ``checking`` and ``reconnecting`` are included in the wire contract so a
+    client can render an honest transitional state without pretending that a
+    recovery command has already run. Core normally returns a settled state;
+    the GUI owns those two local transitions.
+    """
+
+    IDLE = "idle"
+    CHECKING = "checking"
+    RECONNECTING = "reconnecting"
+    PAUSED = "paused"
+    RESUMABLE = "resumable"
+    NEEDS_REVIEW = "needs_review"
+    UNKNOWN_SIDE_EFFECT = "unknown_side_effect"
+    QUARANTINED = "quarantined"
+    UNSUPPORTED = "unsupported"
+
+
+class RecoveryOwner(StrEnum):
+    """The execution owner that must receive a recovery command."""
+
+    CHAT = "chat"
+    PLANNING = "planning"
+    WORKFLOW = "workflow"
+
+
+class RecoveryAction(StrEnum):
+    """Transport-neutral verbs advertised by ``RecoveryStatus``."""
+
+    CHECK = "check"
+    REVIEW = "review"
+    RESUME = "resume"
+    RESUME_WORKFLOW = "resume_workflow"
+    RESUME_GENERATION = "resume_generation"
+    CONTINUE = "continue"
+    ACKNOWLEDGE = "acknowledge"
+    ABORT = "abort"
+    QUARANTINE = "quarantine"
+    NEW_SESSION = "new_session"
+
+
 class RecoveryResolution(StrEnum):
     """User-guided outcomes. Resume is report-level after blocking items close."""
 
@@ -186,6 +229,70 @@ class RecoveryReport(ProtocolModel):
     @property
     def blocking_open(self) -> tuple[RecoveryItem, ...]:
         return tuple(item for item in self.items if item.blocking and item.resolution is None)
+
+
+class RecoveryCheck(ProtocolModel):
+    """One readable, non-authoritative recovery check.
+
+    The identifiers are deliberately named opaque: they are action handles,
+    not display fields. The GUI must retain them only for the typed command it
+    sends after the user chooses an action and must never render them as a
+    report/ID form.
+    """
+
+    summary: str = Field(min_length=1, max_length=512)
+    classification: str = Field(min_length=1, max_length=80)
+    allowed_actions: tuple[str, ...] = Field(default=(), max_length=8)
+    opaque_target: str | None = Field(default=None, max_length=128)
+    opaque_item: str | None = Field(default=None, max_length=128)
+
+    @field_validator("summary")
+    @classmethod
+    def clean_summary(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("recovery check summary must not be empty")
+        return cleaned[:512]
+
+
+class RecoveryStatus(ProtocolModel):
+    """Read-only execution recovery capability projection.
+
+    This is intentionally separate from ``RecoveryReport``. A status read may
+    not create a report, restore a runtime, enqueue work, or start a driver.
+    ``opaque_target`` and check handles are only echoed back to the matching
+    command adapter; safe summaries are the only user-facing content.
+    """
+
+    protocol_version: int = Field(default=1, ge=1, strict=True)
+    display_state: RecoveryDisplayState = RecoveryDisplayState.IDLE
+    owner: RecoveryOwner | None = None
+    safe_summary: str = Field(min_length=1, max_length=512)
+    allowed_actions: tuple[str, ...] = Field(default=(), max_length=12)
+    opaque_target: str | None = Field(default=None, max_length=128)
+    opaque_target_kind: (
+        Literal["agent_run", "report", "workflow_run", "planning_operation"] | None
+    ) = None
+    decision_required: bool = False
+    revision: int = Field(default=0, ge=0, strict=True)
+    checks: tuple[RecoveryCheck, ...] = Field(default=(), max_length=16)
+
+    @field_validator("safe_summary")
+    @classmethod
+    def clean_safe_summary(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("recovery status summary must not be empty")
+        return cleaned[:512]
+
+    @model_validator(mode="after")
+    def enforce_status_budget(self) -> RecoveryStatus:
+        payload = canonical_json_bytes(self.model_dump(mode="json"))
+        require_payload_budget(payload, 32 * 1024, label="RecoveryStatus")
+        refuse_secret_material(
+            payload, label="RecoveryStatus", profile=TextSafetyProfile.LEGACY_STRICT
+        )
+        return self
 
 
 class RecoveryReceipt(ProtocolModel):

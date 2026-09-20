@@ -163,10 +163,14 @@ class OperationalApplicationService:
         return self._query(lambda: self.journal.get_session(self.workspace_id, session_id))
 
     def list_sessions(
-        self, *, cursor: str | None = None, limit: int = 50
+        self, *, cursor: str | None = None, limit: int = 50, include_execution: bool = True
     ) -> QueryPage[DurableSession]:
         offset = self._offset(cursor, limit)
-        items = self._query(lambda: self.journal.list_sessions(self.workspace_id))
+        items = self._query(
+            lambda: self.journal.list_sessions(
+                self.workspace_id, include_execution=include_execution
+            )
+        )
         page = items[offset : offset + limit]
         return QueryPage(page, str(offset + len(page)) if offset + len(page) < len(items) else None)
 
@@ -375,13 +379,12 @@ class OperationalApplicationService:
             lambda: self.journal.list_preference_review_jobs(
                 self.workspace_id,
                 status=selected_status,
-                limit=min(500, offset + limit),
+                limit=limit,
+                offset=offset,
             )
         )
-        page = tuple(
-            self._preference_review_job_view(item) for item in items[offset : offset + limit]
-        )
-        return QueryPage(page, str(offset + len(page)) if offset + len(page) < len(items) else None)
+        page = tuple(self._preference_review_job_view(item) for item in items)
+        return QueryPage(page, str(offset + len(page)) if len(page) == limit else None)
 
     list_preference_review_job_views = list_preference_review_jobs
 
@@ -483,17 +486,11 @@ class OperationalApplicationService:
     def accept_preference_proposal(self, proposal_id: str, **kwargs):
         return self._preference_inbox().accept(proposal_id, **kwargs)
 
-    def edit_and_accept_preference_proposal(self, proposal_id: str, statement: str, **kwargs):
-        return self._preference_inbox().edit_and_accept(proposal_id, statement, **kwargs)
-
     def accept_preference_proposals(self, proposal_ids, **kwargs):
         return self._preference_inbox().accept_many(proposal_ids, **kwargs)
 
     def reject_preference_proposal(self, proposal_id: str, **kwargs):
         return self._preference_inbox().reject(proposal_id, **kwargs)
-
-    def reject_and_suppress_preference_proposal(self, proposal_id: str, **kwargs):
-        return self._preference_inbox().reject_and_suppress(proposal_id, **kwargs)
 
     async def run_preference_review(self, job_id: str):
         worker = self.review_worker
@@ -533,6 +530,9 @@ class OperationalApplicationService:
 
     def get_memory_selection(self, selection_id: str):
         return self.memory.get_selection(selection_id)
+
+    def rebuild_memory_index(self, *, page_size: int = 500) -> int:
+        return self.memory.rebuild_index(page_size=page_size)
 
     def disable_project_knowledge(self, command):
         return self.memory.disable_knowledge(command)
@@ -588,11 +588,12 @@ class OperationalApplicationService:
                 self.workspace_id,
                 status=selected_status,
                 task_outcome_id=task_outcome_id,
-                limit=min(500, offset + limit),
+                limit=limit,
+                offset=offset,
             )
         )
-        page = items[offset : offset + limit]
-        return QueryPage(page, str(offset + len(page)) if offset + len(page) < len(items) else None)
+        page = items
+        return QueryPage(page, str(offset + len(page)) if len(page) == limit else None)
 
     def get_learning_evidence(self, evidence_id: str) -> LearningEvidence | None:
         return self._query(
@@ -769,6 +770,8 @@ class OperationalApplicationService:
         )
 
     def cleanup_orphans(self, *, dry_run: bool = True):
+        if not dry_run:
+            getattr(self, "maintenance_check", lambda: None)()
         if self.artifacts is None:
             raise ApplicationError(
                 ApplicationErrorCode.UNAVAILABLE, "Artifact service is unavailable"
@@ -1053,6 +1056,81 @@ class OperationalApplicationService:
 
         return self._translate(lambda: self.journal.transact(work))
 
+    def get_session_metadata(self, session_id):
+        return self.journal.session_metadata.get(self.workspace_id, session_id)
+
+    def update_session_metadata(
+        self, session_id, *, expected_revision, title=None, pinned=None, command_id=None
+    ):
+        operation = "session_metadata"
+        payload = {
+            "session_id": session_id,
+            "expected_revision": expected_revision,
+            "title": title,
+            "pinned": pinned,
+        }
+        cid, digest, replay = self._prepare(operation, payload, command_id)
+        if replay is not None:
+            return ApplicationCommandResult(self.get_session_metadata(session_id), replay)
+
+        def work(txn):
+            value = txn.session_metadata.update(
+                self.workspace_id,
+                session_id,
+                expected_revision=expected_revision,
+                title=title,
+                pinned=pinned,
+            )
+            receipt = self._receipt(
+                txn,
+                command_id=cid,
+                operation=operation,
+                digest=digest,
+                session_id=session_id,
+                result_kind="session",
+                result_id=session_id,
+                event_cursor=None,
+            )
+            return ApplicationCommandResult(value, receipt)
+
+        return self._translate(lambda: self.journal.transact(work))
+
+    def unarchive_session(self, session_id, *, command_id=None, expected_updated_at=None):
+        operation = "session_unarchive"
+        payload = {
+            "session_id": session_id,
+            "expected_updated_at": expected_updated_at.isoformat() if expected_updated_at else None,
+        }
+        cid, digest, replay = self._prepare(operation, payload, command_id)
+        if replay is not None:
+            return ApplicationCommandResult(self._require_session(session_id), replay)
+
+        def work(txn):
+            current = self._require_session(session_id)
+            if expected_updated_at is not None and current.updated_at != expected_updated_at:
+                raise ApplicationError(ApplicationErrorCode.STALE, "Session row is stale")
+            if current.lifecycle is not SessionLifecycle.ARCHIVED:
+                raise ApplicationError(ApplicationErrorCode.CONFLICT, "Session must be archived")
+            value = txn.save_session(
+                self.workspace_id,
+                current.model_copy(
+                    update={"lifecycle": SessionLifecycle.ACTIVE, "updated_at": _now(self.clock)}
+                ),
+            )
+            receipt = self._receipt(
+                txn,
+                command_id=cid,
+                operation=operation,
+                digest=digest,
+                session_id=session_id,
+                result_kind="session",
+                result_id=session_id,
+                event_cursor=None,
+            )
+            return ApplicationCommandResult(value, receipt)
+
+        return self._translate(lambda: self.journal.transact(work))
+
     def archive_session(
         self,
         session_id: str,
@@ -1246,6 +1324,23 @@ class OperationalApplicationService:
                 task_run_id, command_id=cid, expected_row_version=expected_row_version
             ),
             event_type="task.resumed",
+        )
+
+    def task_abandon(
+        self,
+        task_run_id: str,
+        *,
+        command_id: str | None = None,
+        expected_row_version: int | None = None,
+    ) -> ApplicationCommandResult[DurableTaskRun]:
+        return self._task_command(
+            "task_abandon",
+            {"task_run_id": task_run_id, "expected_row_version": expected_row_version},
+            command_id,
+            lambda cid: self.tasks.abandon(
+                task_run_id, command_id=cid, expected_row_version=expected_row_version
+            ),
+            event_type="task.abandoned",
         )
 
     def pin_artifact(

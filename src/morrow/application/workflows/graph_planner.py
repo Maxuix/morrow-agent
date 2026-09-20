@@ -290,6 +290,7 @@ class GraphPlannerService:
                 diagnostics.append(str(exc)[:512])
         if candidate is None or source is None:
             return self._needs_input(policy, budget, reasons, diagnostics)
+        auto_run = self.policies.auto_run(policy)
         explanation = PlannerExplanation(
             mode="multi" if multi else "direct",
             reasons=tuple(reasons),
@@ -306,12 +307,8 @@ class GraphPlannerService:
                 }.values()
             ),
             budget=budget,
-            auto_run_eligible=self.policies.auto_run(policy, features.task_type),
-            auto_run_reason="paired_benefit"
-            if self.policies.auto_run(policy, features.task_type)
-            else "paired_evidence_missing"
-            if policy.auto_run_mode == "allow_promoted"
-            else "approval_only",
+            auto_run_eligible=auto_run,
+            auto_run_reason="user_policy" if auto_run else "approval_only",
         )
         metadata = PlannerMetadata(
             request_digest=digest,
@@ -522,8 +519,8 @@ class GraphPlannerService:
                 starting_point="grammar",
                 node_count=0,
                 budget=budget,
-                auto_run_reason="paired_evidence_missing"
-                if policy.auto_run_mode == "allow_promoted"
+                auto_run_reason="user_policy"
+                if policy.auto_run_mode == "auto"
                 else "approval_only",
             ),
             diagnostics=tuple(dict.fromkeys(diagnostics))[:16],

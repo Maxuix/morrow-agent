@@ -170,7 +170,7 @@ async def test_guardrail_and_excluded_role_are_preserved(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_workspace_policy_overrides_global_and_autorun_needs_real_promotion(tmp_path):
+async def test_workspace_policy_overrides_global_and_auto_run_follows_user_policy(tmp_path):
     fx = ServerFixture(tmp_path)
     try:
         await publish_roles(fx)
@@ -188,8 +188,7 @@ async def test_workspace_policy_overrides_global_and_autorun_needs_real_promotio
             policy_id="workspace_rules",
             scope="workspace",
             required_roles=("reviewer",),
-            auto_run_mode="allow_promoted",
-            evidence=("fake_evidence",),
+            auto_run_mode="auto",
         )
         second = await put(local, 0)
         assert second.status == 200, second.body
@@ -198,8 +197,8 @@ async def test_workspace_policy_overrides_global_and_autorun_needs_real_promotio
         assert "reviewer" in {
             n["node_id"] for n in result["workflow_draft"]["draft"]["source"]["nodes"]
         }
-        assert result["explanation"]["auto_run_eligible"] is False
-        assert result["explanation"]["auto_run_reason"] == "paired_evidence_missing"
+        assert result["explanation"]["auto_run_eligible"] is True
+        assert result["explanation"]["auto_run_reason"] == "user_policy"
         stale = await put(local.model_copy(update={"multi_agent": False}), 0)
         assert stale.status == 409
         # Persistence uses the Extension authority, including OCC with unrelated Skill/MCP changes.
@@ -592,16 +591,16 @@ async def test_planner_uses_current_profile_constraints_before_save(
         fx.close()
 
 
-def test_policy_document_retains_legacy_digest_and_other_extension_fields(tmp_path):
+def test_policy_document_digest_includes_current_extension_fields(tmp_path):
     from morrow.adapters.state.extension_yaml import ExtensionYamlStore, extension_document_digest
     from morrow.application.workflows.orchestration_policy import OrchestrationPolicyService
     from morrow.core.domain import canonical_json_bytes, sha256_digest
     from morrow.core.skills.bindings import GlobalExtensionDocument, SkillBinding
 
     store = ExtensionYamlStore(tmp_path)
-    document = GlobalExtensionDocument(bindings=(SkillBinding(skill_id="example", scope="global"),))
-    old = document.model_dump(mode="json", by_alias=True, exclude={"orchestration", "updated_at"})
-    assert extension_document_digest(document) == sha256_digest(canonical_json_bytes(old))
+    document = GlobalExtensionDocument(skills=(SkillBinding(skill_id="example", scope="global"),))
+    current = document.model_dump(mode="json", by_alias=True, exclude={"updated_at"})
+    assert extension_document_digest(document) == sha256_digest(canonical_json_bytes(current))
     store.write_global(document, expected_revision=0)
     service = OrchestrationPolicyService(store, workspace_id="ws_test")
     service.put(OrchestrationPolicy(), expected_revision=1)
@@ -646,16 +645,12 @@ async def test_similar_implementation_tasks_change_shape_with_scope(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_generated_workflow_manual_run_works_without_promotion(tmp_path):
+async def test_generated_workflow_manual_run_works_without_auto_run(tmp_path):
     from test_stage8_core_api import create_session_and_task
 
     fx = ServerFixture(tmp_path, scripts=[["evidence"], ["implementation"], ["review passed"]])
     try:
         await publish_roles(fx)
-        policy = OrchestrationPolicy(auto_run_mode="allow_promoted")
-        await fx.on_core(
-            lambda: fx.host.context.products.orchestration_policies.put(policy, expected_revision=0)
-        )
         planned = await generate(fx, planning("Implement a large change across modules"))
         assert planned["explanation"]["auto_run_eligible"] is False
         frozen = await fx.client.post(

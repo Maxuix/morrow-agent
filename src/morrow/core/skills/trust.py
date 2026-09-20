@@ -45,9 +45,6 @@ class ManifestDocument(ProtocolModel):
     platform_constraints: tuple[str, ...] = ()
     raw_morrow_fields: tuple[str, ...] = ()
 
-    def has_identity_fields(self) -> bool:
-        return bool(self.name) or bool(self.display_version)
-
 
 @dataclass(frozen=True, slots=True)
 class TrustEvidence:

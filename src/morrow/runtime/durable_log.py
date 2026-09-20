@@ -152,9 +152,6 @@ class DurableConversationWriter:
         _durables, snapshot = self.persist_with_records(planned)
         return snapshot
 
-    def apply_persisted(self, committed: ConversationSnapshot) -> None:
-        self.log.install_snapshot(committed)
-
     def commit(self, planned: ConversationAppend) -> None:
         self.persist(planned)
         self.log.apply_committed(planned)

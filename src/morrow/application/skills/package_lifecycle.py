@@ -217,6 +217,21 @@ class SkillPackageLifecycleMixin:
                 "confirmation_required", "Skill package removal requires confirmation"
             )
         validate_skv_id(version_id)
+        # A completed removal has no catalog version left to resolve. Recover its
+        # exact explicit-source receipt before inspecting the remaining packages.
+        if command_id is not None and source_kind is not None:
+            _, _, replay = self._prepare_command(
+                "remove",
+                {
+                    "scope_id": scope_id,
+                    "skill_id": skill_id,
+                    "version_id": version_id,
+                    "source_kind": source_kind.value,
+                },
+                command_id,
+            )
+            if replay is not None:
+                return replay
         entry, resolved_source = self._resolve_entry(
             skill_id, scope_id, source_kind, allow_conflicted=True
         )

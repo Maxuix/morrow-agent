@@ -17,12 +17,12 @@ from pydantic import BaseModel, ValidationError
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
 from morrow.adapters.state.preference_yaml_types import (
     PreferenceYamlConflict,
-    PreferenceYamlError,
     PreferenceYamlLoadStatus,
 )
 from morrow.core.models import (
     CURRENT_SCHEMA_VERSION,
     WORKSPACE_DOCUMENT_SCHEMA_VERSION,
+    WORKSPACE_INDEX_SCHEMA_VERSION,
     Profile,
     ProfileDocument,
     StateLoadResult,
@@ -66,7 +66,6 @@ class YamlDocument:
         lock_path: Path | None = None,
         failure_injector: Callable[[str], None] | None = None,
         supported_schema_version: int = CURRENT_SCHEMA_VERSION,
-        load_transform: Callable[[dict], dict] | None = None,
         workspace_envelope: bool = False,
     ) -> None:
         self.path = path
@@ -75,7 +74,6 @@ class YamlDocument:
         self.lock_path = lock_path or path.with_suffix(path.suffix + ".lock")
         self.failure_injector = failure_injector
         self.supported_schema_version = supported_schema_version
-        self.load_transform = load_transform
         self.workspace_envelope = workspace_envelope
 
     def _fail(self, point: str) -> None:
@@ -130,14 +128,12 @@ class YamlDocument:
             if not isinstance(raw, dict):
                 raise ValueError("state document must be a mapping")
             schema_version = int(raw.get("schema_version", 0))
-            if schema_version > self.supported_schema_version:
+            if schema_version != self.supported_schema_version:
                 return StateLoadResult(
                     status=StateLoadStatus.UNSUPPORTED_SCHEMA,
                     revision=raw.get("revision"),
-                    error=f"schema_version {schema_version} is newer than supported version",
+                    error=f"schema_version {schema_version} is not the current version",
                 )
-            if self.load_transform:
-                raw = self.load_transform(raw)
             value = self.model_type.model_validate(raw)
             if self.workspace_envelope:
                 presence = StatePresence(value.state)
@@ -237,10 +233,6 @@ class GlobalConfigYamlStore:
         self.preference_store = PreferenceYamlStore(root, failure_injector=failure_injector)
 
     def load(self) -> StateLoadResult:
-        try:
-            self.preference_store.migrate_global()
-        except PreferenceYamlError as exc:
-            return StateLoadResult(status=StateLoadStatus.CORRUPT, error=exc.code)
         return self._state_load(self.preference_store.load_global())
 
     def update(
@@ -293,6 +285,7 @@ class WorkspaceIndexYamlStore:
             default_factory=WorkspaceIndex,
             lock_path=locks / "workspace-index.lock",
             failure_injector=failure_injector,
+            supported_schema_version=WORKSPACE_INDEX_SCHEMA_VERSION,
         )
 
     def load(self) -> StateLoadResult:
@@ -373,12 +366,6 @@ def _write_locked(self: YamlDocument, value: BaseModel, current_revision: int) -
 YamlDocument._write_locked = _write_locked  # type: ignore[attr-defined]
 
 
-def _load_workspace_envelope(raw: dict) -> dict:
-    if int(raw.get("schema_version", 0)) == 1 and "state" not in raw:
-        return {**raw, "schema_version": WORKSPACE_DOCUMENT_SCHEMA_VERSION, "state": "present"}
-    return raw
-
-
 class ProjectStateYamlStore:
     """Narrow workspace state facade; every operation requires workspace_id."""
 
@@ -397,8 +384,6 @@ class ProjectStateYamlStore:
         workspace_id: str,
         name: str,
         model_type: type[T],
-        *,
-        migrate_profile: bool = False,
     ) -> YamlDocument:
         if not workspace_id or "/" in workspace_id or "\\" in workspace_id:
             raise ValueError("invalid workspace_id")
@@ -409,44 +394,10 @@ class ProjectStateYamlStore:
             lock_path=self.locks / f"{workspace_id}-{name}.lock",
             failure_injector=self.failure_injector,
             supported_schema_version=WORKSPACE_DOCUMENT_SCHEMA_VERSION,
-            load_transform=_load_workspace_envelope if migrate_profile else None,
             workspace_envelope=True,
         )
 
-    def _migrate_profile(self, workspace_id: str) -> StateLoadResult | None:
-        document = self._document(workspace_id, "profile.yaml", ProfileDocument)
-        if not document.path.exists():
-            return None
-        try:
-            raw = yaml.safe_load(document.path.read_text(encoding="utf-8"))
-            if not isinstance(raw, dict) or int(raw.get("schema_version", 0)) != 1:
-                return None
-            with FileLock(str(document.lock_path), timeout=5):
-                legacy_document = self._document(
-                    workspace_id,
-                    "profile.yaml",
-                    ProfileDocument,
-                    migrate_profile=True,
-                )
-                loaded = legacy_document.load()
-                if loaded.status is not StateLoadStatus.OK or loaded.value is None:
-                    return StateLoadResult(
-                        status=StateLoadStatus.CORRUPT, error="profile_migration"
-                    )
-                written = document._write_locked(loaded.value, loaded.revision or 0)
-                if written.status is not StateWriteStatus.OK:
-                    return StateLoadResult(
-                        status=StateLoadStatus.CORRUPT, error="profile_migration"
-                    )
-        except (OSError, Timeout, TypeError, ValueError, yaml.YAMLError):
-            return StateLoadResult(status=StateLoadStatus.CORRUPT, error="profile_migration")
-        return None
-
     def load_preferences(self, workspace_id: str) -> StateLoadResult:
-        try:
-            self.preference_store.migrate_workspace(workspace_id)
-        except PreferenceYamlError as exc:
-            return StateLoadResult(status=StateLoadStatus.CORRUPT, error=exc.code)
         generic = self.preference_store.load_workspace(workspace_id)
         if generic.status is not PreferenceYamlLoadStatus.OK or generic.value is None:
             return StateLoadResult(
@@ -462,25 +413,7 @@ class ProjectStateYamlStore:
         )
 
     def load_profile(self, workspace_id: str) -> StateLoadResult:
-        migration_error = self._migrate_profile(workspace_id)
-        if migration_error is not None:
-            return migration_error
         return self._document(workspace_id, "profile.yaml", ProfileDocument).load()
-
-    def load_preferences_backup(self, workspace_id: str) -> StateLoadResult:
-        generic = self.preference_store.load_workspace_backup(workspace_id)
-        if generic.status is not PreferenceYamlLoadStatus.OK or generic.value is None:
-            return StateLoadResult(
-                status=StateLoadStatus(generic.status.value),
-                revision=generic.revision,
-                error=generic.error,
-            )
-        return StateLoadResult(
-            status=StateLoadStatus.OK,
-            presence=StatePresence(generic.presence or StatePresence.PRESENT.value),
-            value=generic.value,
-            revision=generic.revision,
-        )
 
     def load_profile_backup(self, workspace_id: str) -> StateLoadResult:
         return self._document(workspace_id, "profile.yaml", ProfileDocument).load_backup()

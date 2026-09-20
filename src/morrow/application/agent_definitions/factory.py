@@ -10,10 +10,12 @@ from morrow.application.agent_definitions.errors import (
 )
 from morrow.application.agent_definitions.publication import resolve_definition_tools
 from morrow.application.prompt import DirectCodingPromptAssembler
-from morrow.core.agent_runs import AgentDefinitionRef
+from morrow.core.agent_definitions import AgentDefinitionVersion
+from morrow.core.agent_presets import LoadedPresetPreference
+from morrow.core.agent_runs import AgentDefinitionRef, SettingSource
 from morrow.core.capabilities import OperationIntent, OperationKind, PolicyVerdict
 from morrow.core.domain import TaskRunPurpose, TaskRunStatus, session_can_start_work
-from morrow.core.models import ModelRef, ToolEffect
+from morrow.core.models import GenerationOptions, ModelRef, ToolEffect
 from morrow.core.workflows.contracts import MECHANISM_TOOL_NAMES
 from morrow.runtime.tools import ToolExecutor, ToolRegistry
 
@@ -38,6 +40,7 @@ class AgentFactory:
         conversation_scope="isolated",
         resolved_tool_requirements=None,
         parallel_read_candidate=False,
+        preset_preference: LoadedPresetPreference | None = None,
     ):
         self.preparation = preparation
         self.publication = publication
@@ -49,9 +52,10 @@ class AgentFactory:
         self.resolved_tool_requirements = resolved_tool_requirements
         self.parallel_read_candidate = parallel_read_candidate
         self.parallel_read_proven = parallel_read_candidate
+        self.preset_preference = preset_preference
         self.diagnostics = ()
 
-    def _scope(self, *, fresh):
+    def _scope(self, *, fresh, allow_history: bool = False):
         ws = self.publication.workspace_id
         journal = self.publication.journal
         stored = journal.get_session(ws, self.session.session_id)
@@ -80,7 +84,11 @@ class AgentFactory:
             return stored
         if stored.session_id == self.invoking_session_id or stored.parent_session_id is not None:
             raise AgentDefinitionAdmissionError(DefinitionFailure.SCOPE)
-        if fresh and (stored.conversation_position != 0 or self.session.log.snapshot().records):
+        if (
+            fresh
+            and not allow_history
+            and (stored.conversation_position != 0 or self.session.log.snapshot().records)
+        ):
             raise AgentDefinitionAdmissionError(DefinitionFailure.NONEMPTY)
         return stored
 
@@ -201,6 +209,47 @@ class AgentFactory:
 
         return restrict
 
+    def _resolve_model(self, version: AgentDefinitionVersion) -> ModelRef | None:
+        """Agent-level explicit model: definition first, then the preset overlay."""
+        selection = version.source.model_selection
+        if isinstance(selection, ModelRef):
+            return selection
+        if self.preset_preference is not None and self.preset_preference.preference.model:
+            return self.preset_preference.preference.model
+        return None
+
+    def _resolve_generation(
+        self, version: AgentDefinitionVersion
+    ) -> tuple[GenerationOptions, SettingSource | None]:
+        """Resolve the D06 generation chain down to the frozen request options.
+
+        Node-level explicit choices join this chain in the task-plan slices;
+        in the current path the agent-level choice (definition field or preset
+        preference overlay) is the deepest explicit level, then the adapter
+        default applies. The returned source marker freezes where the value
+        came from into the AgentRun evidence.
+        """
+        choice = version.source.generation_selection
+        source_scope = "explicit" if choice is not None else None
+        source_revision = 0
+        if choice is None and self.preset_preference is not None:
+            choice = self.preset_preference.preference.generation
+            if choice is not None:
+                source_scope = "workspace"
+                source_revision = self.preset_preference.revision
+        if choice is None:
+            # No explicit level: adapter omission behavior, no source marker,
+            # keeping evidence identical to the pre-selection wire format.
+            return GenerationOptions(), None
+        if choice.mode == "explicit":
+            return (
+                GenerationOptions(reasoning_effort=choice.value),
+                SettingSource(scope=source_scope, revision=source_revision),
+            )
+        # An explicit model_default stops the chain at the adapter omission
+        # behavior; the marker records that a choice (not silence) decided it.
+        return GenerationOptions(), SettingSource(scope=source_scope, revision=source_revision)
+
     def prepare_new(
         self,
         *,
@@ -208,18 +257,24 @@ class AgentFactory:
         model: ModelRef | None = None,
         max_agent_generation_requests=None,
         require_enabled: bool = True,
+        generation=None,
+        settings_sources=None,
+        allow_history: bool = False,
     ):
         """Prepare one new AgentRun for this factory's caller-owned leaf.
 
         ``require_enabled=False`` is the Workflow path: an admitted Run checks
         only one-way revocation, never the mutable head. ``model`` pins the
         Compiler-frozen ``resolved_model_ref``; without it the Definition's own
-        selector applies (the standalone admission-time ``invoking_active``
-        resolution). ``max_agent_generation_requests`` overrides the Definition
-        ceiling with the Workflow's frozen effective node cap.
+        selector or the preset preference applies (the standalone admission-time
+        ``invoking_active`` resolution). ``max_agent_generation_requests``
+        overrides the Definition ceiling with the Workflow's frozen effective
+        node cap. The resolved generation options freeze into the AgentRun
+        snapshot so tool follow-ups, Provider retries and recovery all read the
+        same value.
         """
 
-        self._scope(fresh=True)
+        self._scope(fresh=True, allow_history=allow_history)
         if require_enabled:
             version = self.publication.admit(self.version_id)
         else:
@@ -230,16 +285,19 @@ class AgentFactory:
                 )
             )
         if model is None:
-            model = (
-                version.source.model_selection
-                if isinstance(version.source.model_selection, ModelRef)
-                else None
+            model = self._resolve_model(version)
+        if generation is None:
+            generation, generation_source = self._resolve_generation(version)
+            settings_sources = (
+                {"generation": generation_source} if generation_source is not None else None
             )
         runtime = self.preparation.prepare_new(
             agent_run_id=agent_run_id,
             model=model,
             prompt_assembler=self._assembler(version),
             tool_transform=self._tools(version, preflight_skills=True),
+            generation=generation,
+            settings_sources=settings_sources,
         )
         spec = runtime.spec.model_copy(
             update={

@@ -28,7 +28,14 @@ class RuntimeControlService:
         self.id_source = id_source
         self.clock = clock
 
-    def enqueue(self, session_id: str, kind: RuntimeControlKind, text: str) -> RuntimeControlEntry:
+    def enqueue(
+        self,
+        session_id: str,
+        kind: RuntimeControlKind,
+        text: str,
+        *,
+        client_message_id: str | None = None,
+    ) -> RuntimeControlEntry:
         if not text.strip() or len(text) > RUNTIME_CONTROL_TEXT_MAX_CHARS:
             raise RuntimeControlError(
                 RuntimeControlErrorCode.INVALID,
@@ -38,7 +45,7 @@ class RuntimeControlService:
             self.workspace_id,
             session_id=session_id,
             kind=kind,
-            client_message_id=self.id_source.new_id("cmsg"),
+            client_message_id=client_message_id or self.id_source.new_id("cmsg"),
             text=text,
             created_at=self.clock(),
         )

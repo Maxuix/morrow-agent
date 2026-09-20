@@ -94,11 +94,6 @@ class PreferenceWriteBatchJournalMixin:
                     _optional_unix(batch.finalized_at),
                 ),
             )
-            for proposal_id in batch.proposal_ids:
-                self.backend.executor().execute(
-                    "INSERT INTO preference_write_batch_proposals(workspace_id, batch_id, proposal_id) VALUES (?, ?, ?)",
-                    (workspace_id, batch.batch_id, proposal_id),
-                )
             loaded = self.get_preference_write_batch(workspace_id, batch.batch_id)
             if loaded is None:
                 raise StorageError(

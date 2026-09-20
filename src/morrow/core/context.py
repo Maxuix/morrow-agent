@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
@@ -31,6 +32,121 @@ CONTEXT_SECTION_MAX_BYTES = 8 * 1024
 CONTEXT_CHECKPOINT_MAX_RECORDS = 512
 CONTEXT_CHECKPOINT_MAX_SECTIONS = 128
 CONTEXT_CHECKPOINT_MAX_ARTIFACT_REFS = 64
+CONTEXT_INSPECTOR_MAX_RUN_LABEL = 160
+CONTEXT_INSPECTOR_MAX_PROMPT_SUMMARY = 512
+CONTEXT_INSPECTOR_MAX_PROMPT_SOURCES = 32
+CONTEXT_INSPECTOR_MAX_PROMPT_SOURCE_BYTES = 16 * 1024
+
+
+class ContextRunLabel(ProtocolModel):
+    """Safe selector metadata for one actual AgentRun.
+
+    The opaque run identity is retained for a subsequent server-authorized
+    lookup, while the label is composed from bounded session/node metadata. No
+    prompt body, digest, or model response is part of this projection.
+    """
+
+    agent_run_id: str = Field(pattern=r"^arun_[A-Za-z0-9_-]+$", max_length=128)
+    label: str = Field(min_length=1, max_length=CONTEXT_INSPECTOR_MAX_RUN_LABEL)
+    task_title: str = Field(min_length=1, max_length=128)
+    node_id: str | None = Field(default=None, max_length=128)
+    node_title: str | None = Field(default=None, max_length=CONTEXT_INSPECTOR_MAX_RUN_LABEL)
+    created_at: datetime
+
+    @field_validator("label", "task_title", "node_id", "node_title")
+    @classmethod
+    def safe_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("context run label text must not be empty")
+        refuse_secret_material(cleaned, label="context run label")
+        return cleaned
+
+
+class PromptConstraintSource(ProtocolModel):
+    """Workspace-relative source metadata; source bodies remain unavailable."""
+
+    path: str = Field(min_length=1, max_length=512)
+    scope: str = Field(min_length=1, max_length=512)
+    byte_count: int = Field(ge=0, le=CONTEXT_INSPECTOR_MAX_PROMPT_SOURCE_BYTES)
+
+    @field_validator("path")
+    @classmethod
+    def safe_path(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if (
+            not cleaned
+            or cleaned.startswith(("/", "~"))
+            or "\\" in cleaned
+            or "\x00" in cleaned
+            or (len(cleaned) >= 2 and cleaned[1] == ":")
+            or any(part in {"", ".", ".."} for part in cleaned.split("/"))
+        ):
+            raise ValueError("prompt constraint source must be workspace-relative")
+        refuse_secret_material(cleaned, label="prompt constraint source")
+        return cleaned
+
+    @field_validator("scope")
+    @classmethod
+    def safe_scope(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if cleaned == ".":
+            return cleaned
+        if (
+            not cleaned
+            or cleaned.startswith(("/", "~"))
+            or "\\" in cleaned
+            or "\x00" in cleaned
+            or (len(cleaned) >= 2 and cleaned[1] == ":")
+            or any(part in {"", ".", ".."} for part in cleaned.split("/"))
+        ):
+            raise ValueError("prompt constraint source must be workspace-relative")
+        refuse_secret_material(cleaned, label="prompt constraint source")
+        return cleaned
+
+
+class PromptConstraintSection(ProtocolModel):
+    """One explainable, non-secret Prompt constraint partition."""
+
+    kind: Literal["profile", "role", "project_instructions"]
+    label: str = Field(min_length=1, max_length=128)
+    available: bool
+    summary: str = Field(max_length=CONTEXT_INSPECTOR_MAX_PROMPT_SUMMARY)
+    sources: tuple[PromptConstraintSource, ...] = Field(
+        default=(), max_length=CONTEXT_INSPECTOR_MAX_PROMPT_SOURCES
+    )
+
+    @field_validator("label", "summary")
+    @classmethod
+    def safe_summary(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        refuse_secret_material(cleaned, label="prompt constraint summary")
+        return cleaned
+
+
+class PromptConstraintsProjection(ProtocolModel):
+    """Run-frozen Prompt evidence with explicit historical degradation."""
+
+    availability: Literal["available", "missing"]
+    message: str | None = Field(default=None, max_length=256)
+    sections: tuple[PromptConstraintSection, ...] = Field(default=(), max_length=8)
+
+    @field_validator("message")
+    @classmethod
+    def safe_message(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split())
+        refuse_secret_material(cleaned, label="prompt constraint message")
+        return cleaned
+
+    @model_validator(mode="after")
+    def unique_sections(self) -> PromptConstraintsProjection:
+        if len({section.kind for section in self.sections}) != len(self.sections):
+            raise ValueError("prompt constraint sections must be unique")
+        return self
 
 
 @dataclass(frozen=True, slots=True)

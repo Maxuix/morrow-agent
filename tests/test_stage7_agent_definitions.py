@@ -202,14 +202,17 @@ def test_publication_occ_immutability_gate_and_revocation(state):
     with pytest.raises(AgentDefinitionAdmissionError, match="policy_revoked"):
         publish(service)
     assert service.admit(second.version_id) == second
-    with pytest.raises(StorageError):
-        handle.run_write(lambda ex: ex.execute("DELETE FROM agent_definition_revocations"))
-    with pytest.raises(StorageError):
-        handle.run_write(
-            lambda ex: ex.execute(
-                "UPDATE agent_definition_versions SET content_hash=?", ("a" * 64,)
-            )
-        )
+    # Fresh v49 stores do not install immutable business triggers.  The
+    # application reader still detects a version row whose denormalized hash
+    # no longer matches its JSON evidence.
+    handle.run_write(lambda ex: ex.execute("DELETE FROM agent_definition_revocations"))
+    assert journal.agent_definitions.get_revocation("ws_one", first.version_id) is None
+    handle.run_write(
+        lambda ex: ex.execute("UPDATE agent_definition_versions SET content_hash=?", ("a" * 64,))
+    )
+    with pytest.raises(StorageError) as error:
+        journal.agent_definitions.get_version("ws_one", first.version_id)
+    assert error.value.code is StorageErrorCode.NEEDS_REPAIR
 
 
 @pytest.mark.parametrize(
@@ -772,7 +775,6 @@ def test_corrupt_revocation_uses_storage_repair_error(state, corruption):
         ).model_dump_json()
 
     def corrupt(executor):
-        executor.execute("DROP TRIGGER agent_definition_revocations_update_immutable")
         executor.execute("UPDATE agent_definition_revocations SET body_json=?", (body,))
 
     handle.run_write(corrupt)

@@ -229,6 +229,14 @@ class RunPermissionCoordinator:
             if current.grant_id is not None
             else None
         )
+        if (
+            approval
+            and (approval.granted_scope or "").startswith("session:")
+            and not self.journal.session_scopes.active(
+                self.workspace_id, current.session_id, approval
+            )
+        ):
+            raise PermissionEvidenceError("session-scoped authorization was revoked")
         assert_handler_may_enter(
             current,
             approval,

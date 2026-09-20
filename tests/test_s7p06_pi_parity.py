@@ -394,8 +394,12 @@ async def test_context_overflow_has_one_compaction_recovery_path():
     assert session.compaction_summary is not None
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
     assert [event.payload["status"] for event in events if event.type == "status.changed"] == [
+        # Attempt 1 overflows, compaction recovers, attempt 2 completes without
+        # incremental output, so no "model_responding" is fabricated.
+        "awaiting_model",
         "compacting",
         "compacted",
+        "awaiting_model",
     ]
 
 
@@ -412,7 +416,15 @@ async def test_v2_compaction_rechecks_threshold_before_model_admission():
         ContextBuilder(
             run_policy=policy,
             estimate_request_chars=lambda messages, tools: 1,
-            estimate_request_tokens=lambda messages, tools: 2_000,
+            estimate_request_tokens=lambda messages, tools: (
+                2_000
+                if any(
+                    token in (getattr(message, "content", "") or "")
+                    for message in messages
+                    for token in ("old request", "another old", "continue the task")
+                )
+                else 10
+            ),
         ),
     )
 

@@ -199,11 +199,7 @@ class LearningPromotionService:
                     semantic_key=semantic_key,
                     stamp=stamp,
                 )
-            elif candidate.candidate_type in {
-                LearningCandidateType.SKILL_CANDIDATE,
-                LearningCandidateType.WORKFLOW_FEEDBACK,
-                LearningCandidateType.ORCHESTRATION_POLICY_CANDIDATE,
-            }:
+            elif candidate.candidate_type is LearningCandidateType.SKILL_CANDIDATE:
                 knowledge = self._acknowledge_candidate_only()
             else:
                 raise ApplicationError(

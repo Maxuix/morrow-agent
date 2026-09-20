@@ -211,7 +211,7 @@ def test_failed_provider_test_returns_non_zero_exit(monkeypatch):
     application = type("Application", (), {"provider_service": ProviderServiceStub()})()
     monkeypatch.setattr(cli_module, "build_application", lambda **kwargs: application)
 
-    result = CliRunner().invoke(app, ["provider", "test", "opencode-go"])
+    result = CliRunner().invoke(app, ["provider", "test", "volcengine"])
 
     assert result.exit_code == 2
     assert "auth" in result.output
@@ -315,8 +315,7 @@ def test_provider_presets_lists_known_presets():
     result = CliRunner().invoke(app, ["provider", "presets"])
 
     assert result.exit_code == 0, result.output
-    assert "opencode-go\topencode-go/deepseek-v4-flash" in result.output
-    assert "opencode-go-mimo\topencode-go/mimo-v2.5" in result.output
+    assert "volcengine\tvolcengine/glm-5.3-flash" in result.output
 
 
 def test_provider_add_help_lists_presets():
@@ -324,8 +323,7 @@ def test_provider_add_help_lists_presets():
 
     assert result.exit_code == 0, result.output
     compact = result.output.replace("\n", "").replace(" ", "")
-    assert "opencode-go" in compact
-    assert "opencode-go-mimo" in compact
+    assert "volcengine" in compact
     assert "provider presets" in result.output
 
 
@@ -333,23 +331,23 @@ def test_provider_add_reports_whether_active_model_switched(monkeypatch):
     class ProviderServiceStub:
         def add(self, preset, secret, **kwargs):
             del preset, secret, kwargs
-            return ModelRef(provider_id="opencode-go", model_id="mimo-v2.5")
+            return ModelRef(provider_id="volcengine", model_id="glm-5.3-flash")
 
         def current_model(self):
-            return ModelRef(provider_id="opencode-go", model_id="deepseek-v4-flash")
+            return ModelRef(provider_id="volcengine", model_id="previous-model")
 
     monkeypatch.setattr(
         cli_module,
         "build_application",
         lambda **kwargs: type("Application", (), {"provider_service": ProviderServiceStub()})(),
     )
-    monkeypatch.setattr(cli_module, "_secret", lambda provider_id="opencode-go": "secret")
+    monkeypatch.setattr(cli_module, "_secret", lambda provider_id="volcengine": "secret")
 
-    result = CliRunner().invoke(app, ["provider", "add", "--preset", "opencode-go-mimo"])
+    result = CliRunner().invoke(app, ["provider", "add", "--preset", "volcengine"])
 
     assert result.exit_code == 0, result.output
-    assert "已配置 opencode-go/mimo-v2.5" in result.output
-    assert "当前模型未切换：opencode-go/deepseek-v4-flash" in result.output
+    assert "已配置 volcengine/glm-5.3-flash" in result.output
+    assert "当前模型未切换：volcengine/previous-model" in result.output
 
 
 def test_provider_add_reports_typed_sanitized_connection_failure(monkeypatch):
@@ -370,9 +368,9 @@ def test_provider_add_reports_typed_sanitized_connection_failure(monkeypatch):
         "build_application",
         lambda **kwargs: type("Application", (), {"provider_service": ProviderServiceStub()})(),
     )
-    monkeypatch.setattr(cli_module, "_secret", lambda provider_id="opencode-go": "secret")
+    monkeypatch.setattr(cli_module, "_secret", lambda provider_id="volcengine": "secret")
 
-    result = CliRunner().invoke(app, ["provider", "add", "--preset", "opencode-go"])
+    result = CliRunner().invoke(app, ["provider", "add", "--preset", "volcengine"])
 
     assert result.exit_code == 2
     assert "Provider 添加失败（network）" in result.output

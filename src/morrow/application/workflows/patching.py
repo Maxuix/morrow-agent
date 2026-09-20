@@ -85,11 +85,6 @@ class PatchApplicationService:
         self.id_source = id_source
         self.finalizer = finalizer
         self.clock = clock
-        from morrow.application.workflows.feedback import WorkflowFeedbackService
-
-        self.feedback = WorkflowFeedbackService(
-            journal, workspace_id=workspace_id, artifacts=finalizer.artifacts
-        )
         self.outputs = EffectiveOutputResolver(journal, workspace_id=workspace_id)
 
     def validate(self, patch: FutureGraphPatch, *, active_model=None) -> PatchValidation:
@@ -193,21 +188,7 @@ class PatchApplicationService:
         )
 
         def work(txn):
-            saved = txn.workflows.store_detached_revision(revision)
-            if patch.request_kind == "user_exact":
-                from morrow.application.workflows.feedback import task_type
-                from morrow.application.workflows.replan import revision_source
-
-                self.feedback.capture_edit(
-                    revision_source(base),
-                    patch.source,
-                    subject_kind="run",
-                    subject_id=parent.workflow_run_id,
-                    sample_id=parent.root_task_run_id,
-                    task_class=task_type(self.feedback.run_task(parent)),
-                    edit_id=patch.workflow_patch_id,
-                )
-            return saved
+            return txn.workflows.store_detached_revision(revision)
 
         revision = self.journal.transact(work)
         return PatchApplication(patch, revision, parent, None, validation)

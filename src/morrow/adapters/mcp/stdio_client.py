@@ -7,6 +7,7 @@ executes a remote call; that boundary belongs to the next MCP runtime subplan.
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 import shutil
 import tempfile
@@ -69,10 +70,12 @@ class McpStdioClient:
         *,
         workspace_root: Path | None = None,
         environment: dict[str, str] | None = None,
+        secrets: tuple[str, ...] = (),
     ) -> None:
         self.definition = definition
         self.workspace_root = workspace_root
         self.environment = dict(environment or {})
+        self._secrets = tuple(s for s in secrets if s)
         self.diagnostic = McpStdioDiagnostic()
         self._stack: AsyncExitStack | None = None
         self._session: ClientSession | None = None
@@ -80,6 +83,31 @@ class McpStdioClient:
         self._stderr_task: asyncio.Task[None] | None = None
         self._stderr_read_fd: int | None = None
         self._managed_cwd: Path | None = None
+
+    def _check_secrets(self, value, phase):
+        if not self._secrets:
+            return
+
+        def scan(item):
+            if isinstance(item, str):
+                if any(secret in item for secret in self._secrets):
+                    raise McpAdapterError("credential_echo", phase)
+            elif isinstance(item, dict):
+                for key, nested in item.items():
+                    scan(str(key))
+                    scan(nested)
+                    if key in {"data", "blob"} and isinstance(nested, str):
+                        try:
+                            raw = base64.b64decode(nested, validate=True)
+                        except ValueError:
+                            continue
+                        if any(secret.encode() in raw for secret in self._secrets):
+                            raise McpAdapterError("credential_echo", phase)
+            elif isinstance(item, (tuple, list)):
+                for nested in item:
+                    scan(nested)
+
+        scan(value.model_dump(mode="json"))
 
     @property
     def handshake(self) -> McpHandshake | None:
@@ -154,6 +182,7 @@ class McpStdioClient:
             )
             session = await stack.enter_async_context(ClientSession(read, write))
             result = await session.initialize()
+            self._check_secrets(result, "handshake")
             self._stack = stack
             self._session = session
             self._handshake = McpHandshake(
@@ -208,6 +237,7 @@ class McpStdioClient:
         while True:
             params = PaginatedRequestParams(cursor=cursor) if cursor else None
             page = await self._session.list_tools(params=params)
+            self._check_secrets(page, "list_tools")
             for item in page.tools:
                 values.append(
                     McpRemoteTool(
@@ -248,10 +278,12 @@ class McpStdioClient:
                 "invalid_arguments", "call_tool", "MCP tool arguments are invalid"
             )
         try:
-            return await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 self._session.call_tool(remote_name, arguments),
                 self.definition.timeout_ms / 1000,
             )
+            self._check_secrets(result, "call_tool")
+            return result
         except TimeoutError as exc:
             raise McpAdapterError("timeout", "call_tool", "MCP tool call timed out") from exc
         except McpAdapterError:

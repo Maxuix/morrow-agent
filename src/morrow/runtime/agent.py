@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
+import logging
 import math
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from morrow.application.context import ContextBudgetError
@@ -23,11 +25,13 @@ from morrow.core.execution import (
 )
 from morrow.core.faults import InjectedFault
 from morrow.core.models import (
+    INTERRUPT_STOP_CODES,
     AgentEvent,
     AgentStopCode,
     AssistantMessage,
     FinishReason,
     FunctionToolCall,
+    GenerationOptions,
     Message,
     ModelCompletion,
     ModelCost,
@@ -45,23 +49,27 @@ from morrow.core.models import (
     sanitize_text,
     utc_now,
 )
-from morrow.core.ports import Clock, IdSource, ModelProvider
+from morrow.core.ports import Clock, IdSource, ModelContentObserver, ModelProvider
 from morrow.runtime.conversation import ConversationLogError
 from morrow.runtime.durable_log import durable_call_id
 from morrow.runtime.ids import RandomIdSource
+from morrow.runtime.reasoning_filter import ReasoningRedactor
 from morrow.runtime.session import Session
 from morrow.runtime.text_stream import TextStreamProjection, project_text
-from morrow.runtime.tool_cycle import ToolCycleExecutor
+from morrow.runtime.tool_cycle import ToolCycleExecutor, ToolPauseRequested
 from morrow.runtime.tools import (
     MIN_ERROR_ENVELOPE_CHARS,
     ToolErrorCode,
+    ToolExecutionOutcome,
     ToolExecutor,
 )
 
 if TYPE_CHECKING:
     from morrow.application.agent_runs.preparation import PreparedAgentRunRuntime
 
-LEGACY_TRANSIENT_MODEL_ERRORS = frozenset(
+logger = logging.getLogger("morrow.runtime")
+
+TRANSIENT_MODEL_ERRORS = frozenset(
     {ModelErrorCode.NETWORK, ModelErrorCode.RATE_LIMIT, ModelErrorCode.TIMEOUT}
 )
 MODEL_ERROR_STOPS = {
@@ -73,6 +81,19 @@ MODEL_ERROR_STOPS = {
     ModelErrorCode.CONTEXT_OVERFLOW: AgentStopCode.CONTEXT_BUDGET,
     ModelErrorCode.INTERNAL: AgentStopCode.INTERNAL,
 }
+
+# Repeated identical tool failures fund a guessing loop instead of progress:
+# the second failure of one (tool, error, field path) signature carries a
+# directed correction in its envelope, and the third field-identified
+# validation failure stops the run instead of paying for another guess.
+# Operational failures without a field path stay hint-only: changing the
+# target may legitimately succeed.
+REPEATED_FAILURE_HINT_THRESHOLD = 2
+REPEATED_FAILURE_STOP_THRESHOLD = 3
+REPEATED_FAILURE_HINT = (
+    "这已是第 {count} 次以相同方式失败的工具调用（工具 {tool}，错误 {code}，"
+    "位置 {path}）。请先阅读上方错误信息并改变方法，不要重复相同调用。"
+)
 
 
 class ModelCallOutcome(ProtocolModel):
@@ -88,9 +109,12 @@ class ModelCallOutcome(ProtocolModel):
 class ModelCallRunner:
     """Interprets one Provider attempt; never touches Session or history."""
 
-    def __init__(self, provider: ModelProvider, model: ModelRef) -> None:
+    def __init__(
+        self, provider: ModelProvider, model: ModelRef, generation: GenerationOptions | None = None
+    ) -> None:
         self.provider = provider
         self.model = model
+        self.generation = generation or GenerationOptions()
         self._outcome = ModelCallOutcome()
 
     async def attempt(
@@ -100,7 +124,12 @@ class ModelCallRunner:
     ) -> AsyncIterator[ModelEvent]:
         self._outcome = ModelCallOutcome()
         try:
-            async for model_event in self.provider.stream(self.model, messages, tools):
+            options = (
+                {"generation": self.generation}
+                if self.generation.reasoning_effort is not None
+                else {}
+            )
+            async for model_event in self.provider.stream(self.model, messages, tools, **options):
                 if model_event.kind == "completed":
                     self._outcome = self._classify_completion(model_event)
                 elif model_event.kind == "error":
@@ -217,6 +246,14 @@ def _consume_cancellation_request() -> None:
             task.uncancel()
 
 
+async def _next_stream_event(stream):
+    """Await one provider event with a race-safe StopAsyncIteration mapping."""
+    try:
+        return ("event", await anext(stream))
+    except StopAsyncIteration:
+        return ("stop", None)
+
+
 def _remaining_text_chunks(
     projection: TextStreamProjection, chunks: list[str], message: AssistantMessage
 ) -> tuple[list[str], bool]:
@@ -226,6 +263,40 @@ def _remaining_text_chunks(
     if not had_preview and chunks and "".join(chunks) == remainder:
         return chunks, reset
     return ([remainder] if remainder else []), reset
+
+
+def _failure_hint(result: ToolExecutionOutcome, count: int) -> str:
+    return REPEATED_FAILURE_HINT.format(
+        count=count,
+        tool=result.name,
+        code=result.error_code.value if result.error_code is not None else "unknown",
+        path=result.validation_path or "$",
+    )
+
+
+def _with_failure_hint(result: ToolExecutionOutcome, count: int) -> ToolExecutionOutcome:
+    """Attach one bounded, reviewed correction to a repeated-failure envelope.
+
+    The augmentation is additive and best-effort: an unparsable or already
+    hinted envelope is returned unchanged, and the durable execution record
+    keeps the handler's original envelope either way.
+    """
+
+    try:
+        payload = json.loads(result.envelope)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return result
+    if not isinstance(payload, dict):
+        return result
+    error = payload.get("error")
+    if not isinstance(error, dict) or "hint" in error:
+        return result
+    hinted = {
+        **payload,
+        "error": {**error, "hint": _failure_hint(result, count)},
+    }
+    encoded = json.dumps(hinted, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return replace(result, envelope=encoded)
 
 
 @dataclass
@@ -266,8 +337,11 @@ class _AgentRunState:
     crashed: bool = False
     terminal_finish_reason: FinishReason | None = None
     stop_code: AgentStopCode | None = None
+    paused_generation: int | None = None
     internal_phase: str = "run_setup"
     stop_detail: str | None = None
+    pending_steering_text: str | None = None
+    failure_streaks: dict[tuple[str, str, str], int] = field(default_factory=dict)
 
 
 class _RunEventEmitter:
@@ -395,6 +469,9 @@ class AgentLoop:
         should_stop_after_turn=None,
         retry_sleep=None,
         runtime_control=None,
+        activity_observer: ModelContentObserver | None = None,
+        steering_mode: str = "end_turn",
+        pause_control=None,
     ) -> None:
         self.runner = ModelCallRunner(provider, model)
         self.context_builder = context_builder
@@ -406,18 +483,134 @@ class AgentLoop:
         self.should_stop_after_turn = should_stop_after_turn
         self.retry_sleep = retry_sleep or asyncio.sleep
         self.runtime_control = runtime_control
+        self.activity_observer = activity_observer
+        self.activity_observer_drops = 0
+        # Leaf drives inject steering at the next request boundary; plain chat
+        # keeps the end-turn + orchestrator re-submit semantics.
+        self.steering_mode = steering_mode
+        # Optional durable pause authority (P03): None keeps plain chat on its
+        # exact existing path — no control reads, no wake tasks, no new events.
+        self.pause_control = pause_control
         self.tool_cycle = (
             ToolCycleExecutor(
                 tool_executor,
                 self.run_policy,
                 wall_now=self._wall_now,
+                activity_listener=self._tool_activity_listener,
+                output_listener_factory=self._tool_output_listener_factory,
+                pause_control=pause_control,
             )
             if tool_executor is not None
             else None
         )
 
+    def _tool_output_listener_factory(self, call):
+        """Bounded realtime stdout/stderr sink for one tool call (P4.3)."""
+
+        def listener(stream: str, text: str) -> None:
+            observer = self.activity_observer
+            if observer is None or not text:
+                return
+            try:
+                observer.tool_output(
+                    call_id=call.id,
+                    text=text.encode("utf-8")[:4096].decode("utf-8", errors="ignore"),
+                )
+            except Exception:
+                if self.activity_observer_drops < 10_000:
+                    self.activity_observer_drops += 1
+
+        return listener
+
+    def _tool_activity_listener(self, fact: dict) -> None:
+        """Forward one real tool transition to the projection observer (P4.1)."""
+        observer = self.activity_observer
+        if observer is None:
+            return
+        try:
+            observer.tool_observation(
+                call_id=fact["call_id"],
+                tool_name=fact["tool_name"],
+                ordinal=fact["ordinal"],
+                total=fact["total"],
+                phase=fact["phase"],
+                timestamp=fact["timestamp"],
+                disposition=fact.get("disposition"),
+                arguments_json=fact.get("arguments_json"),
+                facts=fact.get("facts", ()),
+                artifact_refs=fact.get("artifact_refs", ()),
+                error_code=fact.get("error_code"),
+                validation_reason=fact.get("validation_reason"),
+                validation_path=fact.get("validation_path"),
+                tool_execution_id=fact.get("tool_execution_id"),
+            )
+        except Exception:
+            if self.activity_observer_drops < 10_000:
+                self.activity_observer_drops += 1
+
+    def _notify_reasoning(self, *, turn_id: str, attempt_ordinal: int, fragment: str) -> None:
+        """Best-effort reasoning projection; never raises, never stores content."""
+        observer = self.activity_observer
+        if observer is None or not fragment:
+            return
+        try:
+            observer.reasoning_delta(
+                turn_id=turn_id, attempt_ordinal=attempt_ordinal, fragment=fragment
+            )
+        except Exception:
+            # Bounded error counting only: never the fragment, never a raise.
+            if self.activity_observer_drops < 10_000:
+                self.activity_observer_drops += 1
+
     def _id(self, prefix: str) -> str:
         return self.id_source.new_id(prefix)
+
+    def _pause_signal(self, session: Session):
+        """Authority read of the durable pause intent; never raises."""
+        control = self.pause_control
+        if control is None:
+            return None
+        try:
+            return control.pending_signal(session.session_id)
+        except Exception:
+            return None
+
+    async def _next_model_step(self, session: Session, stream, waiter):
+        """One consume step of the model stream, racing the pause wake signal.
+
+        Returns ``((kind, value), waiter)`` where kind is one of ``event``,
+        ``stop``, ``pause`` or ``continue`` (a spurious wake: keep waiting).
+        The default path (no pause control) awaits ``anext`` directly and keeps
+        the exact cancellation semantics of plain chat.
+        """
+        if self.pause_control is None:
+            try:
+                return ("event", await anext(stream)), waiter
+            except StopAsyncIteration:
+                return ("stop", None), waiter
+        if waiter is None:
+            waiter = asyncio.ensure_future(self.pause_control.wait_signal(session.session_id))
+        task = asyncio.ensure_future(_next_stream_event(stream))
+        try:
+            done, _pending = await asyncio.wait({task, waiter}, return_when=asyncio.FIRST_COMPLETED)
+        except BaseException:
+            task.cancel()
+            waiter.cancel()
+            await asyncio.gather(task, waiter, return_exceptions=True)
+            raise
+        if task in done:
+            if not waiter.done():
+                waiter.cancel()
+                await asyncio.gather(waiter, return_exceptions=True)
+            return task.result(), None
+        signal = self._pause_signal(session)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        if signal is None:
+            return ("continue", None), waiter
+        waiter.cancel()
+        await asyncio.gather(waiter, return_exceptions=True)
+        return ("pause", signal), None
 
     def _wall_now(self, session: Session | None = None):
         if self.clock is not None:
@@ -474,6 +667,16 @@ class AgentLoop:
         if inspect.isawaitable(result):
             result = await result
         return result is not None
+
+    async def _take_steering(self, session: Session):
+        """Atomically consume one pending steering entry (P6.3 inject mode)."""
+        control = self.runtime_control
+        if control is None:
+            return None
+        result = control.consume_first_steering(session.session_id)
+        if inspect.isawaitable(result):
+            result = await result
+        return result
 
     async def _compact_context(
         self,
@@ -716,9 +919,19 @@ class AgentLoop:
                     ),
                 }
             )
-        runner = ModelCallRunner(provider, model)
+        runner = ModelCallRunner(
+            provider,
+            model,
+            prepared.spec.provider_runtime.generation if prepared is not None else None,
+        )
         tool_cycle = (
-            ToolCycleExecutor(tool_executor, policy, wall_now=self._wall_now)
+            ToolCycleExecutor(
+                tool_executor,
+                policy,
+                wall_now=self._wall_now,
+                activity_listener=self._tool_activity_listener,
+                output_listener_factory=self._tool_output_listener_factory,
+            )
             if tool_executor is not None
             else None
         )
@@ -801,9 +1014,9 @@ class AgentLoop:
                 state.summary_retry_count = retry_progress.summary_retry_count
                 return
 
-            # Older stores have no explicit retry-progress row.  Recover only transient failures;
-            # an arbitrary non-retryable or overflow failure must never consume the v2 budget.
-            transient_codes = LEGACY_TRANSIENT_MODEL_ERRORS
+            # Before the first retry-progress write, derive only transient failures;
+            # an arbitrary non-retryable or overflow failure must never consume the retry budget.
+            transient_codes = TRANSIENT_MODEL_ERRORS
             state.total_retry_count = sum(
                 item.state.value == "failed" and item.error_code in transient_codes
                 for item in settled_before_latest
@@ -971,6 +1184,65 @@ class AgentLoop:
                 running_status=running_status,
             )
 
+        async def finish_interrupted(
+            signal, *, partial_text: str = "", stop_code=AgentStopCode.USER_PAUSE
+        ):
+            """Typed user-pause terminal: close this turn, never the task.
+
+            The interrupted terminal ends the Turn and the AgentRun metrics
+            only; TaskRun, NodeRun, and WorkflowRun stay open so the user's
+            next message continues the same business identity (D02/D05). No
+            ``CancelledError`` is raised and no cancel cascade runs. The
+            streamed-but-uncommitted text rides along as a bounded display
+            fragment; it is never committed as a full reply.
+            """
+            reason = "user_pause" if stop_code is AgentStopCode.USER_PAUSE else "provider_failure"
+            state.internal_phase = "interrupt"
+            state.settled = True
+            fragment = (partial_text or state.visible)[:8192]
+            unresolved = session.log.unresolved_call_ids
+            interrupted = self._close_unresolved(
+                session,
+                state.active_calls,
+                state.durable_executions,
+                ToolErrorCode.CANCELLED,
+                "用户已暂停，未开始的工具调用不再执行",
+                tool_executor=tool_executor,
+                result_limit=state.active_result_limit,
+            )
+            for status_event in synthetic_statuses(
+                unresolved,
+                code=ToolErrorCode.CANCELLED,
+                running_status="cancelled",
+            ):
+                yield status_event
+            if session.log.has_active_turn:
+                try:
+                    session.finish_turn(
+                        FinishReason.INTERRUPTED,
+                        interrupted_call_ids=interrupted,
+                        stop_code=stop_code,
+                    )
+                except ConversationLogError:
+                    pass
+            state.terminal_finish_reason = FinishReason.INTERRUPTED
+            state.stop_code = stop_code
+            state.paused_generation = signal.control_generation if signal is not None else None
+            retain_facts(FinishReason.INTERRUPTED.value)
+            if self.pause_control is not None:
+                try:
+                    self.pause_control.clear(session.session_id)
+                except Exception:
+                    pass
+            payload = completion_payload(FinishReason.INTERRUPTED, fragment, stop_code=stop_code)
+            payload["reason"] = reason
+            if signal is not None:
+                payload["control_generation"] = signal.control_generation
+            if interrupted:
+                payload["interrupted_call_ids"] = list(interrupted)
+            yield event("status.changed", {"status": "paused", "reason": reason})
+            yield event("turn.completed", payload)
+
         try:
             if startup_error is not None:
                 if resume_current_turn:
@@ -1131,18 +1403,40 @@ class AgentLoop:
                 if _pending_cancellation():
                     _consume_cancellation_request()
                     raise asyncio.CancelledError
-                if await self._steering_pending(session):
-                    session.finish_turn(FinishReason.STEERED)
-                    state.settled = True
-                    state.terminal_finish_reason = FinishReason.STEERED
-                    state.stop_code = None
-                    retain_facts(FinishReason.STEERED.value)
-                    yield event("status.changed", {"status": "steered"})
-                    yield event(
-                        "turn.completed",
-                        completion_payload(FinishReason.STEERED, state.visible),
-                    )
+                pause_signal = self._pause_signal(session)
+                if pause_signal is not None:
+                    # Durable pause accepted: no new model/tool admission may
+                    # commit; end this turn interrupted before the request.
+                    async for interrupted_event in finish_interrupted(pause_signal):
+                        yield interrupted_event
                     return
+                steering_entry = None
+                if await self._steering_pending(session):
+                    if self.steering_mode == "inject":
+                        # Leaf drive: consume atomically (at-most-once) and
+                        # inject into THIS request; the turn stays open.
+                        steering_entry = await self._take_steering(session)
+                        if steering_entry is not None:
+                            yield event(
+                                "status.changed",
+                                {
+                                    "status": "steered",
+                                    "receipt": "applied",
+                                    "client_message_id": steering_entry["client_message_id"],
+                                },
+                            )
+                    else:
+                        session.finish_turn(FinishReason.STEERED)
+                        state.settled = True
+                        state.terminal_finish_reason = FinishReason.STEERED
+                        state.stop_code = None
+                        retain_facts(FinishReason.STEERED.value)
+                        yield event("status.changed", {"status": "steered"})
+                        yield event(
+                            "turn.completed",
+                            completion_payload(FinishReason.STEERED, state.visible),
+                        )
+                        return
                 try:
                     state.internal_phase = "context_build"
                     context = context_builder.build(session, tools=tools)
@@ -1168,6 +1462,16 @@ class AgentLoop:
                         context = context_builder.build(session, tools=tools)
                         yield event("status.changed", {"status": "compacted"})
                     call_messages = list(context.messages)
+                    injected_steering = (
+                        steering_entry["text"]
+                        if steering_entry is not None
+                        else state.pending_steering_text
+                    )
+                    if injected_steering:
+                        # The correction rides the next model request (P6.3);
+                        # the durable receipt is the consumed control row.
+                        call_messages.append(UserMessage(content=injected_steering))
+                        state.pending_steering_text = None
                     estimated_chars = context_builder.validate_request(call_messages, tools)
                 except ContextBudgetError as exc:
                     for item in terminal_error(str(exc), AgentStopCode.CONTEXT_BUDGET):
@@ -1191,6 +1495,9 @@ class AgentLoop:
                     state.accounting_basis = context.accounting_basis
                 elif state.accounting_basis != context.accounting_basis:
                     state.accounting_basis = None
+                # Request budgets are enforced durably at request admission
+                # (AgentRun and workflow lineage caps refuse over-cap requests
+                # with budget_exhausted); the loop never duplicates that gate.
                 state.internal_phase = "model_call"
                 state.model_attempts += 1
                 admission = None
@@ -1224,15 +1531,102 @@ class AgentLoop:
                         ),
                     )
                 candidate_chunks: list[str] = []
+                candidate_bytes = 0
+                response_overflow = False
                 text_projection = TextStreamProjection()
+                # The request may stream nothing for a long time (reasoning-only
+                # responses, slow providers). "awaiting_model" is the factual
+                # no-content stage; "model_responding" fires only on real output.
+                yield event(
+                    "status.changed",
+                    {"status": "awaiting_model", "attempt_ordinal": state.model_attempts},
+                )
+                responding_reported = False
+                thinking_reported = False
+                reasoning_redactor = ReasoningRedactor()
                 stream = runner.attempt(call_messages, tools)
+                pause_signal = None
+                pause_waiter = None
                 try:
                     while True:
-                        try:
-                            model_event = await anext(stream)
-                        except StopAsyncIteration:
+                        (step_kind, step_value), pause_waiter = await self._next_model_step(
+                            session, stream, pause_waiter
+                        )
+                        if step_kind == "stop":
                             break
+                        if step_kind == "pause":
+                            pause_signal = step_value
+                            break
+                        if step_kind == "continue":
+                            continue
+                        model_event = step_value
+                        if model_event.kind == "reasoning_delta" and model_event.reasoning_text:
+                            # Vendor-visible thinking (P3.2): a distinct
+                            # content-free stage plus bounded projected
+                            # fragments to the observer; never the reply text.
+                            if not thinking_reported:
+                                thinking_reported = True
+                                yield event(
+                                    "status.changed",
+                                    {
+                                        "status": "thinking",
+                                        "attempt_ordinal": state.model_attempts,
+                                    },
+                                )
+                            visible = reasoning_redactor.feed(model_event.reasoning_text)
+                            self._notify_reasoning(
+                                turn_id=state.turn_id,
+                                attempt_ordinal=state.model_attempts,
+                                fragment=visible,
+                            )
+                            continue
+                        if model_event.kind == "activity":
+                            # Content-free arrival marker; never carries fragments.
+                            if model_event.activity == "reasoning":
+                                # Reasoning activity means thinking, not reply
+                                # text: keep the two stages distinct (P3.4).
+                                if not thinking_reported:
+                                    thinking_reported = True
+                                    yield event(
+                                        "status.changed",
+                                        {
+                                            "status": "thinking",
+                                            "attempt_ordinal": state.model_attempts,
+                                        },
+                                    )
+                                continue
+                            if not responding_reported:
+                                responding_reported = True
+                                yield event(
+                                    "status.changed",
+                                    {
+                                        "status": "model_responding",
+                                        "attempt_ordinal": state.model_attempts,
+                                    },
+                                )
+                            if model_event.activity == "tool_call":
+                                yield event(
+                                    "status.changed",
+                                    {
+                                        "status": "tool_preparing",
+                                        "attempt_ordinal": state.model_attempts,
+                                    },
+                                )
+                            continue
                         if model_event.kind == "text_delta" and model_event.text:
+                            if not responding_reported:
+                                responding_reported = True
+                                yield event(
+                                    "status.changed",
+                                    {
+                                        "status": "model_responding",
+                                        "attempt_ordinal": state.model_attempts,
+                                    },
+                                )
+                            candidate_bytes += len(model_event.text.encode("utf-8"))
+                            if candidate_bytes > 256 * 1024:
+                                response_overflow = True
+                                break
                             candidate_chunks.append(model_event.text)
                             visible_chunk = text_projection.feed(model_event.text)
                             if visible_chunk:
@@ -1244,13 +1638,16 @@ class AgentLoop:
                                     },
                                 )
                 finally:
+                    if pause_waiter is not None and not pause_waiter.done():
+                        pause_waiter.cancel()
+                        await asyncio.gather(pause_waiter, return_exceptions=True)
                     try:
                         close = getattr(stream, "aclose", None)
                         if close is not None:
                             await close()
                     finally:
                         if admission is not None:
-                            if _pending_cancellation():
+                            if _pending_cancellation() or pause_signal is not None:
                                 settle_model_request(
                                     admission,
                                     state_name="cancelled",
@@ -1273,6 +1670,30 @@ class AgentLoop:
                                     usage=attempt_outcome.usage,
                                     cost=attempt_outcome.cost,
                                 )
+                # Attempt end: release or drop the redactor's held tail —
+                # ambiguous content stays hidden even at the stream boundary.
+                tail = reasoning_redactor.finish()
+                if tail:
+                    self._notify_reasoning(
+                        turn_id=state.turn_id,
+                        attempt_ordinal=state.model_attempts,
+                        fragment=tail,
+                    )
+                if response_overflow:
+                    for item in terminal_error(
+                        "回复超过单条消息存储上限", AgentStopCode.MODEL_OUTPUT_LIMIT
+                    ):
+                        yield item
+                    return
+                if pause_signal is not None:
+                    # The pause woke before the provider response completed; the
+                    # uncommitted response is dropped and shown as a partial
+                    # fragment only. The turn ends interrupted, the task stays.
+                    async for interrupted_event in finish_interrupted(
+                        pause_signal, partial_text="".join(candidate_chunks)
+                    ):
+                        yield interrupted_event
+                    return
                 if _pending_cancellation():
                     _consume_cancellation_request()
                     raise asyncio.CancelledError
@@ -1343,8 +1764,19 @@ class AgentLoop:
                         state.stop_detail = f"{failure.origin.value}_internal"
                     state.retry_count = 0
                     persist_retry_progress()
-                    for item in terminal_error(failure.message, stop_code):
-                        yield item
+                    # An interrupted terminal is meaningful only when the host
+                    # supplied a pause authority (durable chat/workflow). The
+                    # standalone in-memory AgentLoop keeps its historical
+                    # fatal terminal because it has no task checkpoint to
+                    # resume from.
+                    if stop_code in INTERRUPT_STOP_CODES and self.pause_control is not None:
+                        async for item in finish_interrupted(
+                            None, partial_text="".join(candidate_chunks), stop_code=stop_code
+                        ):
+                            yield item
+                    else:
+                        for item in terminal_error(failure.message, stop_code):
+                            yield item
                     return
                 state.retry_count = 0
                 persist_retry_progress()
@@ -1358,7 +1790,7 @@ class AgentLoop:
                 )
                 if is_final_text:
                     candidate_text = message.content or ""
-                    if await self._steering_pending(session):
+                    if await self._steering_pending(session) and self.steering_mode != "inject":
                         session.finish_turn(FinishReason.STEERED)
                         state.settled = True
                         state.terminal_finish_reason = FinishReason.STEERED
@@ -1474,6 +1906,53 @@ class AgentLoop:
                     if _pending_cancellation():
                         _consume_cancellation_request()
                         raise asyncio.CancelledError
+                    tool_pause = self._pause_signal(session)
+                    if tool_pause is not None:
+                        # Pause beats tool admission: everything not yet
+                        # dispatched closes as not-executed (P03.4).
+                        async for interrupted_event in finish_interrupted(tool_pause):
+                            yield interrupted_event
+                        return
+                    if self.steering_mode == "inject" and await self._steering_pending(session):
+                        # Per-call admission check (P6.3 / proposal 5.2): the
+                        # correction applies before each not-yet-admitted call;
+                        # the rest close through the existing cancellation
+                        # closure so no tool call is left dangling.
+                        steering_entry = await self._take_steering(session)
+                        if steering_entry is not None:
+                            state.pending_steering_text = steering_entry["text"]
+                            yield event(
+                                "status.changed",
+                                {
+                                    "status": "steered",
+                                    "receipt": "applied",
+                                    "client_message_id": steering_entry["client_message_id"],
+                                },
+                            )
+                            remaining = calls[index - 1 :]
+                            remaining_durable = (
+                                state.durable_executions[index - 1 :]
+                                if state.durable_executions
+                                else ()
+                            )
+                            self._close_unresolved(
+                                session,
+                                remaining,
+                                remaining_durable,
+                                ToolErrorCode.CANCELLED,
+                                "纠偏已生效，剩余工具调用未执行",
+                                tool_executor=tool_executor,
+                                result_limit=per_call_result_limit,
+                            )
+                            for remaining_call in remaining:
+                                yield tool_status(
+                                    remaining_call,
+                                    "cancelled",
+                                    calls.index(remaining_call) + 1,
+                                    len(calls),
+                                    error_code=ToolErrorCode.CANCELLED,
+                                )
+                            break
                     state.active_running_id = call.id
                     yield tool_status(call, "running", index, len(calls))
                     durable = (
@@ -1481,17 +1960,47 @@ class AgentLoop:
                     )
                     if tool_cycle is None:
                         raise RuntimeError("tool cycle executor is unavailable")
-                    call_execution = await tool_cycle.execute_call(
-                        session,
-                        call,
-                        durable_execution=durable,
-                        run_context=state.run_context,
-                        ordinal=index,
-                        total=len(calls),
-                        result_limit=per_call_result_limit,
-                    )
+                    try:
+                        call_execution = await tool_cycle.execute_call(
+                            session,
+                            call,
+                            durable_execution=durable,
+                            run_context=state.run_context,
+                            ordinal=index,
+                            total=len(calls),
+                            result_limit=per_call_result_limit,
+                        )
+                    except ToolPauseRequested as pause_exc:
+                        # The approval wait was interrupted: the durable
+                        # approval row stays pending (never auto-approved or
+                        # denied); the call closes as not-executed.
+                        async for interrupted_event in finish_interrupted(pause_exc.signal):
+                            yield interrupted_event
+                        return
                     result = call_execution.outcome
                     durable = call_execution.durable_execution
+                    failure_streak = 0
+                    repeated_stop: str | None = None
+                    if not result.ok and result.error_code is not None:
+                        streak_key = (
+                            call.name,
+                            result.error_code.value,
+                            result.validation_path or "",
+                        )
+                        failure_streak = state.failure_streaks.get(streak_key, 0) + 1
+                        state.failure_streaks[streak_key] = failure_streak
+                        if failure_streak >= REPEATED_FAILURE_HINT_THRESHOLD:
+                            result = _with_failure_hint(result, failure_streak)
+                        if (
+                            failure_streak >= REPEATED_FAILURE_STOP_THRESHOLD
+                            and result.validation_path is not None
+                        ):
+                            repeated_stop = (
+                                f"工具 {call.name} 已连续 {failure_streak} 次以完全相同的方式失败"
+                                f"（错误 {result.error_code.value}，"
+                                f"位置 {result.validation_path}），继续重试无法取得进展，"
+                                "已停止本轮任务。请保留已有结论并修正完成方式。"
+                            )
                     if durable is not None:
                         if durable_runtime is None:
                             raise RuntimeError(
@@ -1513,6 +2022,18 @@ class AgentLoop:
                         error_code=result.error_code,
                         truncated=result.truncated,
                     )
+                    commit_pause = self._pause_signal(session)
+                    if commit_pause is not None:
+                        # Check point: the tool result just committed durably.
+                        # Already-committed results are preserved; no further
+                        # dispatch happens this turn (A04).
+                        async for interrupted_event in finish_interrupted(commit_pause):
+                            yield interrupted_event
+                        return
+                    if repeated_stop is not None:
+                        for item in terminal_error(repeated_stop, AgentStopCode.LOOP_DETECTED):
+                            yield item
+                        return
                 state.active_calls = ()
                 state.active_result_limit = None
                 if await self._host_stop_requested(session, message):
@@ -1526,7 +2047,7 @@ class AgentLoop:
                         completion_payload(FinishReason.CANCELLED, state.visible),
                     )
                     return
-                if await self._steering_pending(session):
+                if await self._steering_pending(session) and self.steering_mode != "inject":
                     session.finish_turn(FinishReason.STEERED)
                     state.settled = True
                     state.terminal_finish_reason = FinishReason.STEERED
@@ -1587,6 +2108,7 @@ class AgentLoop:
             )
             return
         except Exception as exc:
+            logger.error("task failed: %s: %s", type(exc).__name__, exc)
             if not state.started:
                 state.started = True
                 yield event("turn.started", {})
@@ -1759,6 +2281,8 @@ class AgentRuntime:
         should_stop_after_turn=None,
         retry_sleep=None,
         runtime_control=None,
+        activity_observer: ModelContentObserver | None = None,
+        pause_control=None,
     ) -> None:
         self._loop = AgentLoop(
             provider,
@@ -1771,6 +2295,8 @@ class AgentRuntime:
             should_stop_after_turn=should_stop_after_turn,
             retry_sleep=retry_sleep,
             runtime_control=runtime_control,
+            activity_observer=activity_observer,
+            pause_control=pause_control,
         )
 
     @property
@@ -1786,6 +2312,7 @@ class AgentRuntime:
         prepared: PreparedAgentRunRuntime | None = None,
         startup_error: str | ApplicationError | None = None,
         agent_run_id: str | None = None,
+        cancelled_is_user: bool | Callable[[], bool] = True,
     ) -> AsyncIterator[AgentEvent]:
         return self._loop.run_task(
             session,
@@ -1794,6 +2321,7 @@ class AgentRuntime:
             prepared=prepared,
             startup_error=startup_error,
             agent_run_id=agent_run_id,
+            cancelled_is_user=cancelled_is_user,
         )
 
     async def compact_idle(self, session: Session, *, instructions: str = "") -> bool:

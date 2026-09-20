@@ -448,6 +448,12 @@ async def test_multi_turn_correction_and_acceptance_survive_restart(tmp_path):
     await products.orchestrator.dispatch("先完成这个目标")
     first_task = products.tasks.get(products.persistence.current_task_run_id)
     assert first_task.status is TaskRunStatus.READY_FOR_ACCEPTANCE
+    initial_outcomes = products.persistence.journal.list_task_outcomes(
+        identity.workspace_id, first_task.task_run_id
+    )
+    assert len(initial_outcomes) == 1
+    assert initial_outcomes[0].trigger is TaskOutcomeTrigger.SNAPSHOT
+    assert initial_outcomes[0].task_status is TaskRunStatus.READY_FOR_ACCEPTANCE
 
     await products.orchestrator.dispatch("请修正并补充结果")
     second_task = products.tasks.get(first_task.task_run_id)
@@ -460,8 +466,14 @@ async def test_multi_turn_correction_and_acceptance_survive_restart(tmp_path):
     outcomes = products.persistence.journal.list_task_outcomes(
         identity.workspace_id, first_task.task_run_id
     )
-    assert len(outcomes) == 1
-    assert outcomes[0].version == 1
+    assert len(outcomes) == 3
+    assert [outcome.version for outcome in outcomes] == [1, 2, 3]
+    assert [outcome.trigger for outcome in outcomes] == [
+        TaskOutcomeTrigger.SNAPSHOT,
+        TaskOutcomeTrigger.SNAPSHOT,
+        TaskOutcomeTrigger.ACCEPTANCE,
+    ]
+    assert outcomes[0] == initial_outcomes[0]
     assert (
         products.persistence.journal.get_session(
             identity.workspace_id, session_id

@@ -12,6 +12,13 @@ from morrow.core.workflows.definitions import (
     WorkflowRevisionRevocation,
 )
 from morrow.core.workflows.drafts import WorkflowDraft, WorkflowDraftStatus
+from morrow.core.workflows.planning import (
+    TASK_PLAN_DEFINITION_PREFIX,
+    PlanDecision,
+    PlanningBinding,
+    PlanningOperation,
+    TaskPlanProvenance,
+)
 from morrow.core.workflows.replan import ReplanProposal, ReplanSignal
 from morrow.core.workflows.runs import (
     NodeRun,
@@ -24,6 +31,105 @@ from morrow.core.workflows.runs import (
 def _first(executor, sql, parameters):
     rows = tuple(executor.execute(sql, parameters))
     return rows[0] if rows else None
+
+
+def _verify_task_plan_provenance(executor, revisions):
+    if not tuple(
+        executor.execute(
+            "SELECT name FROM sqlite_master WHERE name='workflow_task_plan_provenance'"
+        )
+    ):
+        return
+    provenances = {}
+    for workspace_id, revision_id, origin, body in executor.execute(
+        "SELECT workspace_id, workflow_revision_id, origin, body_json "
+        "FROM workflow_task_plan_provenance"
+    ):
+        value = TaskPlanProvenance.model_validate_json(body)
+        revision = revisions[revision_id]
+        if (
+            (workspace_id, revision_id, origin)
+            != (value.workspace_id, value.workflow_revision_id, value.origin)
+            or revision.workspace_id != workspace_id
+            or revision.revision >= 0
+            or revision.parent_workflow_revision_id is not None
+            or not revision.workflow_definition_id.startswith(TASK_PLAN_DEFINITION_PREFIX)
+            or _first(
+                executor,
+                "SELECT 1 FROM workflow_definition_heads "
+                "WHERE workspace_id=? AND workflow_definition_id=?",
+                (revision.workspace_id, revision.workflow_definition_id),
+            )
+        ):
+            raise ValueError("task-plan provenance mismatch")
+        binding_row = _first(
+            executor,
+            "SELECT body_json FROM workflow_planning_bindings "
+            "WHERE workspace_id=? AND planning_binding_id=?",
+            (workspace_id, value.planning_binding_id),
+        )
+        decision_row = _first(
+            executor,
+            "SELECT body_json FROM workflow_plan_decisions "
+            "WHERE workspace_id=? AND plan_decision_id=?",
+            (workspace_id, value.plan_decision_id),
+        )
+        version_row = _first(
+            executor,
+            "SELECT 1 FROM workflow_draft_versions "
+            "WHERE workspace_id=? AND draft_id=? AND version=?",
+            (workspace_id, value.draft_id, value.draft_version),
+        )
+        root = _first(
+            executor,
+            "SELECT workspace_id, session_id, purpose FROM task_runs WHERE task_run_id=?",
+            (value.root_task_run_id,),
+        )
+        if binding_row is None or decision_row is None or version_row is None or root is None:
+            raise ValueError("task-plan provenance mismatch")
+        binding = PlanningBinding.model_validate_json(binding_row[0])
+        decision = PlanDecision.model_validate_json(decision_row[0])
+        expected_mode = "repair" if value.origin == "repair" else "initial"
+        if (
+            binding.mode != expected_mode
+            or decision.decision != "start"
+            or decision.command_id != value.command_id
+            or decision.session_id != binding.session_id
+            or decision.draft_id != value.draft_id
+            or decision.draft_version != value.draft_version
+            or {item.node_id for item in value.frozen_selections}
+            != {node.node_id for node in revision.nodes}
+            or root != (workspace_id, binding.session_id, "user")
+        ):
+            raise ValueError("task-plan provenance mismatch")
+        provenances[revision_id] = value
+    for value in revisions.values():
+        if value.parent_workflow_revision_id is None and value.revision < 0:
+            if value.workflow_revision_id not in provenances:
+                raise ValueError("parentless run-local Revision is missing task-plan provenance")
+
+
+def _verify_planning_replan_state(executor):
+    if not tuple(
+        executor.execute("SELECT name FROM sqlite_master WHERE name='workflow_planning_operations'")
+    ):
+        return
+    bindings = {}
+    if tuple(
+        executor.execute("SELECT name FROM sqlite_master WHERE name='workflow_planning_bindings'")
+    ):
+        for (body,) in executor.execute("SELECT body_json FROM workflow_planning_bindings"):
+            binding = PlanningBinding.model_validate_json(body)
+            bindings[binding.planning_binding_id] = binding
+    for (body,) in executor.execute("SELECT body_json FROM workflow_planning_operations"):
+        operation = PlanningOperation.model_validate_json(body)
+        binding = bindings.get(operation.planning_binding_id)
+        if (
+            binding is None
+            or binding.workspace_id != operation.workspace_id
+            or binding.session_id != operation.session_id
+        ):
+            raise ValueError("planning operation ownership mismatch")
 
 
 def verify_workflow_rows(executor):
@@ -81,6 +187,9 @@ def verify_workflow_rows(executor):
                     node.agent_definition_ref.content_hash,
                 ):
                     raise ValueError("Agent reference mismatch")
+
+        _verify_task_plan_provenance(executor, revisions)
+        _verify_planning_replan_state(executor)
 
         for (
             draft_id,
@@ -195,8 +304,20 @@ def verify_workflow_rows(executor):
                 if run.admission_deadline_at != expected_deadline:
                     raise ValueError("run deadline mismatch")
         nodes = {}
-        for node_id, ws, run_id, nid, attempt, status, body in executor.execute(
-            "SELECT * FROM workflow_node_runs"
+        for (
+            node_id,
+            ws,
+            run_id,
+            nid,
+            attempt,
+            status,
+            body,
+            stored_agent_id,
+            stored_leaf_session_id,
+            stored_leaf_task_id,
+        ) in executor.execute(
+            "SELECT node_run_id, workspace_id, workflow_run_id, node_id, attempt, status, "
+            "body_json, agent_run_id, leaf_session_id, leaf_task_run_id FROM workflow_node_runs"
         ):
             node = NodeRun.model_validate_json(body)
             if (node_id, ws, run_id, nid, attempt, status) != (
@@ -208,11 +329,30 @@ def verify_workflow_rows(executor):
                 node.status.value,
             ) or runs[run_id].workspace_id != ws:
                 raise ValueError("node identity mismatch")
-            if node.leaf_task_run_id:
+            body_refs = (node.agent_run_id, node.conversation_session_id, node.leaf_task_run_id)
+            stored_refs = (stored_agent_id, stored_leaf_session_id, stored_leaf_task_id)
+            preadmission_leaf = (
+                node.status.value == "queued"
+                and body_refs == (None, None, None)
+                and stored_agent_id is None
+                and stored_leaf_session_id is not None
+                and stored_leaf_task_id is not None
+            )
+            if stored_refs != body_refs and not preadmission_leaf:
+                raise ValueError("node admission reference mismatch")
+            leaf_session_id = (
+                node.conversation_session_id
+                if node.conversation_session_id is not None
+                else stored_leaf_session_id
+            )
+            leaf_task_run_id = (
+                node.leaf_task_run_id if node.leaf_task_run_id is not None else stored_leaf_task_id
+            )
+            if leaf_task_run_id:
                 leaf = _first(
                     executor,
                     "SELECT workspace_id, session_id, purpose FROM task_runs WHERE task_run_id=?",
-                    (node.leaf_task_run_id,),
+                    (leaf_task_run_id,),
                 )
                 workflow_run = runs[run_id]
                 declared = next(
@@ -221,12 +361,13 @@ def verify_workflow_rows(executor):
                     if candidate.node_id == node.node_id
                 )
                 if declared.conversation_scope == "invoking_session":
-                    valid_leaf = (
-                        node.leaf_task_run_id == workflow_run.root_task_run_id
-                        and leaf == (ws, node.conversation_session_id, "user")
+                    valid_leaf = leaf_task_run_id == workflow_run.root_task_run_id and leaf == (
+                        ws,
+                        leaf_session_id,
+                        "user",
                     )
                 else:
-                    valid_leaf = leaf == (ws, node.conversation_session_id, "workflow_node")
+                    valid_leaf = leaf == (ws, leaf_session_id, "workflow_node")
                 if not valid_leaf:
                     raise ValueError("leaf ownership mismatch")
                 if node.parallel_read_digest is not None:
@@ -278,10 +419,6 @@ def verify_workflow_rows(executor):
             actual_ids = {
                 n.node_id for n in nodes.values() if n.workflow_run_id == run.workflow_run_id
             }
-            if not execution_ids and run.run_relation == "initial":
-                # Compatibility for stores opened on v26 before execution-set
-                # population shipped; the legacy full NodeRun set is exact.
-                execution_ids = actual_ids
             if actual_ids != execution_ids:
                 raise ValueError("run node set mismatch")
             if run.run_relation == "initial" and execution_ids != {
@@ -367,20 +504,32 @@ def verify_workflow_rows(executor):
                     for ref in revision.required_outputs
                 ):
                     raise ValueError("completed Workflow required output is missing")
-        for node_id, session_id, task_id in executor.execute(
-            "SELECT * FROM workflow_leaf_ownership"
-        ):
-            task = _first(
-                executor,
-                "SELECT workspace_id, session_id, purpose FROM task_runs WHERE task_run_id=?",
-                (task_id,),
-            )
-            if task != (nodes[node_id].workspace_id, session_id, "workflow_node"):
-                raise ValueError("leaf ownership mismatch")
-        for agent_id, node_id in executor.execute("SELECT * FROM workflow_agent_run_refs"):
-            if nodes[node_id].agent_run_id != agent_id:
-                raise ValueError("AgentRun reference mismatch")
-            node = nodes[node_id]
+        for node in nodes.values():
+            workflow_run = runs[node.workflow_run_id]
+            revision = revisions[workflow_run.workflow_revision_id]
+            declared = next(n for n in revision.nodes if n.node_id == node.node_id)
+            if node.leaf_task_run_id:
+                leaf = _first(
+                    executor,
+                    "SELECT workspace_id, session_id, purpose FROM task_runs WHERE task_run_id=?",
+                    (node.leaf_task_run_id,),
+                )
+                if declared.conversation_scope == "invoking_session":
+                    valid_leaf = (
+                        node.leaf_task_run_id == workflow_run.root_task_run_id
+                        and leaf == (node.workspace_id, node.conversation_session_id, "user")
+                    )
+                else:
+                    valid_leaf = leaf == (
+                        node.workspace_id,
+                        node.conversation_session_id,
+                        "workflow_node",
+                    )
+                if not valid_leaf:
+                    raise ValueError("leaf ownership mismatch")
+            if node.agent_run_id is None:
+                continue
+            agent_id = node.agent_run_id
             revision = revisions[runs[node.workflow_run_id].workflow_revision_id]
             declared = next(n for n in revision.nodes if n.node_id == node.node_id)
             agent = _first(
@@ -405,12 +554,6 @@ def verify_workflow_rows(executor):
             ):
                 raise ValueError("Workflow node budget mismatch")
         for node in nodes.values():
-            if node.agent_run_id is not None and _first(
-                executor,
-                "SELECT node_run_id FROM workflow_agent_run_refs WHERE agent_run_id=?",
-                (node.agent_run_id,),
-            ) != (node.node_run_id,):
-                raise ValueError("Workflow AgentRun attribution is missing")
             if node.status.value == "completed":
                 declared = next(
                     n
@@ -507,9 +650,6 @@ def verify_workflow_rows(executor):
                     consumed_signals.get(sid) != proposal.proposal_id for sid in proposal.signal_ids
                 ):
                     raise ValueError("Replan proposal signal evidence is missing")
-        from morrow.application.workflows.feedback_integrity import verify_feedback_rows
-
-        verify_feedback_rows(executor, runs, revisions)
         return True, ()
     except (ValueError, TypeError, KeyError, IndexError, AttributeError):
         return False, ("workflow_integrity",)

@@ -23,11 +23,14 @@ from morrow.core.models import AssistantMessage, FinishReason, FunctionToolCall,
 from morrow.core.recovery import (
     FileObservation,
     RecoveryDecisionError,
+    RecoveryDisplayState,
     RecoveryEvidence,
     RecoveryItem,
+    RecoveryOwner,
     RecoveryReport,
     RecoveryReportStatus,
     RecoveryResolution,
+    RecoveryStatus,
     allowed_resolutions,
     apply_item_resolution,
     apply_report_resume,
@@ -113,6 +116,27 @@ def test_recovery_report_is_budgeted_and_refuses_secrets():
             ),
         )
     assert RECOVERY_REPORT_MAX_BYTES == 64 * 1024
+
+
+def test_recovery_status_contract_is_bounded_and_refuses_secrets():
+    status = RecoveryStatus(
+        display_state=RecoveryDisplayState.UNKNOWN_SIDE_EFFECT,
+        owner=RecoveryOwner.CHAT,
+        safe_summary="副作用结果未知；请核对已保存证据。",
+        allowed_actions=("acknowledge", "new_session"),
+        opaque_target="rrp_1",
+        opaque_target_kind="report",
+        decision_required=True,
+        revision=12,
+    )
+    assert status.protocol_version == 1
+    assert status.opaque_target == "rrp_1"
+    assert status.checks == ()
+    with pytest.raises(ValidationError, match="secret"):
+        RecoveryStatus(
+            display_state=RecoveryDisplayState.NEEDS_REVIEW,
+            safe_summary="api_key leaked",
+        )
 
 
 def test_classifier_uses_declaration_not_tool_effect():

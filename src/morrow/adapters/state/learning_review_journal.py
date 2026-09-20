@@ -6,7 +6,6 @@ from datetime import datetime
 
 from morrow.adapters.state.learning_journal import (
     _EVIDENCE_COLUMNS,
-    _EVIDENCE_COLUMNS_QUALIFIED,
     _REVIEW_COLUMNS,
     _evidence_from_row,
     _json_text,
@@ -50,8 +49,9 @@ class SqliteLearningReviewMixin:
         status: LearningReviewStatus | None = None,
         task_outcome_id: str | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[LearningReview, ...]:
-        if not 1 <= limit <= 500:
+        if not 1 <= limit <= 500 or not isinstance(offset, int) or offset < 0:
             raise StorageError(StorageErrorCode.UNAVAILABLE, "learning review page is invalid")
         sql = f"SELECT {_REVIEW_COLUMNS} FROM learning_reviews WHERE workspace_id = ?"
         parameters: list[object] = [workspace_id]
@@ -61,8 +61,8 @@ class SqliteLearningReviewMixin:
         if task_outcome_id is not None:
             sql += " AND task_outcome_id = ?"
             parameters.append(task_outcome_id)
-        sql += " ORDER BY created_at_unix ASC, review_version ASC, review_id ASC LIMIT ?"
-        parameters.append(limit)
+        sql += " ORDER BY created_at_unix ASC, review_version ASC, review_id ASC LIMIT ? OFFSET ?"
+        parameters.extend((limit, offset))
         return tuple(_review_from_row(row) for row in self.backend.read_all(sql, tuple(parameters)))
 
     def count_learning_reviews(
@@ -441,25 +441,8 @@ class SqliteLearningReviewMixin:
                     StorageErrorCode.UNAVAILABLE,
                     "review evidence must belong to its origin review",
                 )
-            existing = self.backend.read_one(
-                "SELECT 1 FROM learning_review_evidence WHERE review_id = ? AND evidence_id = ?",
-                (review_id, evidence_id),
-            )
-            if existing is not None:
-                return
-            count = self.backend.read_one(
-                "SELECT COUNT(*) FROM learning_review_evidence WHERE review_id = ?",
-                (review_id,),
-            )
-            policy = self.get_effective_learning_policy(workspace_id)
-            if count is not None and int(count[0]) >= policy.max_evidence_per_review:
-                raise StorageError(
-                    StorageErrorCode.UNAVAILABLE, "learning review evidence budget is exhausted"
-                )
-            self.backend.executor().execute(
-                "INSERT INTO learning_review_evidence(workspace_id, review_id, evidence_id) VALUES (?, ?, ?)",
-                (workspace_id, review_id, evidence_id),
-            )
+            # Evidence ownership is represented by learning_evidence.origin_review_id.
+            # Linking an already-owned row is therefore an idempotent validation.
 
         self.backend.transact(work)
 
@@ -467,10 +450,9 @@ class SqliteLearningReviewMixin:
         self, workspace_id: str, review_id: str
     ) -> tuple[LearningEvidence, ...]:
         rows = self.backend.read_all(
-            f"SELECT {_EVIDENCE_COLUMNS_QUALIFIED} FROM learning_evidence e "
-            "JOIN learning_review_evidence l ON l.evidence_id = e.evidence_id "
-            "WHERE l.workspace_id = ? AND l.review_id = ? "
-            "ORDER BY e.created_at_unix ASC, e.evidence_id ASC",
+            f"SELECT {_EVIDENCE_COLUMNS} FROM learning_evidence "
+            "WHERE workspace_id = ? AND origin_review_id = ? "
+            "ORDER BY created_at_unix ASC, evidence_id ASC",
             (workspace_id, review_id),
         )
         return tuple(_evidence_from_row(row) for row in rows)

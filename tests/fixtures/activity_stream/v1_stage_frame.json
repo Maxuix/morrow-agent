@@ -1,0 +1,19 @@
+{
+  "protocol_version": 1,
+  "workspace_id": "ws_sample",
+  "session_id": "ses_root",
+  "stream_epoch": "0f1e2d3c4b5a",
+  "sequence": 7,
+  "type": "stage",
+  "agent_run_id": "arun_sample",
+  "message_id": null,
+  "payload": {
+    "workflow_run_id": "wfr_sample",
+    "node_run_id": "nrun_sample",
+    "node_id": "collect",
+    "agent_run_id": "arun_sample",
+    "session_id": "ses_leaf",
+    "stage": "awaiting_model",
+    "ts": "2026-09-08T00:00:00+00:00"
+  }
+}

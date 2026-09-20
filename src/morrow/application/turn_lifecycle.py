@@ -207,6 +207,17 @@ class TurnSubmissionCoordinator:
                 )
             else:
                 clear_task = self._apply_task_terminal_in_txn(txn, session, terminal)
+                if terminal.finish_reason is FinishReason.INTERRUPTED:
+                    from morrow.application.task_continuity import save_chat_interruption
+
+                    save_chat_interruption(
+                        txn,
+                        workspace_id=self.workspace_id,
+                        session_id=session.session_id,
+                        state=self.state,
+                        terminal=terminal,
+                        now=self.clock(),
+                    )
             self._close_open_receipt_in_txn(txn, session)
             return clear_task
 
@@ -229,6 +240,16 @@ class TurnSubmissionCoordinator:
             receipt.model_copy(update={"disposition": TurnSubmitDisposition.ACCEPTED_CLOSED}),
         )
 
+    def _attachments(self, session, key):
+        from morrow.core.models import AttachmentRef
+
+        entry = self.journal.interactions.get(self.workspace_id, session.session_id, key)
+        return (
+            tuple(AttachmentRef.model_validate(a) for a in entry["request"].get("attachments", ()))
+            if entry
+            else ()
+        )
+
     def probe(
         self,
         session: Session,
@@ -242,7 +263,7 @@ class TurnSubmissionCoordinator:
         Never creates IDs, loads preferences YAML, or performs external work;
         `prepare_new()` may then run only when the probe says the run is new.
         """
-        digest = digest or request_digest(user_input)
+        digest = digest or request_digest(user_input, self._attachments(session, client_message_id))
         classified = _classify_receipt(
             self.journal.get_receipt(self.workspace_id, session.session_id, client_message_id),
             digest,
@@ -277,7 +298,7 @@ class TurnSubmissionCoordinator:
         prompt_projection=None,
         writer: DurableConversationWriter,
     ) -> TurnSubmitResult:
-        digest = request_digest(user_input)
+        digest = request_digest(user_input, self._attachments(session, client_message_id))
         result = self.probe(session, user_input, client_message_id, digest=digest)
         if result.kind != "new":
             if result.kind == "recovery" and result.receipt is not None:
@@ -308,7 +329,17 @@ class TurnSubmissionCoordinator:
         preference_sources = (
             self.preference_loader() if self.preference_loader is not None else None
         )
-        planned = session.log.plan_begin_turn(UserMessage(content=user_input))
+        attachments = self._attachments(session, client_message_id)
+        entry = (
+            self.journal.interactions.get(self.workspace_id, session.session_id, client_message_id)
+            if attachments
+            else None
+        )
+        planned = session.log.plan_begin_turn(
+            UserMessage(
+                content=entry["request"]["text"] if entry else user_input, attachments=attachments
+            )
+        )
         command_id = self.id_source.new_id(COMMAND_ID_PREFIX)
 
         def work(txn: MemorySelectionAdmissionPort) -> _AcceptedTurn | TurnSubmitResult:
@@ -395,9 +426,7 @@ class TurnSubmissionCoordinator:
                 created_at=stamp,
             )
             if self.workflow_leaf is not None:
-                txn.create_workflow_turn(
-                    self.workspace_id, self.workflow_leaf.context.node_run_id, durable_turn
-                )
+                self.workflow_leaf.create_turn_in_txn(txn, durable_turn)
             else:
                 txn.create_turn(self.workspace_id, durable_turn)
             if follow_up_task is not None:
@@ -464,7 +493,7 @@ class TurnSubmissionCoordinator:
                     workspace_id=self.workspace_id,
                     task_run_id=task_id,
                     turn_id=turn_id,
-                    task_goal=user_input,
+                    task_goal=user_input or "分析所附文件",
                 ),
                 now=stamp,
             )
@@ -474,6 +503,7 @@ class TurnSubmissionCoordinator:
                 run_policy=self.run_policy if prepared_spec is None else prepared_spec.run_policy,
                 tools=tools,
                 runtime_instance_id=self.runtime_instance_id,
+                input_attachments=self._attachments(session, client_message_id),
                 memory_selection=selection,
                 preference_sources=preference_sources,
                 prepared_spec=prepared_spec,
@@ -481,9 +511,41 @@ class TurnSubmissionCoordinator:
                 prompt_projection=prompt_projection,
             )
             txn.put_memory_selection(self.workspace_id, selection)
+            resume_parent = None
+            pause_owner = "workflow_run" if self.workflow_leaf is not None else "chat_turn"
+            pause_owner_id = (
+                self.workflow_leaf.context.workflow_run_id
+                if self.workflow_leaf is not None
+                else session.session_id
+            )
+            point = txn.workflows.execution_pause.latest_pause_point(
+                self.workspace_id, owner=pause_owner, owner_id=pause_owner_id
+            )
+            if point is not None and point.cancelled_at is None:
+                continuation_accepted = (
+                    point.fact.lifecycle == "suspended"
+                    or point.continuation_command_id == client_message_id
+                )
+                if continuation_accepted and self.workflow_leaf is not None:
+                    segments = txn.workflows.segments_for_node(
+                        self.workspace_id, self.workflow_leaf.context.node_run_id
+                    )
+                    if segments and segments[-1].status == "interrupted":
+                        resume_parent = segments[-1].agent_run_id
+                elif continuation_accepted and point.safety is not None:
+                    if point.safety.task_run_id == task_id:
+                        resume_parent = point.safety.interrupted_agent_run_id
+                        from morrow.application.execution_pause import ExecutionPauseService
+
+                        ExecutionPauseService(
+                            self.journal,
+                            workspace_id=self.workspace_id,
+                            clock=self.clock,
+                        ).resume_chat_pause(session.session_id, command_id=client_message_id)
             txn.create_agent_run(
                 self.workspace_id,
                 DurableAgentRun(
+                    resume_of_agent_run_id=resume_parent,
                     agent_run_id=stored_agent_run_id,
                     turn_id=turn_id,
                     session_id=session.session_id,
@@ -508,7 +570,9 @@ class TurnSubmissionCoordinator:
                     txn.freeze_agent_run_permission_snapshot(
                         self.workspace_id, stored_agent_run_id, permission
                     )
-                self.workflow_leaf.admit_node_in_txn(txn, agent_run_id=stored_agent_run_id)
+                self.workflow_leaf.admit_node_in_txn(
+                    txn, agent_run_id=stored_agent_run_id, turn_id=turn_id
+                )
             if prepared_mcp_run is not None:
                 expected_ids = (
                     prepared_spec.mcp_run_snapshot_ids if prepared_spec is not None else ()
@@ -540,6 +604,15 @@ class TurnSubmissionCoordinator:
                 ),
             )
             writer.persist(planned)
+            interactions = getattr(txn, "interactions", None)
+            if interactions is not None:
+                interactions.bind_turn(
+                    self.workspace_id,
+                    session.session_id,
+                    client_message_id,
+                    turn_id,
+                    stored_agent_run_id,
+                )
             runtime_control = (
                 txn.get_runtime_control(self.workspace_id, session.session_id, client_message_id)
                 if self.workflow_leaf is None
@@ -620,9 +693,15 @@ class TurnSubmissionCoordinator:
             raise RuntimeError("durable TaskRun is missing for the active turn")
         if terminal.finish_reason is FinishReason.STEERED:
             return False
+        if terminal.finish_reason is FinishReason.INTERRUPTED:
+            # Interrupted turns only occur with a pause authority (workflow
+            # leaves); defensively keep any plain-chat task open as well.
+            return False
         if terminal.finish_reason is FinishReason.STOP:
             target = TaskRunStatus.READY_FOR_ACCEPTANCE
-            trigger = None
+            # Publish the result before asking the user to accept it. The snapshot
+            # keeps acceptance explicit and is committed atomically with the answer.
+            trigger = TaskOutcomeTrigger.SNAPSHOT
             reason = "assistant_answer_presented"
         elif terminal.finish_reason is FinishReason.CANCELLED:
             target = TaskRunStatus.CANCELLED
@@ -879,8 +958,11 @@ class SessionRestoreCoordinator:
             raise
 
 
-def request_digest(user_input: str) -> str:
-    return sha256_digest(canonical_json_bytes({"content": user_input}))
+def request_digest(user_input: str, attachments=()) -> str:
+    payload = {"content": user_input}
+    if attachments:
+        payload["attachments"] = [a.model_dump(mode="json") for a in attachments]
+    return sha256_digest(canonical_json_bytes(payload))
 
 
 def _classify_receipt(
@@ -918,6 +1000,7 @@ def build_agent_run_snapshot(
     run_policy,
     tools: tuple[ToolDefinition, ...],
     runtime_instance_id: str,
+    input_attachments=(),
     memory_selection: MemorySelection | None = None,
     preference_sources: PreferenceRunSources | None = None,
     prepared_spec: PreparedAgentRunSpec | None = None,
@@ -1059,6 +1142,7 @@ def build_agent_run_snapshot(
         ),
     }
     return AgentRunSnapshot(
+        input_attachments=input_attachments,
         definition_ref=prepared_spec.definition_ref if prepared_spec else None,
         max_agent_generation_requests=(
             prepared_spec.max_agent_generation_requests if prepared_spec else None

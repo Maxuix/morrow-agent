@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 
 from morrow.adapters.state.transaction import SqliteJournalBackend
 from morrow.core.application import (
-    ApplicationCommandDisposition,
     ApplicationCommandReceipt,
     ApplicationEvent,
 )
@@ -18,10 +17,6 @@ from morrow.core.store import StorageError, StorageErrorCode
 _EVENT_COLUMNS = (
     "event_id, workspace_id, cursor, schema_version, event_type, aggregate_kind, "
     "aggregate_id, payload_json, payload_bytes, created_at_unix"
-)
-_RECEIPT_COLUMNS = (
-    "command_id, workspace_id, session_id, operation, request_digest, disposition, "
-    "result_kind, result_id, event_cursor, row_version, created_at_unix"
 )
 
 
@@ -122,16 +117,12 @@ class SqliteApplicationJournal:
 
     def get_receipt(self, workspace_id: str, command_id: str) -> ApplicationCommandReceipt | None:
         row = self.backend.read_one(
-            f"SELECT {_RECEIPT_COLUMNS} FROM application_command_receipts WHERE command_id = ?",
-            (command_id,),
+            "SELECT payload_json FROM command_receipts "
+            "WHERE receipt_kind = 'application_command' AND workspace_id = ? AND receipt_key = ?",
+            (workspace_id, command_id),
         )
         if row is None:
             return None
-        if str(row[1]) != workspace_id:
-            raise StorageError(
-                StorageErrorCode.UNAVAILABLE,
-                "application command receipt is outside the workspace",
-            )
         return _receipt_from_row(row)
 
     def put_receipt(
@@ -160,18 +151,17 @@ class SqliteApplicationJournal:
         ):
             raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
         self.backend.executor().execute(
-            f"INSERT INTO application_command_receipts({_RECEIPT_COLUMNS}) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO command_receipts(receipt_kind,workspace_id,session_id,receipt_key,"
+            "command_id,request_digest,payload_json,revision,created_at_unix) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                receipt.command_id,
+                "application_command",
                 receipt.workspace_id,
                 receipt.session_id,
-                receipt.operation,
+                receipt.command_id,
+                receipt.command_id,
                 receipt.request_digest,
-                receipt.disposition.value,
-                receipt.result_kind,
-                receipt.result_id,
-                receipt.event_cursor,
+                receipt.model_dump_json(),
                 receipt.row_version,
                 _unix(receipt.created_at),
             ),
@@ -209,19 +199,7 @@ def _event_from_row(row: tuple[object, ...]) -> ApplicationEvent:
 
 def _receipt_from_row(row: tuple[object, ...]) -> ApplicationCommandReceipt:
     try:
-        return ApplicationCommandReceipt(
-            command_id=str(row[0]),
-            workspace_id=str(row[1]),
-            session_id=str(row[2]) if row[2] is not None else None,
-            operation=str(row[3]),
-            request_digest=str(row[4]),
-            disposition=ApplicationCommandDisposition(str(row[5])),
-            result_kind=str(row[6]) if row[6] is not None else None,
-            result_id=str(row[7]) if row[7] is not None else None,
-            event_cursor=int(row[8]) if row[8] is not None else None,
-            row_version=int(row[9]) if row[9] is not None else None,
-            created_at=_from_unix(row[10]),
-        )
+        return ApplicationCommandReceipt.model_validate_json(str(row[0]))
     except (TypeError, ValueError) as exc:
         raise StorageError(
             StorageErrorCode.NEEDS_REPAIR, "application command receipt is invalid"

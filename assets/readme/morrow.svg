@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">Morrow — terminal and web, one coding runtime</title>
+  <desc id="desc">Morrow's warm paper identity, a real CLI invocation, and a schematic sequence from Chat through AgentLoop to a persisted result. This is a conceptual diagram, not a screenshot.</desc>
+  <rect width="1200" height="300" rx="12" fill="#faf9f5"/>
+  <g id="identity" fill="#201f1b">
+    <text x="56" y="117" font-family="Georgia, 'Times New Roman', serif" font-size="94" letter-spacing="-4">Morrow<tspan fill="#c15f3c">.</tspan></text>
+    <text x="60" y="167" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="26">Your project. A conversation that continues.</text>
+  </g>
+  <g id="entry-points" font-family="ui-monospace, 'SFMono-Regular', Menlo, monospace">
+    <text x="60" y="247" font-size="24" fill="#6d6a5f"><tspan fill="#c15f3c">&gt;</tspan> uv run morrow --dir .</text>
+    <text x="817" y="64" font-size="19" fill="#6d6a5f">TERMINAL + WEB GUI</text>
+  </g>
+  <g id="execution-sequence" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="26" fill="#201f1b">
+    <path d="M796 99 V242" fill="none" stroke="#c15f3c" stroke-width="2"/>
+    <circle cx="796" cy="105" r="6" fill="#c15f3c"/>
+    <circle cx="796" cy="173" r="6" fill="#c15f3c"/>
+    <circle cx="796" cy="241" r="6" fill="#c15f3c"/>
+    <text x="820" y="114">Chat</text>
+    <text x="820" y="182">AgentLoop</text>
+    <text x="820" y="250">Persisted result</text>
+  </g>
+</svg>

@@ -1,23 +1,20 @@
-"""Restore-time checks for v10/v11 Learning links in a SQLite backup."""
+"""Restore-time checks for Learning links in a SQLite backup."""
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
-_LEARNING_SCHEMA_VERSION = 10
 _LEARNING_TABLES = frozenset(
     {
         "learning_policies",
         "learning_reviews",
         "learning_evidence",
-        "learning_review_evidence",
         "learning_candidates",
-        "learning_candidate_evidence",
         "learning_suppressions",
         "learning_candidate_decisions",
         "project_knowledge_heads",
         "project_knowledge_revisions",
-        "project_knowledge_evidence",
         "memory_workspace_state",
         "promotion_operations",
         "configuration_activations",
@@ -29,7 +26,6 @@ def verify_learning_references(connection: sqlite3.Connection) -> tuple[bool, tu
     """Verify bounded Learning references without reading YAML or credentials."""
 
     try:
-        schema_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
         tables = {
             str(row[0])
             for row in connection.execute(
@@ -38,8 +34,6 @@ def verify_learning_references(connection: sqlite3.Connection) -> tuple[bool, tu
         }
     except (TypeError, ValueError, sqlite3.Error):
         return False, ("learning_schema_unreadable",)
-    if schema_version < _LEARNING_SCHEMA_VERSION:
-        return True, ()
     if not _LEARNING_TABLES.issubset(tables):
         return False, ("learning_schema_tables_missing",)
 
@@ -67,32 +61,11 @@ def verify_learning_references(connection: sqlite3.Connection) -> tuple[bool, tu
             """,
         ),
         (
-            "learning_review_evidence_link",
-            """
-            SELECT COUNT(*) FROM learning_review_evidence l
-            LEFT JOIN learning_reviews r ON r.review_id = l.review_id
-            LEFT JOIN learning_evidence e ON e.evidence_id = l.evidence_id
-            WHERE r.review_id IS NULL OR e.evidence_id IS NULL
-               OR r.workspace_id != l.workspace_id OR e.workspace_id != l.workspace_id
-               OR e.origin_review_id != l.review_id
-            """,
-        ),
-        (
             "learning_candidate_review",
             """
             SELECT COUNT(*) FROM learning_candidates c
             LEFT JOIN learning_reviews r ON r.review_id = c.origin_review_id
             WHERE r.review_id IS NULL OR r.workspace_id != c.workspace_id
-            """,
-        ),
-        (
-            "learning_candidate_evidence_link",
-            """
-            SELECT COUNT(*) FROM learning_candidate_evidence l
-            LEFT JOIN learning_candidates c ON c.candidate_id = l.candidate_id
-            LEFT JOIN learning_evidence e ON e.evidence_id = l.evidence_id
-            WHERE c.candidate_id IS NULL OR e.evidence_id IS NULL
-               OR c.workspace_id != l.workspace_id OR e.workspace_id != l.workspace_id
             """,
         ),
         (
@@ -137,17 +110,6 @@ def verify_learning_references(connection: sqlite3.Connection) -> tuple[bool, tu
                OR (r.source_decision_id IS NOT NULL AND d.decision_id IS NULL)
             """,
         ),
-        (
-            "learning_knowledge_evidence_link",
-            """
-            SELECT COUNT(*) FROM project_knowledge_evidence l
-            LEFT JOIN project_knowledge_revisions r
-                ON r.knowledge_revision_id = l.knowledge_revision_id
-            LEFT JOIN learning_evidence e ON e.evidence_id = l.evidence_id
-            WHERE r.knowledge_revision_id IS NULL OR e.evidence_id IS NULL
-               OR r.workspace_id != l.workspace_id OR e.workspace_id != l.workspace_id
-            """,
-        ),
     )
     issues: list[str] = []
     for code, query in checks:
@@ -158,6 +120,49 @@ def verify_learning_references(connection: sqlite3.Connection) -> tuple[bool, tu
             continue
         if count:
             issues.append(code)
+    try:
+        candidates = connection.execute(
+            "SELECT candidate_id, workspace_id, evidence_ids_json FROM learning_candidates"
+        ).fetchall()
+        for _candidate_id, workspace_id, raw_ids in candidates:
+            ids = json.loads(str(raw_ids))
+            if not isinstance(ids, list) or any(not isinstance(item, str) for item in ids):
+                issues.append("learning_candidate_evidence")
+                break
+            for evidence_id in ids:
+                row = connection.execute(
+                    "SELECT workspace_id FROM learning_evidence WHERE evidence_id=?",
+                    (evidence_id,),
+                ).fetchone()
+                if row is None or str(row[0]) != str(workspace_id):
+                    issues.append("learning_candidate_evidence")
+                    break
+            if "learning_candidate_evidence" in issues:
+                break
+    except (TypeError, ValueError, json.JSONDecodeError, sqlite3.Error):
+        issues.append("learning_candidate_evidence_unreadable")
+    try:
+        revisions = connection.execute(
+            "SELECT knowledge_revision_id, workspace_id, evidence_ids_json "
+            "FROM project_knowledge_revisions"
+        ).fetchall()
+        for _revision_id, workspace_id, raw_ids in revisions:
+            ids = json.loads(str(raw_ids))
+            if not isinstance(ids, list) or any(not isinstance(item, str) for item in ids):
+                issues.append("learning_knowledge_evidence")
+                break
+            for evidence_id in ids:
+                row = connection.execute(
+                    "SELECT workspace_id FROM learning_evidence WHERE evidence_id=?",
+                    (evidence_id,),
+                ).fetchone()
+                if row is None or str(row[0]) != str(workspace_id):
+                    issues.append("learning_knowledge_evidence")
+                    break
+            if "learning_knowledge_evidence" in issues:
+                break
+    except (TypeError, ValueError, json.JSONDecodeError, sqlite3.Error):
+        issues.append("learning_knowledge_evidence_unreadable")
     return not issues, tuple(dict.fromkeys(issues))
 
 

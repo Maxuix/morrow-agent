@@ -10,6 +10,7 @@ import stat
 import sys
 import threading
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,11 +66,6 @@ class FileSystemAdapter:
         self._locks: dict[Path, threading.Lock] = {}
 
     @contextmanager
-    def target_lock(self, path: Path):
-        with self.paths_lock((path,)):
-            yield
-
-    @contextmanager
     def paths_lock(self, paths: tuple[Path, ...]):
         """Acquire every affected path in one deterministic lexical order."""
 
@@ -93,6 +89,18 @@ class FileSystemAdapter:
 
     def read_bytes(self, path: Path, *, max_bytes: int) -> bytes:
         try:
+            absolute = path if path.is_absolute() else path.absolute()
+            if self._confined_fd_supported():
+                parent_fd: int | None = None
+                try:
+                    parent_fd = self._open_directory_chain(Path(absolute.anchor), absolute.parent)
+                    return self._read_file_bytes_at(parent_fd, absolute.name, max_bytes=max_bytes)
+                finally:
+                    if parent_fd is not None:
+                        try:
+                            os.close(parent_fd)
+                        except OSError:
+                            pass
             metadata = os.stat(path, follow_symlinks=False)
             if not stat.S_ISREG(metadata.st_mode):
                 raise ValueError("file is not an admitted regular file")
@@ -103,17 +111,7 @@ class FileSystemAdapter:
             non_blocking = getattr(os, "O_NONBLOCK", 0)
             fd = os.open(path, flags | no_follow | non_blocking)
             try:
-                chunks: list[bytes] = []
-                total = 0
-                while True:
-                    chunk = os.read(fd, min(128 * 1024, max_bytes - total + 1))
-                    if not chunk:
-                        break
-                    chunks.append(chunk)
-                    total += len(chunk)
-                    if total > max_bytes:
-                        raise ValueError("file is too large")
-                return b"".join(chunks)
+                return self._read_fd_bytes(fd, max_bytes=max_bytes)
             finally:
                 os.close(fd)
         except (OSError, ValueError) as exc:
@@ -123,37 +121,73 @@ class FileSystemAdapter:
                 raise LocalFileError("file_too_large", "文件超过读取上限") from exc
             raise LocalFileError("read_failed", "文件读取失败") from exc
 
-    def iter_directory(self, path: Path) -> tuple[DirectoryItem, ...]:
-        items: list[DirectoryItem] = []
+    @staticmethod
+    def _confined_fd_supported() -> bool:
+        return bool(
+            getattr(os, "O_NOFOLLOW", 0)
+            and getattr(os, "O_DIRECTORY", 0)
+            and os.open in os.supports_dir_fd
+        )
+
+    @staticmethod
+    def _read_fd_bytes(fd: int, *, max_bytes: int) -> bytes:
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(fd, min(128 * 1024, max_bytes - total + 1))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > max_bytes:
+                raise ValueError("file is too large")
+        return b"".join(chunks)
+
+    @classmethod
+    def _read_file_bytes_at(cls, parent_fd: int, name: str, *, max_bytes: int) -> bytes:
+        metadata = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("file is not an admitted regular file")
+        if metadata.st_size > max_bytes:
+            raise ValueError("file is too large")
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        non_blocking = getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(name, os.O_RDONLY | no_follow | non_blocking, dir_fd=parent_fd)
+        try:
+            return cls._read_fd_bytes(fd, max_bytes=max_bytes)
+        finally:
+            os.close(fd)
+
+    def iter_directory(self, path: Path) -> Iterator[DirectoryItem]:
         try:
             with os.scandir(path) as entries:
-                for entry in entries:
-                    try:
-                        metadata = entry.stat(follow_symlinks=False)
-                    except OSError:
-                        continue
-                    mode = metadata.st_mode
-                    if stat.S_ISDIR(mode):
-                        kind = LocalFileKind.DIRECTORY
-                    elif stat.S_ISREG(mode):
-                        kind = LocalFileKind.FILE
-                    elif stat.S_ISLNK(mode):
-                        kind = LocalFileKind.SYMLINK
-                    else:
-                        kind = LocalFileKind.SPECIAL
-                    items.append(
-                        DirectoryItem(
-                            path=Path(entry.path),
-                            name=entry.name,
-                            kind=kind,
-                            size=metadata.st_size if kind is LocalFileKind.FILE else 0,
-                        )
-                    )
+                ordered = sorted(entries, key=lambda entry: (entry.name.casefold(), entry.name))
         except OSError as exc:
             from morrow.services.files import LocalFileError
 
             raise LocalFileError("list_failed", "目录读取失败") from exc
-        return tuple(sorted(items, key=lambda item: (item.name.casefold(), item.name)))
+        # Yield lazily after names are collected and sorted: callers that hit
+        # their entry budget can stop before stat-ing the rest of the directory.
+        for entry in ordered:
+            try:
+                metadata = entry.stat(follow_symlinks=False)
+            except OSError:
+                continue
+            mode = metadata.st_mode
+            if stat.S_ISDIR(mode):
+                kind = LocalFileKind.DIRECTORY
+            elif stat.S_ISREG(mode):
+                kind = LocalFileKind.FILE
+            elif stat.S_ISLNK(mode):
+                kind = LocalFileKind.SYMLINK
+            else:
+                kind = LocalFileKind.SPECIAL
+            yield DirectoryItem(
+                path=Path(entry.path),
+                name=entry.name,
+                kind=kind,
+                size=metadata.st_size if kind is LocalFileKind.FILE else 0,
+            )
 
     def atomic_write(
         self,
@@ -675,15 +709,6 @@ class FileSystemAdapter:
                     pass
 
     @staticmethod
-    def atomic_no_replace_supported() -> bool:
-        try:
-            FileSystemAdapter._require_confined_mutation_support()
-            FileSystemAdapter._rename_primitive()
-        except FileSystemMutationError:
-            return False
-        return True
-
-    @staticmethod
     def _require_confined_mutation_support() -> None:
         if (
             not getattr(os, "O_NOFOLLOW", 0)
@@ -991,19 +1016,6 @@ class FileSystemAdapter:
             raise FileSystemMutationError("source_conflict", "源文件目录项无法检查") from exc
         if not FileSystemAdapter._same_file_identity(expected, current):
             raise FileSystemMutationError("source_conflict", "源文件目录项已发生变化")
-
-    @staticmethod
-    def _read_bytes_at(parent_fd: int, name: str, *, max_bytes: int) -> bytes:
-        fd, _metadata, raw = FileSystemAdapter._open_regular_at(
-            parent_fd, name, max_bytes=max_bytes
-        )
-        try:
-            return raw
-        finally:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
 
     @staticmethod
     def _read_file_at(parent_fd: int, name: str, *, max_bytes: int) -> ConfinedFileState:

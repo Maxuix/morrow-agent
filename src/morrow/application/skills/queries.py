@@ -43,38 +43,36 @@ class SkillStatusView(ProtocolModel):
         return self.binding.pinned_version_id if self.binding else None
 
 
-class SkillRunStatusView(ProtocolModel):
-    """Reference-only AgentRun Skill status; never includes full context text."""
-
-    agent_run_id: str
-    status: str
-    selected_count: int = 0
-    context_count: int = 0
-    omitted_count: int = 0
-    skill_ids: tuple[str, ...] = ()
-    issue_codes: tuple[str, ...] = ()
-
-
 class SkillQueries:
-    """Read-only list/show/status surface; it never changes Binding or packages."""
+    """Read-only catalog and binding surface; it never changes Binding or packages."""
 
-    def __init__(self, catalog, bindings: SkillBindingService, *, journal=None) -> None:
+    def __init__(self, catalog, bindings: SkillBindingService) -> None:
         self.catalog = catalog
         self.bindings = bindings
-        self.journal = journal
 
-    def list(self, *, scope_id: str | None = None, limit: int = 100) -> tuple[SkillStatusView, ...]:
-        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 256:
+    def list(
+        self, *, scope_id: str | None = None, limit: int = 100, offset: int = 0
+    ) -> tuple[SkillStatusView, ...]:
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= 256
+            or offset < 0
+        ):
             raise SkillQueryError("Skill query limit is invalid")
         view = self.catalog.scan_scope(scope_id)
         binding_map = self._binding_map(scope_id)
         return tuple(
             self._status(entry, binding_map.get(entry.definition.skill_id))
-            for entry in view.entries[:limit]
+            for entry in view.entries[offset : offset + limit]
         )
 
     def show(self, skill_id_or_name: str, *, scope_id: str | None = None) -> SkillStatusView:
-        values = self.list(scope_id=scope_id, limit=256)
+        binding_map = self._binding_map(scope_id)
+        values = tuple(
+            self._status(e, binding_map.get(e.definition.skill_id))
+            for e in self.catalog.scan_scope(scope_id).entries
+        )
         direct = next((item for item in values if item.skill_id == skill_id_or_name), None)
         if direct is not None:
             return direct
@@ -89,41 +87,6 @@ class SkillQueries:
                 else "Skill identity is unavailable"
             )
         return matches[0]
-
-    def run_status(
-        self, agent_run_id: str, *, workspace_id: str | None = None
-    ) -> SkillRunStatusView:
-        """Return bounded selection/context health without exposing package text."""
-
-        if self.journal is None:
-            raise SkillQueryError("Skill AgentRun status requires the operational journal")
-        run = self.journal.get_agent_run(
-            workspace_id or self.bindings.workspace_id or "", agent_run_id
-        )
-        if run is None:
-            raise SkillQueryError("AgentRun is unavailable")
-        workspace_id = workspace_id or self.bindings.workspace_id or ""
-        selections = self.journal.list_skill_selections(workspace_id, agent_run_id)
-        contexts = self.journal.list_skill_contexts(workspace_id, agent_run_id)
-        issues: list[str] = []
-        if len(selections) != run.snapshot.skill_selected_count:
-            issues.append("selection_count_mismatch")
-        if len(contexts) != len(run.snapshot.skill_context_ids):
-            issues.append("context_count_mismatch")
-        if run.snapshot.skill_omitted_count:
-            issues.append("candidates_omitted")
-        status = "ok" if not issues else "degraded"
-        if run.snapshot.skill_selection_ids and not selections:
-            status = "unavailable"
-        return SkillRunStatusView(
-            agent_run_id=agent_run_id,
-            status=status,
-            selected_count=len(selections),
-            context_count=len(contexts),
-            omitted_count=run.snapshot.skill_omitted_count,
-            skill_ids=tuple(item.skill_id for item in selections),
-            issue_codes=tuple(issues),
-        )
 
     def _binding_map(self, scope_id: str | None) -> dict[str, SkillBinding]:
         scope = "global" if scope_id is None else "workspace"
@@ -149,4 +112,4 @@ class SkillQueries:
         )
 
 
-__all__ = ["SkillQueries", "SkillQueryError", "SkillRunStatusView", "SkillStatusView"]
+__all__ = ["SkillQueries", "SkillQueryError", "SkillStatusView"]

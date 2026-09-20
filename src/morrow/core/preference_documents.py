@@ -9,7 +9,7 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 
 from morrow.core.domain import canonical_json_bytes, validate_prefixed_id
-from morrow.core.models import ModelRef, ProtocolModel, ProviderConfig, utc_now
+from morrow.core.models import ChatSettings, ModelRef, ProtocolModel, ProviderConfig, utc_now
 from morrow.core.preference_models import (
     PREFERENCE_ID_PREFIX,
     PREFERENCE_MAX_ACTIVE_SNAPSHOT_BYTES,
@@ -30,7 +30,9 @@ from morrow.core.state_schema import (
 class PreferenceDocument(ProtocolModel):
     """A generic YAML-authoritative Preference document for one durable scope."""
 
-    schema_version: int = Field(default=3, ge=1)
+    schema_version: Literal[WORKSPACE_PREFERENCE_SCHEMA_VERSION] = (
+        WORKSPACE_PREFERENCE_SCHEMA_VERSION
+    )
     scope: Literal["global", "workspace"]
     revision: int = Field(default=0, ge=0)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -73,6 +75,7 @@ class GlobalConfig(ProtocolModel):
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     active_model: ModelRef | None = None
     runtime_policy: RuntimePolicyOverrides | None = None
+    chat_settings: ChatSettings = Field(default_factory=ChatSettings)
 
     _normalize_time = field_validator("updated_at", mode="before")(_aware)
 
