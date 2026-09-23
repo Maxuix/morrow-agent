@@ -583,6 +583,7 @@ async def test_adapter_rejects_non_normal_finish_as_invalid_response(finish):
 
     assert [event.kind for event in events] == ["text_delta", "error"]
     assert events[-1].failure.code == ModelErrorCode.INVALID_RESPONSE
+    assert events[-1].failure.retryable is True
 
 
 @pytest.mark.asyncio
@@ -610,6 +611,7 @@ async def test_adapter_classifies_malformed_stream_as_invalid_response():
 
     assert [event.kind for event in events] == ["error"]
     assert events[-1].failure.code == ModelErrorCode.INVALID_RESPONSE
+    assert events[-1].failure.retryable is True
 
 
 @pytest.mark.live
@@ -1014,6 +1016,7 @@ async def test_adapter_rejects_malformed_tool_streams(chunks):
     events = await collect_stream_with_tools(provider, (demo_tool(),))
     assert events[-1].kind == "error"
     assert events[-1].failure.code == ModelErrorCode.INVALID_RESPONSE
+    assert events[-1].failure.retryable is True
 
 
 @pytest.mark.asyncio
@@ -1098,7 +1101,9 @@ def test_adapter_classifies_provider_request_rejections_as_invalid_response(stat
     error = RuntimeError("provider rejected request")
     error.status_code = status_code
 
-    assert classify_failure(error).code is ModelErrorCode.INVALID_RESPONSE
+    failure = classify_failure(error)
+    assert failure.code is ModelErrorCode.INVALID_RESPONSE
+    assert failure.retryable is False
 
 
 @pytest.mark.parametrize(
@@ -1163,7 +1168,9 @@ def test_adapter_classifies_nested_value_errors_as_invalid_response():
     error = RuntimeError("provider request failed")
     error.__cause__ = ValueError("malformed provider chunk")
 
-    assert classify_failure(error).code is ModelErrorCode.INVALID_RESPONSE
+    failure = classify_failure(error)
+    assert failure.code is ModelErrorCode.INVALID_RESPONSE
+    assert failure.retryable is False
     assert serialize_tool(demo_tool()) == {
         "type": "function",
         "function": {

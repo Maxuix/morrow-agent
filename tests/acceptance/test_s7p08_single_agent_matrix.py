@@ -174,7 +174,9 @@ async def test_interactive_and_headless_paths_share_run_preparation_and_terminal
     interactive_result = await terminal_module._consume_dispatch(
         interactive.orchestrator, "same prompt", sink
     )
-    headless_terminal, headless_result = await cli_module._headless_stream(headless, "same prompt")
+    headless_stream = await cli_module._headless_stream(headless, "same prompt")
+    headless_terminal = headless_stream.terminal_event
+    headless_result = headless_stream.dispatch
 
     assert not interactive_result.degraded
     assert headless_result is not None and not headless_result.degraded

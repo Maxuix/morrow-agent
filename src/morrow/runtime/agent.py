@@ -6,7 +6,7 @@ import asyncio
 import inspect
 import json
 import logging
-import math
+import random
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
@@ -53,6 +53,7 @@ from morrow.core.ports import Clock, IdSource, ModelContentObserver, ModelProvid
 from morrow.runtime.conversation import ConversationLogError
 from morrow.runtime.durable_log import durable_call_id
 from morrow.runtime.ids import RandomIdSource
+from morrow.runtime.provider_retry import RetryWait, next_provider_retry_delay
 from morrow.runtime.reasoning_filter import ReasoningRedactor
 from morrow.runtime.session import Session
 from morrow.runtime.text_stream import TextStreamProjection, project_text
@@ -72,6 +73,9 @@ logger = logging.getLogger("morrow.runtime")
 TRANSIENT_MODEL_ERRORS = frozenset(
     {ModelErrorCode.NETWORK, ModelErrorCode.RATE_LIMIT, ModelErrorCode.TIMEOUT}
 )
+# Server failures share the transient retry path when the adapter marks them
+# retryable. Resume accounting without a persisted counter uses the same set.
+RESUME_RETRY_CODES = TRANSIENT_MODEL_ERRORS | {ModelErrorCode.INTERNAL}
 MODEL_ERROR_STOPS = {
     ModelErrorCode.AUTH: AgentStopCode.PROVIDER_AUTH,
     ModelErrorCode.NETWORK: AgentStopCode.PROVIDER_NETWORK,
@@ -145,10 +149,14 @@ class ModelCallRunner:
                     )
                 yield model_event
             if self._outcome.message is None and self._outcome.failure is None:
+                # The iterator ended before a completion or an adapter failure.
+                # That is an empty stream, not a semantic rejection: it is
+                # retryable only until an assistant or tool intent is committed.
                 self._outcome = ModelCallOutcome(
                     failure=ModelFailure(
                         code=ModelErrorCode.INVALID_RESPONSE,
                         origin=ModelFailureOrigin.PROVIDER,
+                        retryable=True,
                         message="模型响应未正常结束",
                     ),
                     usage=self._outcome.usage,
@@ -221,17 +229,19 @@ class ModelCallRunner:
         )
 
 
-def _bounded_retry_after(value: float | None) -> float | None:
-    """Keep provider-directed backoff numeric, finite and within the policy envelope."""
+def _can_retry_provider_failure(failure: ModelFailure, *, tool_intent_committed: bool) -> bool:
+    """Honor the adapter's retryable flag, with one post-commit exception.
 
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        if not math.isfinite(value) or value < 0:
-            return None
-        return min(value, 60.0)
-    except (TypeError, ValueError):
-        return None
+    Empty and corrupt streams are retried only when the adapter marks them
+    retryable and this turn has not committed a tool intent. A later invalid
+    response keeps its own stop reason so a committed tool is not repeated.
+    """
+
+    if not failure.retryable:
+        return False
+    if failure.code is ModelErrorCode.INVALID_RESPONSE and tool_intent_committed:
+        return False
+    return True
 
 
 def _pending_cancellation() -> bool:
@@ -313,6 +323,8 @@ class _AgentRunState:
     retry_count: int = 0
     total_retry_count: int = 0
     summary_retry_count: int = 0
+    retry_wait: RetryWait = field(default_factory=RetryWait)
+    omission_floor: int = 0
     max_estimated_request_chars: int = 0
     request_char_budget: int = 1
     cleared_cycle_count: int = 0
@@ -468,6 +480,7 @@ class AgentLoop:
         grant_provider=None,
         should_stop_after_turn=None,
         retry_sleep=None,
+        retry_unit: Callable[[], float] | None = None,
         runtime_control=None,
         activity_observer: ModelContentObserver | None = None,
         steering_mode: str = "end_turn",
@@ -482,6 +495,7 @@ class AgentLoop:
         self.grant_provider = grant_provider
         self.should_stop_after_turn = should_stop_after_turn
         self.retry_sleep = retry_sleep or asyncio.sleep
+        self.retry_unit = retry_unit or random.random
         self.runtime_control = runtime_control
         self.activity_observer = activity_observer
         self.activity_observer_drops = 0
@@ -564,6 +578,12 @@ class AgentLoop:
 
     def _id(self, prefix: str) -> str:
         return self.id_source.new_id(prefix)
+
+    def _retry_sample(self) -> float:
+        try:
+            return float(self.retry_unit())
+        except (TypeError, ValueError):
+            return 0.0
 
     def _pause_signal(self, session: Session):
         """Authority read of the durable pause intent; never raises."""
@@ -690,6 +710,7 @@ class AgentLoop:
         retry_observer: Callable[[float], None] | None = None,
         request_admitter=None,
         request_settler=None,
+        retry_wait: RetryWait | None = None,
     ) -> bool:
         """Generate and install one immutable summary projection."""
 
@@ -702,20 +723,32 @@ class AgentLoop:
             return False
         session.compaction_in_progress = True
         try:
-            if not callable(getattr(provider, "complete", None)) and not callable(
-                getattr(provider, "complete_result", None)
-            ):
-                raise ContextBudgetError("当前 Provider 不支持上下文压缩")
-            completion = await self._complete_compaction_summary(
-                provider,
-                model,
-                list(candidate.summary_messages),
-                context_builder.run_policy,
-                retry_observer=retry_observer,
-                request_admitter=request_admitter,
-                request_settler=request_settler,
-            )
-            summary = CompactionSummary.from_provider_text(completion.content)
+            try:
+                if not callable(getattr(provider, "complete", None)) and not callable(
+                    getattr(provider, "complete_result", None)
+                ):
+                    raise ContextBudgetError("当前 Provider 不支持上下文压缩")
+                completion = await self._complete_compaction_summary(
+                    provider,
+                    model,
+                    list(candidate.summary_messages),
+                    context_builder.run_policy,
+                    retry_observer=retry_observer,
+                    request_admitter=request_admitter,
+                    request_settler=request_settler,
+                    retry_wait=retry_wait,
+                )
+                summary = CompactionSummary.from_provider_text(completion.content)
+            except asyncio.CancelledError:
+                raise
+            except ContextBudgetError:
+                raise
+            except ApplicationError:
+                raise
+            except Exception as exc:
+                raise ContextBudgetError("上下文压缩失败，请稍后重试") from exc
+            # Persistence and in-memory installation are outside the summary
+            # fallback boundary. A failed commit must not become an omission.
             durable_runtime = session.durable_runtime
             context_builder.apply_compaction(
                 session,
@@ -733,14 +766,6 @@ class AgentLoop:
                 cost=completion.cost,
             )
             return True
-        except asyncio.CancelledError:
-            raise
-        except ContextBudgetError:
-            raise
-        except ApplicationError:
-            raise
-        except Exception as exc:
-            raise ContextBudgetError("上下文压缩失败，请稍后重试") from exc
         finally:
             session.compaction_in_progress = False
 
@@ -754,9 +779,11 @@ class AgentLoop:
         retry_observer: Callable[[float], None] | None = None,
         request_admitter=None,
         request_settler=None,
+        retry_wait: RetryWait | None = None,
     ) -> ModelCompletion:
         """Use the same bounded transient-retry policy for LLM summaries as agent requests."""
 
+        wait = retry_wait if retry_wait is not None else RetryWait()
         retry_count = 0
         while True:
             admission = request_admitter(messages) if request_admitter is not None else None
@@ -825,18 +852,21 @@ class AgentLoop:
                 return completion
             if failure.code is ModelErrorCode.CONTEXT_OVERFLOW:
                 raise ContextBudgetError("上下文压缩请求超过模型上下文限制") from None
-            if (
-                not policy.retry_enabled
-                or not failure.failure.retryable
-                or retry_count >= policy.max_retries
+            if not policy.retry_enabled or not _can_retry_provider_failure(
+                failure.failure, tool_intent_committed=False
             ):
                 raise failure
-            retry_count += 1
-            exponential = policy.retry_base_delay_seconds * (2 ** (retry_count - 1))
-            delay = min(
-                max(exponential, _bounded_retry_after(failure.retry_after_seconds) or 0.0),
-                policy.max_provider_retry_delay_seconds,
+            delay = next_provider_retry_delay(
+                policy=policy,
+                retry_index=retry_count + 1,
+                retry_after_seconds=failure.retry_after_seconds,
+                waited_seconds=wait.seconds,
+                unit=self._retry_sample(),
             )
+            if delay is None:
+                raise failure
+            retry_count += 1
+            wait.seconds += delay
             if retry_observer is not None:
                 retry_observer(delay)
             await self.retry_sleep(delay)
@@ -1016,7 +1046,7 @@ class AgentLoop:
 
             # Before the first retry-progress write, derive only transient failures;
             # an arbitrary non-retryable or overflow failure must never consume the retry budget.
-            transient_codes = TRANSIENT_MODEL_ERRORS
+            transient_codes = RESUME_RETRY_CODES
             state.total_retry_count = sum(
                 item.state.value == "failed" and item.error_code in transient_codes
                 for item in settled_before_latest
@@ -1439,28 +1469,68 @@ class AgentLoop:
                         return
                 try:
                     state.internal_phase = "context_build"
-                    context = context_builder.build(session, tools=tools)
+
+                    def build_model_context():
+                        return context_builder.build(
+                            session, tools=tools, omission_floor=state.omission_floor
+                        )
+
+                    context = build_model_context()
                     while context.compaction_required:
                         if not policy.compaction_enabled:
                             raise ContextBudgetError("模型上下文需要压缩，但自动压缩已禁用")
                         previous_boundary = session.compaction_boundary_sequence
                         yield event("status.changed", {"status": "compacting"})
-                        if not await self._compact_context(
-                            session,
-                            provider,
-                            model,
-                            context_builder,
-                            tools=tools,
-                            retry_observer=observe_compaction_retry,
-                            request_admitter=admit_compaction_request,
-                            request_settler=settle_model_request,
+                        compact_error = "当前上下文没有可安全压缩的完整边界"
+                        compacted = False
+                        try:
+                            compacted = await self._compact_context(
+                                session,
+                                provider,
+                                model,
+                                context_builder,
+                                tools=tools,
+                                retry_observer=observe_compaction_retry,
+                                request_admitter=admit_compaction_request,
+                                request_settler=settle_model_request,
+                                retry_wait=state.retry_wait,
+                            )
+                            if (
+                                compacted
+                                and session.compaction_boundary_sequence <= previous_boundary
+                            ):
+                                compacted = False
+                                compact_error = "上下文压缩未推进有效边界"
+                        except ContextBudgetError as exc:
+                            compacted = False
+                            compact_error = str(exc)
+                        if compacted:
+                            state.compaction_count += 1
+                            context = build_model_context()
+                            yield event("status.changed", {"status": "compacted"})
+                            continue
+                        degraded = context_builder.degrade_model_input(
+                            session, tools=tools, omission_floor=state.omission_floor
+                        )
+                        if degraded is None:
+                            raise ContextBudgetError(compact_error)
+                        state.omission_floor = degraded.omission_floor
+                        context = degraded
+                        if (
+                            degraded.dropped_turn_count
+                            or degraded.dropped_cycle_count
+                            or degraded.dropped_record_count
                         ):
-                            raise ContextBudgetError("当前上下文没有可安全压缩的完整边界")
-                        if session.compaction_boundary_sequence <= previous_boundary:
-                            raise ContextBudgetError("上下文压缩未推进有效边界")
-                        state.compaction_count += 1
-                        context = context_builder.build(session, tools=tools)
-                        yield event("status.changed", {"status": "compacted"})
+                            yield event(
+                                "status.changed",
+                                {
+                                    "status": "context_degraded",
+                                    "dropped_turn_count": degraded.dropped_turn_count,
+                                    "dropped_cycle_count": degraded.dropped_cycle_count,
+                                    "dropped_record_count": degraded.dropped_record_count,
+                                },
+                            )
+                        break
                     call_messages = list(context.messages)
                     injected_steering = (
                         steering_entry["text"]
@@ -1474,8 +1544,14 @@ class AgentLoop:
                         state.pending_steering_text = None
                     estimated_chars = context_builder.validate_request(call_messages, tools)
                 except ContextBudgetError as exc:
-                    for item in terminal_error(str(exc), AgentStopCode.CONTEXT_BUDGET):
-                        yield item
+                    if self.pause_control is not None:
+                        async for item in finish_interrupted(
+                            None, stop_code=AgentStopCode.CONTEXT_BUDGET
+                        ):
+                            yield item
+                    else:
+                        for item in terminal_error(str(exc), AgentStopCode.CONTEXT_BUDGET):
+                            yield item
                     return
 
                 state.max_estimated_request_chars = max(
@@ -1725,32 +1801,62 @@ class AgentLoop:
                                     retry_observer=observe_compaction_retry,
                                     request_admitter=admit_compaction_request,
                                     request_settler=settle_model_request,
+                                    retry_wait=state.retry_wait,
                                 )
-                            except ContextBudgetError as exc:
-                                for item in terminal_error(str(exc), AgentStopCode.CONTEXT_BUDGET):
-                                    yield item
-                                return
-                            if compacted:
-                                state.compaction_count += 1
-                                yield event("status.changed", {"status": "compacted"})
+                            except ContextBudgetError:
+                                compacted = False
+                            if not compacted:
+                                degraded = context_builder.degrade_model_input(
+                                    session, tools=tools, omission_floor=state.omission_floor
+                                )
+                                if degraded is None:
+                                    if self.pause_control is not None:
+                                        async for item in finish_interrupted(
+                                            None, stop_code=AgentStopCode.CONTEXT_BUDGET
+                                        ):
+                                            yield item
+                                    else:
+                                        for item in terminal_error(
+                                            "上下文压缩失败，请稍后重试",
+                                            AgentStopCode.CONTEXT_BUDGET,
+                                        ):
+                                            yield item
+                                    return
+                                state.omission_floor = degraded.omission_floor
+                                state.dropped_turn_count += degraded.dropped_turn_count
+                                state.dropped_cycle_count += degraded.dropped_cycle_count
+                                state.dropped_record_count += degraded.dropped_record_count
                                 continue
-                    retry_limit = policy.max_retries if policy.retry_enabled else 0
-                    can_retry = state.retry_count < retry_limit and failure.retryable
-                    if can_retry:
+                            state.compaction_count += 1
+                            yield event("status.changed", {"status": "compacted"})
+                            continue
+                    delay = None
+                    if policy.retry_enabled and _can_retry_provider_failure(
+                        failure, tool_intent_committed=state.tool_calls > 0
+                    ):
+                        delay = next_provider_retry_delay(
+                            policy=policy,
+                            retry_index=state.retry_count + 1,
+                            retry_after_seconds=failure.retry_after_seconds,
+                            waited_seconds=state.retry_wait.seconds,
+                            unit=self._retry_sample(),
+                        )
+                    if delay is not None:
                         state.retry_count += 1
                         state.total_retry_count += 1
+                        state.retry_wait.seconds += delay
                         persist_retry_progress()
-                        exponential = policy.retry_base_delay_seconds * (
-                            2 ** (state.retry_count - 1)
-                        )
-                        provider_delay = failure.retry_after_seconds or 0.0
-                        payload = {
-                            "status": "retrying",
-                            "retry_delay_seconds": min(
-                                max(exponential, provider_delay),
-                                policy.max_provider_retry_delay_seconds,
-                            ),
-                        }
+                        if text_projection.emitted:
+                            # A failed attempt may have shown provisional lines.
+                            # Discard that draft before streaming the next attempt.
+                            yield event(
+                                "status.changed",
+                                {
+                                    "status": "response_reset",
+                                    "attempt_ordinal": state.model_attempts,
+                                },
+                            )
+                        payload = {"status": "retrying", "retry_delay_seconds": delay}
                         yield event("status.changed", payload)
                         await self.retry_sleep(payload["retry_delay_seconds"])
                         continue
@@ -2280,6 +2386,7 @@ class AgentRuntime:
         grant_provider=None,
         should_stop_after_turn=None,
         retry_sleep=None,
+        retry_unit: Callable[[], float] | None = None,
         runtime_control=None,
         activity_observer: ModelContentObserver | None = None,
         pause_control=None,
@@ -2294,6 +2401,7 @@ class AgentRuntime:
             grant_provider=grant_provider,
             should_stop_after_turn=should_stop_after_turn,
             retry_sleep=retry_sleep,
+            retry_unit=retry_unit,
             runtime_control=runtime_control,
             activity_observer=activity_observer,
             pause_control=pause_control,

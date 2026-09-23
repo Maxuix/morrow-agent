@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 
-from morrow.application.workflows.evidence import workflow_task_outcome
+from morrow.application.outcome_budget import build_bounded_task_outcome
 from morrow.application.workflows.outputs import EffectiveOutputResolver
 from morrow.application.workflows.transitions import WorkflowTransitionService
 from morrow.core.application import ApplicationError, ApplicationErrorCode
@@ -537,69 +537,73 @@ class WorkflowOutcomeFinalizer:
                     ArtifactReference(artifact_id=binding.artifact_id, role="workflow_result")
                 )
         outcomes = txn.list_task_outcomes(self.workspace_id, root.task_run_id)
-        return workflow_task_outcome(
-            outcome_id=self.id_source.new_id(TASK_OUTCOME_ID_PREFIX),
-            workspace_id=self.workspace_id,
-            session_id=root.session_id,
-            task_run_id=root.task_run_id,
-            version=len(outcomes) + 1,
-            trigger=trigger,
-            task_status=root.status,
-            summary=summary,
-            goal_reference=TaskOutcomeEvidenceRef(
-                kind=TaskOutcomeEvidenceKind.ARTIFACT,
-                reference_id=run.input_artifacts[0].artifact_id,
-                role="workflow_input",
-            ),
-            changed_paths=tuple(
-                sorted(
-                    {
-                        evidence.relative_path
-                        for execution in executions
-                        if execution.facts is not None
-                        for evidence in execution.facts.files
-                    }
-                )
-            ),
-            validation_facts=tuple(
-                sorted(
-                    {
+        changed_paths: list[str] = []
+        seen_paths: set[str] = set()
+        for execution in reversed(executions):
+            if execution.facts is None:
+                continue
+            for evidence in execution.facts.files:
+                if evidence.relative_path in seen_paths:
+                    continue
+                seen_paths.add(evidence.relative_path)
+                changed_paths.append(evidence.relative_path)
+        return build_bounded_task_outcome(
+            {
+                "outcome_id": self.id_source.new_id(TASK_OUTCOME_ID_PREFIX),
+                "workspace_id": self.workspace_id,
+                "session_id": root.session_id,
+                "task_run_id": root.task_run_id,
+                "version": len(outcomes) + 1,
+                "trigger": trigger,
+                "task_status": root.status,
+                "summary": summary,
+                "goal_reference": TaskOutcomeEvidenceRef(
+                    kind=TaskOutcomeEvidenceKind.ARTIFACT,
+                    reference_id=run.input_artifacts[0].artifact_id,
+                    role="workflow_input",
+                ),
+                "changed_paths": tuple(changed_paths),
+                "validation_facts": tuple(
+                    sorted(
+                        {
+                            f"{execution.tool_name}:{execution.disposition.value}"
+                            for execution in executions
+                            if execution.state
+                            in {ToolExecutionState.HANDLER_COMPLETED, ToolExecutionState.CLOSED}
+                        }
+                    )
+                ),
+                "side_effects": tuple(
+                    sorted(
+                        {
+                            f"{execution.tool_name}:{execution.intent.effect_class.value}"
+                            for execution in executions
+                        }
+                    )
+                ),
+                "unresolved_items": tuple(
+                    sorted(
                         f"{execution.tool_name}:{execution.disposition.value}"
                         for execution in executions
-                        if execution.state
-                        in {ToolExecutionState.HANDLER_COMPLETED, ToolExecutionState.CLOSED}
-                    }
-                )
-            ),
-            side_effects=tuple(
-                sorted(
-                    {
-                        f"{execution.tool_name}:{execution.intent.effect_class.value}"
-                        for execution in executions
-                    }
-                )
-            ),
-            unresolved_items=tuple(
-                sorted(
-                    f"{execution.tool_name}:{execution.disposition.value}"
-                    for execution in executions
-                    if execution.state is not ToolExecutionState.CLOSED
-                    or execution.disposition
-                    in {
-                        ToolExecutionDisposition.FAILED,
-                        ToolExecutionDisposition.INTERRUPTED,
-                        ToolExecutionDisposition.UNKNOWN,
-                    }
-                )
-            ),
-            completion_basis=(
-                f"trigger={trigger.value}",
-                f"task_status={root.status.value}",
-                *basis_extra,
-                f"tool_execution_count={len(executions)}",
-                f"prior_outcome_count={len(outcomes)}",
-            ),
-            evidence_refs=tuple(evidence_refs),
-            artifact_refs=tuple(artifact_refs),
-            created_at=self.clock(),
+                        if execution.state is not ToolExecutionState.CLOSED
+                        or execution.disposition
+                        in {
+                            ToolExecutionDisposition.FAILED,
+                            ToolExecutionDisposition.INTERRUPTED,
+                            ToolExecutionDisposition.UNKNOWN,
+                        }
+                    )
+                ),
+                "completion_basis": (
+                    f"trigger={trigger.value}",
+                    f"task_status={root.status.value}",
+                    *basis_extra,
+                    f"tool_execution_count={len(executions)}",
+                    f"prior_outcome_count={len(outcomes)}",
+                ),
+                "evidence_refs": tuple(evidence_refs),
+                "artifact_refs": tuple(artifact_refs),
+                "created_at": self.clock(),
+            },
+            workflow=True,
         )

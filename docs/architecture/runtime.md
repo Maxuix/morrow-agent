@@ -39,9 +39,16 @@ STOP 的摘要不能推进压缩边界。活动运行的摘要调用使用同一
 的保守文本字符预算，不伪造 token 窗口。图像 token 按 Provider 与 exact model 的公开计量
 （尺寸与模型分档）估算，未知模型使用标明的像素回退；HTTP 传输体积另计全部 Base64，
 与模型预算分开。当前输入本身超限、传输体积超限和历史需要压缩使用不同错误提示。
-重试只归 AgentLoop，Scheduler 不重复请求。瞬态 Provider 错误可按 RunPolicy
-重试，明确余额、配额或计费失败不重试；工具超时和 Artifact 保留上限是独立的每操作边界。
-默认值和可覆盖字段以 [runtime-policy.toml](../../src/morrow/resources/runtime-policy.toml) 为准。
+重试只归 AgentLoop，Scheduler 不重复请求。瞬态网络、超时、限流和适配器标记为可重试的
+服务端错误共用同一退避：默认 5 次（代码安全上限），指数退避带抖动，`Retry-After` 是单次等待的下限，
+累计等待约 2 分钟；预算耗尽后保留已提交安全点。明确余额、配额或计费失败不重试。
+空流和损坏流只有在适配器将其标为可重试、且尚未提交 Assistant 或工具意图时才重试；HTTP 400/422、
+配置错误和上下文超限仍按各自原因结束。工具超时和 Artifact 保留上限是独立的每操作边界。
+长任务默认值和安全上限分别见 [runtime/policy.py](../../src/morrow/runtime/policy.py)
+与 [core/runtime_policy.py](../../src/morrow/core/runtime_policy.py)；其他运行策略的打包默认值见
+[runtime-policy.toml](../../src/morrow/resources/runtime-policy.toml)。
+摘要失败使用同一重试预算；仍失败时，只有能通过预算校验的完整 Turn 或工具周期会从模型输入中省略，
+原始对话不改。当前输入本身放不下时保留可恢复中断。
 
 模型请求在有限瞬态重试耗尽后， durable Chat/Workflow runtime 会把可恢复的 Provider、内部或
 无效流终止写成 `FinishReason.INTERRUPTED`，记录 stop code、请求和已闭合工具调用的安全点，并

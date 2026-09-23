@@ -77,6 +77,10 @@ async def _collect(iterator):
     return [event async for event in iterator]
 
 
+async def _no_retry_sleep(_delay: float) -> None:
+    return None
+
+
 class _EventProvider:
     def __init__(self, attempts):
         self.attempts = list(attempts)
@@ -172,25 +176,26 @@ async def test_only_explicit_transient_provider_internal_retries():
 @pytest.mark.asyncio
 async def test_zero_progress_transient_retries_but_auth_never_retries():
     transient = _EventProvider(
-        [
-            [_model_error(ModelErrorCode.TIMEOUT, retryable=True)],
-            [_model_error(ModelErrorCode.TIMEOUT, retryable=True)],
-            [_model_error(ModelErrorCode.TIMEOUT, retryable=True)],
-            [_model_error(ModelErrorCode.TIMEOUT, retryable=True)],
-        ]
+        [[_model_error(ModelErrorCode.TIMEOUT, retryable=True)] for _ in range(6)]
     )
     transient_events = await _collect(
-        AgentLoop(transient, MODEL, make_context_builder()).run_task(
-            Session(session_id="transient"), "go"
-        )
+        AgentLoop(
+            transient,
+            MODEL,
+            make_context_builder(),
+            retry_sleep=_no_retry_sleep,
+        ).run_task(Session(session_id="transient"), "go")
     )
-    assert len(transient.stream_calls) == 4
-    # One "awaiting_model" stage per attempt (4) plus one retry wait per retry
-    # boundary (3); the factual wait is now observable instead of silent.
+    assert len(transient.stream_calls) == 6
+    # One "awaiting_model" stage per attempt plus one retry wait per retry.
     transient_statuses = [
         event.payload.get("status") for event in transient_events if event.type == "status.changed"
     ]
     assert transient_statuses == [
+        "awaiting_model",
+        "retrying",
+        "awaiting_model",
+        "retrying",
         "awaiting_model",
         "retrying",
         "awaiting_model",

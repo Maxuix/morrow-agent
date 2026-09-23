@@ -321,10 +321,15 @@ async def test_only_explicit_stop_finish_admits_assistant_history(terminal_event
     if terminal_event is not None:
         model_events.append(terminal_event)
     session = Session(session_id="session")
+
+    async def _no_retry_sleep(_delay: float) -> None:
+        return None
+
     runtime = AgentRuntime(
         EventStreamProvider(model_events),
         ModelRef(provider_id="p", model_id="m"),
         make_context_builder(),
+        retry_sleep=_no_retry_sleep,
     )
 
     events = [event async for event in runtime.run_turn(session, "finish")]

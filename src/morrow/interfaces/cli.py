@@ -7,6 +7,7 @@ import getpass
 import json
 import sys
 import warnings
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -228,17 +229,69 @@ def _headless_echo(kind: str, **payload) -> None:
     )
 
 
-async def _headless_stream(session_app, prompt: str):
+@dataclass(frozen=True)
+class _HeadlessStreamResult:
+    terminal_event: AgentEvent | None = None
+    dispatch: DispatchResult | None = None
+    started_turn_id: str | None = None
+    started_session_id: str | None = None
+    failed: bool = False
+    cancelled: bool = False
+
+
+def _safe_stop_reason(value) -> str | None:
+    if not isinstance(value, str) or not value or len(value) > 64:
+        return None
+    if any(character.isspace() for character in value):
+        return None
+    if not value.replace("_", "").isalnum():
+        return None
+    return value
+
+
+async def _headless_stream(session_app, prompt: str) -> _HeadlessStreamResult:
     terminal_event = None
     dispatch = None
-    async for item in session_app.orchestrator.stream(prompt):
-        if isinstance(item, AgentEvent):
-            _headless_echo("agent_event", event=_headless_dump(item))
-            if item.type == "turn.completed":
-                terminal_event = item
-        elif isinstance(item, DispatchResult):
-            dispatch = item
-    return terminal_event, dispatch
+    started_turn_id = None
+    started_session_id = None
+    try:
+        async for item in session_app.orchestrator.stream(prompt):
+            if isinstance(item, AgentEvent):
+                _headless_echo("agent_event", event=_headless_dump(item))
+                if item.type == "turn.started":
+                    started_turn_id = item.turn_id
+                    started_session_id = item.session_id
+                if item.type == "turn.completed":
+                    terminal_event = item
+            elif isinstance(item, DispatchResult):
+                dispatch = item
+    except asyncio.CancelledError:
+        return _HeadlessStreamResult(
+            terminal_event=terminal_event,
+            dispatch=dispatch,
+            started_turn_id=started_turn_id,
+            started_session_id=started_session_id,
+            failed=terminal_event is None,
+            cancelled=True,
+        )
+    except Exception:
+        return _HeadlessStreamResult(
+            terminal_event=terminal_event,
+            dispatch=dispatch,
+            started_turn_id=started_turn_id,
+            started_session_id=started_session_id,
+            # A committed Turn can still be followed by failed dispatch or
+            # outcome finalization. Its metrics remain valid, but the headless
+            # invocation must not report success for the whole operation.
+            failed=True,
+            cancelled=False,
+        )
+    return _HeadlessStreamResult(
+        terminal_event=terminal_event,
+        dispatch=dispatch,
+        started_turn_id=started_turn_id,
+        started_session_id=started_session_id,
+    )
 
 
 def _headless_ids(session_app, terminal_event):
@@ -271,8 +324,25 @@ def _headless_terminal_record(
     dispatch: DispatchResult | None,
     *,
     stream_failed: bool = False,
+    cancelled: bool = False,
+    started_turn_id: str | None = None,
+    started_session_id: str | None = None,
 ) -> bool:
-    session_id, task_run_id, agent_run_id, turn_id = _headless_ids(session_app, terminal_event)
+    # A stream that never started a turn must not inherit the previous run.
+    if terminal_event is None and started_turn_id is None:
+        session_id = task_run_id = agent_run_id = turn_id = None
+    elif terminal_event is not None:
+        session_id, task_run_id, agent_run_id, turn_id = _headless_ids(session_app, terminal_event)
+    else:
+        session_id = started_session_id
+        turn_id = started_turn_id
+        task_run_id = None
+        persistence = getattr(session_app, "persistence", None)
+        committer = getattr(getattr(session_app, "session", None), "committer", None)
+        candidate = getattr(persistence, "current_agent_run_id", None) or getattr(
+            committer, "current_agent_run_id", None
+        )
+        agent_run_id = candidate if isinstance(candidate, str) else None
     observation = None
     observation_failed = False
     api = getattr(session_app, "api", None)
@@ -283,16 +353,60 @@ def _headless_terminal_record(
                 observation = getter(agent_run_id)
             except Exception:
                 observation_failed = True
+                observation = None
     observation_payload = _headless_dump(observation) or {}
-    session_id = observation_payload.get("session_id", session_id)
-    task_run_id = observation_payload.get("task_run_id", task_run_id)
-    agent_run_id = observation_payload.get("agent_run_id", agent_run_id)
-    turn_id = observation_payload.get("turn_id", turn_id)
+    expected_turn_id = started_turn_id or (terminal_event.turn_id if terminal_event else None)
+    expected_session_id = started_session_id or (
+        terminal_event.session_id if terminal_event else None
+    )
+    unconfirmed_run = expected_turn_id is not None and (
+        observation_payload.get("turn_id") != expected_turn_id
+        or observation_payload.get("session_id") != expected_session_id
+        or observation_payload.get("agent_run_id") != agent_run_id
+    )
+    if unconfirmed_run:
+        # A stale or unavailable observation cannot confirm an AgentRun ID.
+        observation_payload = {}
+        agent_run_id = None
+        task_run_id = None
+        session_id = expected_session_id
+        turn_id = expected_turn_id
+    elif observation_payload:
+        session_id = observation_payload.get("session_id", session_id)
+        task_run_id = observation_payload.get("task_run_id", task_run_id)
+        agent_run_id = observation_payload.get("agent_run_id", agent_run_id)
+        turn_id = observation_payload.get("turn_id", turn_id)
     metrics = observation_payload.get("terminal_metrics")
+    if not isinstance(metrics, dict):
+        metrics = None
+    requests = observation_payload.get("requests")
+    if isinstance(requests, list):
+        request_count = len(requests)
+    elif isinstance(metrics, dict) and isinstance(metrics.get("model_attempts"), int):
+        request_count = metrics.get("model_attempts")
+    else:
+        request_count = None
     finish_reason = terminal_event.payload.get("finish_reason") if terminal_event else None
+    stop_reason = None
+    if isinstance(metrics, dict):
+        stop_reason = _safe_stop_reason(metrics.get("stop_code")) or _safe_stop_reason(
+            metrics.get("finish_reason")
+        )
+    if stop_reason is None and terminal_event is not None:
+        stop_reason = _safe_stop_reason(
+            terminal_event.payload.get("stop_code")
+        ) or _safe_stop_reason(finish_reason)
+    if stop_reason is None and (stream_failed or cancelled):
+        stop_reason = "cancelled" if cancelled else "error"
+    if terminal_event is not None:
+        if cancelled:
+            stop_reason = "post_turn_cancelled"
+        elif stream_failed:
+            stop_reason = "post_turn_error"
     dispatch_degraded = bool(getattr(dispatch, "degraded", False))
     successful = (
         not stream_failed
+        and not cancelled
         and not observation_failed
         and not dispatch_degraded
         and terminal_event is not None
@@ -307,6 +421,8 @@ def _headless_terminal_record(
         task_run_id=task_run_id,
         turn_id=turn_id,
         metrics=metrics,
+        request_count=request_count,
+        stop_reason=stop_reason,
     )
     return successful
 
@@ -365,17 +481,23 @@ def run_headless(
                 permission_profile=PermissionProfile.from_preset(permission_mode),
                 resume_session_id=resume_session_id,
             )
-            stream_failed = False
-            terminal_event = None
-            dispatch = None
             try:
-                terminal_event, dispatch = asyncio.run(_headless_stream(session_app, prompt))
+                streamed = asyncio.run(_headless_stream(session_app, prompt))
+            except KeyboardInterrupt:
+                streamed = _HeadlessStreamResult(failed=True, cancelled=True)
             except Exception:
-                stream_failed = True
-                typer.echo("headless run failed before a normal terminal event", err=True)
+                streamed = _HeadlessStreamResult(failed=True)
+            if streamed.failed or streamed.cancelled:
+                typer.echo("headless run ended before a normal stop", err=True)
             try:
                 success = _headless_terminal_record(
-                    session_app, terminal_event, dispatch, stream_failed=stream_failed
+                    session_app,
+                    streamed.terminal_event,
+                    streamed.dispatch,
+                    stream_failed=streamed.failed,
+                    cancelled=streamed.cancelled,
+                    started_turn_id=streamed.started_turn_id,
+                    started_session_id=streamed.started_session_id,
                 )
             except Exception:
                 typer.echo("headless run observation is unavailable", err=True)

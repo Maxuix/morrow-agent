@@ -1069,12 +1069,17 @@ async def test_agent_loop_marks_an_empty_provider_stream_as_invalid_response(tmp
 
     handle, _journal, session, persistence = _open(tmp_path)
     try:
+
+        async def _no_retry_sleep(_delay: float) -> None:
+            return None
+
         loop = AgentLoop(
             EmptyProvider(),
             ModelRef(provider_id="p", model_id="m"),
             make_context_builder(),
             id_source=FixedIdSource(),
             clock=FixedClock(),
+            retry_sleep=_no_retry_sleep,
         )
 
         events = [event async for event in loop.run_task(session, "empty")]
@@ -1082,9 +1087,11 @@ async def test_agent_loop_marks_an_empty_provider_stream_as_invalid_response(tmp
         assert events[-1].payload["stop_code"] == AgentStopCode.INVALID_RESPONSE.value
         observation = persistence.get_agent_run_observation()
         assert observation is not None and observation.terminal_metrics is not None
-        assert observation.requests[0].state.value == "failed"
+        assert len(observation.requests) == 6
+        assert [item.state.value for item in observation.requests] == ["failed"] * 6
         assert observation.requests[0].error_code is ModelErrorCode.INVALID_RESPONSE
         assert observation.terminal_metrics.stop_code is AgentStopCode.INVALID_RESPONSE
+        assert [message.role for message in session.log.messages_view()] == ["user"]
     finally:
         handle.close()
 
@@ -1419,7 +1426,8 @@ async def test_compaction_shares_request_accounting_and_preserves_usage(tmp_path
             assert requests[1].state.value == "failed"
             assert requests[1].finish_reason is ModelFinishReason.LENGTH
             assert not session.compaction_entries
-            assert observation.terminal_metrics.usage.total_tokens == 560
-            assert events[-1].payload["finish_reason"] == "error"
+            assert [item.purpose.value for item in requests] == ["agent", "compaction", "agent"]
+            assert observation.terminal_metrics.usage.total_tokens == 670
+            assert events[-1].payload["finish_reason"] == "stop"
     finally:
         handle.close()

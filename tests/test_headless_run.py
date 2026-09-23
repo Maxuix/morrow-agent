@@ -48,6 +48,9 @@ def test_run_emits_only_versioned_jsonl_and_terminal_safe_record(monkeypatch, tm
             return SimpleNamespace(
                 model_dump=lambda mode="json": {
                     "agent_run_id": agent_run_id,
+                    "session_id": "ses_1",
+                    "task_run_id": "task_1",
+                    "turn_id": "turn_1",
                     "terminal_metrics": {
                         "finish_reason": "stop",
                         "usage": {"availability": "unavailable"},

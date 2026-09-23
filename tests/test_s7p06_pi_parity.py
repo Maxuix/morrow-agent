@@ -243,6 +243,7 @@ async def test_v2_retry_uses_provider_delay_cap_and_does_not_duplicate_history()
         MODEL,
         _v2_context(compaction_enabled=False),
         retry_sleep=retry_sleep,
+        retry_unit=lambda: 1.0,
     )
 
     events = [event async for event in loop.run_task(session, "retry this")]
@@ -460,6 +461,7 @@ async def test_compaction_summary_uses_bounded_transient_retries(code, retryable
         MODEL,
         ContextBuilder(run_policy=policy, estimate_request_chars=lambda messages, tools: 1),
         retry_sleep=retry_sleep,
+        retry_unit=lambda: 1.0,
     )
 
     events = [event async for event in loop.run_task(session, "current request")]

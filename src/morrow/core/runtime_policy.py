@@ -15,6 +15,9 @@ AGENT_RUN_POLICY_SCHEMA_VERSION = 2
 # packaged resource nor user-owned YAML can widen the bounded runtime beyond reviewed limits.
 AGENT_MAX_TOOL_TIMEOUT_SECONDS = 300.0
 AGENT_MAX_MODEL_RETRIES = 5
+# Cumulative sleep for one run's provider retries. This is a code-owned recovery
+# bound, not a task-lifetime stop and not a user-overlay field.
+PROVIDER_RETRY_WAIT_BUDGET_SECONDS = 120.0
 AGENT_MAX_REQUEST_CHARS = 4_000_000
 AGENT_MAX_TOOL_RESULT_CHARS = 256_000
 AGENT_MAX_VALIDATION_ERRORS = 10
@@ -24,7 +27,9 @@ AGENT_MAX_KEEP_RECENT_TOKENS = 1_000_000
 AGENT_MAX_RETRY_DELAY_SECONDS = 60.0
 PI_DEFAULT_RESERVE_TOKENS = 16_384
 PI_DEFAULT_KEEP_RECENT_TOKENS = 20_000
-PI_DEFAULT_MAX_RETRIES = 3
+# The product default uses the whole reviewed retry ceiling. Overlays may select
+# fewer attempts, but cannot exceed AGENT_MAX_MODEL_RETRIES.
+PI_DEFAULT_MAX_RETRIES = 5
 PI_DEFAULT_RETRY_BASE_DELAY_SECONDS = 2.0
 PI_DEFAULT_MAX_PROVIDER_RETRY_DELAY_SECONDS = 60.0
 PI_DEFAULT_TOOL_MAX_BYTES = 50 * 1024
@@ -134,6 +139,7 @@ __all__ = [
     "AgentRunPolicyOverrides",
     "LongHorizonPolicyOverrides",
     "PI_DEFAULT_GREP_MAX_LINE_CHARS",
+    "PROVIDER_RETRY_WAIT_BUDGET_SECONDS",
     "PI_DEFAULT_KEEP_RECENT_TOKENS",
     "PI_DEFAULT_MAX_PROVIDER_RETRY_DELAY_SECONDS",
     "PI_DEFAULT_MAX_RETRIES",

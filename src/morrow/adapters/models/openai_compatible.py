@@ -410,6 +410,23 @@ def _has_terminal_provider_limit(errors: tuple[BaseException, ...]) -> bool:
     )
 
 
+def _is_precommit_stream_defect(error: BaseException) -> bool:
+    """True for an empty or corrupt stream that is not an HTTP or quota rejection.
+
+    The caller must already know the failure happened while reading the
+    provider stream, before any assistant or tool intent was committed.
+    """
+
+    errors = _error_chain(error)
+    if _has_terminal_provider_limit(errors):
+        return False
+    if any(_provider_status(item) in (400, 401, 402, 403, 404, 413, 422) for item in errors):
+        return False
+    return any(
+        isinstance(item, (TypeError, ValueError, _ProviderStreamEndedEarly)) for item in errors
+    )
+
+
 def _is_transient_provider_internal(error: BaseException) -> bool:
     errors = _error_chain(error)
     if _has_terminal_provider_limit(errors):
@@ -658,6 +675,7 @@ class OpenAICompatibleProvider:
         completed_reason: ModelFinishReason | None = None
         finish_seen = False
         finish_signal: str | None = None
+        parsing_stream = False
         # One bounded activity marker per kind: fragments and reasoning stay
         # internal, only their arrival is observable progress evidence.
         emitted_activity: set[str] = set()
@@ -691,6 +709,7 @@ class OpenAICompatibleProvider:
                 )
                 return
             iterator = aiter(response)
+            parsing_stream = True
             first = True
             while True:
                 try:
@@ -801,9 +820,19 @@ class OpenAICompatibleProvider:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            failure = classify_failure(exc)
+            # Only a stream-read defect is retryable. Request construction and
+            # HTTP 400/422 stay non-retryable even when the code is the same.
+            if (
+                parsing_stream
+                and failure.code is ModelErrorCode.INVALID_RESPONSE
+                and not failure.retryable
+                and _is_precommit_stream_defect(exc)
+            ):
+                failure = failure.model_copy(update={"retryable": True})
             yield ModelEvent(
                 kind="error",
-                failure=classify_failure(exc),
+                failure=failure,
                 made_progress=accumulator.made_progress,
                 usage=usage,
             )

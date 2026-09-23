@@ -80,6 +80,7 @@ class ContextPack(ProtocolModel):
     dropped_cycle_count: int = 0
     dropped_record_count: int = 0
     checkpoint_id: str | None = None
+    omission_floor: int = 0
     estimated_context_tokens: int = 0
     accounting_basis: TokenAccountingBasis | None = None
     token_threshold: int | None = None
@@ -120,6 +121,7 @@ class _CompactionUnit:
     messages: tuple[Message, ...]
     source_start_sequence: int
     source_end_sequence: int
+    kind: Literal["turn", "cycle"] = "turn"
 
 
 class ContextBuilder:
@@ -449,6 +451,117 @@ class ContextBuilder:
                     values.append(value)
         return tuple(values[:256])
 
+    def _projection_units(self, session: Session, *, floor: int) -> list[_CompactionUnit]:
+        """Complete turns and closed tool cycles at or after ``floor``.
+
+        A closed turn is one unit. An active turn is split only at cycle
+        boundaries so a later omission never separates a call from its result.
+        """
+
+        units: list[_CompactionUnit] = []
+        for turn in session.log.snapshot().public_turns(require_closed=False):
+            message_records = tuple(record for record in turn.records if hasattr(record, "message"))
+            if not message_records:
+                continue
+            labeled: list[tuple[tuple, Literal["turn", "cycle"]]] = []
+            if turn.terminal is not None:
+                labeled.append((message_records, "turn"))
+            else:
+                cycle_groups: list[tuple[MessageRecord, ...]] = []
+                if turn.cycles:
+                    cycle_groups.append((turn.user, *turn.cycles[0].records))
+                    cycle_groups.extend(tuple(cycle.records) for cycle in turn.cycles[1:])
+                else:
+                    cycle_groups.append((turn.user,))
+                if turn.final_assistant is not None:
+                    if cycle_groups and cycle_groups[-1] != (turn.user,):
+                        cycle_groups.append((turn.final_assistant,))
+                    else:
+                        cycle_groups[0] = (*cycle_groups[0], turn.final_assistant)
+                labeled.extend((group, "cycle") for group in cycle_groups)
+            for group, kind in labeled:
+                eligible = tuple(record for record in group if record.sequence >= floor)
+                if not eligible:
+                    continue
+                source_end = (
+                    turn.terminal.sequence
+                    if turn.terminal is not None and kind == "turn"
+                    else max(record.sequence for record in eligible)
+                )
+                units.append(
+                    _CompactionUnit(
+                        messages=tuple(record.message for record in eligible),
+                        source_start_sequence=min(record.sequence for record in eligible),
+                        source_end_sequence=source_end,
+                        kind=kind,
+                    )
+                )
+        return units
+
+    def degrade_model_input(
+        self,
+        session: Session,
+        *,
+        tools: tuple[ToolDefinition, ...] = (),
+        omission_floor: int = 0,
+    ) -> ContextPack | None:
+        """Drop older complete turns or tool cycles until the projection fits.
+
+        The conversation log is not modified. The returned pack is the first
+        projection that passes the same budget check as a normal model request.
+        ``None`` means the current input or another safety boundary still does
+        not fit, so the caller must keep a recoverable interrupt instead of
+        cutting inside a turn or a tool cycle.
+        """
+
+        before = session.log.snapshot()
+        floor = max(session.compaction_boundary_sequence, omission_floor)
+        units = self._projection_units(session, floor=floor)
+        if not units:
+            return None
+
+        def project(candidate_floor: int) -> ContextPack | None:
+            try:
+                pack = self._chat(
+                    self._request(session, "chat", tools),
+                    session,
+                    omission_floor=candidate_floor,
+                )
+            except ContextBudgetError:
+                return None
+            if session.log.snapshot() != before:
+                raise ContextBudgetError("上下文降级不能改写对话")
+            if pack.compaction_required:
+                return None
+            return pack
+
+        for drop_count in range(0, len(units)):
+            candidate_floor = floor if drop_count == 0 else units[drop_count].source_start_sequence
+            pack = project(candidate_floor)
+            if pack is None:
+                continue
+            dropped = units[:drop_count]
+            dropped_records = 0
+            for unit in dropped:
+                if unit.kind == "turn":
+                    dropped_records += len(unit.messages)
+                    continue
+                # The active turn's user message stays as the request anchor.
+                dropped_records += sum(
+                    1 for message in unit.messages if not isinstance(message, UserMessage)
+                )
+            return pack.model_copy(
+                update={
+                    "omission_floor": max(floor, candidate_floor),
+                    "dropped_turn_count": sum(unit.kind == "turn" for unit in dropped),
+                    "dropped_cycle_count": sum(unit.kind == "cycle" for unit in dropped),
+                    "dropped_record_count": dropped_records,
+                }
+            )
+        if session.log.snapshot() != before:
+            raise ContextBudgetError("上下文降级不能改写对话")
+        return None
+
     def prepare_compaction(
         self,
         session: Session,
@@ -466,51 +579,8 @@ class ContextBuilder:
         except ValueError as exc:
             raise ContextBudgetError("上下文压缩指令不符合安全边界") from exc
         snapshot = session.log.snapshot()
-        turns = snapshot.public_turns(require_closed=False)
-        if not turns:
-            return None
         boundary = session.compaction_boundary_sequence
-        units: list[_CompactionUnit] = []
-        for turn in turns:
-            message_records = tuple(record for record in turn.records if hasattr(record, "message"))
-            if not message_records:
-                continue
-            if turn.terminal is not None:
-                groups = (message_records,)
-            else:
-                # An active long-running turn may contain many closed ToolCycles.  Split only at
-                # cycle boundaries; the user anchor is included with the first eligible group.
-                cycle_groups: list[tuple[MessageRecord, ...]] = []
-                if turn.cycles:
-                    cycle_groups.append((turn.user, *turn.cycles[0].records))
-                    cycle_groups.extend(tuple(cycle.records) for cycle in turn.cycles[1:])
-                else:
-                    cycle_groups.append((turn.user,))
-                if turn.final_assistant is not None:
-                    if cycle_groups and cycle_groups[-1] != (turn.user,):
-                        cycle_groups.append((turn.final_assistant,))
-                    else:
-                        cycle_groups[0] = (*cycle_groups[0], turn.final_assistant)
-                groups = tuple(cycle_groups)
-            for group in groups:
-                eligible = tuple(record for record in group if record.sequence >= boundary)
-                if not eligible:
-                    continue
-                # A complete closed Turn ends at its terminal record; a split active Turn ends at
-                # the last ToolMessage of a closed cycle.  The persistence layer validates the
-                # latter as a closed ToolCycle boundary rather than treating it as a closed Turn.
-                source_end = (
-                    turn.terminal.sequence
-                    if turn.terminal is not None
-                    else max(record.sequence for record in eligible)
-                )
-                units.append(
-                    _CompactionUnit(
-                        messages=tuple(record.message for record in eligible),
-                        source_start_sequence=min(record.sequence for record in eligible),
-                        source_end_sequence=source_end,
-                    )
-                )
+        units = self._projection_units(session, floor=boundary)
         if len(units) < 2:
             return None
 
@@ -657,13 +727,15 @@ class ContextBuilder:
         session.latest_model_usage_message_count = None
         return entry
 
-    def _chat(self, request: ContextRequest, session: Session) -> ContextPack:
+    def _chat(
+        self, request: ContextRequest, session: Session, *, omission_floor: int = 0
+    ) -> ContextPack:
         turns = list(request.snapshot.public_turns(require_closed=False))
         if not turns:
             raise ContextBudgetError("聊天上下文缺少当前用户请求")
         if any(turn.unresolved_call_ids for turn in turns):
             raise ContextBudgetError("上下文包含未闭合的工具调用")
-        boundary = session.compaction_boundary_sequence
+        boundary = max(session.compaction_boundary_sequence, omission_floor)
         projected = self._messages_for_boundary(request.snapshot, boundary)
         messages = self._hydrate((*request.system_messages, *request.memory_messages, *projected))
         self._validate_tool_pairing(messages)
@@ -692,6 +764,7 @@ class ContextBuilder:
             token_threshold=threshold,
             compaction_required=compaction_required,
             checkpoint_id=request.checkpoint.checkpoint_id if request.checkpoint else None,
+            omission_floor=boundary,
         )
 
     @staticmethod
@@ -734,9 +807,12 @@ class ContextBuilder:
         purpose: ContextPurpose = "chat",
         tools: tuple[ToolDefinition, ...] = (),
         checkpoint: ContextCheckpoint | None = None,
+        omission_floor: int = 0,
     ) -> ContextPack:
         request = self._request(session, purpose, tools, checkpoint)
-        return self._chat(request, session) if purpose == "chat" else self._non_chat(request)
+        if purpose != "chat":
+            return self._non_chat(request)
+        return self._chat(request, session, omission_floor=omission_floor)
 
     def validate_request(
         self, messages: list[Message] | tuple[Message, ...], tools: tuple[ToolDefinition, ...]

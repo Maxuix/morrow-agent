@@ -12,10 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from morrow.application.workflows.evidence import (
-    select_workflow_snapshot_carry_forward,
-    workflow_task_outcome,
-)
+from morrow.application.outcome_budget import build_bounded_task_outcome
+from morrow.application.workflows.evidence import select_workflow_snapshot_carry_forward
 from morrow.core.application import ApplicationErrorCode
 from morrow.core.domain import (
     COMMAND_ID_PREFIX,
@@ -109,14 +107,16 @@ class TaskOutcomeAssembler:
         transitions = self.journal.list_task_transitions(self.workspace_id, task.task_run_id)
         outcomes = self.journal.list_task_outcomes(self.workspace_id, task.task_run_id)
 
-        changed_paths = sorted(
-            {
-                evidence.relative_path
-                for execution in executions
-                if execution.facts is not None
-                for evidence in execution.facts.files
-            }
-        )
+        changed_paths: list[str] = []
+        seen_paths: set[str] = set()
+        for execution in reversed(executions):
+            if execution.facts is None:
+                continue
+            for evidence in execution.facts.files:
+                if evidence.relative_path in seen_paths:
+                    continue
+                seen_paths.add(evidence.relative_path)
+                changed_paths.append(evidence.relative_path)
         validation_facts = sorted(
             {
                 f"{execution.tool_name}:{execution.disposition.value}"
@@ -179,15 +179,8 @@ class TaskOutcomeAssembler:
                 ),
             ]
         )
-        linked_artifacts = tuple(
-            sorted(
-                {
-                    (reference.artifact_id, reference.role): reference
-                    for execution in executions
-                    for reference in execution.artifact_refs
-                }.values(),
-                key=lambda reference: (reference.artifact_id, reference.role),
-            )
+        recent_execution_artifacts = tuple(
+            reference for execution in reversed(executions) for reference in execution.artifact_refs
         )
         # Narrow Workflow evidence carry-forward: only the marked snapshot bound to
         # this root's latest READY transition contributes, and only then does the
@@ -196,15 +189,8 @@ class TaskOutcomeAssembler:
         if trigger is TaskOutcomeTrigger.ACCEPTANCE:
             carry_forward = select_workflow_snapshot_carry_forward(transitions, outcomes)
         carried_refs = carry_forward.artifact_refs if carry_forward is not None else ()
-        all_artifact_refs = tuple(
-            sorted(
-                {
-                    (reference.artifact_id, reference.role): reference
-                    for reference in (*linked_artifacts, *artifact_refs, *carried_refs)
-                }.values(),
-                key=lambda reference: (reference.artifact_id, reference.role),
-            )
-        )
+        # Explicit output and Workflow results outrank older execution artifacts.
+        all_artifact_refs = (*artifact_refs, *carried_refs, *recent_execution_artifacts)
         goal_reference = (
             TaskOutcomeEvidenceRef(
                 kind=TaskOutcomeEvidenceKind.TURN,
@@ -236,9 +222,9 @@ class TaskOutcomeAssembler:
             "artifact_refs": all_artifact_refs,
             "created_at": self.clock(),
         }
-        if carry_forward is not None or workflow_profile:
-            return workflow_task_outcome(**fields)
-        return TaskOutcome(**fields)
+        return build_bounded_task_outcome(
+            fields, workflow=carry_forward is not None or workflow_profile
+        )
 
 
 class TaskService:
