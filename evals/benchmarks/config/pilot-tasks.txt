@@ -1,0 +1,28 @@
+# Terminal-Bench 2.0 pilot 任务清单（25 个，按难度/类别分层抽样）
+# 来源：vendor/terminal-bench-2 各任务 task.toml 的 metadata.difficulty/category
+# 4 easy + 按类别轮转补齐 medium/hard 至 25
+cobol-modernization
+fix-git
+prove-plus-comm
+overfull-hbox
+financial-document-processor
+sparql-university
+hf-model-inference
+mcmc-sampling-stan
+build-cython-ext
+db-wal-recovery
+extract-moves-from-video
+chess-best-move
+caffe-cifar-10
+llm-inference-batching-scheduler
+largest-eigenval
+feal-differential-cryptanalysis
+count-dataset-tokens
+train-fasttext
+portfolio-optimization
+constraints-scheduling
+adaptive-rejection-sampler
+bn-fit-modify
+break-filter-js-from-html
+fix-code-vulnerability
+build-pmars

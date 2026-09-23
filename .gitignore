@@ -39,7 +39,8 @@ docs/*
 !docs/architecture/*.md
 
 # Generated acceptance/evaluation material and local test output.
-evals/
+evals/*
+!evals/benchmarks/
 scripts/*
 !scripts/build_release.py
 *.log
@@ -72,3 +73,13 @@ Morrow-项目使用手册.html
 # Screenshot provenance notes are local working material; the images used by
 # the public README remain allowed.
 assets/readme/README.md
+
+# Benchmark harness materials (large vendored deps + run artifacts)
+evals/benchmarks/vendor/
+evals/benchmarks/jobs/
+evals/benchmarks/runs/
+evals/benchmarks/assets/
+evals/benchmarks/.venv/
+evals/benchmarks/__pycache__/
+evals/benchmarks/results/
+evals/benchmarks/pilot_tasks.json

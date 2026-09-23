@@ -1,0 +1,142 @@
+# Morrow Benchmark Harness
+
+面向 Morrow（承序）的自动化评测 harness，覆盖 **Terminal-Bench 2.0**（89 任务，Harbor 官方 harness + 官方 verifier）与 **SWE-bench Lite**（300 任务，官方 harness 评分）。全部运行共享一个 **100M token 预算账本**，超支自动拒跑。
+
+> 报告与简历必须标注 **SWE-bench Lite**（300），不得写成 Verified（500）。
+
+## 目录
+
+```
+config/
+  pilot-tasks.txt      # TB2 pilot 25 任务（按难度/类别分层抽样）
+  env.template         # 运行环境变量模板（复制为 .env 填写）
+harness/
+  budget.py            # TokenBudget 预算账本（admission/finalize/refused）
+  morrow_harbor_agent.py  # Harbor installed-agent：容器内安装并运行 Morrow
+  bench_setup.py       # 容器内一次性引导（workspace/provider/model，不落密钥）
+  swe_lite_runner.py   # SWE-bench Lite 逐实例 runner（官方镜像内运行 Morrow）
+run_tb2.py             # TB2 驱动：pilot(25) / full(89) / 子集
+run_swebench_lite.py   # SWE-bench Lite 驱动：patch 生成 + 官方评分
+collect_metrics.py     # 指标聚合（分辨率/分层/p50p95/token/成本/失败分类）
+scripts/prepare_assets.sh  # 离线资产包构建（wheel + python-build + wheelhouse）
+vendor/                # harbor / terminal-bench-2 / swebench / swebench-lite（gitignored）
+assets/                # 离线安装资产（gitignored）
+runs/                  # 运行产物（job 结果、patch、预算账本，gitignored）
+results/               # 指标报告（gitignored）
+```
+
+## 工作原理
+
+**TB2**：`run_tb2.py` 调官方 Harbor CLI（`harbor run -p vendor/terminal-bench-2`），
+agent 为自定义 installed-agent `harness.morrow_harbor_agent:MorrowAgent`：
+setup 阶段把离线资产（python-build-standalone 3.12 + Morrow wheel + x86_64 wheelhouse）
+上传进任务容器并完成安装；run 阶段使用任务声明的 workdir（若未声明则读取容器
+`pwd`）执行 `morrow run`。`uv` / `uvx` 只进入 agent 进程的 PATH，不修改容器
+全局工具链。运行结束或超时取消时都会尝试回收 JSONL 日志；有 `run.completed`
+时解析终端指标填充 Harbor `AgentContext`。
+任务成败只由每个任务自带的官方 verifier（`tests/` + task.toml）判定，harness 不做任何自定义解释。
+
+**SWE-bench Lite**：`run_swebench_lite.py` 逐实例启动官方实例镜像
+（`ghcr.io/swe-bench/{repo}:{version}`，可用 `MORROW_BENCH_SWE_IMAGE_TEMPLATE` 换镜像站），
+在同一容器内离线安装 Morrow、以 `problem_statement` 为 prompt 运行，
+取 `git diff` 为 model patch，合并成官方 predictions CSV 后调用官方
+`swebench.harness.run_evaluation` 评分（FAIL_TO_PASS / PASS_TO_PASS，% Resolved）。
+
+**密钥处理**：provider 以 `secret=None` 创建，运行时通过 per-exec 环境变量
+`MORROW_<PROVIDER>_API_KEY` 解析；密钥不写入任何配置文件、命令行或日志。
+容器内 headless Linux 无 Keychain，这条路径同时绕开了 keyring 限制。
+
+## 快速开始
+
+```bash
+cd evals/benchmarks
+
+# 0. 一次性：准备离线资产（wheel/python-build/wheelhouse，已验证 linux/amd64）
+scripts/prepare_assets.sh
+
+# 1. 配置（填入真实 endpoint 与 key）
+cp config/env.template .env
+
+# 2. TB2 pilot（25 任务，dry-run 先看计划）
+python3 run_tb2.py --pilot --dry-run
+python3 run_tb2.py --pilot
+# 通过后跑全量 89
+python3 run_tb2.py --full
+
+# 3. SWE-bench Lite（先 1 个实例冒烟，再按预算分批）
+python3 run_swebench_lite.py --limit 1
+python3 run_swebench_lite.py --limit 50
+# 分片并行
+python3 run_swebench_lite.py --shards 4 --shard 0
+
+# 4. 聚合指标
+python3 collect_metrics.py
+```
+
+`prepare_assets.sh` 每次重建当前源码 wheel 和依赖 wheelhouse，按
+`manylinux_2_28_x86_64` 解析依赖，并在无网络的 Debian 11 容器中完成安装冒烟，
+成功后才替换评测资产。准备阶段需要可用的 Docker 镜像和包镜像源；试次安装不访问网络。
+
+## 预算方案（100M token 硬上限）
+
+账本规则与 `evals/code-agent-mini` 的 campaign-capacity 一致（保守计量）：
+每个任务 admission 先冻结 `max(预留, 已知用量)`，任务结束后用 Morrow
+`run.completed.usage.total_tokens` 精确修正；`unavailable` 永不记 0。
+所有任务共享 `runs/budget-ledger.json`。
+
+建议分配（按经验值，pilot 后按实测修正）：
+
+| 阶段 | 内容 | 预留 |
+|---|---|---|
+| TB2 pilot | 25 任务 × ~1.0M | 25M |
+| TB2 full 剩余 | 64 任务 × ~1.0M | 64M 内 |
+| SWE-bench Lite 冒烟 + 分批 | 每实例 ~0.5–1.5M | 视 pilot 实测在剩余额度内滚动 admission |
+
+若实测单任务均值显著高于预留，调低 `--reservation` 无意义（它是下限保护），
+应缩小每批 `--limit` 并观察账本 `used/remaining`；账本归零即自动停止。
+
+## 收集的指标（collect_metrics.py 输出 results/metrics.json）
+
+- TB2：Resolution Rate；按 difficulty/category 通过率；p50/p95 任务耗时；
+  Input/Output/Total tokens（含每任务 p50/p95）；tool_calls/tool_rounds/
+  model_attempts（模型请求）/retry_count/上下文压缩（dropped+cleared cycles）；
+  单任务成本、单成功任务成本；失败分类（模型失败/工具失败/超时/环境失败/预算耗尽，
+  来自 exception_info + stop_code）。
+- SWE-bench Lite：% Resolved（官方 report）；按 repo 通过率；p50/p95 完成时间；
+  tokens 总量与单实例分布；patch 统计（patched/empty/error）；官方 results.json 原文引用。
+
+## 断点续跑与持久化（中断后无需全量重跑）
+
+| 层 | 持久化位置 | 中断后续跑行为 |
+|---|---|---|
+| 预算账本 | `runs/budget-ledger.json`（原子写入） | `admit` 按 run_key 幂等：已 admitted/finalized 的任务重跑不重复计费；被中途杀死的任务保留预留计量，完成后以精确 usage 修正 |
+| TB2 任务 | `runs/jobs/<job>/trials/*/result.json` | 原命令重跑同一 `--job-name`：Harbor 校验配置一致后，**有 result.json 的 trial 直接跳过，没有的自动重跑**（Harbor 启动时清理半成品 trial 目录） |
+| TB2 过程日志 | `runs/jobs/<job>/trials/*/agent/logs/morrow-run.jsonl` + `morrow-terminal-metrics.json` | 随 trial 保留；`_finalize_from_job_logs` 只补正仍处于 admitted 状态的条目 |
+| SWE-bench 实例 | `runs/swebench-lite/instances-shard<N>.jsonl`（append）+ `workspaces/*__patch.diff` + `*__morrow-run.jsonl` | 默认跳过 jsonl 中已记录的实例（`--rerun` 可强制重跑）；predictions CSV 每次从磁盘上的 patch 文件重建，已完成的实例不会丢 patch |
+| 容器残留 | docker | SWE runner 每次启动实例前 `docker rm -f` 同名残留容器，驱动被杀不会卡死续跑 |
+
+两个注意点：
+
+1. **TB2 续跑必须沿用同一 `--job-name` 且参数完全一致**（Harbor 对同 job 目录做配置一致性校验，配置变了会拒绝恢复）；若改了任务集/参数，换一个新的 `--job-name`（旧结果仍保留在 metrics 聚合中，因为 collect 扫描全部 jobs 目录）。
+2. 若驱动进程本身被 SIGKILL，SWE 侧最后一个实例无 jsonl 记录会被重跑（幂等，不重复计费）；TB2 侧由 Harbor 的 result.json 存在性判定，语义一致。
+
+## 已知限制（CN 网络环境）
+
+- docker.io / ghcr.io 直连受限：docker hub 走 `docker.m.daocloud.io` 已可用；
+  ghcr 的 SWE-bench 镜像需配 `MORROW_BENCH_SWE_IMAGE_TEMPLATE` 指向可达镜像站，
+  或用 `swebench.image_builder` 按官方 spec 本地构建（base 镜像走 daocloud 代理）。
+- TB2 任务镜像（docker hub `alexgshaw/*`）走 daocloud 拉取；个别任务
+  `allow_internet=false` 时模型 API 需走宿主机可达网络（Harbor local 环境下
+  容器共享宿主机网络，一般无碍）。
+- 首次 `harbor run` 会为 25 个 pilot 任务拉取镜像（每个 0.5–3 GB），请预留磁盘。
+
+## 验证记录（2026-09-24）
+
+- `prepare_assets.sh` 重建当前源码 wheel 和 58 个依赖 wheel；
+  `cryptography-50.0.1` 使用 `manylinux_2_28_x86_64`。
+- 两个本地 Debian 11 / glibc 2.31 QEMU 任务镜像内，无网络安装链路通过：
+  python-build-standalone → venv → wheelhouse 装 Morrow → `morrow --help`。
+- Harbor 适配器 7 项离线回归通过，涵盖超时取消日志回收、非零退出分类、
+  PATH 隔离、workdir 继承和 reasoning effort 传递；资产准备的成功与失败事务测试通过。
+- Morrow 全量离线测试 2490 通过、2 项 live 未运行。
+- 本次修复未运行模型评测任务；SWE-bench 实例镜像仍需独立验证。
