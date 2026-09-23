@@ -142,6 +142,33 @@ def test_headless_dispatch_does_not_reuse_an_existing_agent_run_id(capsys):
     assert record["metrics"] is None
 
 
+async def test_headless_reasoning_override_preserves_prepared_options():
+    selected = []
+
+    class FakeOrchestrator:
+        def prepare_options(self, _key):
+            return {
+                "model": "bound-model",
+                "generation": {"reasoning_effort": "low"},
+                "settings_sources": {"source": "bound"},
+                "permission_preset": "manual",
+            }
+
+        async def stream(self, _prompt):
+            selected.append(self.prepare_options("message"))
+            if False:
+                yield None
+
+    await cli_module._headless_stream(
+        SimpleNamespace(orchestrator=FakeOrchestrator()), "prompt", reasoning_effort="high"
+    )
+    options = selected[0]
+    assert options["model"] == "bound-model"
+    assert options["permission_preset"] == "manual"
+    assert options["settings_sources"] == {"source": "bound"}
+    assert options["generation"].reasoning_effort == "high"
+
+
 def test_run_uses_the_real_session_builder_with_a_scripted_provider(monkeypatch, tmp_path):
     workspace = tmp_path / "project"
     workspace.mkdir()

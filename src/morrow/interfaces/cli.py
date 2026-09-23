@@ -43,6 +43,7 @@ from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.core.learning import LearningReviewStatus
 from morrow.core.models import (
     AgentEvent,
+    GenerationOptions,
     ModelErrorCode,
     ModelProviderError,
     ToolApprovalDecision,
@@ -249,7 +250,24 @@ def _safe_stop_reason(value) -> str | None:
     return value
 
 
-async def _headless_stream(session_app, prompt: str) -> _HeadlessStreamResult:
+async def _headless_stream(
+    session_app,
+    prompt: str,
+    *,
+    reasoning_effort: str | None = None,
+) -> _HeadlessStreamResult:
+    if reasoning_effort is not None:
+        prepare_options = session_app.orchestrator.prepare_options
+
+        def prepare_with_reasoning(key):
+            options = dict(prepare_options(key)) if prepare_options is not None else {}
+            generation = GenerationOptions.model_validate(options.get("generation") or {})
+            options["generation"] = GenerationOptions.model_validate(
+                {**generation.model_dump(), "reasoning_effort": reasoning_effort}
+            )
+            return options
+
+        session_app.orchestrator.prepare_options = prepare_with_reasoning
     terminal_event = None
     dispatch = None
     started_turn_id = None
@@ -442,6 +460,11 @@ def run_headless(
     resume_session_id: str | None = typer.Option(
         None, "--resume-session-id", "--session-id", help="恢复指定 Session。"
     ),
+    reasoning_effort: str | None = typer.Option(
+        None,
+        "--reasoning-effort",
+        help="模型思考强度：none、minimal、low、medium、high、xhigh 或 max。",
+    ),
 ) -> None:
     """Run one ordinary prompt and emit versioned JSONL records only."""
 
@@ -455,6 +478,12 @@ def run_headless(
     if prompt is None or not prompt.strip():
         typer.echo("headless run requires an explicit prompt", err=True)
         raise typer.Exit(code=2)
+    if reasoning_effort is not None:
+        try:
+            GenerationOptions(reasoning_effort=reasoning_effort)
+        except ValueError:
+            typer.echo("invalid --reasoning-effort", err=True)
+            raise typer.Exit(code=2) from None
     if permission_mode is PermissionPreset.AUTO_SANDBOXED:
         capability = default_sandbox_backend().probe()
         if not capability.supported:
@@ -482,7 +511,13 @@ def run_headless(
                 resume_session_id=resume_session_id,
             )
             try:
-                streamed = asyncio.run(_headless_stream(session_app, prompt))
+                streamed = asyncio.run(
+                    _headless_stream(
+                        session_app,
+                        prompt,
+                        reasoning_effort=reasoning_effort,
+                    )
+                )
             except KeyboardInterrupt:
                 streamed = _HeadlessStreamResult(failed=True, cancelled=True)
             except Exception:
