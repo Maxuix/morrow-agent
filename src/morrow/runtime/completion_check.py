@@ -43,10 +43,14 @@ def check_completion(run: ToolRunContext) -> CompletionCheck:
     """
 
     latest: dict[tuple[str, str], tuple[int, ValidationFact]] = {}
+    historical: dict[tuple[str, str], ValidationFact] = {}
     facts = run.facts
     for index, fact in enumerate(facts):
         if isinstance(fact, ValidationFact):
-            latest[(fact.validator_kind, fact.scope)] = (index, fact)
+            if fact.historical:
+                historical[(fact.validator_kind, fact.scope)] = fact
+            else:
+                latest[(fact.validator_kind, fact.scope)] = (index, fact)
     issues: list[str] = []
     evidence: list[str] = []
     if active_tracked_executions(facts):
@@ -59,6 +63,12 @@ def check_completion(run: ToolRunContext) -> CompletionCheck:
     )
     if changed_paths:
         evidence.append("已记录的文件变更：" + "、".join(tuple(changed_paths)[:16]))
+    # A re-read of an earlier run's settled result stays visible, but only a
+    # validation executed against the current version can decide the outcome.
+    for (kind, scope), fact in sorted(historical.items()):
+        evidence.append(
+            f"{kind} ({scope}) 的历史结果：{fact.status}（先前执行的回读，不代表当前版本）"
+        )
     statuses: list[str] = []
     for (kind, scope), (index, fact) in sorted(latest.items()):
         if validation_evidence_stale(facts, index):

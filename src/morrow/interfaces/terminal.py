@@ -133,7 +133,9 @@ class Terminal:
             "cancelled": "取消",
         }.get(metrics.validation_outcome, "未知")
         markers: list[str] = []
-        command_facts = tuple(fact for fact in facts if isinstance(fact, CommandToolFact))
+        command_facts = tuple(
+            fact for fact in facts if isinstance(fact, CommandToolFact) and not fact.historical
+        )
         successful_commands = sum(
             fact.status == "exited" and fact.exit_code == 0 for fact in command_facts
         )

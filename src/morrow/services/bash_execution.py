@@ -216,6 +216,7 @@ def _tracked_facts(
     started: bool = False,
 ) -> tuple:
     terminal = None
+    historical = False
     if view.status is not TrackedCommandStatus.RUNNING:
         terminal = service.tracked.claim_terminal_fact(
             view.execution_id, session_id=session_id, task_id=task_id
@@ -228,6 +229,7 @@ def _tracked_facts(
             )
             if terminal is None:
                 return ()
+            historical = True
     if not started and _state_already_projected(run, view):
         return ()
     kind = plan.validation_kind if plan is not None else None
@@ -248,6 +250,7 @@ def _tracked_facts(
         duration_ms=duration_ms,
         output_truncated=view.output_truncated,
         execution_id=view.execution_id,
+        historical=historical,
     )
     if terminal is None or kind is None or scope is None:
         return (fact,)
@@ -269,6 +272,7 @@ def _tracked_facts(
         status=status,
         exit_code=view.exit_code,
         evidence_summary=evidence,
+        historical=historical,
     )
     return fact, validation
 

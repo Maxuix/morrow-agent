@@ -272,6 +272,8 @@ class CommandToolFact(ToolFactHeader):
     redaction_flags: tuple[str, ...] = ()
     redaction_count: int = Field(default=0, ge=0, le=100_000)
     execution_id: str | None = Field(default=None, pattern=r"^exec_[0-9a-f]{24}$")
+    # A re-read of a state settled before this run; not a new execution.
+    historical: bool = False
 
     @field_validator("command_class", "status")
     @classmethod
@@ -300,6 +302,9 @@ class ValidationFact(ToolFactHeader):
     status: Literal["passed", "failed", "timeout", "cancelled", "inconclusive"]
     exit_code: int | None = Field(default=None, ge=0, le=255)
     evidence_summary: str = Field(min_length=1, max_length=80)
+    # A re-read of a validation settled before this run; never proof of the
+    # current run's artifacts regardless of its position in the fact chain.
+    historical: bool = False
 
     @field_validator("validator_kind", "evidence_summary")
     @classmethod
@@ -403,11 +408,12 @@ class ToolRunContext:
 
     @property
     def validation_facts(self) -> tuple[ValidationFact, ...]:
-        """Return the latest fact for each validator/scope pair in ordinal order."""
+        """Latest fact per validator/scope pair in ordinal order; historical
+        re-reads of earlier runs are evidence, not this run's validations."""
 
         latest: dict[tuple[str, str], ValidationFact] = {}
         for fact in self._facts:
-            if isinstance(fact, ValidationFact):
+            if isinstance(fact, ValidationFact) and not fact.historical:
                 latest[(fact.validator_kind, fact.scope)] = fact
         return tuple(sorted(latest.values(), key=lambda fact: fact.ordinal))
 
@@ -451,7 +457,7 @@ class ToolRunContext:
         command_facts = tuple(fact for fact in self._facts if isinstance(fact, CommandToolFact))
         latest: dict[tuple[str, str], tuple[int, ValidationFact]] = {}
         for index, fact in enumerate(self._facts):
-            if isinstance(fact, ValidationFact):
+            if isinstance(fact, ValidationFact) and not fact.historical:
                 latest[(fact.validator_kind, fact.scope)] = (index, fact)
         validation_facts = tuple(
             fact
