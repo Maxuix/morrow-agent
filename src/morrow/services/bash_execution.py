@@ -101,6 +101,7 @@ async def run_bash(
                 tool_name=tool_name,
                 ordinal=ordinal,
                 approval_verdict=approval_verdict,
+                run=run,
                 plan=prepared.plan,
                 started=True,
             ),
@@ -131,6 +132,7 @@ async def run_bash(
                 tool_name=tool_name,
                 ordinal=ordinal,
                 approval_verdict=approval_verdict,
+                run=run,
             ),
         )
     if prepared.action == "stop":
@@ -154,6 +156,7 @@ async def run_bash(
                 tool_name=tool_name,
                 ordinal=ordinal,
                 approval_verdict=approval_verdict,
+                run=run,
             ),
         )
     raise ProcessServiceError("invalid_mode", "未知的 bash 操作")
@@ -208,6 +211,7 @@ def _tracked_facts(
     tool_name: str,
     ordinal: int,
     approval_verdict,
+    run,
     plan=None,
     started: bool = False,
 ) -> tuple:
@@ -216,7 +220,15 @@ def _tracked_facts(
         terminal = service.tracked.claim_terminal_fact(
             view.execution_id, session_id=session_id, task_id=task_id
         )
-    if not started and terminal is None:
+        if terminal is None:
+            # An earlier observation may have settled the terminal state; this
+            # run still projects the stored evidence instead of reclaiming it.
+            terminal = service.tracked.settled_terminal_fact(
+                view.execution_id, session_id=session_id, task_id=task_id
+            )
+            if terminal is None:
+                return ()
+    if not started and _state_already_projected(run, view):
         return ()
     kind = plan.validation_kind if plan is not None else None
     scope = plan.validation_scope if plan is not None else None
@@ -259,6 +271,20 @@ def _tracked_facts(
         evidence_summary=evidence,
     )
     return fact, validation
+
+
+def _state_already_projected(run, view) -> bool:
+    """Deduplicate per run: one fact per execution and observed state.
+
+    Lifecycle events settle once globally, but every run must see the
+    executions it observes. A repeated poll of an unchanged state within one
+    run does not record again.
+    """
+
+    for fact in reversed(run.facts):
+        if isinstance(fact, CommandToolFact) and fact.execution_id == view.execution_id:
+            return fact.status == view.status.value
+    return False
 
 
 def _read(

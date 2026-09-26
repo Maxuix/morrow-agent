@@ -498,3 +498,107 @@ async def test_tracked_validator_terminal_failure_is_evidence(tmp_path: Path, mo
     run.record(final.facts)
     assert final.facts[1].status == "failed"
     assert check_completion(run).validation_outcome == "failed"
+
+
+def _tracked_service(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    lifecycle=TrackedLifecycle.TASK,
+    validation_kind: str | None = None,
+    validation_scope: str | None = None,
+):
+    service = ProcessExecutionService(WorkspaceFileService(WorkspacePathResolver(tmp_path)))
+    execution = TrackedExecution(
+        execution_id=EXECUTION_ID,
+        session_id="s",
+        task_id="t",
+        lifecycle=lifecycle,
+        command_class="shell",
+        cwd_relative=".",
+        adapter=HostProcessAdapter(),
+        spawned=SimpleNamespace(
+            stdout=_CursorBuffer(1024),
+            stderr=_CursorBuffer(1024),
+            started=time.monotonic(),
+        ),
+        validation_kind=validation_kind,
+        validation_scope=validation_scope,
+    )
+    service.tracked._items[EXECUTION_ID] = execution
+    monkeypatch.setattr(service.tracked, "_refresh", lambda _execution: None)
+    return service, execution
+
+
+async def _poll(service, run, *, task_id="t", call_id="poll", ordinal=2):
+    return await bash_execution.run_bash(
+        service,
+        PreparedBash(action="poll", execution_id=EXECUTION_ID),
+        session_id="s",
+        task_id=task_id,
+        result_limit=8192,
+        run=run,
+        call_id=call_id,
+        tool_name="bash",
+        ordinal=ordinal,
+        approval_verdict=PolicyVerdict.ALLOW,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "lifecycle,next_task",
+    [
+        (TrackedLifecycle.TASK, "t"),
+        (TrackedLifecycle.ACCEPTANCE, "next-task"),
+    ],
+)
+async def test_running_poll_in_later_run_invalidates_validation(
+    tmp_path: Path, monkeypatch, lifecycle, next_task
+):
+    # The registry survives; each AgentLoop.run_task gets a fresh ToolRunContext.
+    service, _execution = _tracked_service(tmp_path, monkeypatch, lifecycle=lifecycle)
+    run = ToolRunContext(run_id="next-run", session_id="s", owner_task_id=next_task)
+    run.record((_passed("validate", 1),))
+    result = await _poll(service, run, task_id=next_task)
+    assert result.payload.status is TrackedCommandStatus.RUNNING
+    assert len(result.facts) == 1 and result.facts[0].status == "running"
+    run.record(result.facts)
+    assert check_completion(run).validation_outcome != "passed"
+    # A repeated poll of the unchanged state stays idempotent within this run.
+    repeated = await _poll(service, run, task_id=next_task, call_id="poll-again", ordinal=3)
+    assert repeated.facts == ()
+
+
+@pytest.mark.asyncio
+async def test_settled_terminal_state_stays_visible_to_later_runs(tmp_path: Path, monkeypatch):
+    service, execution = _tracked_service(
+        tmp_path,
+        monkeypatch,
+        lifecycle=TrackedLifecycle.ACCEPTANCE,
+        validation_kind="pytest",
+        validation_scope=".",
+    )
+    execution.status, execution.exit_code = TrackedCommandStatus.EXITED, 1
+    first = ToolRunContext(run_id="first-run", session_id="s", owner_task_id="t")
+    claimed = await _poll(service, first)
+    assert len(claimed.facts) == 2 and claimed.facts[1].status == "failed"
+    first.record(claimed.facts)
+
+    later = ToolRunContext(run_id="later-run", session_id="s", owner_task_id="next-task")
+    visible = await _poll(service, later, task_id="next-task")
+    assert len(visible.facts) == 2 and visible.facts[1].status == "failed"
+    later.record(visible.facts)
+    assert check_completion(later).validation_outcome == "failed"
+    # A repeated read in the same run does not settle or record again.
+    repeated = await _poll(service, later, task_id="next-task", call_id="poll-again", ordinal=3)
+    assert repeated.facts == ()
+
+    # Reading the settled state neither consumes it nor settles it again.
+    third = ToolRunContext(run_id="third-run", session_id="s", owner_task_id="another-task")
+    reread = await _poll(service, third, task_id="another-task")
+    assert len(reread.facts) == 2 and reread.facts[1].status == "failed"
+
+    # After the terminal state is visible, revalidation recovers passed.
+    later.record((_passed("recheck", 4),))
+    assert check_completion(later).validation_outcome == "passed"

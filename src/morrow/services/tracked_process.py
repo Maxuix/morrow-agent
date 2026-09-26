@@ -48,7 +48,7 @@ class TrackedExecution:
     signal: int | None = None
     validation_kind: str | None = None
     validation_scope: str | None = None
-    terminal_fact_recorded: bool = False
+    terminal_fact: tuple[str | None, str | None, int] | None = None
 
 
 class TrackedProcessRegistry:
@@ -187,18 +187,31 @@ class TrackedProcessRegistry:
 
         with self._lock:
             execution = self._visible(execution_id, session_id=session_id, task_id=task_id)
-            if execution.status is TrackedCommandStatus.RUNNING or execution.terminal_fact_recorded:
+            if execution.status is TrackedCommandStatus.RUNNING or execution.terminal_fact:
                 return None
             if execution.status is TrackedCommandStatus.CANCELLED and _group_alive(
                 execution.spawned.process.pid
             ):
                 return None
-            execution.terminal_fact_recorded = True
             duration_ms = min(
                 COMMAND_DURATION_MAX_MS,
                 max(0, int((time.monotonic() - execution.spawned.started) * 1000)),
             )
-            return execution.validation_kind, execution.validation_scope, duration_ms
+            execution.terminal_fact = (
+                execution.validation_kind,
+                execution.validation_scope,
+                duration_ms,
+            )
+            return execution.terminal_fact
+
+    def settled_terminal_fact(
+        self, execution_id: str, *, session_id: str, task_id: str
+    ) -> tuple[str | None, str | None, int] | None:
+        """Read an already-claimed terminal state without settling it again."""
+
+        with self._lock:
+            execution = self._visible(execution_id, session_id=session_id, task_id=task_id)
+            return execution.terminal_fact
 
     def _visible(self, execution_id: str, *, session_id: str, task_id: str) -> TrackedExecution:
         if (
