@@ -109,6 +109,8 @@ class RecoveryApplicationService:
                 return ApplicationCommandResult(value, receipt)
 
             close_all = close_all or (resolution is RecoveryResolution.ABORT and item_id is None)
+            session_row = api.journal.get_session(api.workspace_id, report.session_id)
+            tracked_task_id = session_row.current_task_run_id if session_row is not None else None
 
             def work(txn):
                 resumed_agent_run_ids: list[str] = []
@@ -173,6 +175,11 @@ class RecoveryApplicationService:
                 if planned is not None:
                     log.apply_committed(planned)
                 self._sync_persistence(result.value, resumed_agent_run_id)
+                if tracked_task_id:
+                    if resolution is RecoveryResolution.ABORT and close_all:
+                        api.tasks.release_tracked(report.session_id, tracked_task_id, "cancel")
+                    elif resolution is RecoveryResolution.RESUME:
+                        api.tasks.release_tracked(report.session_id, tracked_task_id, "open")
                 return result
             except ApplicationError:
                 api._restore_log_projection(log, report.session_id)

@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import datetime
 
-from morrow.core.runtime_policy import PROVIDER_RETRY_WAIT_BUDGET_SECONDS
+from morrow.core.runtime_policy import (
+    PROVIDER_RETRY_WAIT_BUDGET_SECONDS,
+    PROVIDER_RUN_RETRY_WAIT_BUDGET_SECONDS,
+)
 
 
 def bounded_retry_after(value: float | None) -> float | None:
@@ -37,6 +41,8 @@ def next_provider_retry_delay(
     retry_index: int,
     retry_after_seconds: float | None,
     waited_seconds: float,
+    total_waited_seconds: float = 0.0,
+    elapsed_seconds: float = 0.0,
     unit: float,
 ) -> float | None:
     """Return the next sleep, or None when the attempt or wait budget is spent.
@@ -49,7 +55,11 @@ def next_provider_retry_delay(
 
     if isinstance(retry_index, bool) or retry_index < 1 or retry_index > policy.max_retries:
         return None
-    remaining = PROVIDER_RETRY_WAIT_BUDGET_SECONDS - waited_seconds
+    remaining = min(
+        PROVIDER_RETRY_WAIT_BUDGET_SECONDS - waited_seconds,
+        PROVIDER_RETRY_WAIT_BUDGET_SECONDS - elapsed_seconds,
+        PROVIDER_RUN_RETRY_WAIT_BUDGET_SECONDS - total_waited_seconds,
+    )
     if remaining <= 0:
         return None
     exponential = policy.retry_base_delay_seconds * (2 ** (retry_index - 1))
@@ -65,9 +75,30 @@ def next_provider_retry_delay(
 
 @dataclass
 class RetryWait:
-    """Cumulative provider-retry sleep for one run or one idle compaction."""
+    """Provider retry sleep for the current failure window and the entire run."""
 
     seconds: float = 0.0
+    total_seconds: float = 0.0
+    started_at: datetime | None = None
+
+    def begin(self, now: datetime) -> None:
+        if self.started_at is None:
+            self.started_at = now
+
+    def elapsed(self, now: datetime) -> float:
+        if self.started_at is None:
+            return 0.0
+        elapsed = (now - self.started_at).total_seconds()
+        # A clock rollback must not widen a persisted recovery window.
+        return elapsed if elapsed >= 0 else PROVIDER_RETRY_WAIT_BUDGET_SECONDS
+
+    def add(self, delay: float) -> None:
+        self.seconds += delay
+        self.total_seconds += delay
+
+    def reset_window(self) -> None:
+        self.seconds = 0.0
+        self.started_at = None
 
 
 __all__ = [

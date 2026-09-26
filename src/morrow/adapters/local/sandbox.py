@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from morrow.adapters.local.process import HostProcessAdapter, ProcessAdapterError, ProcessOutput
+from morrow.adapters.local.shell import shell_invocation
 from morrow.services.sandbox import SandboxChangeSet, SandboxServiceError, SandboxSnapshotService
 
 
@@ -121,9 +122,20 @@ class NativeSandboxProcessAdapter:
                 timeout_seconds=self.prepare_timeout_seconds,
                 cancel_event=prepare_cancel,
             )
-            command = ("/bin/sh", "-c", shell) if shell is not None else argv
+            if shell is not None:
+                try:
+                    command = shell_invocation(self.process.shell, shell)
+                except LookupError as exc:
+                    raise ProcessAdapterError(
+                        "invalid_command",
+                        "命令未启动，进程没有执行。当前环境没有可用的 shell",
+                    ) from exc
+            else:
+                command = argv
             if not command:
-                raise ProcessAdapterError("invalid_command", "沙箱命令为空")
+                raise ProcessAdapterError(
+                    "invalid_command", "命令未启动，进程没有执行。沙箱命令为空"
+                )
             sandbox_cwd = session.snapshot_root / relative_cwd
             sandbox_command = self.backend.build_command(
                 argv=tuple(command),
@@ -149,7 +161,7 @@ class NativeSandboxProcessAdapter:
                 argv=sandbox_command,
                 shell=None,
                 cwd=sandbox_cwd,
-                timeout_seconds=min(timeout_seconds, 75.0),
+                timeout_seconds=timeout_seconds,
                 environment=sandbox_environment,
                 output_limit=output_limit,
                 redaction_overlap=redaction_overlap,

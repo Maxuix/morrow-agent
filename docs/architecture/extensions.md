@@ -28,7 +28,7 @@ handler 不读取终端输入、不自行发公开事件、不直接依赖具体
 | --- | --- | --- |
 | 读文件、目录、搜索 | WorkspaceFileService / WorkspaceSearchService | 冻结工作空间、no-follow、类型与资源预算 |
 | edit/write | WorkspaceMutationService / ChangeSetService | 内部冻结 revision/hash/mode，冲突检查、原子发布和真实 diff |
-| bash | ProcessExecutionService | Host 或已探测的 NativeSandbox 后端；有界输出、超时、取消、进程组清理 |
+| bash | ProcessExecutionService | 启动时固定的 shell：优先 `/bin/bash -c`，否则已探测的 POSIX sh，工具描述与该 shell 一致。Host 或已探测的 NativeSandbox 后端；有界输出、超时、取消、进程组清理。预检只拒绝空命令名、NUL 和长度；切词失败不拒绝脚本，也不把它识别成校验命令 |
 | 沙箱变更推广 | SandboxSnapshotService + mutation services | 当前运行、审批、逐项预检；不承诺整批原子回滚 |
 | 只读 Git service | GitInspectionService | 固定只读协议、禁 executable 扩展；模型层通过 bash 操作 Git |
 
@@ -39,7 +39,9 @@ handler 不读取终端输入、不自行发公开事件、不直接依赖具体
 保留 staging/unknown 事实并拒绝继续。多路径稳定加锁，失败不覆盖第三方文件。
 
 普通 Host `bash` 无 OS 隔离，不按 Git/管道/重定向等命令字符串猜测审批，也不保证工作空间、
-网络或凭据 confinement。Auto Sandboxed 使用默认断网的临时快照；取消/超时先等待准备与收集
+网络或凭据 confinement。Shell 字符串在进程启动时固定为 `/bin/bash -c` 或已探测的 POSIX sh；
+预检失败以 `invalid_command` 表示进程未启动，已启动进程的非零退出仍是 `exited` 加退出码。
+Auto Sandboxed 使用默认断网的临时快照；取消/超时先等待准备与收集
 停稳再清理。Linux 原生后端在真实 runner 验证前仍 unsupported，不能由二进制存在推断支持。
 
 Full Access Manual 是额外授权证据链：grant 绑定前台 AgentRun 与不可变 permission snapshot，

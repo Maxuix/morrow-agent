@@ -13,12 +13,11 @@ from morrow.adapters.models.openai_compatible import (
     normalize_tool_schema,
     serialize_tool,
 )
+from morrow.application.bash_tool import BASH_PROVIDER_SCHEMA, BashArguments
 from morrow.application.configuration import CONFIGURATION_PROVIDER_SCHEMA
 from morrow.application.local_tools import (
-    BASH_PROVIDER_SCHEMA,
     PROMOTE_SANDBOX_PROVIDER_SCHEMA,
     WRITE_PROVIDER_SCHEMA,
-    BashArguments,
     WriteArguments,
     _tool_error,
 )
@@ -191,8 +190,7 @@ async def test_actual_provider_wire_exposes_simple_bash_shape_runtime_accepts_ex
         provider_schema=BASH_PROVIDER_SCHEMA,
     )
 
-    with pytest.raises(ToolArgumentsValidationError):
-        wire_validator.validate("{}")
+    assert wire_validator.validate("{}") == {}
     with pytest.raises(ToolArgumentsValidationError):
         runtime_validator.validate("{}")
     with pytest.raises(ToolArgumentsValidationError):

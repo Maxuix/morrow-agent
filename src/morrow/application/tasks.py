@@ -72,6 +72,14 @@ class TaskCommandResult:
     learning_review_id: str | None = None
 
 
+def _process_release_reason(target: TaskRunStatus) -> str:
+    if target is TaskRunStatus.ACCEPTED:
+        return "accept"
+    if target is TaskRunStatus.CANCELLED:
+        return "cancel"
+    return "terminate"
+
+
 def task_command_digest(operation: str, payload: dict[str, object]) -> str:
     return sha256_digest(canonical_json_bytes({"operation": operation, **payload}))
 
@@ -248,6 +256,18 @@ class TaskService:
             id_source=id_source,
             clock=self.clock,
         )
+        self.process_release: Callable[..., object] | None = None
+
+    def release_tracked(self, session_id: str, task_id: str, reason: str) -> None:
+        """Tell the process owner about a committed task transition.
+
+        The hook is optional. A missing owner leaves the task transition intact.
+        """
+
+        hook = self.process_release
+        if hook is None or not session_id or not task_id:
+            return
+        hook(session_id=session_id, task_id=task_id, reason=reason)
 
     def get(self, task_run_id: str) -> DurableTaskRun | None:
         return self.journal.get_task_run(self.workspace_id, task_run_id)
@@ -606,7 +626,14 @@ class TaskService:
             )
             return TaskCommandResult("accepted", updated, outcome, receipt)
 
-        return self.journal.transact(work)
+        result = self.journal.transact(work)
+        if result.kind == "accepted" and result.task is not None:
+            self.release_tracked(
+                result.task.session_id,
+                result.task.task_run_id,
+                _process_release_reason(target),
+            )
+        return result
 
     def _transition(
         self,

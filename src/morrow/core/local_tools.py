@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from morrow.core.models import ProtocolModel
+from morrow.core.runtime_policy import (
+    COMMAND_DURATION_MAX_MS,
+    FOREGROUND_COMMAND_DEFAULT_SECONDS,
+    FOREGROUND_COMMAND_MAX_SECONDS,
+)
 
 WORKSPACE_RELATIVE_PATH_MAX_CHARS = 512
 WORKSPACE_RELATIVE_PATH_PATTERN = (
@@ -207,11 +212,14 @@ class CommandStatus(StrEnum):
 class CommandRequest(LocalToolModel):
     """Provider-independent command request admitted by the Host process service."""
 
-    argv: tuple[Annotated[str, Field(min_length=1, max_length=4096)], ...] | None = Field(
+    argv: tuple[Annotated[str, Field(min_length=0, max_length=4096)], ...] | None = Field(
         default=None,
         min_length=1,
         max_length=64,
-        description='命令参数数组，例如 ["python3", "run_acceptance.py"]。必须与 shell 二选一。',
+        description=(
+            '命令参数数组，例如 ["python3", "run_acceptance.py"]。'
+            "命令名必须非空；其余参数可以是空字符串。必须与 shell 二选一。"
+        ),
     )
     shell: str | None = Field(
         default=None,
@@ -220,16 +228,22 @@ class CommandRequest(LocalToolModel):
         description="单一 shell 字符串。必须与 argv 二选一；不要用来安装依赖或访问网络。",
     )
     cwd: str = "."
-    timeout_seconds: float = Field(default=90.0, gt=0, le=90)
+    timeout_seconds: float = Field(
+        default=FOREGROUND_COMMAND_DEFAULT_SECONDS,
+        gt=0,
+        le=FOREGROUND_COMMAND_MAX_SECONDS,
+    )
 
     @field_validator("argv")
     @classmethod
     def valid_argv(cls, values: tuple[str, ...] | None) -> tuple[str, ...] | None:
         if values is None:
             return None
-        for value in values:
-            if not value or len(value) > 4096 or "\x00" in value:
-                raise ValueError("argv entries must be bounded, non-empty and NUL-free")
+        if not values[0] or len(values[0]) > 4096 or "\x00" in values[0]:
+            raise ValueError("command name must be non-empty, bounded, and NUL-free")
+        for value in values[1:]:
+            if len(value) > 4096 or "\x00" in value:
+                raise ValueError("argv entries must be bounded and NUL-free")
         return values
 
     @field_validator("shell", "cwd")
@@ -251,9 +265,16 @@ class CommandRequest(LocalToolModel):
 
 
 class CommandResult(LocalToolModel):
-    """Bounded, sanitized Host process result; command text is intentionally absent."""
+    """Bounded, sanitized Host process result; command text is intentionally absent.
+
+    ``executed`` is true only after a process has been started. A preflight
+    rejection is a tool error with ``executed=false`` and never uses this model,
+    so a non-zero ``exit_code`` cannot be read as "the script was refused
+    before it ran".
+    """
 
     status: CommandStatus
+    executed: Literal[True] = True
     exit_code: int | None = None
     signal: int | None = Field(default=None, ge=1, le=255)
     stdout: str = Field(max_length=50 * 1024)
@@ -265,7 +286,7 @@ class CommandResult(LocalToolModel):
     stdout_truncated: bool = False
     stderr_truncated: bool = False
     output_truncated: bool = False
-    duration_ms: int = Field(ge=0, le=120_000)
+    duration_ms: int = Field(ge=0, le=COMMAND_DURATION_MAX_MS)
     command_class: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     cwd: str = Field(min_length=1, max_length=512)
     redaction_flags: tuple[str, ...] = ()
@@ -273,6 +294,40 @@ class CommandResult(LocalToolModel):
     sandbox_change_set_id: str | None = Field(default=None, max_length=128)
     sandbox_changed_paths: tuple[str, ...] = ()
     sandbox_changes_truncated: bool = False
+
+
+class TrackedCommandStatus(StrEnum):
+    RUNNING = "running"
+    EXITED = "exited"
+    SIGNALED = "signaled"
+    CANCELLED = "cancelled"
+    LOST = "lost"
+
+
+class TrackedLifecycle(StrEnum):
+    TASK = "task"
+    ACCEPTANCE = "acceptance"
+
+
+class TrackedCommandView(LocalToolModel):
+    """One tracked command. The command text itself is absent.
+
+    ``output_offset`` and ``stderr_offset`` are the next raw-byte positions.
+    Passing them back to poll continues the read and does not start a process.
+    """
+
+    execution_id: str = Field(pattern=r"^exec_[0-9a-f]{24}$")
+    status: TrackedCommandStatus
+    exit_code: int | None = Field(default=None, ge=0, le=255)
+    signal: int | None = Field(default=None, ge=1, le=255)
+    stdout: str = Field(default="", max_length=50 * 1024)
+    stderr: str = Field(default="", max_length=50 * 1024)
+    output_offset: int = Field(ge=0, le=10**12)
+    stderr_offset: int = Field(ge=0, le=10**12)
+    output_truncated: bool = False
+    lifecycle: TrackedLifecycle
+    cwd: str = Field(min_length=1, max_length=512)
+    command_class: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
 
 
 class GitRepositoryState(StrEnum):

@@ -115,6 +115,26 @@ class MorrowAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((self.logs_dir / "morrow-run.jsonl").read_text(), env.log)
         self.assertTrue((self.logs_dir / "morrow-terminal-metrics.json").exists())
 
+    async def test_resolved_harbor_timeout_reaches_morrow_run(self) -> None:
+        task_dir = Path(self.temp.name) / "task"
+        task_dir.mkdir()
+        (task_dir / "task.toml").write_text("[agent]\ntimeout_sec = 100\n", encoding="utf-8")
+        (self.logs_dir.parent / "config.json").write_text(
+            json.dumps(
+                {
+                    "task": {"path": str(task_dir)},
+                    "agent": {"max_timeout_sec": 80},
+                    "agent_timeout_multiplier": 2,
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.assertEqual(adapter._resolved_agent_timeout_seconds(self.logs_dir.parent), 160)
+        env = FakeEnvironment()
+        await self.agent.run("work", env, AgentContext())
+        command = next(item for item in env.commands if "morrow run" in item)
+        self.assertIn("--run-timeout-seconds ", command)
+
     async def test_cancel_recovers_partial_log_and_preserves_cancellation(self) -> None:
         env = FakeEnvironment(block_run=True)
         env.log = '{"kind":"turn.completed"}\n'

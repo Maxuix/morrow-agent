@@ -62,8 +62,9 @@ async def test_request_failure_exhausts_bounded_retries_then_interrupts(code, re
     assert lifecycle_is_valid(events)
     assert events[-1].payload["finish_reason"] == "interrupted"
     assert events[-1].payload["reason"] == "provider_failure"
-    assert len(calls) == (3 if retry else 1)
-    assert len(sleeps) == (2 if retry else 0)
+    should_retry = retry and code is not ModelErrorCode.AUTH
+    assert len(calls) == (3 if should_retry else 1)
+    assert len(sleeps) == (2 if should_retry else 0)
     assert session.log.has_active_turn is False
     assert not any(
         getattr(r, "message", None) and r.message.role == "assistant"

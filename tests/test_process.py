@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.local.process import HostProcessAdapter
-from morrow.application.local_tools import make_bash_tool
+from morrow.application.bash_tool import make_bash_tool
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import (
     ApprovalMode,
@@ -92,13 +92,13 @@ def test_process_preflight_accepts_ordinary_shell_and_git_commands(tmp_path):
     assert error.value.code in {"invalid_path", "outside_workspace"}
 
 
-def test_command_paths_are_not_keyword_blocked_and_invalid_shell_is_rejected(tmp_path):
+def test_command_paths_are_not_keyword_blocked_and_unparsed_shell_is_admitted(tmp_path):
     service = _service(tmp_path)
     protected = service.preflight(CommandRequest(argv=("cat", ".env")))
     assert protected.request.argv == ("cat", ".env")
-    with pytest.raises(ProcessServiceError) as error:
-        service.preflight(CommandRequest(shell="echo 'unterminated"))
-    assert error.value.code == "invalid_command"
+    plan = service.preflight(CommandRequest(shell="echo 'unterminated"))
+    assert plan.command_class == "unknown"
+    assert plan.validation_kind is None
 
 
 @pytest.mark.asyncio
@@ -115,6 +115,7 @@ async def test_host_process_returns_structured_nonzero_and_shell_results(tmp_pat
         approval_verdict=PolicyVerdict.REQUIRE_APPROVAL,
     )
     assert result.status is CommandStatus.EXITED
+    assert result.executed is True
     assert result.exit_code == 3
     assert result.stdout.strip() == "ok"
     assert fact.status == "exited"

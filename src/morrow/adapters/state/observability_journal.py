@@ -369,6 +369,8 @@ class SqliteObservabilityJournal:
         compaction_count: int = 0,
         overflow_recovery_count: int = 0,
         validation_outcome: str = "not_run",
+        execution_finished: bool = False,
+        goal_verification: str = "unverified",
         finalized_at: datetime | None = None,
     ) -> AgentRunTerminalMetrics:
         run = self._require_run(workspace_id, agent_run_id)
@@ -465,6 +467,8 @@ class SqliteObservabilityJournal:
             compaction_count=compaction_count,
             overflow_recovery_count=overflow_recovery_count,
             validation_outcome=validation_outcome,
+            execution_finished=execution_finished,
+            goal_verification=goal_verification,
             finalized_at=finalized_at or self.backend.now(),
         )
 
@@ -559,6 +563,9 @@ class SqliteObservabilityJournal:
         consecutive_model_retries: int,
         total_retry_count: int,
         summary_retry_count: int,
+        retry_wait_seconds: float | None = None,
+        total_retry_wait_seconds: float | None = None,
+        retry_window_started_at: datetime | None = None,
         updated_at: datetime | None = None,
     ) -> AgentRunRetryProgress:
         self._require_run(workspace_id, agent_run_id)
@@ -568,6 +575,9 @@ class SqliteObservabilityJournal:
             consecutive_model_retries=consecutive_model_retries,
             total_retry_count=total_retry_count,
             summary_retry_count=summary_retry_count,
+            retry_wait_seconds=retry_wait_seconds,
+            total_retry_wait_seconds=total_retry_wait_seconds,
+            retry_window_started_at=retry_window_started_at,
             updated_at=updated_at or self.backend.now(),
         )
 
@@ -577,6 +587,13 @@ class SqliteObservabilityJournal:
                 if (
                     candidate.total_retry_count < current.total_retry_count
                     or candidate.summary_retry_count < current.summary_retry_count
+                    or (
+                        current.total_retry_wait_seconds is not None
+                        and (
+                            candidate.total_retry_wait_seconds is None
+                            or candidate.total_retry_wait_seconds < current.total_retry_wait_seconds
+                        )
+                    )
                 ):
                     raise StorageError(
                         StorageErrorCode.UNAVAILABLE,
@@ -586,6 +603,9 @@ class SqliteObservabilityJournal:
                     candidate.consecutive_model_retries == current.consecutive_model_retries
                     and candidate.total_retry_count == current.total_retry_count
                     and candidate.summary_retry_count == current.summary_retry_count
+                    and candidate.retry_wait_seconds == current.retry_wait_seconds
+                    and candidate.total_retry_wait_seconds == current.total_retry_wait_seconds
+                    and candidate.retry_window_started_at == current.retry_window_started_at
                 ):
                     return current
                 self.backend.executor().execute(

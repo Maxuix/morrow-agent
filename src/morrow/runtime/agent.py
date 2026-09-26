@@ -7,8 +7,10 @@ import inspect
 import json
 import logging
 import random
+import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field, replace
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from morrow.application.context import ContextBudgetError
@@ -50,7 +52,14 @@ from morrow.core.models import (
     utc_now,
 )
 from morrow.core.ports import Clock, IdSource, ModelContentObserver, ModelProvider
+from morrow.runtime.completion_check import (
+    MAX_COMPLETION_REVIEWS,
+    check_completion,
+    completion_review_prompt,
+    has_acceptance_cues,
+)
 from morrow.runtime.conversation import ConversationLogError
+from morrow.runtime.deadline import RunDeadline, RunDeadlineExceeded
 from morrow.runtime.durable_log import durable_call_id
 from morrow.runtime.ids import RandomIdSource
 from morrow.runtime.provider_retry import RetryWait, next_provider_retry_delay
@@ -69,6 +78,13 @@ if TYPE_CHECKING:
     from morrow.application.agent_runs.preparation import PreparedAgentRunRuntime
 
 logger = logging.getLogger("morrow.runtime")
+
+MODEL_ATTEMPT_MAX_SECONDS = 600.0
+
+
+class ModelAttemptExceeded(TimeoutError):
+    """A single request ran past its total attempt budget."""
+
 
 TRANSIENT_MODEL_ERRORS = frozenset(
     {ModelErrorCode.NETWORK, ModelErrorCode.RATE_LIMIT, ModelErrorCode.TIMEOUT}
@@ -229,19 +245,16 @@ class ModelCallRunner:
         )
 
 
-def _can_retry_provider_failure(failure: ModelFailure, *, tool_intent_committed: bool) -> bool:
-    """Honor the adapter's retryable flag, with one post-commit exception.
+def _can_retry_provider_failure(failure: ModelFailure) -> bool:
+    """Retry a failed request before its assistant response has been committed.
 
-    Empty and corrupt streams are retried only when the adapter marks them
-    retryable and this turn has not committed a tool intent. A later invalid
-    response keeps its own stop reason so a committed tool is not repeated.
+    Both callers inspect the outcome before appending assistant or tool intent.
+    Prior tool cycles remain in durable history and are never dispatched here.
     """
 
-    if not failure.retryable:
-        return False
-    if failure.code is ModelErrorCode.INVALID_RESPONSE and tool_intent_committed:
-        return False
-    return True
+    return failure.retryable and failure.code in RESUME_RETRY_CODES | {
+        ModelErrorCode.INVALID_RESPONSE
+    }
 
 
 def _pending_cancellation() -> bool:
@@ -485,6 +498,7 @@ class AgentLoop:
         activity_observer: ModelContentObserver | None = None,
         steering_mode: str = "end_turn",
         pause_control=None,
+        monotonic_clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.runner = ModelCallRunner(provider, model)
         self.context_builder = context_builder
@@ -505,6 +519,7 @@ class AgentLoop:
         # Optional durable pause authority (P03): None keeps plain chat on its
         # exact existing path — no control reads, no wake tasks, no new events.
         self.pause_control = pause_control
+        self.monotonic_clock = monotonic_clock
         self.tool_cycle = (
             ToolCycleExecutor(
                 tool_executor,
@@ -784,6 +799,7 @@ class AgentLoop:
         """Use the same bounded transient-retry policy for LLM summaries as agent requests."""
 
         wait = retry_wait if retry_wait is not None else RetryWait()
+        wait.reset_window()
         retry_count = 0
         while True:
             admission = request_admitter(messages) if request_admitter is not None else None
@@ -849,24 +865,26 @@ class AgentLoop:
                         cost=completion.cost if completion else ModelCost.unavailable(),
                     )
             if failure is None:
+                wait.reset_window()
                 return completion
             if failure.code is ModelErrorCode.CONTEXT_OVERFLOW:
                 raise ContextBudgetError("上下文压缩请求超过模型上下文限制") from None
-            if not policy.retry_enabled or not _can_retry_provider_failure(
-                failure.failure, tool_intent_committed=False
-            ):
+            if not policy.retry_enabled or not _can_retry_provider_failure(failure.failure):
                 raise failure
+            wait.begin(self._wall_now())
             delay = next_provider_retry_delay(
                 policy=policy,
                 retry_index=retry_count + 1,
                 retry_after_seconds=failure.retry_after_seconds,
                 waited_seconds=wait.seconds,
+                total_waited_seconds=wait.total_seconds,
+                elapsed_seconds=wait.elapsed(self._wall_now()),
                 unit=self._retry_sample(),
             )
             if delay is None:
                 raise failure
             retry_count += 1
-            wait.seconds += delay
+            wait.add(delay)
             if retry_observer is not None:
                 retry_observer(delay)
             await self.retry_sleep(delay)
@@ -897,7 +915,13 @@ class AgentLoop:
         startup_error: str | ApplicationError | None = None,
         agent_run_id: str | None = None,
         cancelled_is_user: bool | Callable[[], bool] = True,
+        run_timeout_seconds: float | None = None,
     ) -> AsyncIterator[AgentEvent]:
+        deadline = (
+            RunDeadline.from_seconds(run_timeout_seconds, clock=self.monotonic_clock)
+            if run_timeout_seconds is not None
+            else None
+        )
         client_message_id = client_message_id or self._id("cmsg")
         if prepared is not None:
             provider = prepared.provider
@@ -980,6 +1004,9 @@ class AgentLoop:
             ),
             agent_run_id=initial_agent_run_id,
         )
+        completion_review_count = 0
+        completion_review_tool_calls = 0
+        pending_completion_review: str | None = None
 
         observation_runtime = (
             durable_runtime
@@ -1042,6 +1069,16 @@ class AgentLoop:
                 state.total_retry_count = retry_progress.total_retry_count
                 state.retry_count = retry_progress.consecutive_model_retries
                 state.summary_retry_count = retry_progress.summary_retry_count
+                if retry_progress.total_retry_wait_seconds is not None:
+                    state.retry_wait.seconds = retry_progress.retry_wait_seconds or 0.0
+                    state.retry_wait.total_seconds = retry_progress.total_retry_wait_seconds
+                    state.retry_wait.started_at = retry_progress.retry_window_started_at
+                else:
+                    # Older rows lack delays; do not grant a fresh budget on resume.
+                    state.retry_wait.seconds = min(state.retry_count * 60.0, 120.0)
+                    state.retry_wait.total_seconds = min(state.total_retry_count * 60.0, 600.0)
+                if state.retry_count and state.retry_wait.started_at is None:
+                    state.retry_wait.started_at = self._wall_now(session) - timedelta(seconds=120)
                 return
 
             # Before the first retry-progress write, derive only transient failures;
@@ -1058,6 +1095,10 @@ class AgentLoop:
                     break
                 trailing_failures += 1
             state.retry_count = trailing_failures
+            state.retry_wait.seconds = min(trailing_failures * 60.0, 120.0)
+            state.retry_wait.total_seconds = min(state.total_retry_count * 60.0, 600.0)
+            if trailing_failures:
+                state.retry_wait.started_at = self._wall_now(session) - timedelta(seconds=120)
 
         def settle_model_request(
             admission,
@@ -1097,6 +1138,9 @@ class AgentLoop:
                     consecutive_model_retries=state.retry_count,
                     total_retry_count=state.total_retry_count,
                     summary_retry_count=state.summary_retry_count,
+                    retry_wait_seconds=state.retry_wait.seconds,
+                    total_retry_wait_seconds=state.retry_wait.total_seconds,
+                    retry_window_started_at=state.retry_wait.started_at,
                 )
             except Exception:
                 # Retry telemetry is bounded best-effort evidence and must not replace the
@@ -1168,6 +1212,8 @@ class AgentLoop:
                     compaction_count=state.compaction_count,
                     overflow_recovery_count=state.overflow_recovery_count,
                     validation_outcome=run_metrics.validation_outcome,
+                    execution_finished=run_metrics.execution_finished,
+                    goal_verification=run_metrics.goal_verification,
                 )
             except Exception:
                 # Observation persistence must never leak raw storage details into
@@ -1430,6 +1476,8 @@ class AgentLoop:
 
             while True:
                 state.internal_phase = "run_control"
+                if deadline is not None:
+                    deadline.require_work()
                 if _pending_cancellation():
                     _consume_cancellation_request()
                     raise asyncio.CancelledError
@@ -1477,6 +1525,8 @@ class AgentLoop:
 
                     context = build_model_context()
                     while context.compaction_required:
+                        if deadline is not None:
+                            deadline.require_work()
                         if not policy.compaction_enabled:
                             raise ContextBudgetError("模型上下文需要压缩，但自动压缩已禁用")
                         previous_boundary = session.compaction_boundary_sequence
@@ -1484,17 +1534,20 @@ class AgentLoop:
                         compact_error = "当前上下文没有可安全压缩的完整边界"
                         compacted = False
                         try:
-                            compacted = await self._compact_context(
-                                session,
-                                provider,
-                                model,
-                                context_builder,
-                                tools=tools,
-                                retry_observer=observe_compaction_retry,
-                                request_admitter=admit_compaction_request,
-                                request_settler=settle_model_request,
-                                retry_wait=state.retry_wait,
-                            )
+                            async with asyncio.timeout(
+                                deadline.require_work() if deadline is not None else None
+                            ):
+                                compacted = await self._compact_context(
+                                    session,
+                                    provider,
+                                    model,
+                                    context_builder,
+                                    tools=tools,
+                                    retry_observer=observe_compaction_retry,
+                                    request_admitter=admit_compaction_request,
+                                    request_settler=settle_model_request,
+                                    retry_wait=state.retry_wait,
+                                )
                             if (
                                 compacted
                                 and session.compaction_boundary_sequence <= previous_boundary
@@ -1504,6 +1557,13 @@ class AgentLoop:
                         except ContextBudgetError as exc:
                             compacted = False
                             compact_error = str(exc)
+                        except TimeoutError as exc:
+                            if deadline is not None and deadline.remaining_seconds() <= 0:
+                                raise RunDeadlineExceeded(
+                                    "任务运行时间已用尽，正在保存已有结果"
+                                ) from exc
+                            compacted = False
+                            compact_error = "上下文压缩请求超时"
                         if compacted:
                             state.compaction_count += 1
                             context = build_model_context()
@@ -1542,6 +1602,20 @@ class AgentLoop:
                         # the durable receipt is the consumed control row.
                         call_messages.append(UserMessage(content=injected_steering))
                         state.pending_steering_text = None
+                    if pending_completion_review is not None:
+                        call_messages.append(UserMessage(content=pending_completion_review))
+                        pending_completion_review = None
+                    if deadline is not None:
+                        remaining = deadline.require_work()
+                        if remaining <= 120:
+                            call_messages.append(
+                                UserMessage(
+                                    content=(
+                                        f"本次运行还可用于工作的时间约 {remaining:.0f} 秒。"
+                                        "请优先验证和保存已有成果，并尽快给出可用结论。"
+                                    )
+                                )
+                            )
                     estimated_chars = context_builder.validate_request(call_messages, tools)
                 except ContextBudgetError as exc:
                     if self.pause_control is not None:
@@ -1575,6 +1649,16 @@ class AgentLoop:
                 # (AgentRun and workflow lineage caps refuse over-cap requests
                 # with budget_exhausted); the loop never duplicates that gate.
                 state.internal_phase = "model_call"
+                if state.retry_count == 0:
+                    # A completed tool cycle or failed compaction ends the prior
+                    # failure window; the run-wide wait budget remains consumed.
+                    state.retry_wait.reset_window()
+                if deadline is not None:
+                    deadline.require_work()
+                attempt_until = asyncio.get_running_loop().time() + min(
+                    MODEL_ATTEMPT_MAX_SECONDS,
+                    deadline.require_work() if deadline is not None else MODEL_ATTEMPT_MAX_SECONDS,
+                )
                 state.model_attempts += 1
                 admission = None
                 if observation_runtime is not None and state.agent_run_id is not None:
@@ -1621,13 +1705,30 @@ class AgentLoop:
                 thinking_reported = False
                 reasoning_redactor = ReasoningRedactor()
                 stream = runner.attempt(call_messages, tools)
+                model_started_at = self.monotonic_clock()
+                activity_counts: dict[str, int] = {}
+                attempt_timed_out = False
                 pause_signal = None
                 pause_waiter = None
                 try:
                     while True:
-                        (step_kind, step_value), pause_waiter = await self._next_model_step(
-                            session, stream, pause_waiter
-                        )
+                        if deadline is not None:
+                            try:
+                                deadline.require_work()
+                            except RunDeadlineExceeded:
+                                attempt_timed_out = True
+                                break
+                        if asyncio.get_running_loop().time() >= attempt_until:
+                            attempt_timed_out = True
+                            break
+                        try:
+                            async with asyncio.timeout_at(attempt_until):
+                                (step_kind, step_value), pause_waiter = await self._next_model_step(
+                                    session, stream, pause_waiter
+                                )
+                        except TimeoutError:
+                            attempt_timed_out = True
+                            break
                         if step_kind == "stop":
                             break
                         if step_kind == "pause":
@@ -1636,6 +1737,36 @@ class AgentLoop:
                         if step_kind == "continue":
                             continue
                         model_event = step_value
+                        activity_kind = (
+                            "reasoning"
+                            if model_event.kind == "reasoning_delta"
+                            or (
+                                model_event.kind == "activity"
+                                and model_event.activity == "reasoning"
+                            )
+                            else "tool_call"
+                            if model_event.kind == "activity"
+                            and model_event.activity == "tool_call"
+                            else "text"
+                            if model_event.kind == "text_delta"
+                            else None
+                        )
+                        if activity_kind is not None and deadline is not None:
+                            count = activity_counts.get(activity_kind, 0) + 1
+                            activity_counts[activity_kind] = count
+                            if count == 1 or count % 128 == 0:
+                                yield event(
+                                    "status.changed",
+                                    {
+                                        "status": "model_activity",
+                                        "activity": activity_kind,
+                                        "chunk_count": count,
+                                        "elapsed_seconds": round(
+                                            self.monotonic_clock() - model_started_at, 2
+                                        ),
+                                        "attempt_ordinal": state.model_attempts,
+                                    },
+                                )
                         if model_event.kind == "reasoning_delta" and model_event.reasoning_text:
                             # Vendor-visible thinking (P3.2): a distinct
                             # content-free stage plus bounded projected
@@ -1728,6 +1859,12 @@ class AgentLoop:
                                     admission,
                                     state_name="cancelled",
                                 )
+                            elif attempt_timed_out:
+                                settle_model_request(
+                                    admission,
+                                    state_name="failed",
+                                    error_code=ModelErrorCode.TIMEOUT,
+                                )
                             else:
                                 attempt_outcome = runner.outcome
                                 if attempt_outcome.failure is not None:
@@ -1747,6 +1884,10 @@ class AgentLoop:
                                     cost=attempt_outcome.cost,
                                 )
                 # Attempt end: release or drop the redactor's held tail —
+                if attempt_timed_out:
+                    if deadline is not None and deadline.remaining_seconds() <= 0:
+                        raise RunDeadlineExceeded("任务运行时间已用尽，正在保存已有结果")
+                    raise ModelAttemptExceeded("单次模型请求超过总用时上限")
                 # ambiguous content stays hidden even at the stream boundary.
                 tail = reasoning_redactor.finish()
                 if tail:
@@ -1831,20 +1972,21 @@ class AgentLoop:
                             yield event("status.changed", {"status": "compacted"})
                             continue
                     delay = None
-                    if policy.retry_enabled and _can_retry_provider_failure(
-                        failure, tool_intent_committed=state.tool_calls > 0
-                    ):
+                    if policy.retry_enabled and _can_retry_provider_failure(failure):
+                        state.retry_wait.begin(self._wall_now(session))
                         delay = next_provider_retry_delay(
                             policy=policy,
                             retry_index=state.retry_count + 1,
                             retry_after_seconds=failure.retry_after_seconds,
                             waited_seconds=state.retry_wait.seconds,
+                            total_waited_seconds=state.retry_wait.total_seconds,
+                            elapsed_seconds=state.retry_wait.elapsed(self._wall_now(session)),
                             unit=self._retry_sample(),
                         )
                     if delay is not None:
                         state.retry_count += 1
                         state.total_retry_count += 1
-                        state.retry_wait.seconds += delay
+                        state.retry_wait.add(delay)
                         persist_retry_progress()
                         if text_projection.emitted:
                             # A failed attempt may have shown provisional lines.
@@ -1858,7 +2000,18 @@ class AgentLoop:
                             )
                         payload = {"status": "retrying", "retry_delay_seconds": delay}
                         yield event("status.changed", payload)
-                        await self.retry_sleep(payload["retry_delay_seconds"])
+                        if deadline is not None:
+                            if payload["retry_delay_seconds"] >= deadline.require_work():
+                                raise RunDeadlineExceeded("任务运行时间已用尽，正在保存已有结果")
+                            try:
+                                async with asyncio.timeout(deadline.require_work()):
+                                    await self.retry_sleep(payload["retry_delay_seconds"])
+                            except TimeoutError as exc:
+                                raise RunDeadlineExceeded(
+                                    "任务运行时间已用尽，正在保存已有结果"
+                                ) from exc
+                        else:
+                            await self.retry_sleep(payload["retry_delay_seconds"])
                         continue
                     if outcome.finish_reason == ModelFinishReason.LENGTH:
                         stop_code = AgentStopCode.MODEL_OUTPUT_LIMIT
@@ -1868,7 +2021,6 @@ class AgentLoop:
                         stop_code = MODEL_ERROR_STOPS[failure.code]
                     if failure.code is ModelErrorCode.INTERNAL:
                         state.stop_detail = f"{failure.origin.value}_internal"
-                    state.retry_count = 0
                     persist_retry_progress()
                     # An interrupted terminal is meaningful only when the host
                     # supplied a pause authority (durable chat/workflow). The
@@ -1885,6 +2037,7 @@ class AgentLoop:
                             yield item
                     return
                 state.retry_count = 0
+                state.retry_wait.reset_window()
                 persist_retry_progress()
                 message = outcome.message
                 if message is not None and message.content:
@@ -1908,6 +2061,56 @@ class AgentLoop:
                             completion_payload(FinishReason.STEERED, state.visible),
                         )
                         return
+                    completion_check = check_completion(state.run_context)
+                    needs_review = (
+                        state.tool_calls > 0
+                        and getattr(durable_runtime, "workflow_leaf", None) is None
+                        and (
+                            (
+                                completion_review_count == 0
+                                and (completion_check.issues or has_acceptance_cues(user_input))
+                            )
+                            or (
+                                completion_check.issues
+                                and state.tool_calls > completion_review_tool_calls
+                            )
+                        )
+                    )
+                    if (
+                        needs_review
+                        and completion_review_count < MAX_COMPLETION_REVIEWS
+                        and (
+                            prepared_spec is None
+                            or prepared_spec.max_agent_generation_requests is None
+                            or state.model_attempts < prepared_spec.max_agent_generation_requests
+                        )
+                        and (deadline is None or deadline.remaining_seconds() > 15)
+                    ):
+                        completion_review_count += 1
+                        completion_review_tool_calls = state.tool_calls
+                        pending_completion_review = completion_review_prompt(
+                            user_input,
+                            completion_check,
+                            candidate_text=candidate_text,
+                            final=completion_review_count == MAX_COMPLETION_REVIEWS,
+                        )
+                        if text_projection.emitted:
+                            yield event(
+                                "status.changed",
+                                {
+                                    "status": "response_reset",
+                                    "attempt_ordinal": state.model_attempts,
+                                },
+                            )
+                        yield event(
+                            "status.changed",
+                            {
+                                "status": "completion_review",
+                                "review_ordinal": completion_review_count,
+                                "validation_outcome": completion_check.validation_outcome,
+                            },
+                        )
+                        continue
                     try:
                         state.internal_phase = "conversation_commit"
                         freeze_permissions()
@@ -2009,6 +2212,8 @@ class AgentLoop:
                 state.tool_rounds += 1
                 state.internal_phase = "tool_cycle"
                 for index, call in enumerate(calls, start=1):
+                    if deadline is not None:
+                        deadline.require_work()
                     if _pending_cancellation():
                         _consume_cancellation_request()
                         raise asyncio.CancelledError
@@ -2066,16 +2271,28 @@ class AgentLoop:
                     )
                     if tool_cycle is None:
                         raise RuntimeError("tool cycle executor is unavailable")
+                    task_run_id = getattr(durable_runtime, "current_task_run_id", None)
+                    if isinstance(task_run_id, str) and task_run_id.strip():
+                        state.run_context.owner_task_id = task_run_id
                     try:
-                        call_execution = await tool_cycle.execute_call(
-                            session,
-                            call,
-                            durable_execution=durable,
-                            run_context=state.run_context,
-                            ordinal=index,
-                            total=len(calls),
-                            result_limit=per_call_result_limit,
-                        )
+                        async with asyncio.timeout(
+                            deadline.require_work() if deadline is not None else None
+                        ):
+                            call_execution = await tool_cycle.execute_call(
+                                session,
+                                call,
+                                durable_execution=durable,
+                                run_context=state.run_context,
+                                ordinal=index,
+                                total=len(calls),
+                                result_limit=per_call_result_limit,
+                            )
+                    except TimeoutError as exc:
+                        if deadline is not None and deadline.remaining_seconds() <= 0:
+                            raise RunDeadlineExceeded(
+                                "任务运行时间已用尽，正在保存已有结果"
+                            ) from exc
+                        raise
                     except ToolPauseRequested as pause_exc:
                         # The approval wait was interrupted: the durable
                         # approval row stays pending (never auto-approved or
@@ -2169,6 +2386,39 @@ class AgentLoop:
             state.settled = True
             state.crashed = True
             raise
+        except (RunDeadlineExceeded, ModelAttemptExceeded) as exc:
+            if not state.started:
+                state.started = True
+                yield event("turn.started", {})
+            state.settled = True
+            stop_code = (
+                AgentStopCode.RUN_TIMEOUT
+                if isinstance(exc, RunDeadlineExceeded)
+                else AgentStopCode.PROVIDER_TIMEOUT
+            )
+            unresolved = session.log.unresolved_call_ids
+            interrupted = self._close_unresolved(
+                session,
+                state.active_calls,
+                state.durable_executions,
+                ToolErrorCode.TIMEOUT,
+                "任务截止时间已到，工具调用未完成",
+                tool_executor=tool_executor,
+                result_limit=state.active_result_limit,
+            )
+            for status_event in synthetic_statuses(
+                unresolved, code=ToolErrorCode.TIMEOUT, running_status="failed"
+            ):
+                yield status_event
+            if session.log.has_active_turn:
+                for item in terminal_error(str(exc), stop_code, interrupted=interrupted):
+                    yield item
+            else:
+                state.terminal_finish_reason = FinishReason.ERROR
+                state.stop_code = stop_code
+                for item in fatal(str(exc), stop_code):
+                    yield item
+            return
         except asyncio.CancelledError:
             if state.final_committed:
                 return
@@ -2421,6 +2671,7 @@ class AgentRuntime:
         startup_error: str | ApplicationError | None = None,
         agent_run_id: str | None = None,
         cancelled_is_user: bool | Callable[[], bool] = True,
+        run_timeout_seconds: float | None = None,
     ) -> AsyncIterator[AgentEvent]:
         return self._loop.run_task(
             session,
@@ -2430,6 +2681,7 @@ class AgentRuntime:
             startup_error=startup_error,
             agent_run_id=agent_run_id,
             cancelled_is_user=cancelled_is_user,
+            run_timeout_seconds=run_timeout_seconds,
         )
 
     async def compact_idle(self, session: Session, *, instructions: str = "") -> bool:

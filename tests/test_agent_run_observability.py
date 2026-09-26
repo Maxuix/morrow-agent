@@ -15,8 +15,8 @@ from pydantic import BaseModel, ConfigDict
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.application.backup import OperationalBackupService
+from morrow.application.bash_tool import BASH_PROVIDER_SCHEMA, BashArguments
 from morrow.application.doctor import OperationalDoctor
-from morrow.application.local_tools import BASH_PROVIDER_SCHEMA, BashArguments
 from morrow.application.tool_persistence import _envelope_from_outcome
 from morrow.application.turns import SessionPersistence
 from morrow.core.application import ApplicationError
@@ -605,6 +605,8 @@ async def test_agent_loop_observation_records_retry_attempts(tmp_path):
         assert observation.retry_progress is not None
         assert observation.retry_progress.total_retry_count == 1
         assert observation.retry_progress.consecutive_model_retries == 0
+        assert observation.retry_progress.retry_wait_seconds == 0
+        assert observation.retry_progress.total_retry_wait_seconds > 0
     finally:
         handle.close()
 
@@ -624,9 +626,24 @@ def test_retry_progress_is_bounded_and_monotonic(tmp_path):
             consecutive_model_retries=1,
             total_retry_count=2,
             summary_retry_count=1,
+            retry_wait_seconds=3.0,
+            total_retry_wait_seconds=5.0,
+            retry_window_started_at=FixedClock().now(),
         )
         assert saved.total_retry_count == 2
+        assert saved.total_retry_wait_seconds == 5.0
         assert persistence.get_agent_run_observation("arun_1").retry_progress == saved
+
+        with pytest.raises(StorageError) as wait_error:
+            persistence.record_retry_progress(
+                agent_run_id="arun_1",
+                consecutive_model_retries=0,
+                total_retry_count=2,
+                summary_retry_count=1,
+                retry_wait_seconds=0.0,
+                total_retry_wait_seconds=4.0,
+            )
+        assert wait_error.value.code is StorageErrorCode.UNAVAILABLE
 
         with pytest.raises(StorageError) as error:
             persistence.record_retry_progress(
@@ -969,6 +986,51 @@ async def test_agent_loop_records_one_durable_request_and_terminal_metrics(tmp_p
 
 
 @pytest.mark.asyncio
+async def test_deadline_records_failed_request_and_terminal_metrics(tmp_path):
+    class FakeMonotonic:
+        value = 0.0
+
+        def __call__(self):
+            return self.value
+
+    clock = FakeMonotonic()
+
+    class ContinuousProvider:
+        async def stream(self, model, messages, tools=(), *, generation=None):
+            del model, messages, tools, generation
+            while True:
+                clock.value += 1
+                yield ModelEvent(kind="activity", activity="reasoning")
+
+    handle, _journal, session, persistence = _open(tmp_path)
+    try:
+        loop = AgentLoop(
+            ContinuousProvider(),
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+            id_source=FixedIdSource(),
+            clock=FixedClock(),
+            monotonic_clock=clock,
+        )
+
+        events = [
+            event async for event in loop.run_task(session, "question", run_timeout_seconds=10)
+        ]
+
+        assert events[-1].payload["stop_code"] == AgentStopCode.RUN_TIMEOUT.value
+        observation = persistence.get_agent_run_observation()
+        assert observation is not None
+        assert len(observation.requests) == 1
+        assert observation.requests[0].state.value == "failed"
+        assert observation.requests[0].error_code is ModelErrorCode.TIMEOUT
+        assert observation.terminal_metrics is not None
+        assert observation.terminal_metrics.stop_code is AgentStopCode.RUN_TIMEOUT
+        assert observation.terminal_metrics.model_attempts == 1
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
 async def test_unexpected_context_failure_records_internal_source_without_public_change(
     tmp_path, monkeypatch
 ):
@@ -1188,6 +1250,15 @@ async def test_agent_loop_resume_continues_the_same_agent_run_after_settled_requ
             state="failed",
             error_code=ModelErrorCode.NETWORK,
         )
+        persistence.record_retry_progress(
+            agent_run_id="arun_1",
+            consecutive_model_retries=1,
+            total_retry_count=1,
+            summary_retry_count=0,
+            retry_wait_seconds=3.0,
+            total_retry_wait_seconds=5.0,
+            retry_window_started_at=FixedClock().now(),
+        )
     finally:
         handle.close()
 
@@ -1237,6 +1308,10 @@ async def test_agent_loop_resume_continues_the_same_agent_run_after_settled_requ
         assert observation.terminal_metrics.dropped_cycle_count == 3
         assert observation.terminal_metrics.dropped_record_count == 4
         assert observation.terminal_metrics.retry_count == 1
+        assert observation.retry_progress is not None
+        assert observation.retry_progress.retry_wait_seconds == 0
+        assert observation.retry_progress.total_retry_wait_seconds == 5.0
+        assert observation.retry_progress.retry_window_started_at is None
     finally:
         reopened.close()
 
@@ -1292,6 +1367,9 @@ async def test_agent_loop_terminal_metrics_count_durable_tool_dispositions(tmp_p
         assert metrics.tool_calls == 1
         assert metrics.tool_terminal_counts.succeeded == 1
         assert metrics.tool_terminal_counts.terminal_total == 1
+        assert metrics.execution_finished
+        assert metrics.validation_outcome == "not_run"
+        assert metrics.goal_verification == "unverified"
     finally:
         handle.close()
 

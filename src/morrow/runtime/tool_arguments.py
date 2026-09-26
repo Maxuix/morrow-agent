@@ -28,6 +28,13 @@ MAX_ENUM_VALUES = 64
 MAX_COMBINATIONS = 16
 SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 
+
+def _bound_text(value: object) -> str:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return str(value)
+    return f"{value:g}"
+
+
 _ANNOTATION_KEYWORDS = frozenset(
     {
         "title",
@@ -705,9 +712,15 @@ class JsonSchemaArgumentsValidator:
             ("exclusiveMinimum", lambda bound: value > bound),
             ("exclusiveMaximum", lambda bound: value < bound),
         )
-        if any(keyword in node and not check(node[keyword]) for keyword, check in checks):
+        failed = [
+            keyword for keyword, check in checks if keyword in node and not check(node[keyword])
+        ]
+        if failed:
+            rendered = "，".join(f"{keyword} {_bound_text(node[keyword])}" for keyword in failed)
             raise ToolArgumentsValidationError(
-                "validation_failed", "工具参数数值不符合 Schema", details=_detail(path, "number")
+                "validation_failed",
+                f"工具参数数值不符合 Schema：{rendered}",
+                details=_detail(path, "number"),
             )
         multiple = node.get("multipleOf")
         if multiple is not None and not math.isclose(

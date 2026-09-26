@@ -9,6 +9,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from morrow.core.capabilities import (
+    ChangeToolFact,
     CommandToolFact,
     PolicyVerdict,
     ToolHandlerOutcome,
@@ -18,6 +19,7 @@ from morrow.core.capabilities import (
 from morrow.core.local_tools import CommandRequest, CommandResult, CommandStatus
 from morrow.core.models import AssistantMessage, FunctionToolCall, ModelRef
 from morrow.runtime.agent import AgentLoop
+from morrow.runtime.completion_check import check_completion, has_acceptance_cues
 from morrow.runtime.session import Session
 from morrow.runtime.tools import ToolExecutor, ToolRegistry, make_tool
 from morrow.services.files import WorkspaceFileService, WorkspacePathResolver
@@ -59,6 +61,20 @@ def _validation(
     )
 
 
+def _change(*, ordinal: int = 1, path: str = "out/report.json"):
+    return ChangeToolFact(
+        call_id=f"change-{ordinal}",
+        tool_name="write_file",
+        ordinal=ordinal,
+        approval_verdict=PolicyVerdict.ALLOW,
+        relative_paths=(path,),
+        operation="write",
+        status="succeeded",
+        changed_lines=1,
+        changed_bytes=12,
+    )
+
+
 def test_command_success_is_not_a_validation_fact_or_validation_outcome():
     run = ToolRunContext(run_id="run-1", session_id="session-1")
     run.record((_command(),))
@@ -83,6 +99,42 @@ def test_latest_scoped_validation_fact_replaces_only_its_own_requirement():
         ("pytest", "src"): "passed",
     }
     assert run.metrics("stop").validation_outcome == "failed"
+
+
+def test_validation_after_file_change_is_required_for_final_version():
+    run = ToolRunContext(run_id="run-1", session_id="session-1")
+    run.record((_validation(), _change(ordinal=2)))
+
+    check = check_completion(run)
+    assert check.validation_outcome == "not_run"
+    assert "后续变更" in check.issues[0]
+    assert run.metrics("stop").validation_outcome == "not_run"
+    assert run.metrics("stop").goal_verification == "unverified"
+
+    run.record((_validation(ordinal=3),))
+    assert check_completion(run).validation_outcome == "passed"
+    assert run.metrics("stop").validation_outcome == "passed"
+
+
+def test_opaque_command_after_validation_invalidates_but_another_validator_does_not():
+    run = ToolRunContext(run_id="run-1", session_id="session-1")
+    run.record(
+        (
+            _validation(ordinal=1, scope="tests"),
+            _command(ordinal=2),
+            _validation(ordinal=2, scope="src"),
+        )
+    )
+    assert run.metrics("stop").validation_outcome == "passed"
+
+    run.record((_command(ordinal=3),))
+    assert run.metrics("stop").validation_outcome == "not_run"
+    assert "不透明命令" in check_completion(run).issues[0]
+
+
+def test_public_delivery_cues_are_distinct_from_a_plain_explanation():
+    assert has_acceptance_cues("写入 out/report.json，延迟用毫秒表示，保持服务运行")
+    assert not has_acceptance_cues("解释这段算法的思路")
 
 
 def test_validator_recognition_is_strict_and_shell_control_flow_fails_closed(tmp_path):
@@ -181,6 +233,56 @@ class _NoArguments(BaseModel):
 
 
 @pytest.mark.asyncio
+async def test_delivery_review_uses_public_path_and_unit_before_final_commit():
+    async def handler(arguments: _NoArguments):
+        del arguments
+        return ToolHandlerOutcome(
+            payload={"written": True}, facts=(_change(path="out/wrong.json"),)
+        )
+
+    registry = ToolRegistry()
+    registry.register(
+        make_tool(
+            name="write_file",
+            description="Scripted file write.",
+            arguments_model=_NoArguments,
+            handler=handler,
+        )
+    )
+    provider = ScriptedModelProvider(
+        (
+            AssistantMessage(
+                tool_calls=(FunctionToolCall(id="write-1", name="write_file", arguments="{}"),)
+            ),
+            AssistantMessage(content="Saved to a different path; latency is 50 seconds."),
+            AssistantMessage(content="Saved to out/report.json; latency is 50 ms."),
+        )
+    )
+    session = Session(session_id="session-1")
+    loop = AgentLoop(
+        provider,
+        ModelRef(provider_id="demo", model_id="model"),
+        make_context_builder(),
+        tool_executor=ToolExecutor(registry.snapshot(), make_run_policy()),
+    )
+
+    events = [
+        event
+        async for event in loop.run_task(
+            session, "写入 out/report.json，延迟用 ms 表示，并保持服务运行"
+        )
+    ]
+
+    assert events[-1].payload["finish_reason"] == "stop"
+    assert len(provider.stream_calls) == 3
+    assert "out/report.json" in provider.stream_calls[2][-1].content
+    assert "out/wrong.json" in provider.stream_calls[2][-1].content
+    assert "50 seconds" in provider.stream_calls[2][-1].content
+    assert "服务" in provider.stream_calls[2][-1].content
+    assert session.log.messages_view()[-1].content == "Saved to out/report.json; latency is 50 ms."
+
+
+@pytest.mark.asyncio
 async def test_failed_validation_telemetry_does_not_reject_model_stop():
     async def handler(arguments: _NoArguments):
         del arguments
@@ -210,6 +312,7 @@ async def test_failed_validation_telemetry_does_not_reject_model_stop():
                 )
             ),
             AssistantMessage(content="I am done despite the failed check."),
+            AssistantMessage(content="The check failed; I could not verify completion."),
         )
     )
     loop = AgentLoop(
@@ -224,9 +327,60 @@ async def test_failed_validation_telemetry_does_not_reject_model_stop():
 
     assert events[-1].type == "turn.completed"
     assert events[-1].payload["finish_reason"] == "stop"
-    assert session.log.messages_view()[-1].content == "I am done despite the failed check."
+    assert len(provider.stream_calls) == 3
+    assert "最近一次验证为 failed" in provider.stream_calls[2][-1].content
+    assert session.log.messages_view()[-1].content == (
+        "The check failed; I could not verify completion."
+    )
     assert session.latest_metrics is not None
     assert session.latest_metrics.validation_outcome == "failed"
+    assert session.latest_metrics.execution_finished
+    assert session.latest_metrics.goal_verification == "unverified"
+
+
+@pytest.mark.asyncio
+async def test_persistent_validation_failure_gets_at_most_two_reviews():
+    async def handler(arguments: _NoArguments):
+        del arguments
+        return ToolHandlerOutcome(payload={"checked": True}, facts=(_validation(status="failed"),))
+
+    registry = ToolRegistry()
+    registry.register(
+        make_tool(
+            name="check",
+            description="Scripted failing check.",
+            arguments_model=_NoArguments,
+            handler=handler,
+        )
+    )
+
+    def call(call_id: str) -> AssistantMessage:
+        return AssistantMessage(
+            tool_calls=(FunctionToolCall(id=call_id, name="check", arguments="{}"),)
+        )
+
+    provider = ScriptedModelProvider(
+        (
+            call("check-1"),
+            AssistantMessage(content="done too early"),
+            call("check-2"),
+            AssistantMessage(content="still done too early"),
+            AssistantMessage(content="The check still fails; completion is unverified."),
+        )
+    )
+    session = Session(session_id="session-1")
+    loop = AgentLoop(
+        provider,
+        ModelRef(provider_id="demo", model_id="model"),
+        make_context_builder(),
+        tool_executor=ToolExecutor(registry.snapshot(), make_run_policy()),
+    )
+
+    events = [event async for event in loop.run_task(session, "修复失败的测试")]
+
+    assert events[-1].payload["finish_reason"] == "stop"
+    assert len(provider.stream_calls) == 5
+    assert session.log.messages_view()[-1].content.endswith("unverified.")
 
 
 @pytest.mark.asyncio

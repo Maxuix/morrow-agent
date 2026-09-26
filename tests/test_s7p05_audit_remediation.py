@@ -96,7 +96,11 @@ async def test_production_model_stop_is_accepted_after_a_failed_change(tmp_path:
     )[0]
     observation = session_app.persistence.get_agent_run_observation(run.agent_run_id)
     assert observation is not None
-    assert [request.purpose.value for request in observation.requests] == ["agent", "agent"]
+    assert [request.purpose.value for request in observation.requests] == [
+        "agent",
+        "agent",
+        "agent",
+    ]
 
 
 @pytest.mark.asyncio

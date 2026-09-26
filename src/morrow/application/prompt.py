@@ -25,7 +25,7 @@ from morrow.core.prompt import (
 )
 
 DIRECT_CODING_PROFILE_ID = "direct-coding"
-DIRECT_CODING_PROFILE_VERSION = "v3"
+DIRECT_CODING_PROFILE_VERSION = "v4"
 DIRECT_CODING_ROLE_PROMPT_MAX_BYTES = 8 * 1024
 
 DIRECT_CODING_PROTOCOL = (
@@ -36,7 +36,8 @@ DIRECT_CODING_PROTOCOL = (
     "以工具返回和验证结果作为事实依据，完成修改后复查结果与工作区状态。"
     "遇到阻塞时报告具体阻塞点、已确认事实和可执行的下一步。"
     "交付时简洁说明完成内容、验证证据和仍需关注的事项。"
-    "创建完成任务所需的文件，并在交付前清理临时产物。"
+    "创建完成任务所需的文件；仅清理由本任务产生且确认不属于交付物的临时产物，"
+    "保留任务要求的文件、服务和运行环境。"
     "进度沟通只报告新增信息：环境、任务范围和验证条件在首次确认后保持不变，仅在发生变化时更新；"
     "工具调用前如需说明，只描述紧接着的操作，更远的后续计划要明确标注；"
     "工具返回后基于新增结果继续，说明中包含新发现、已完成事项或具体阻塞，"
@@ -44,6 +45,12 @@ DIRECT_CODING_PROTOCOL = (
     "没有值得告知的新信息时，可以直接调用工具；"
     "区分计划执行、已经执行和已经验证，表述与实际工具结果一致。"
 )
+_LEGACY_CLEANUP_V3 = "创建完成任务所需的文件，并在交付前清理临时产物。"
+_CLEANUP_V4 = (
+    "创建完成任务所需的文件；仅清理由本任务产生且确认不属于交付物的临时产物，"
+    "保留任务要求的文件、服务和运行环境。"
+)
+DIRECT_CODING_PROTOCOL_V3 = DIRECT_CODING_PROTOCOL.replace(_CLEANUP_V4, _LEGACY_CLEANUP_V3)
 
 
 class PromptAssemblyError(ValueError):
@@ -131,7 +138,7 @@ class DirectCodingPromptAssembler:
             )
         else:
             resolution = self.resolver.rehydrate(evidence)
-        return self._projection(resolution)
+        return self._projection(resolution, evidence=evidence)
 
     def evidence_for(
         self, resolution: ProjectInstructionResolution | None = None
@@ -165,7 +172,7 @@ class DirectCodingPromptAssembler:
 
         messages = [
             SystemMessage(content=render_system_boundary(tools)),
-            SystemMessage(content=self.profile.coding_protocol),
+            SystemMessage(content=self._protocol_for(projection.evidence)),
         ]
         if projection.role_prompt:
             messages.append(
@@ -179,9 +186,22 @@ class DirectCodingPromptAssembler:
         """Public verification seam used by fresh admission and recovery."""
         self._verify_projection(projection)
 
-    def _projection(self, resolution: ProjectInstructionResolution) -> PromptProjection:
+    def _protocol_for(self, evidence: PromptProfileEvidence) -> str:
+        if (
+            evidence.profile_version == "v3"
+            and self.profile.version == DIRECT_CODING_PROFILE_VERSION
+        ):
+            return DIRECT_CODING_PROTOCOL_V3
+        return self.profile.coding_protocol
+
+    def _projection(
+        self,
+        resolution: ProjectInstructionResolution,
+        *,
+        evidence: PromptProfileEvidence | None = None,
+    ) -> PromptProjection:
         return PromptProjection(
-            evidence=self.evidence_for(resolution),
+            evidence=evidence or self.evidence_for(resolution),
             role_prompt=self.role_prompt,
             project_instructions=resolution.sources,
             provenance=self._provenance,
@@ -271,9 +291,17 @@ class DirectCodingPromptAssembler:
             raise PromptAssemblyError("prompt profile evidence has an invalid type")
         if evidence.profile_id != self.profile.profile_id:
             raise PromptAssemblyError("prompt profile ID drifted")
-        if evidence.profile_version != self.profile.version:
+        legacy = (
+            self.profile.profile_id == DIRECT_CODING_PROFILE_ID
+            and self.profile.version == DIRECT_CODING_PROFILE_VERSION
+            and self.profile.coding_protocol == DIRECT_CODING_PROTOCOL
+            and evidence.profile_version == "v3"
+            and evidence.profile_digest
+            == DirectCodingProfile(version="v3", coding_protocol=DIRECT_CODING_PROTOCOL_V3).digest
+        )
+        if evidence.profile_version != self.profile.version and not legacy:
             raise PromptAssemblyError("prompt profile version drifted")
-        if evidence.profile_digest != self.profile.digest:
+        if evidence.profile_digest != self.profile.digest and not legacy:
             raise PromptAssemblyError("prompt profile digest drifted")
         expected_role_digest = sha256_digest(self.role_prompt) if self.role_prompt else None
         if evidence.role_prompt_digest != expected_role_digest:

@@ -216,6 +216,8 @@ class AgentRunTerminalMetrics(ProtocolModel):
     validation_outcome: str = Field(
         default="not_run", pattern=r"^(not_run|passed|failed|timeout|cancelled)$"
     )
+    execution_finished: bool = False
+    goal_verification: Literal["verified", "unverified"] = "unverified"
     finalized_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("agent_run_id")
@@ -270,6 +272,9 @@ class AgentRunRetryProgress(ProtocolModel):
     consecutive_model_retries: int = Field(default=0, ge=0)
     total_retry_count: int = Field(default=0, ge=0)
     summary_retry_count: int = Field(default=0, ge=0)
+    retry_wait_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    total_retry_wait_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    retry_window_started_at: datetime | None = None
     updated_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("agent_run_id")
@@ -287,12 +292,25 @@ class AgentRunRetryProgress(ProtocolModel):
     def valid_updated_at(cls, value: datetime) -> datetime:
         return _aware(value)
 
+    @field_validator("retry_window_started_at")
+    @classmethod
+    def valid_retry_window_started_at(cls, value: datetime | None) -> datetime | None:
+        return _aware(value) if value is not None else None
+
     @model_validator(mode="after")
     def counter_contract(self) -> AgentRunRetryProgress:
         if self.consecutive_model_retries > self.total_retry_count:
             raise ValueError("consecutive model retries cannot exceed total retries")
         if self.summary_retry_count > self.total_retry_count:
             raise ValueError("summary retries cannot exceed total retries")
+        if (self.retry_wait_seconds is None) != (self.total_retry_wait_seconds is None):
+            raise ValueError("retry wait counters must be recorded together")
+        if (
+            self.retry_wait_seconds is not None
+            and self.total_retry_wait_seconds is not None
+            and self.retry_wait_seconds > self.total_retry_wait_seconds
+        ):
+            raise ValueError("current retry wait cannot exceed total retry wait")
         return self
 
 

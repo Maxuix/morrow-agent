@@ -45,6 +45,7 @@ from morrow.core.permissions import (
     PermissionSnapshot,
     assert_grant_snapshot_matches,
 )
+from morrow.core.runtime_policy import COMMAND_DURATION_MAX_MS
 
 TOOL_EXECUTION_ID_PREFIX = "tex"
 APPROVAL_ID_PREFIX = "apr"
@@ -423,7 +424,7 @@ class DurableCommandFacts(ProtocolModel):
     cwd: str = Field(min_length=1, max_length=_RELATIVE_PATH_LIMIT)
     exit_code: int | None = Field(default=None, ge=0, le=255)
     signal: int | None = Field(default=None, ge=1, le=255)
-    duration_ms: int = Field(ge=0, le=120_000)
+    duration_ms: int = Field(ge=0, le=COMMAND_DURATION_MAX_MS)
     output_truncated: bool = False
     redaction_flags: tuple[str, ...] = ()
     redaction_count: int = Field(default=0, ge=0, le=100_000)

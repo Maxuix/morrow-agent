@@ -854,7 +854,13 @@ class ToolExecutor:
             except asyncio.CancelledError:
                 raise
             except ToolExecutionError as exc:
-                return self._error(call, exc.code, str(exc), limit=limit)
+                return self._error(
+                    call,
+                    exc.code,
+                    str(exc),
+                    limit=limit,
+                    details=list(exc.details) if exc.details else None,
+                )
             except Exception:
                 return self._error(
                     call,
@@ -908,7 +914,13 @@ class ToolExecutor:
             except asyncio.CancelledError:
                 raise
             except ToolExecutionError as exc:
-                return self._error(call, exc.code, str(exc), limit=limit)
+                return self._error(
+                    call,
+                    exc.code,
+                    str(exc),
+                    limit=limit,
+                    details=list(exc.details) if exc.details else None,
+                )
             except Exception:
                 return self._error(
                     call,

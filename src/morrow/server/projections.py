@@ -313,6 +313,8 @@ def agent_run_terminal_wire(metrics) -> dict[str, Any]:
             "compaction_count",
             "overflow_recovery_count",
             "validation_outcome",
+            "execution_finished",
+            "goal_verification",
             "finalized_at",
         ),
     )

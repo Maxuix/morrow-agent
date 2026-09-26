@@ -57,6 +57,7 @@ class SessionOrchestrator:
         self.execution_lock = None
         self.pre_admission_check = None
         self.cancelled_is_user = True
+        self.run_timeout_seconds: float | None = None
         self.queue_enabled = lambda: True
 
     @property
@@ -251,6 +252,11 @@ class SessionOrchestrator:
                 prepared=prepared,
                 startup_error=startup_error,
                 agent_run_id=prepared_agent_run_id,
+                **(
+                    {"run_timeout_seconds": self.run_timeout_seconds}
+                    if self.run_timeout_seconds is not None
+                    else {}
+                ),
                 **(
                     {"cancelled_is_user": self.cancelled_is_user}
                     if self.cancelled_is_user is not True

@@ -8,6 +8,8 @@ import math
 from collections.abc import AsyncIterator, Mapping
 from urllib.parse import urlsplit
 
+import httpx
+
 from morrow.core.activity import ThinkingCapability
 from morrow.core.image_tokens import (
     estimate_image_part_tokens,
@@ -650,7 +652,7 @@ class OpenAICompatibleProvider:
             self._client = AsyncOpenAI(
                 api_key=self.credential,
                 base_url=self.base_url,
-                timeout=self.timeout,
+                timeout=httpx.Timeout(self.timeout, connect=self.connect_timeout),
                 max_retries=0,
             )
         return self._client
@@ -676,6 +678,7 @@ class OpenAICompatibleProvider:
         finish_seen = False
         finish_signal: str | None = None
         parsing_stream = False
+        first_semantic_until = asyncio.get_running_loop().time() + self.first_token_timeout
         # One bounded activity marker per kind: fragments and reasoning stay
         # internal, only their arrival is observable progress evidence.
         emitted_activity: set[str] = set()
@@ -691,20 +694,23 @@ class OpenAICompatibleProvider:
                 request["tools"] = [serialize_tool(tool) for tool in tools]
                 request["tool_choice"] = "auto"
             try:
-                # Streaming reasoning models can hold the response headers for
-                # many seconds while thinking server-side: the create() call
-                # must be bounded by the first-token budget, not by the tighter
-                # connect guard (live-verified against glm-5.3-flash, P7).
-                async with asyncio.timeout(max(self.connect_timeout, self.first_token_timeout)):
+                # Socket connection uses the SDK's connect timeout. A reasoning
+                # model may hold response headers while thinking; creation and
+                # any non-semantic chunks share one first-semantic deadline.
+                async with asyncio.timeout_at(first_semantic_until):
                     response = await self._get_client().chat.completions.create(**request)
-            except TimeoutError:
+            except (TimeoutError, httpx.ConnectTimeout) as exc:
+                connect_timeout = isinstance(exc, httpx.ConnectTimeout)
+                code = ModelErrorCode.NETWORK if connect_timeout else ModelErrorCode.TIMEOUT
                 yield ModelEvent(
                     kind="error",
                     failure=ModelFailure(
-                        code=ModelErrorCode.NETWORK,
+                        code=code,
                         origin=ModelFailureOrigin.PROVIDER,
                         retryable=True,
-                        message=provider_error_message(ModelErrorCode.NETWORK, phase="connect"),
+                        message=provider_error_message(
+                            code, phase="connect" if connect_timeout else "first_token"
+                        ),
                     ),
                 )
                 return
@@ -714,7 +720,7 @@ class OpenAICompatibleProvider:
             while True:
                 try:
                     if first:
-                        async with asyncio.timeout(self.first_token_timeout):
+                        async with asyncio.timeout_at(first_semantic_until):
                             chunk = await anext(iterator)
                     else:
                         # Inter-chunk idle budget: a stalled stream must not
@@ -739,7 +745,6 @@ class OpenAICompatibleProvider:
                         usage=usage,
                     )
                     return
-                first = False
                 raw_usage = getattr(chunk, "usage", None)
                 if raw_usage is not None:
                     try:
@@ -775,9 +780,12 @@ class OpenAICompatibleProvider:
                     if text is not None and not isinstance(text, str):
                         raise ValueError("model text delta must be a string")
                     if text:
+                        first = False
                         accumulator.add_text(text)
                         yield ModelEvent(kind="text_delta", text=text)
                     tool_fragments = getattr(delta, "tool_calls", None) or []
+                    if tool_fragments:
+                        first = False
                     if tool_fragments and "tool_call" not in emitted_activity:
                         emitted_activity.add("tool_call")
                         yield ModelEvent(kind="activity", activity="tool_call")
@@ -788,6 +796,8 @@ class OpenAICompatibleProvider:
                         or getattr(delta, "reasoning", None)
                         or getattr(delta, "reasoning_text", None)
                     )
+                    if reasoning:
+                        first = False
                     if reasoning and "reasoning" not in emitted_activity:
                         emitted_activity.add("reasoning")
                         yield ModelEvent(kind="activity", activity="reasoning")
@@ -804,6 +814,7 @@ class OpenAICompatibleProvider:
                         )
                 finish = getattr(choice, "finish_reason", None)
                 if finish is not None:
+                    first = False
                     accumulator.set_finish(finish)
                     completed_message, completed_reason = accumulator.build()
                     finish_seen = True

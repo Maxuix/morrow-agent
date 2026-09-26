@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -41,7 +41,11 @@ from morrow.core.models import (
     WorkspaceIdentity,
     WorkspaceResolution,
 )
-from morrow.core.runtime_policy import PI_DEFAULT_MAX_RETRIES, PROVIDER_RETRY_WAIT_BUDGET_SECONDS
+from morrow.core.runtime_policy import (
+    PI_DEFAULT_MAX_RETRIES,
+    PROVIDER_RETRY_WAIT_BUDGET_SECONDS,
+    PROVIDER_RUN_RETRY_WAIT_BUDGET_SECONDS,
+)
 from morrow.interfaces import cli as cli_module
 from morrow.interfaces.cli import app
 from morrow.runtime.agent import AgentLoop
@@ -225,7 +229,7 @@ async def test_retry_discards_visible_text_from_a_failed_attempt() -> None:
 
 
 @pytest.mark.asyncio
-async def test_nonretryable_invalid_response_and_post_tool_defect_do_not_repeat_work() -> None:
+async def test_nonretryable_invalid_response_and_post_tool_defect_recovers_once() -> None:
     rejected = _Script([[_failure(ModelErrorCode.INVALID_RESPONSE, retryable=False)]])
     rejected_events = [
         event
@@ -248,7 +252,7 @@ async def test_nonretryable_invalid_response_and_post_tool_defect_do_not_repeat_
                 )
             ],
             [_failure(ModelErrorCode.INVALID_RESPONSE, retryable=True)],
-            [_answer("should not run")],
+            [_answer("recovered after tool")],
         ]
     )
     session = Session(session_id="tools")
@@ -263,10 +267,60 @@ async def test_nonretryable_invalid_response_and_post_tool_defect_do_not_repeat_
         ).run_task(session, "use the tool")
     ]
 
-    assert provider.calls == 2
+    assert provider.calls == 3
     assert counter == [1]
-    assert events[-1].payload["stop_code"] == "invalid_response"
+    assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
     assert [message.role for message in session.log.messages_view()].count("tool") == 1
+    assert session.log.messages_view()[-1].content == "recovered after tool"
+
+
+@pytest.mark.asyncio
+async def test_successful_requests_reset_the_fault_window_but_keep_total_wait() -> None:
+    counter: list[int] = []
+    builder = make_context_builder()
+    tool_reply = ModelEvent(
+        kind="completed",
+        finish_reason=ModelFinishReason.TOOL_CALLS,
+        message=AssistantMessage(tool_calls=(_call("c1"),)),
+    )
+    provider = _Script(
+        [
+            [_failure(ModelErrorCode.RATE_LIMIT, retryable=True, retry_after=60)],
+            [tool_reply],
+            [_failure(ModelErrorCode.RATE_LIMIT, retryable=True, retry_after=60)],
+            [_answer("done")],
+        ]
+    )
+    delays: list[float] = []
+
+    async def sleep(delay: float) -> None:
+        delays.append(delay)
+
+    events = [
+        event
+        async for event in AgentLoop(
+            provider,
+            MODEL,
+            builder,
+            tool_executor=_executor(builder.run_policy, counter),
+            retry_sleep=sleep,
+        ).run_task(Session(session_id="two-faults"), "go")
+    ]
+
+    assert delays == [60, 60]
+    assert counter == [1]
+    assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
+    assert (
+        next_provider_retry_delay(
+            policy=builder.run_policy,
+            retry_index=1,
+            retry_after_seconds=60,
+            waited_seconds=0,
+            total_waited_seconds=PROVIDER_RUN_RETRY_WAIT_BUDGET_SECONDS - 30,
+            unit=1,
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -326,6 +380,33 @@ async def test_retry_budget_stops_before_the_next_wait_and_can_be_cancelled() ->
     cancelled_events = await task
     assert cancelled.calls == 1
     assert cancelled_events[-1].payload["finish_reason"] == FinishReason.CANCELLED.value
+
+
+@pytest.mark.asyncio
+async def test_fault_window_counts_elapsed_time_as_well_as_sleep() -> None:
+    provider = _Script([[_failure(ModelErrorCode.RATE_LIMIT, retryable=True, retry_after=50)]] * 3)
+    clock = FixedClock()
+    delays: list[float] = []
+
+    async def sleep(delay: float) -> None:
+        delays.append(delay)
+        clock.value += timedelta(seconds=100)
+
+    events = [
+        event
+        async for event in AgentLoop(
+            provider,
+            MODEL,
+            make_context_builder(),
+            clock=clock,
+            retry_sleep=sleep,
+            pause_control=LocalTurnPauseControl(),
+        ).run_task(Session(session_id="elapsed-window"), "go")
+    ]
+
+    assert provider.calls == 2
+    assert delays == [50]
+    assert events[-1].payload["stop_code"] == "provider_rate_limit"
 
 
 @pytest.mark.asyncio

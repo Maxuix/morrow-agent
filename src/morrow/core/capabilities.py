@@ -18,6 +18,7 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from morrow.core.domain import ArtifactReference
 from morrow.core.models import ProtocolModel, ToolEffect
+from morrow.core.runtime_policy import COMMAND_DURATION_MAX_MS
 
 _LOCAL_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _REVISION = re.compile(r"^[0-9a-f]{64}$")
@@ -266,7 +267,7 @@ class CommandToolFact(ToolFactHeader):
     status: str = Field(min_length=1, max_length=32)
     exit_code: int | None = Field(default=None, ge=0, le=255)
     signal: int | None = Field(default=None, ge=1, le=255)
-    duration_ms: int = Field(ge=0, le=120_000)
+    duration_ms: int = Field(ge=0, le=COMMAND_DURATION_MAX_MS)
     output_truncated: bool = False
     redaction_flags: tuple[str, ...] = ()
     redaction_count: int = Field(default=0, ge=0, le=100_000)
@@ -333,6 +334,18 @@ ToolFact = Annotated[
 ]
 
 
+def validation_evidence_stale(facts: tuple[ToolFact, ...], index: int) -> bool:
+    """A later file change or opaque command makes earlier validation uncertain."""
+
+    later = facts[index + 1 :]
+    validator_calls = {fact.call_id for fact in later if isinstance(fact, ValidationFact)}
+    return any(
+        (isinstance(fact, ChangeToolFact) and fact.status not in {"failed", "rejected"})
+        or (isinstance(fact, CommandToolFact) and fact.call_id not in validator_calls)
+        for fact in later
+    )
+
+
 class RunMetricsSnapshot(LocalCapabilityModel):
     """Optional process-local metrics; never part of Provider or persisted state."""
 
@@ -347,6 +360,9 @@ class RunMetricsSnapshot(LocalCapabilityModel):
     cancellation_count: int = Field(ge=0, le=128)
     changed_file_count: int = Field(ge=0, le=128)
     validation_outcome: str = Field(pattern=r"^(not_run|passed|failed|timeout|cancelled)$")
+    execution_finished: bool = False
+    # Public validator facts alone never prove the user's entire goal.
+    goal_verification: Literal["verified", "unverified"] = "unverified"
 
 
 @dataclass
@@ -364,6 +380,7 @@ class ToolRunContext:
     _approval_rejections: int = field(default=0, repr=False)
     _timeout_count: int = field(default=0, repr=False)
     _cancellation_count: int = field(default=0, repr=False)
+    owner_task_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.run_id.strip() or not self.session_id.strip():
@@ -421,7 +438,15 @@ class ToolRunContext:
 
     def metrics(self, finish_reason: str) -> RunMetricsSnapshot:
         command_facts = tuple(fact for fact in self._facts if isinstance(fact, CommandToolFact))
-        validation_facts = self.validation_facts
+        latest: dict[tuple[str, str], tuple[int, ValidationFact]] = {}
+        for index, fact in enumerate(self._facts):
+            if isinstance(fact, ValidationFact):
+                latest[(fact.validator_kind, fact.scope)] = (index, fact)
+        validation_facts = tuple(
+            fact
+            for index, fact in latest.values()
+            if not validation_evidence_stale(self.facts, index)
+        )
         if any(fact.status == "timeout" for fact in validation_facts):
             validation = "timeout"
         elif any(fact.status == "cancelled" for fact in validation_facts):
@@ -456,6 +481,7 @@ class ToolRunContext:
             cancellation_count=self._cancellation_count,
             changed_file_count=min(128, len(changed_paths)),
             validation_outcome=validation,
+            execution_finished=finish_reason == "stop",
         )
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shlex
@@ -10,16 +11,29 @@ import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from morrow.adapters.local.process import HostProcessAdapter, ProcessAdapterError
+from morrow.adapters.local.shell import PinnedShell, pinned_shell_of
 from morrow.core.artifacts import ARTIFACT_MAX_BYTES
 from morrow.core.capabilities import (
     OperationIntent,
     OperationKind,
     ToolRunContext,
 )
-from morrow.core.local_tools import CommandRequest, CommandResult, CommandStatus
+from morrow.core.domain import canonical_json_bytes, sha256_digest
+from morrow.core.local_tools import (
+    CommandRequest,
+    CommandResult,
+    CommandStatus,
+    TrackedCommandView,
+    TrackedLifecycle,
+)
 from morrow.core.models import ToolEffect
+from morrow.core.runtime_policy import (
+    FOREGROUND_COMMAND_MAX_SECONDS,
+    FOREGROUND_COMMAND_MIN_SECONDS,
+)
 from morrow.core.validation import (
     VALIDATION_FLAGS,
     VALIDATION_FORWARDED_ARG_FAMILIES,
@@ -32,20 +46,25 @@ from morrow.runtime.truncation import (
     truncate_tail,
 )
 from morrow.services.files import LocalFileError, WorkspaceFileService
+from morrow.services.tracked_process import TrackedProcessError, TrackedProcessRegistry
 
 MAX_COMMAND_OUTPUT_BYTES = 8 * 1024
 MAX_COMMAND_RESULT_BYTES = 16 * 1024
 MAX_COMMAND_PREVIEW_CHARS = 180
 _SHELL_INTERPRETERS = frozenset({"sh", "bash", "zsh", "ksh", "dash", "fish"})
+_MAX_SHELL_CHARS = 16 * 1024
+_MAX_ARGV_ENTRY_CHARS = 4096
+_NOT_STARTED = "命令未启动，进程没有执行"
 
 
 class ProcessServiceError(RuntimeError):
     """Stable local process-service failure."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, *, fingerprint: str | None = None) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.fingerprint = fingerprint
 
 
 @dataclass(frozen=True)
@@ -58,6 +77,31 @@ class CommandPlan:
     command_class: str
     validation_kind: str | None = None
     validation_scope: str | None = None
+
+
+@dataclass(frozen=True)
+class PreparedBash:
+    """One bash tool call after admission.
+
+    Foreground and start carry a command plan. Poll and stop carry only the
+    execution id and read positions; they never contain a command.
+    """
+
+    action: Literal["foreground", "start", "poll", "stop"]
+    plan: CommandPlan | None = None
+    lifecycle: TrackedLifecycle = TrackedLifecycle.TASK
+    execution_id: str | None = None
+    output_offset: int = 0
+    stderr_offset: int = 0
+
+
+@dataclass(frozen=True)
+class BashExecution:
+    """Tool-facing result. Tracked calls do not invent a finished-command fact."""
+
+    payload: CommandResult | TrackedCommandView
+    facts: tuple = ()
+    artifact: bytes | None = None
 
 
 class SecretRedactor:
@@ -166,39 +210,47 @@ class ProcessExecutionService:
         environment: Mapping[str, str] | None = None,
         requires_host: bool = True,
         requires_sandbox: bool = False,
+        foreground_timeout_seconds: float = FOREGROUND_COMMAND_MAX_SECONDS,
+        tracked: TrackedProcessRegistry | None = None,
     ) -> None:
         self.files = files
         self.adapter = adapter or HostProcessAdapter()
+        self.shell: PinnedShell = pinned_shell_of(self.adapter)
         self.redactor = SecretRedactor(secrets)
         self.environment = dict(environment or os.environ)
         self.requires_host = requires_host
         self.requires_sandbox = requires_sandbox
-        self._plans: dict[tuple[str, str], CommandPlan] = {}
+        if (
+            isinstance(foreground_timeout_seconds, bool)
+            or not isinstance(foreground_timeout_seconds, (int, float))
+            or not math.isfinite(foreground_timeout_seconds)
+            or not 0 < foreground_timeout_seconds <= FOREGROUND_COMMAND_MAX_SECONDS
+        ):
+            raise ValueError("foreground command timeout is outside the code ceiling")
+        self.foreground_timeout_seconds = float(foreground_timeout_seconds)
+        self.tracked = tracked if tracked is not None else TrackedProcessRegistry()
+        self._bash: dict[tuple[str, str], PreparedBash] = {}
 
     def preflight(self, request: CommandRequest) -> CommandPlan:
+        if request.timeout_seconds > self.foreground_timeout_seconds:
+            raise ProcessServiceError(
+                "invalid_timeout",
+                foreground_timeout_message(self.foreground_timeout_seconds),
+            )
         try:
             resolved = self.files.preflight_directory(request.cwd)
         except LocalFileError as exc:
             raise ProcessServiceError(exc.code, exc.message) from exc
-        try:
-            tokens = (
-                tuple(shlex.split(request.shell))
-                if request.shell is not None
-                else request.argv or ()
-            )
-        except ValueError as exc:
-            raise ProcessServiceError("invalid_command", "shell 命令语法无效") from exc
-        if not tokens or any(not token for token in tokens):
-            raise ProcessServiceError("invalid_command", "命令不能为空")
-        parsed_shell_script = _shell_script(tokens) if request.shell is None else None
-        shell_form = request.shell is not None or parsed_shell_script is not None
-        command_class = _command_class(tokens[0], shell=shell_form)
+        if request.shell is not None:
+            command_class, tokens, shell_script = self._admit_shell(request)
+        else:
+            command_class, tokens, shell_script = self._admit_argv(request)
         validation_kind, validation_scope = _recognized_validation(
             tokens,
             files=self.files,
             cwd_relative=resolved.relative_path,
             shell=request.shell is not None,
-            shell_script=parsed_shell_script,
+            shell_script=shell_script,
             shell_source=request.shell,
         )
         return CommandPlan(
@@ -212,14 +264,47 @@ class ProcessExecutionService:
             validation_scope=validation_scope,
         )
 
-    def cache_plan(self, run_id: str, call_id: str, plan: CommandPlan) -> None:
-        self._plans[(run_id, call_id)] = plan
+    def _admit_argv(self, request: CommandRequest) -> tuple[str, tuple[str, ...], str | None]:
+        """Accept argv when the command name is non-empty. Later args may be empty."""
 
-    def cached_plan(self, run_id: str, call_id: str) -> CommandPlan | None:
-        return self._plans.get((run_id, call_id))
+        argv = request.argv or ()
+        if not argv or not argv[0]:
+            raise _invalid_command(request, "命令名不能为空")
+        if any("\x00" in value or len(value) > _MAX_ARGV_ENTRY_CHARS for value in argv):
+            raise _invalid_command(request, "命令参数超出边界")
+        shell_script = _shell_script(argv)
+        return (
+            _command_class(argv[0], shell=shell_script is not None),
+            argv,
+            shell_script,
+        )
 
-    def discard_plan(self, run_id: str, call_id: str) -> None:
-        self._plans.pop((run_id, call_id), None)
+    def _admit_shell(self, request: CommandRequest) -> tuple[str, tuple[str, ...], str | None]:
+        """Admit a shell script after boundary checks, without parsing it as argv.
+
+        Tokenization failure and shell metacharacters stay on the process
+        permission path as ``shell`` or ``unknown``. They are not rejected, and
+        they are not recognized as a validator.
+        """
+
+        source = request.shell or ""
+        if "\x00" in source or len(source) > _MAX_SHELL_CHARS or not source.strip():
+            raise _invalid_command(request, "命令为空或超出边界")
+        if not self.shell.available:
+            raise _invalid_command(request, "当前环境没有可用的 shell")
+        command_class, words = _classify_shell(source)
+        if words is None:
+            return command_class, (), None
+        return command_class, words, None
+
+    def cache_bash(self, run_id: str, call_id: str, prepared: PreparedBash) -> None:
+        self._bash[(run_id, call_id)] = prepared
+
+    def cached_bash(self, run_id: str, call_id: str) -> PreparedBash | None:
+        return self._bash.get((run_id, call_id))
+
+    def discard_bash(self, run_id: str, call_id: str) -> None:
+        self._bash.pop((run_id, call_id), None)
 
     def approval_command(self, plan: CommandPlan) -> str:
         """Render one terminal-only bounded command preview with credential redaction."""
@@ -239,16 +324,29 @@ class ProcessExecutionService:
             command_class=plan.command_class,
             requires_host=self.requires_host,
             requires_sandbox=self.requires_sandbox,
-            preview_summary=(
-                "原生沙箱进程（临时快照）" if self.requires_sandbox else "非沙箱宿主进程",
-                f"命令类别：{plan.command_class}",
+            preview_summary=self._preview_summary(plan),
+        )
+
+    def _preview_summary(self, plan: CommandPlan) -> tuple[str, ...]:
+        lines = [
+            "原生沙箱进程（临时快照）" if self.requires_sandbox else "非沙箱宿主进程",
+            f"命令类别：{plan.command_class}",
+        ]
+        if plan.shell is not None and self.shell.path:
+            version = self.shell.version or self.shell.family
+            lines.append(f"Shell：{self.shell.path} {version}")
+        lines.extend(
+            (
                 f"工作目录：{plan.cwd_relative}",
                 f"超时上限：{plan.request.timeout_seconds:g} 秒",
-                "真实工作空间不会以可写方式暴露；命令修改仅保留在临时快照"
-                if self.requires_sandbox
-                else "命令以当前用户权限运行",
-            ),
+                (
+                    "真实工作空间不会以可写方式暴露；命令修改仅保留在临时快照"
+                    if self.requires_sandbox
+                    else "命令以当前用户权限运行"
+                ),
+            )
         )
+        return tuple(lines)
 
     async def execute(
         self,
@@ -457,6 +555,14 @@ class ProcessExecutionService:
             evidence_summary=evidence,
         )
 
+    def release_owned(self, *, session_id: str, task_id: str, reason: str) -> tuple[str, ...]:
+        """Stop this task's processes. Acceptance services survive ``accept``."""
+
+        try:
+            return self.tracked.release(session_id=session_id, task_id=task_id, reason=reason)
+        except TrackedProcessError as exc:
+            raise ProcessServiceError(exc.code, exc.message) from exc
+
     def _minimal_environment(self) -> dict[str, str]:
         allowed = {"PATH", "LANG", "LC_ALL", "TMPDIR", "SystemRoot", "ComSpec"}
         return {
@@ -494,6 +600,53 @@ class ProcessExecutionService:
         if _json_size(result) > result_limit:
             raise ProcessServiceError("output_budget", "进程结果无法放入当前预算")
         return result
+
+
+def foreground_timeout_message(maximum: float) -> str:
+    """State the active foreground range. Callers reject values outside it."""
+
+    return (
+        f"前台超时必须在 {FOREGROUND_COMMAND_MIN_SECONDS:g}–{maximum:g} 秒之间。"
+        f"当前有效上限是 {maximum:g} 秒。超出上限的请求会被拒绝，不会被改小。"
+    )
+
+
+def command_fingerprint(request: CommandRequest) -> str:
+    """Stable identity of one command. The command text itself is not retained."""
+
+    payload = canonical_json_bytes(
+        {
+            "argv": list(request.argv) if request.argv is not None else None,
+            "shell": request.shell,
+        }
+    )
+    return sha256_digest(payload)
+
+
+def _invalid_command(request: CommandRequest, reason: str) -> ProcessServiceError:
+    return ProcessServiceError(
+        "invalid_command",
+        f"{_NOT_STARTED}。{reason}",
+        fingerprint=command_fingerprint(request),
+    )
+
+
+def _classify_shell(source: str) -> tuple[str, tuple[str, ...] | None]:
+    """Return ``(command_class, words)`` for approval. Never raises on syntax.
+
+    Words are returned only for a flat command whose first word is non-empty,
+    so validator recognition cannot treat a heredoc body or a failed split as
+    ``pytest``. Shell metacharacters stay ``shell``; a split that does not
+    succeed stays ``unknown``.
+    """
+
+    try:
+        words = tuple(shlex.split(source, posix=True))
+    except ValueError:
+        return "unknown", None
+    if not words or not words[0] or _SHELL_CONTROL.search(source) is not None or "<<" in source:
+        return "shell", None
+    return "shell", words
 
 
 def _command_class(executable: str, *, shell: bool) -> str:

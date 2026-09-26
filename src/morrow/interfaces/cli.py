@@ -255,7 +255,10 @@ async def _headless_stream(
     prompt: str,
     *,
     reasoning_effort: str | None = None,
+    run_timeout_seconds: float | None = None,
 ) -> _HeadlessStreamResult:
+    if run_timeout_seconds is not None:
+        session_app.orchestrator.run_timeout_seconds = run_timeout_seconds
     if reasoning_effort is not None:
         prepare_options = session_app.orchestrator.prepare_options
 
@@ -465,6 +468,9 @@ def run_headless(
         "--reasoning-effort",
         help="模型思考强度：none、minimal、low、medium、high、xhigh 或 max。",
     ),
+    run_timeout_seconds: float | None = typer.Option(
+        None, "--run-timeout-seconds", help="宿主提供的本次运行总时限（秒）。"
+    ),
 ) -> None:
     """Run one ordinary prompt and emit versioned JSONL records only."""
 
@@ -483,6 +489,14 @@ def run_headless(
             GenerationOptions(reasoning_effort=reasoning_effort)
         except ValueError:
             typer.echo("invalid --reasoning-effort", err=True)
+            raise typer.Exit(code=2) from None
+    if run_timeout_seconds is not None:
+        from morrow.runtime.deadline import RunDeadline
+
+        try:
+            RunDeadline.from_seconds(run_timeout_seconds)
+        except ValueError:
+            typer.echo("invalid --run-timeout-seconds", err=True)
             raise typer.Exit(code=2) from None
     if permission_mode is PermissionPreset.AUTO_SANDBOXED:
         capability = default_sandbox_backend().probe()
@@ -516,6 +530,7 @@ def run_headless(
                         session_app,
                         prompt,
                         reasoning_effort=reasoning_effort,
+                        run_timeout_seconds=run_timeout_seconds,
                     )
                 )
             except KeyboardInterrupt:

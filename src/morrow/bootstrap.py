@@ -51,13 +51,13 @@ from morrow.application.agent_runs.preparation import (
 from morrow.application.api import OperationalApplicationService
 from morrow.application.artifacts import ArtifactService
 from morrow.application.backup import OperationalBackupService
+from morrow.application.bash_tool import make_bash_tool
 from morrow.application.checkpoints import ContextCheckpointService, SessionForkService
 from morrow.application.commands import CommandService
 from morrow.application.configuration import make_configuration_tool
 from morrow.application.context import ContextBuilder
 from morrow.application.doctor import OperationalDoctor
 from morrow.application.local_tools import (
-    make_bash_tool,
     make_edit_tool,
     make_mainstream_read_search_tools,
     make_promote_sandbox_tool,
@@ -158,6 +158,7 @@ from morrow.services.profile_configuration import ConfigPatchService
 from morrow.services.provider import ProviderService
 from morrow.services.sandbox import SandboxSnapshotService
 from morrow.services.search import WorkspaceSearchService
+from morrow.services.tracked_process import TrackedProcessRegistry
 from morrow.services.workspace import DataRoot, WorkspaceService, WorkspaceStateService
 
 
@@ -773,6 +774,8 @@ def build_session_application(
         )
     except CredentialAccessError as exc:
         raise ValueError(exc.message) from None
+    tracked_commands = TrackedProcessRegistry()
+
     if permission_profile.process_isolation is ProcessIsolation.NATIVE_SANDBOX:
         toolchain_roots, toolchain_bins = _sandbox_toolchain_paths(workspace_capability.root)
         process = ProcessExecutionService(
@@ -787,11 +790,13 @@ def build_session_application(
             secrets=(active_credential,) if active_credential else (),
             requires_host=False,
             requires_sandbox=True,
+            tracked=tracked_commands,
         )
     else:
         process = ProcessExecutionService(
             files,
             secrets=(active_credential,) if active_credential else (),
+            tracked=tracked_commands,
         )
     capability_policy = CapabilityPolicy(
         permission_profile,
@@ -816,6 +821,7 @@ def build_session_application(
         max_output_tokens=exact_capabilities.max_output_tokens,
         settings=app.runtime_policy.long_horizon,
     )
+    process.foreground_timeout_seconds = run_policy.tool_timeout_seconds
     context_builder = ContextBuilder(
         input_types=exact_capabilities.input_types,
         run_policy=run_policy,
@@ -913,10 +919,15 @@ def build_session_application(
                     secrets=(credential,) if credential else (),
                     requires_host=False,
                     requires_sandbox=True,
+                    foreground_timeout_seconds=run_policy.tool_timeout_seconds,
+                    tracked=tracked_commands,
                 )
             else:
                 process = ProcessExecutionService(
-                    files, secrets=(credential,) if credential else ()
+                    files,
+                    secrets=(credential,) if credential else (),
+                    foreground_timeout_seconds=run_policy.tool_timeout_seconds,
+                    tracked=tracked_commands,
                 )
             permission_profile = selected
             session.permission_profile = selected
@@ -1162,6 +1173,11 @@ def build_session_application(
             prompt_assembler=prompt_assembler,
             long_horizon_settings=app.runtime_policy.long_horizon,
         )
+
+        def release_tracked(**kwargs):
+            return process.release_owned(**kwargs)
+
+        persistence.tasks.process_release = release_tracked
         if resume_session_id:
             persistence.restore_into(session)
         else:

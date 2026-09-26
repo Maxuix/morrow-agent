@@ -300,16 +300,29 @@ def test_bash_schema_uses_the_common_command_shape(tmp_path):
     )
     schema = definition.function.parameters
     validator = JsonSchemaArgumentsValidator(schema)
-    for payload in ({}, {"command": None}, {"command": ["pwd"]}):
+    for payload in ({"command": None}, {"command": ["pwd"]}):
         with pytest.raises(ToolArgumentsValidationError):
             validator.validate(json.dumps(payload))
+    assert validator.validate("{}") == {}
     assert validator.validate('{"command":"pwd"}') == {"command": "pwd"}
     assert validator.validate('{"command":"pwd","extra":true}') == {
         "command": "pwd",
         "extra": True,
     }
-    assert set(schema["properties"]) == {"command", "timeout"}
-    assert schema["required"] == ["command"]
+    assert set(schema["properties"]) == {
+        "command",
+        "timeout",
+        "mode",
+        "execution_id",
+        "offset",
+        "stderr_offset",
+        "lifecycle",
+    }
+    assert schema["properties"]["timeout"]["maximum"] == 120
+    assert schema["properties"]["timeout"]["minimum"] == 1
+    assert "120" in schema["properties"]["timeout"]["description"]
+    assert "rejected" in schema["properties"]["timeout"]["description"]
+    assert "required" not in schema
     assert "oneOf" not in schema
     assert "additionalProperties" not in schema
 
@@ -345,7 +358,18 @@ def test_core_provider_schemas_match_the_pi_style_field_surface(tmp_path):
     }
     expected = {
         "read": ({"path", "offset", "limit"}, {"path"}),
-        "bash": ({"command", "timeout"}, {"command"}),
+        "bash": (
+            {
+                "command",
+                "timeout",
+                "mode",
+                "execution_id",
+                "offset",
+                "stderr_offset",
+                "lifecycle",
+            },
+            set(),
+        ),
         "edit": ({"path", "edits"}, {"path", "edits"}),
         "write": ({"path", "content"}, {"path", "content"}),
         "grep": (

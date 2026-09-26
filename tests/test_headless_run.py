@@ -99,11 +99,14 @@ def test_run_emits_only_versioned_jsonl_and_terminal_safe_record(monkeypatch, tm
             "say hello",
             "--state-root",
             str(state_root),
+            "--run-timeout-seconds",
+            "120",
         ],
     )
 
     assert result.exit_code == 0, result.output
     assert emitted == ["say hello"]
+    assert fake_session_app.orchestrator.run_timeout_seconds == 120
     records = [json.loads(line) for line in result.output.splitlines()]
     assert [record["kind"] for record in records] == ["agent_event", "agent_event", "run.completed"]
     assert all(record["schema_version"] == 1 for record in records)

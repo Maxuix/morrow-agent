@@ -17,6 +17,7 @@ from morrow.adapters.models.openai_compatible import (
 from morrow.application.context import ContextBudgetError, ContextBuilder
 from morrow.application.learning.memory_run_projection import build_run_context_projection
 from morrow.application.prompt import (
+    DIRECT_CODING_PROTOCOL_V3,
     DirectCodingProfile,
     DirectCodingPromptAssembler,
 )
@@ -38,7 +39,7 @@ def test_direct_profile_is_versioned_reusable_and_hash_stable() -> None:
     second = DirectCodingProfile()
 
     assert first.profile_id == "direct-coding"
-    assert first.version == "v3"
+    assert first.version == "v4"
     assert first.digest == second.digest
     assert first.coding_protocol
     for behavior in ("检查", "用户已有改动", "工具返回", "验证", "阻塞", "临时产物"):
@@ -52,6 +53,18 @@ def test_direct_profile_is_versioned_reusable_and_hash_stable() -> None:
     ):
         assert norm in first.coding_protocol
     assert "协议关键词" not in first.coding_protocol
+
+
+def test_frozen_v3_protocol_rehydrates_without_rewriting_its_text() -> None:
+    assembler = DirectCodingPromptAssembler()
+    legacy_profile = DirectCodingProfile(version="v3", coding_protocol=DIRECT_CODING_PROTOCOL_V3)
+    evidence = assembler.evidence_for().model_copy(
+        update={"profile_version": "v3", "profile_digest": legacy_profile.digest}
+    )
+
+    projection = assembler.rehydrate(evidence)
+    assert projection.evidence.profile_version == "v3"
+    assert assembler.system_messages(projection=projection)[1].content == DIRECT_CODING_PROTOCOL_V3
 
 
 def test_direct_assembly_orders_authority_and_labels_project_scope(tmp_path: Path) -> None:
@@ -190,7 +203,7 @@ def test_snapshot_freezes_only_prompt_metadata_not_role_or_instruction_text(tmp_
     encoded = json.dumps(snapshot.model_dump(mode="json"), ensure_ascii=False)
 
     assert snapshot.prompt_profile_id == "direct-coding"
-    assert snapshot.prompt_profile_version == "v3"
+    assert snapshot.prompt_profile_version == "v4"
     assert snapshot.prompt_profile_digest == assembler.profile.digest
     assert snapshot.project_instruction_sources[0].path == "AGENTS.md"
     assert snapshot.project_instruction_sources[0].byte_count == len(

@@ -11,8 +11,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from morrow.adapters.local.shell import PinnedShell, pinned_shell, shell_invocation
 from morrow.core.artifacts import ARTIFACT_MAX_BYTES
 from morrow.core.local_tools import CommandStatus
+from morrow.core.runtime_policy import COMMAND_DURATION_MAX_MS
 
 _ARTIFACT_STREAM_CAPTURE_BYTES = ARTIFACT_MAX_BYTES // 4
 
@@ -92,6 +94,55 @@ class _HeadCaptureBuffer:
         return bytes(self.data)
 
 
+class _CursorBuffer:
+    """Bounded capture with a stable absolute read position.
+
+    Bytes dropped from the front advance ``base``. A reader that asks for an
+    offset below ``base`` is told the window moved; the offset is not rewritten
+    into a silent zero.
+    """
+
+    def __init__(self, limit: int) -> None:
+        if limit < 1:
+            raise ProcessAdapterError("invalid_output_limit", "进程输出预算无效")
+        self.limit = limit
+        self.data = bytearray()
+        self.base = 0
+        self.total = 0
+
+    def add(self, chunk: bytes) -> None:
+        self.data.extend(chunk)
+        self.total += len(chunk)
+        overflow = len(self.data) - self.limit
+        if overflow > 0:
+            del self.data[:overflow]
+            self.base += overflow
+
+    def read(self, offset: int, maximum: int) -> tuple[bytes, int, bool]:
+        if offset < 0 or maximum < 1:
+            raise ProcessAdapterError("invalid_range", "输出读取位置无效")
+        if offset > self.total:
+            raise ProcessAdapterError("invalid_range", "输出读取位置超出已捕获输出")
+        truncated = offset < self.base
+        start = self.base if truncated else offset
+        local = start - self.base
+        end = min(len(self.data), local + maximum)
+        chunk = bytes(self.data[local:end])
+        return chunk, start + len(chunk), truncated
+
+
+@dataclass
+class SpawnedCommand:
+    """A live process group that outlives the tool call which started it."""
+
+    process: asyncio.subprocess.Process
+    readers: tuple[asyncio.Task, ...]
+    stdout: _CursorBuffer
+    stderr: _CursorBuffer
+    started: float
+    loop: asyncio.AbstractEventLoop
+
+
 class HostProcessAdapter:
     """Run one non-interactive command without inheriting the caller's environment."""
 
@@ -100,11 +151,13 @@ class HostProcessAdapter:
         *,
         termination_grace_seconds: float = 1.0,
         drain_timeout_seconds: float = 2.0,
+        shell: PinnedShell | None = None,
     ) -> None:
         if drain_timeout_seconds <= 0:
             raise ProcessAdapterError("invalid_drain_timeout", "进程输出收尾预算无效")
         self.termination_grace_seconds = termination_grace_seconds
         self.drain_timeout_seconds = drain_timeout_seconds
+        self.shell = pinned_shell() if shell is None else shell
 
     async def run(
         self,
@@ -135,19 +188,9 @@ class HostProcessAdapter:
         readers: tuple[asyncio.Task, ...] = ()
         timed_out = False
         try:
-            kwargs = {
-                "cwd": str(cwd),
-                "env": environment,
-                "stdin": asyncio.subprocess.DEVNULL,
-                "stdout": asyncio.subprocess.PIPE,
-                "stderr": asyncio.subprocess.PIPE,
-            }
-            if os.name == "posix":
-                kwargs["start_new_session"] = True
-            if shell is not None:
-                process = await asyncio.create_subprocess_shell(shell, **kwargs)
-            else:
-                process = await asyncio.create_subprocess_exec(*argv, **kwargs)
+            process = await self._open_process(
+                argv=argv, shell=shell, cwd=cwd, environment=environment
+            )
             readers = (
                 asyncio.create_task(
                     self._drain(process.stdout, stdout_buffer, stdout_capture, stdout_listener)
@@ -228,16 +271,151 @@ class HostProcessAdapter:
             stderr_original_lines=stderr_lines,
             stdout_truncated=stdout_truncated,
             stderr_truncated=stderr_truncated,
-            duration_ms=min(120_000, max(0, int((time.monotonic() - started) * 1000))),
+            duration_ms=_reported_duration_ms(started),
             stdout_full=stdout_capture.value(),
             stderr_full=stderr_capture.value(),
             full_output_truncated=stdout_capture.truncated or stderr_capture.truncated,
         )
 
+    async def spawn(
+        self,
+        *,
+        argv: tuple[str, ...] | None,
+        shell: str | None,
+        cwd: Path,
+        environment: dict[str, str],
+        output_limit: int,
+    ) -> SpawnedCommand:
+        """Start a process group and return without waiting or reaping it.
+
+        Foreground ``run`` still kills surviving group members when its main
+        process exits. This handle stays alive across tool calls until stop,
+        cancel, or task release.
+        """
+
+        process = None
+        readers: tuple[asyncio.Task, ...] = ()
+        try:
+            process = await self._open_process(
+                argv=argv, shell=shell, cwd=cwd, environment=environment
+            )
+            stdout = _CursorBuffer(output_limit)
+            stderr = _CursorBuffer(output_limit)
+            readers = (
+                asyncio.create_task(self._drain(process.stdout, stdout)),
+                asyncio.create_task(self._drain(process.stderr, stderr)),
+            )
+            return SpawnedCommand(
+                process=process,
+                readers=readers,
+                stdout=stdout,
+                stderr=stderr,
+                started=time.monotonic(),
+                loop=asyncio.get_running_loop(),
+            )
+        except asyncio.CancelledError:
+            if process is not None:
+                await asyncio.shield(self._terminate(process))
+            if readers:
+                await asyncio.gather(*readers, return_exceptions=True)
+            raise
+        except ProcessAdapterError:
+            if process is not None:
+                await self._terminate(process)
+            if readers:
+                await asyncio.gather(*readers, return_exceptions=True)
+            raise
+        except OSError as exc:
+            if process is not None:
+                await self._terminate(process)
+            if readers:
+                await asyncio.gather(*readers, return_exceptions=True)
+            raise ProcessAdapterError("spawn_failed", "宿主进程无法启动") from exc
+
+    def request_stop(self, spawned: SpawnedCommand) -> None:
+        """Signal the process group and reap it on the loop that spawned it."""
+
+        self._signal_group(spawned.process)
+        loop = spawned.loop
+        if loop.is_closed():
+            return
+
+        def schedule() -> None:
+            asyncio.create_task(self._reap_spawned(spawned))
+
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is loop:
+            schedule()
+            return
+        loop.call_soon_threadsafe(schedule)
+
+    async def stop(self, spawned: SpawnedCommand) -> None:
+        await self._reap_spawned(spawned)
+
+    async def _reap_spawned(self, spawned: SpawnedCommand) -> None:
+        try:
+            await self._terminate(spawned.process)
+        except ProcessAdapterError:
+            pass
+        except asyncio.CancelledError:
+            raise
+        for reader in spawned.readers:
+            if not reader.done():
+                reader.cancel()
+        await asyncio.gather(*spawned.readers, return_exceptions=True)
+
+    async def _open_process(
+        self,
+        *,
+        argv: tuple[str, ...] | None,
+        shell: str | None,
+        cwd: Path,
+        environment: dict[str, str],
+    ):
+        kwargs = {
+            "cwd": str(cwd),
+            "env": environment,
+            "stdin": asyncio.subprocess.DEVNULL,
+            "stdout": asyncio.subprocess.PIPE,
+            "stderr": asyncio.subprocess.PIPE,
+        }
+        if os.name == "posix":
+            kwargs["start_new_session"] = True
+        if shell is not None:
+            try:
+                program, flag, script = shell_invocation(self.shell, shell)
+            except LookupError as exc:
+                raise ProcessAdapterError(
+                    "invalid_command",
+                    "命令未启动，进程没有执行。当前环境没有可用的 shell",
+                ) from exc
+            return await asyncio.create_subprocess_exec(program, flag, script, **kwargs)
+        return await asyncio.create_subprocess_exec(*(argv or ()), **kwargs)
+
+    def _signal_group(self, process) -> None:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                return
+            except OSError as exc:
+                raise ProcessAdapterError("cleanup_failed", "宿主进程清理失败") from exc
+            return
+        if process.returncode is None:
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                return
+            except OSError as exc:
+                raise ProcessAdapterError("cleanup_failed", "宿主进程清理失败") from exc
+
     @staticmethod
     async def _drain(
         stream,
-        buffer: _TailBuffer,
+        buffer: _TailBuffer | _CursorBuffer,
         capture: _HeadCaptureBuffer | None = None,
         listener: Callable[[str], None] | None = None,
     ) -> None:
@@ -356,3 +534,13 @@ class HostProcessAdapter:
             await self._wait_main_exit(process, self.termination_grace_seconds)
         except (TimeoutError, OSError) as exc:
             raise ProcessAdapterError("cleanup_failed", "宿主进程清理未完成") from exc
+
+
+def _reported_duration_ms(started: float) -> int:
+    elapsed_ms = max(0, int((time.monotonic() - started) * 1000))
+    if elapsed_ms > COMMAND_DURATION_MAX_MS:
+        raise ProcessAdapterError(
+            "process_failed",
+            f"进程耗时 {elapsed_ms} 毫秒，超过可记录上限 {COMMAND_DURATION_MAX_MS} 毫秒",
+        )
+    return elapsed_ms

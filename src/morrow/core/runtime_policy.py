@@ -14,10 +14,19 @@ AGENT_RUN_POLICY_SCHEMA_VERSION = 2
 # These are safety ceilings, not product defaults. They deliberately remain in code so neither a
 # packaged resource nor user-owned YAML can widen the bounded runtime beyond reviewed limits.
 AGENT_MAX_TOOL_TIMEOUT_SECONDS = 300.0
+# Foreground command timeout shares this ceiling with run policy. The active run's
+# tool_timeout_seconds (packaged default 120, at most this ceiling) is the value
+# schema, admission, and the process executor enforce together. Requests outside
+# that active range are rejected; nothing clamps them.
+FOREGROUND_COMMAND_MIN_SECONDS = 1.0
+FOREGROUND_COMMAND_DEFAULT_SECONDS = 120.0
+FOREGROUND_COMMAND_MAX_SECONDS = AGENT_MAX_TOOL_TIMEOUT_SECONDS
+# Foreground duration reporting covers the ceiling plus bounded process cleanup.
+COMMAND_DURATION_MAX_MS = int(AGENT_MAX_TOOL_TIMEOUT_SECONDS * 1000) + 10_000
 AGENT_MAX_MODEL_RETRIES = 5
-# Cumulative sleep for one run's provider retries. This is a code-owned recovery
-# bound, not a task-lifetime stop and not a user-overlay field.
+# A single request's recovery window and the cumulative run bound are separate.
 PROVIDER_RETRY_WAIT_BUDGET_SECONDS = 120.0
+PROVIDER_RUN_RETRY_WAIT_BUDGET_SECONDS = 600.0
 AGENT_MAX_REQUEST_CHARS = 4_000_000
 AGENT_MAX_TOOL_RESULT_CHARS = 256_000
 AGENT_MAX_VALIDATION_ERRORS = 10
@@ -135,6 +144,10 @@ __all__ = [
     "AGENT_MAX_TOOL_RESULT_CHARS",
     "AGENT_MAX_TOOL_TIMEOUT_SECONDS",
     "AGENT_MAX_VALIDATION_ERRORS",
+    "COMMAND_DURATION_MAX_MS",
+    "FOREGROUND_COMMAND_DEFAULT_SECONDS",
+    "FOREGROUND_COMMAND_MAX_SECONDS",
+    "FOREGROUND_COMMAND_MIN_SECONDS",
     "AGENT_RUN_POLICY_SCHEMA_VERSION",
     "AgentRunPolicyOverrides",
     "LongHorizonPolicyOverrides",

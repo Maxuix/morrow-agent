@@ -426,10 +426,12 @@ def test_sdk_transport_errors_and_wrapped_causes_are_network_without_io():
 
 @pytest.mark.asyncio
 async def test_adapter_connect_timeout_is_network_without_waiting_for_token():
+    import httpx
+
     class HangingCompletions:
         async def create(self, **kwargs):
             del kwargs
-            await asyncio.Event().wait()
+            raise httpx.ConnectTimeout("socket connect timed out")
 
     provider = OpenAICompatibleProvider(
         "https://example.test",
@@ -444,6 +446,35 @@ async def test_adapter_connect_timeout_is_network_without_waiting_for_token():
     assert events[0].failure.code == ModelErrorCode.NETWORK
     assert events[0].failure.message == "连接模型服务超时"
     assert events[0].failure.retryable is True
+
+
+@pytest.mark.asyncio
+async def test_nonsemantic_chunks_cannot_extend_first_semantic_timeout():
+    class EmptyChunks:
+        closed = False
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            await asyncio.sleep(0)
+            return SimpleNamespace(choices=[], usage=None)
+
+        async def aclose(self):
+            self.closed = True
+
+    response = EmptyChunks()
+    provider = OpenAICompatibleProvider(
+        "https://example.test", "credential-sentinel", first_token_timeout=0.01
+    )
+    provider._client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions(response)))
+
+    events = await collect_stream(provider)
+
+    assert [event.kind for event in events] == ["error"]
+    assert events[0].failure.code == ModelErrorCode.TIMEOUT
+    assert events[0].failure.message == "等待模型首个响应超时"
+    assert response.closed is True
 
 
 @pytest.mark.asyncio

@@ -13,7 +13,6 @@ from morrow.core.artifacts import ARTIFACT_MAX_BYTES, ArtifactError, ArtifactErr
 from morrow.core.capabilities import (
     OperationIntent,
     OperationKind,
-    ProcessIsolation,
     RiskFlag,
     ToolCallContext,
     ToolHandlerOutcome,
@@ -25,7 +24,6 @@ from morrow.core.local_tools import (
     WORKSPACE_RELATIVE_PATH_MAX_CHARS,
     WORKSPACE_RELATIVE_PATH_PATTERN,
     ChangeSetResult,
-    CommandRequest,
     ExactEdit,
     MutationMode,
     SearchCase,
@@ -36,7 +34,6 @@ from morrow.core.models import ToolEffect
 from morrow.core.store import StorageError
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.tool_arguments import SCHEMA_DIALECT
-from morrow.runtime.tool_output import current_output_listener
 from morrow.runtime.tools import (
     ApprovalPreviewBudget,
     RegisteredTool,
@@ -51,7 +48,7 @@ from morrow.services.files import (
     WorkspaceFileService,
     WorkspaceMutationService,
 )
-from morrow.services.process import ProcessExecutionService, ProcessServiceError
+from morrow.services.process import ProcessServiceError
 from morrow.services.sandbox import SandboxServiceError, SandboxSnapshotService
 from morrow.services.search import WorkspaceSearchService
 
@@ -235,14 +232,6 @@ WRITE_PROVIDER_SCHEMA = _simple_object_schema(
     required=("path", "content"),
 )
 
-BASH_PROVIDER_SCHEMA = _simple_object_schema(
-    {
-        "command": {"type": "string", "description": "Bash command to execute"},
-        "timeout": {"type": "number", "description": "Timeout in seconds"},
-    },
-    required=("command",),
-)
-
 
 class ReadArtifactArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -314,11 +303,6 @@ class WriteArguments(_CompatibilityArguments):
     content: str
 
 
-class BashArguments(_CompatibilityArguments):
-    command: str
-    timeout: float = 90.0
-
-
 def _tool_error(
     error: LocalFileError | ProcessServiceError | SandboxServiceError,
 ) -> ToolExecutionError:
@@ -352,6 +336,9 @@ def _tool_error(
         "unsupported_capability": ToolErrorCode.UNSUPPORTED_CAPABILITY,
         "cross_device": ToolErrorCode.PUBLISH_FAILED,
         "invalid_command": ToolErrorCode.INVALID_COMMAND,
+        "invalid_timeout": ToolErrorCode.INVALID_ARGUMENTS,
+        "invalid_execution": ToolErrorCode.INVALID_ARGUMENTS,
+        "not_owner": ToolErrorCode.PERMISSION_DENIED,
         "spawn_failed": ToolErrorCode.PROCESS_FAILED,
         "process_failed": ToolErrorCode.PROCESS_FAILED,
         "cleanup_failed": ToolErrorCode.PROCESS_CLEANUP_FAILED,
@@ -373,11 +360,18 @@ def _tool_error(
         "max_bytes": ToolErrorCode.SEARCH_BUDGET,
         "output_budget": ToolErrorCode.OUTPUT_BUDGET,
     }
+    details: list[dict[str, str]] = []
+    fingerprint = getattr(error, "fingerprint", None)
+    if isinstance(fingerprint, str) and len(fingerprint) == 64 and fingerprint.isalnum():
+        details.append({"key": "command_fingerprint", "value": fingerprint})
+    if error.code == "invalid_command":
+        details.append({"key": "executed", "value": "false"})
     return ToolExecutionError(
         mapping.get(error.code, ToolErrorCode.EXECUTION_FAILED),
         error.message,
         disposition=(ToolExecutionDisposition.UNKNOWN if error.code == "outcome_unknown" else None),
         facts=tuple(getattr(error, "facts", ())),
+        details=tuple(details),
     )
 
 
@@ -670,109 +664,6 @@ def make_mainstream_read_search_tools(
         recovery_declaration=tool_declaration("grep"),
     )
     return read, ls, find, grep
-
-
-COMMAND_PREVIEW_BUDGET = ApprovalPreviewBudget(
-    max_lines=8,
-    max_line_chars=200,
-    max_bytes=1600,
-)
-
-
-def make_bash_tool(process: ProcessExecutionService) -> RegisteredTool:
-    """Expose one conventional command string while retaining process preflight and policy."""
-
-    def request(arguments: BashArguments) -> CommandRequest:
-        return CommandRequest(
-            shell=arguments.command,
-            cwd=".",
-            timeout_seconds=float(_bounded(arguments.timeout, minimum=1, maximum=90)),
-        )
-
-    def resolve(arguments: BashArguments, context: ToolCallContext) -> OperationIntent:
-        try:
-            plan = process.preflight(request(arguments))
-        except (LocalFileError, ProcessServiceError) as exc:
-            raise _tool_error(exc) from exc
-        except ValueError:
-            raise ToolExecutionError(
-                ToolErrorCode.INVALID_ARGUMENTS, "命令参数超出执行端边界"
-            ) from None
-        process.cache_plan(context.run.run_id, context.call_id, plan)
-        return process.intent(plan)
-
-    def preview(arguments: BashArguments, context: ToolCallContext) -> tuple[str, ...]:
-        del arguments
-        plan = process.cached_plan(context.run.run_id, context.call_id)
-        if plan is None:
-            return ("无法生成宿主命令预览",)
-        return (
-            f"命令：{process.approval_command(plan)}",
-            f"命令类别：{plan.command_class}",
-            f"工作目录：{plan.cwd_relative}",
-            f"超时上限：{plan.request.timeout_seconds:g} 秒",
-            (
-                "原生沙箱进程（临时快照）；真实工作空间不会以可写方式暴露"
-                if process.requires_sandbox
-                else "非沙箱宿主进程；批准后可能访问工作空间外文件或网络"
-            ),
-        )
-
-    async def handler(arguments: BashArguments, context: ToolCallContext):
-        del arguments
-        plan = process.cached_plan(context.run.run_id, context.call_id)
-        if plan is None:
-            raise ToolExecutionError(ToolErrorCode.PREFLIGHT_FAILED, "命令预检不存在")
-        try:
-            result, fact, artifact_content = await process.execute_with_artifact(
-                plan,
-                result_limit=context.result_limit,
-                run=context.run,
-                call_id=context.call_id,
-                tool_name=context.tool_name,
-                ordinal=context.ordinal,
-                approval_verdict=context.approval_verdict,
-                truncation_max_bytes=context.truncation_max_bytes,
-                truncation_max_lines=context.truncation_max_lines,
-                output_listener=current_output_listener(),
-            )
-        except ProcessServiceError as exc:
-            raise _tool_error(exc) from exc
-        validation_fact = process.validation_fact(
-            plan,
-            result,
-            call_id=context.call_id,
-            tool_name=context.tool_name,
-            ordinal=context.ordinal,
-            approval_verdict=context.approval_verdict,
-        )
-        facts = (fact,) if validation_fact is None else (fact, validation_fact)
-        return ToolHandlerOutcome(
-            payload=result.model_dump(mode="json"),
-            facts=facts,
-            artifact_content=artifact_content,
-        )
-
-    return make_tool(
-        name="bash",
-        description="Run a shell command in the workspace and return stdout, stderr, and status.",
-        arguments_model=BashArguments,
-        provider_schema=BASH_PROVIDER_SCHEMA,
-        handler=handler,
-        context_handler=handler,
-        intent_resolver=resolve,
-        context_approval_preview=preview,
-        context_cleanup=lambda context: process.discard_plan(context.run.run_id, context.call_id),
-        approval_preview_budget=COMMAND_PREVIEW_BUDGET,
-        recovery_declaration=tool_declaration(
-            "bash",
-            process_isolation=(
-                ProcessIsolation.NATIVE_SANDBOX
-                if process.requires_sandbox
-                else ProcessIsolation.HOST
-            ),
-        ),
-    )
 
 
 PROMOTION_PREVIEW_BUDGET = ApprovalPreviewBudget(

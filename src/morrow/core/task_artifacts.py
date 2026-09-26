@@ -21,6 +21,7 @@ from morrow.core.domain import (
     validate_prefixed_id,
 )
 from morrow.core.models import ProtocolModel
+from morrow.core.runtime_policy import COMMAND_DURATION_MAX_MS
 
 TASK_ARTIFACTS_SCHEMA_VERSION = 1
 TASK_ARTIFACT_PREVIEW_MAX_BYTES = 64 * 1024
@@ -167,7 +168,7 @@ class CommandOutputWire(ProtocolModel):
     disposition: str = Field(min_length=1, max_length=32)
     started_at: datetime
     ended_at: datetime | None = None
-    duration_ms: int | None = Field(default=None, ge=0, le=120_000)
+    duration_ms: int | None = Field(default=None, ge=0, le=COMMAND_DURATION_MAX_MS)
     exit_code: int | None = Field(default=None, ge=0, le=255)
     signal: int | None = Field(default=None, ge=1, le=255)
     output_artifact_id: str | None = None

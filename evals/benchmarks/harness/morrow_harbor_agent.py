@@ -20,8 +20,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import re
 import shlex
+import time
+import tomllib
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -85,6 +88,35 @@ def _last_jsonl_record(text: str, kind: str) -> dict[str, Any] | None:
         if isinstance(item, dict) and item.get("kind") == kind:
             record = item
     return record
+
+
+def _resolved_agent_timeout_seconds(trial_dir: Path) -> float | None:
+    """Mirror Harbor's single-step timeout from this trial's resolved inputs."""
+    config_path = trial_dir / "config.json"
+    if not config_path.is_file():
+        return None
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    task = config.get("task") or {}
+    task_path = task.get("path")
+    if not isinstance(task_path, str):
+        return None
+    task_config = tomllib.loads((Path(task_path) / "task.toml").read_text(encoding="utf-8"))
+    agent_config = config.get("agent") or {}
+    base = agent_config.get("override_timeout_sec") or (task_config.get("agent") or {}).get(
+        "timeout_sec"
+    )
+    if base is None:
+        return None
+    maximum = agent_config.get("max_timeout_sec")
+    multiplier = config.get("agent_timeout_multiplier")
+    if multiplier is None:
+        multiplier = config.get("timeout_multiplier", 1.0)
+    seconds = min(float(base), float(maximum) if maximum is not None else math.inf) * float(
+        multiplier
+    )
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("invalid resolved Harbor agent timeout")
+    return seconds
 
 
 class MorrowAgent(BaseInstalledAgent):
@@ -201,6 +233,8 @@ class MorrowAgent(BaseInstalledAgent):
     ) -> None:
         opts = self.options
         assert opts is not None
+        started_at = time.monotonic()
+        outer_timeout = _resolved_agent_timeout_seconds(self.logs_dir.parent)
         workspace = await self._workspace_dir(environment)
         state_root = opts.state_root
 
@@ -217,12 +251,19 @@ class MorrowAgent(BaseInstalledAgent):
             if opts.reasoning_effort
             else ""
         )
+        remaining_arg = ""
+        if outer_timeout is not None:
+            remaining = outer_timeout - (time.monotonic() - started_at) - LOG_COPY_TIMEOUT_SEC
+            if remaining <= 0:
+                raise TimeoutError("Harbor agent timeout left no time for Morrow execution")
+            remaining_arg = f"--run-timeout-seconds {remaining:.3f} "
         command = (
             f"PATH=/opt/morrow/tools:$PATH {self._MORROW_BIN} run "
             f"--state-root {shlex.quote(state_root)} "
             f"--workspace {shlex.quote(workspace)} "
             "--permission-mode manual "
             f"{reasoning_arg}"
+            f"{remaining_arg}"
             f'--prompt "$(cat {prompt_path})" '
             f"> {RUN_LOG_PATH} 2>&1; echo MORROW_EXIT=$?"
         )
