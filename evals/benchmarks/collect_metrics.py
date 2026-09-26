@@ -72,6 +72,13 @@ def collect_tb2(jobs_dir: Path) -> dict:
 
         metrics_file = result_path.parent / "agent" / "logs" / "morrow-terminal-metrics.json"
         partial_file = result_path.parent / "agent" / "logs" / "morrow-partial-metrics.json"
+        fingerprint_file = result_path.parent / "agent" / "logs" / "morrow-fingerprint.json"
+        fingerprint = None
+        if fingerprint_file.is_file():
+            try:
+                fingerprint = json.loads(fingerprint_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                pass
         morrow_metrics: dict = {}
         if metrics_file.exists():
             try:
@@ -122,13 +129,35 @@ def collect_tb2(jobs_dir: Path) -> dict:
                 "agent_output_tokens": agent_ctx.get("n_output_tokens"),
                 "agent_cost_usd": agent_ctx.get("cost_usd"),
                 "partial_usage": partial_usage,
+                "run_id": (((fingerprint or {}).get("campaign") or {}).get("settings") or {}).get(
+                    "run_id"
+                ),
+                "fingerprint_file": str(fingerprint_file) if fingerprint is not None else None,
             }
         )
 
     resolved = [t for t in tasks if t["status"] == "resolved"]
     n = len(tasks)
+    one_job = (jobs_dir / "trials").is_dir()
+    complete_fingerprints = all(task["fingerprint_file"] is not None for task in tasks)
+    unique_tasks = len({task["task"] for task in tasks}) == n
+    report_kind = (
+        "fixed_version_full"
+        if one_job
+        and n == 89
+        and unique_tasks
+        and complete_fingerprints
+        and len({task["run_id"] for task in tasks}) == 1
+        and tasks[0]["run_id"] is not None
+        else "diagnostic_subset"
+        if one_job
+        else "mixed_campaign"
+    )
     report = {
         "benchmark": "Terminal-Bench 2.0",
+        "report_kind": report_kind,
+        "fingerprinted_trials": sum(t["fingerprint_file"] is not None for t in tasks),
+        "run_ids": sorted({t["run_id"] for t in tasks if t["run_id"]}),
         "n_tasks": n,
         "resolution_rate": (len(resolved) / n) if n else None,
         "by_difficulty": _breakdown(tasks, "difficulty"),

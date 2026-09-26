@@ -59,6 +59,10 @@ def test_diagnostics_tracks_settlement_without_exporting_raw_result(tmp_path) ->
     )
     api = SimpleNamespace(
         get_agent_run_observation=lambda _: SimpleNamespace(requests=(request,)),
+        get_agent_run_fingerprint=lambda _: {
+            "tool_schema_digest": "a" * 64,
+            "unexpected": raw_secret,
+        },
         journal=SimpleNamespace(list_executions=lambda *_args, **_kwargs: (execution,)),
         workspace_id="ws_test",
     )
@@ -79,6 +83,9 @@ def test_diagnostics_tracks_settlement_without_exporting_raw_result(tmp_path) ->
     assert "call_1" not in exported
     rows = [json.loads(line) for line in exported.splitlines()]
     requests = [row for row in rows if row["kind"] == "model.request"]
+    assert [row for row in rows if row["kind"] == "run.fingerprint"][0]["digests"] == {
+        "tool_schema_digest": "a" * 64
+    }
     assert [row["state"] for row in requests] == ["admitted", "completed"]
     assert requests[-1]["usage"]["input_tokens"] == 12
     tools = [row for row in rows if row["kind"] == "tool.execution"]

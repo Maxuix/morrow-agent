@@ -18,6 +18,18 @@ from morrow.core.models import AgentEvent
 
 _MAX_BYTES = 8 * 1024 * 1024
 _SAFE_TOKEN = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
+_SAFE_DIGEST = re.compile(r"^[a-f0-9]{64}$")
+_RUN_DIGEST_KEYS = frozenset(
+    {
+        "tool_schema_digest",
+        "run_policy_digest",
+        "provider_config_digest",
+        "generation_digest",
+        "prompt_profile_digest",
+        "role_prompt_digest",
+        "project_instruction_selection_digest",
+    }
+)
 
 
 class HeadlessDiagnostics:
@@ -30,6 +42,7 @@ class HeadlessDiagnostics:
         self._truncated = False
         self._requests: dict[str, str] = {}
         self._tools: dict[str, str] = {}
+        self._fingerprint_written = False
         self.agent_run_id: str | None = None
 
     def close(self) -> None:
@@ -112,6 +125,26 @@ class HeadlessDiagnostics:
         if not run_id:
             return
         api = self._session_app.api
+        if not self._fingerprint_written:
+            getter = getattr(api, "get_agent_run_fingerprint", None)
+            if callable(getter):
+                try:
+                    fingerprint = getter(run_id)
+                except Exception:
+                    fingerprint = None
+                if isinstance(fingerprint, dict):
+                    digests = {
+                        key: value
+                        for key, value in fingerprint.items()
+                        if key in _RUN_DIGEST_KEYS
+                        and (
+                            value is None
+                            or isinstance(value, str)
+                            and _SAFE_DIGEST.fullmatch(value)
+                        )
+                    }
+                    self._write("run.fingerprint", agent_run_id=run_id, digests=digests)
+                    self._fingerprint_written = True
         observation = api.get_agent_run_observation(run_id)
         if observation is None:
             return

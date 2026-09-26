@@ -1,6 +1,6 @@
 # Morrow Benchmark Harness
 
-面向 Morrow（承序）的自动化评测 harness，覆盖 **Terminal-Bench 2.0**（89 任务，Harbor 官方 harness + 官方 verifier）与 **SWE-bench Lite**（300 任务，官方 harness 评分）。全部运行共享一个 **100M token 预算账本**，超支自动拒跑。
+面向 Morrow（承序）的自动化评测 harness，覆盖 **Terminal-Bench 2.0**（89 任务，Harbor 官方 harness + 官方 verifier）与 **SWE-bench Lite**（300 任务，官方 harness 评分）。全部运行共享一个默认 100M token 的任务接纳账本；已知实耗超出预算后会拒绝后续任务，运行中的请求仍可能超支。
 
 > 报告与简历必须标注 **SWE-bench Lite**（300），不得写成 Verified（500）。
 
@@ -78,12 +78,11 @@ python3 collect_metrics.py
 `manylinux_2_28_x86_64` 解析依赖，并在无网络的 Debian 11 容器中完成安装冒烟，
 成功后才替换评测资产。准备阶段需要可用的 Docker 镜像和包镜像源；试次安装不访问网络。
 
-## 预算方案（100M token 硬上限）
+## 预算方案（默认 100M token 接纳额度）
 
-账本规则与 `evals/code-agent-mini` 的 campaign-capacity 一致（保守计量）：
-每个任务 admission 先冻结 `max(预留, 已知用量)`，任务结束后用 Morrow
-`run.completed.usage.total_tokens` 精确修正；`unavailable` 永不记 0。
-所有任务共享 `runs/budget-ledger.json`。
+每个任务 admission 先占用 reservation。完整用量在任务结束后按 Morrow
+`run.completed.usage.total_tokens` 结算；部分或未知用量保留至少 reservation，
+并单列已知实耗与未知覆盖数。所有驱动经进程锁共享 `runs/budget-ledger.json`。
 
 建议分配（按经验值，pilot 后按实测修正）：
 
@@ -93,8 +92,8 @@ python3 collect_metrics.py
 | TB2 full 剩余 | 64 任务 × ~1.0M | 64M 内 |
 | SWE-bench Lite 冒烟 + 分批 | 每实例 ~0.5–1.5M | 视 pilot 实测在剩余额度内滚动 admission |
 
-若实测单任务均值显著高于预留，调低 `--reservation` 无意义（它是下限保护），
-应缩小每批 `--limit` 并观察账本 `used/remaining`；账本归零即自动停止。
+若实测单任务均值显著高于预留，应缩小每批 `--limit` 并观察账本
+`used/remaining` 以及 `unknown_exposure_count`；余额不足下一次 reservation 时停止接纳。
 
 ## 收集的指标（collect_metrics.py 输出 results/metrics.json）
 
@@ -111,16 +110,18 @@ python3 collect_metrics.py
 
 | 层 | 持久化位置 | 中断后续跑行为 |
 |---|---|---|
-| 预算账本 | `runs/budget-ledger.json`（原子写入） | `admit` 按 run_key 幂等：已 admitted/finalized 的任务重跑不重复计费；被中途杀死的任务保留预留计量，完成后以精确 usage 修正 |
-| TB2 任务 | `runs/jobs/<job>/trials/*/result.json` | 原命令重跑同一 `--job-name`：Harbor 校验配置一致后，**有 result.json 的 trial 直接跳过，没有的自动重跑**（Harbor 启动时清理半成品 trial 目录） |
+| 预算账本 | `runs/budget-ledger.json`（进程锁与原子写入） | 每次新运行使用独立 run ID；完整 usage 按实耗结算，未知或部分 usage 保留至少 reservation，并在汇总单列已知实耗和未知覆盖数 |
+| TB2 任务 | `runs/jobs/<effort>/<job>-<run-id>/trials/*/result.json` | 默认新建运行；`--resume-run-id <id>` 仅在指纹完全相同时续跑，Harbor 跳过已有 result.json 的 trial |
 | TB2 过程日志 | `runs/jobs/<job>/trials/*/agent/logs/` 下的 `morrow-diagnostics.jsonl`、`trajectory.json`、尽力回收的 `morrow-run.jsonl` 以及终态或部分指标 JSON | 脱敏诊断随运行逐条刷盘；`_finalize_from_job_logs` 只补正仍处于 admitted 状态的条目 |
 | SWE-bench 实例 | `runs/swebench-lite/instances-shard<N>.jsonl`（append）+ `workspaces/*__patch.diff` + `*__morrow-run.jsonl` | 默认跳过 jsonl 中已记录的实例（`--rerun` 可强制重跑）；predictions CSV 每次从磁盘上的 patch 文件重建，已完成的实例不会丢 patch |
 | 容器残留 | docker | SWE runner 每次启动实例前 `docker rm -f` 同名残留容器，驱动被杀不会卡死续跑 |
 
 两个注意点：
 
-1. **TB2 续跑必须沿用同一 `--job-name` 且参数完全一致**（Harbor 对同 job 目录做配置一致性校验，配置变了会拒绝恢复）；若改了任务集/参数，换一个新的 `--job-name`（旧结果仍保留在 metrics 聚合中，因为 collect 扫描全部 jobs 目录）。
-2. 若驱动进程本身被 SIGKILL，SWE 侧最后一个实例无 jsonl 记录会被重跑（幂等，不重复计费）；TB2 侧由 Harbor 的 result.json 存在性判定，语义一致。
+1. TB2 新运行自动生成 run ID，并在 `runs/manifests/<id>.json` 冻结源码、dirty patch、wheel、锁文件、Harbor 及补丁、任务内容与非密配置。每个 trial 的 `agent/logs/morrow-fingerprint.json` 另记实际 prompt 摘要、容器 Python/libc/架构、有效超时和已完成 AgentRun 的冻结 schema/prompt 摘要。使用 `--resume-run-id` 才复用旧预算键；改动配置时开启新运行。
+2. 若驱动进程被 SIGKILL，按原 run ID 续跑；SWE 侧最后一个实例无 jsonl 记录时会以新 run ID 重跑并单独计费。已有账本 reservation 会保留未知用量，不能当作真实 token 硬上限。
+
+`collect_metrics.py --tb2-jobs` 应指向**单个固定配置 job**，才可解释为该版本的分数；默认扫全部 jobs 的输出只表示混合 campaign。诊断子集单独保存，不能与全量分混用。预算账本仅控制任务接纳；请求可能超出预留量，严格硬预算需要在模型请求接纳处实现额外上限。
 
 ## 已知限制（CN 网络环境）
 

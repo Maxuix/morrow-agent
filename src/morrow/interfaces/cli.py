@@ -454,6 +454,14 @@ def _headless_terminal_record(
         and metrics is not None
         and metrics.get("finish_reason") == "stop"
     )
+    fingerprint = None
+    if agent_run_id is not None and api is not None and not unconfirmed_run:
+        getter = getattr(api, "get_agent_run_fingerprint", None)
+        if callable(getter):
+            try:
+                fingerprint = getter(agent_run_id)
+            except Exception:
+                pass
     _headless_echo(
         "run.completed",
         agent_run_id=agent_run_id,
@@ -463,6 +471,7 @@ def _headless_terminal_record(
         metrics=metrics,
         request_count=request_count,
         stop_reason=stop_reason,
+        fingerprint=fingerprint,
     )
     return successful
 

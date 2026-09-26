@@ -15,6 +15,24 @@ import run_tb2
 
 
 class TerminalBenchDriverTests(unittest.TestCase):
+    def test_preflight_rejects_missing_task_before_admission(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            bench = Path(directory)
+            assets = bench / "assets"
+            (assets / "wheelhouse").mkdir(parents=True)
+            (assets / "uv-x86_64-unknown-linux-gnu").touch()
+            (assets / "morrow_agent-1-py3-none-any.whl").touch()
+            (assets / "cpython-3.12.14-x86_64-unknown-linux-gnu-install_only.tar.gz").touch()
+            harbor = bench / "harbor"
+            harbor.touch()
+            with (
+                patch.object(run_tb2, "BENCH_DIR", bench),
+                patch.object(run_tb2, "HARBOR_BIN", harbor),
+                patch.object(run_tb2, "VENDOR_TB2", bench / "tasks"),
+            ):
+                with self.assertRaises(FileNotFoundError):
+                    run_tb2._preflight(["missing"])
+
     def test_finalizes_usage_after_non_object_jsonl_lines(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -53,6 +71,8 @@ class TerminalBenchDriverTests(unittest.TestCase):
                 patch.object(run_tb2, "RUNS_DIR", Path(directory)),
                 patch.object(run_tb2, "_load_dotenv", return_value=credentials),
                 patch.object(run_tb2, "_all_tasks", return_value=["demo"]),
+                patch.object(run_tb2, "_preflight"),
+                patch.object(run_tb2, "run_fingerprint", return_value={"schema_version": 1}),
                 patch.object(run_tb2, "_finalize_from_job_logs", return_value=0),
                 patch.object(run_tb2.subprocess, "run", side_effect=run),
                 patch("sys.argv", ["run_tb2.py", "--tasks", "demo", "--reasoning-effort", "high"]),
@@ -63,3 +83,17 @@ class TerminalBenchDriverTests(unittest.TestCase):
         command = captured[0]
         self.assertIn("reasoning_effort=high", command)
         self.assertEqual(command[command.index("reasoning_effort=high") - 1], "--ak")
+
+    def test_finalizes_actual_harbor_log_layout_and_partial_usage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            budget = run_tb2.TokenBudget(root / "ledger.json", budget_total=100, reservation=60)
+            self.assertTrue(budget.admit("tb2:run:demo"))
+            logs = root / "job" / "trials" / "demo__123" / "agent" / "logs"
+            logs.mkdir(parents=True)
+            (logs / "morrow-partial-metrics.json").write_text(
+                json.dumps({"known_input_tokens": 70, "unknown_request_count": 1})
+            )
+            self.assertEqual(run_tb2._finalize_from_job_logs(budget, "tb2:run", root / "job"), 1)
+            self.assertEqual(budget.used_tokens, 70)
+            self.assertEqual(budget.summary()["unknown_exposure_count"], 1)

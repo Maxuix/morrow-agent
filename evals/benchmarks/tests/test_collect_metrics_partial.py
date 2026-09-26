@@ -44,3 +44,7 @@ class PartialMetricsTests(unittest.TestCase):
             self.assertEqual(report["tasks"][0]["partial_usage"]["known_input_tokens"], 13)
             self.assertEqual(report["partial_usage"]["unknown_request_count"], 1)
             self.assertEqual(report["partial_usage"]["known_input_tokens"], 13)
+            self.assertEqual(report["report_kind"], "mixed_campaign")
+            with patch.object(collect_metrics, "_task_meta", return_value={}):
+                single_job = collect_metrics.collect_tb2(jobs / "job")
+            self.assertEqual(single_job["report_kind"], "diagnostic_subset")

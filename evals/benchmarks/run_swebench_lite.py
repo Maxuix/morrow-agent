@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 BENCH_DIR = Path(__file__).resolve().parent
@@ -30,6 +32,7 @@ REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 
 sys.path.insert(0, str(BENCH_DIR))
 from harness.budget import TokenBudget  # noqa: E402
+from harness.fingerprint import run_fingerprint, sha256_file, write_json  # noqa: E402
 from harness.swe_lite_runner import SweLiteRunner  # noqa: E402
 
 
@@ -103,6 +106,7 @@ def main() -> int:
         budget_total=args.budget_total,
         reservation=args.reservation,
     )
+    run_id = uuid.uuid4().hex
 
     if not args.evaluate_only:
         instances = _load_instances()[args.offset :]
@@ -110,6 +114,38 @@ def main() -> int:
             instances = instances[args.shard :: args.shards]
         if args.limit:
             instances = instances[: args.limit]
+
+        write_json(
+            effort_runs_dir / f"run-fingerprint-{run_id}.json",
+            run_fingerprint(
+                BENCH_DIR,
+                settings={
+                    "run_id": run_id,
+                    "dataset_sha256": sha256_file(DATASET),
+                    "instance_ids": [item["instance_id"] for item in instances],
+                    "provider_adapter": env.get(
+                        "MORROW_BENCH_PROVIDER_ADAPTER", "openai-compatible"
+                    ),
+                    "provider_id": env.get("MORROW_BENCH_PROVIDER_ID", "bench"),
+                    "provider_base_url_sha256": hashlib.sha256(
+                        env["MORROW_BENCH_PROVIDER_BASE_URL"].encode("utf-8")
+                    ).hexdigest(),
+                    "model_id": env["MORROW_BENCH_MODEL_ID"],
+                    "api_model_id": env["MORROW_BENCH_API_MODEL_ID"],
+                    "reasoning_effort": reasoning_effort,
+                    "context_window_tokens": env.get("MORROW_BENCH_CONTEXT_WINDOW_TOKENS"),
+                    "max_output_tokens": env.get("MORROW_BENCH_MAX_OUTPUT_TOKENS"),
+                    "image_template_sha256": hashlib.sha256(
+                        env.get("MORROW_BENCH_SWE_IMAGE_TEMPLATE", "").encode("utf-8")
+                    ).hexdigest(),
+                    "timeout_seconds": args.timeout,
+                    "concurrency": 1,
+                    "permission_mode": "manual",
+                    "reservation": args.reservation,
+                    "budget_total": args.budget_total,
+                },
+            ),
+        )
 
         runner = SweLiteRunner(
             workspace=effort_runs_dir / "workspaces",
@@ -148,7 +184,7 @@ def main() -> int:
             for instance in instances:
                 if instance["instance_id"] in finished:
                     continue
-                run_key = f"swebench-lite:{instance['instance_id']}"
+                run_key = f"swebench-lite:{run_id}:{instance['instance_id']}"
                 if not budget.admit(run_key):
                     print(f"budget exhausted; stopping before {instance['instance_id']}")
                     break
@@ -158,6 +194,7 @@ def main() -> int:
                 out.write(
                     json.dumps(
                         result.__dict__
+                        | {"run_id": run_id}
                         | {"patch_file": str(result.patch_file) if result.patch_file else None},
                         ensure_ascii=False,
                     )

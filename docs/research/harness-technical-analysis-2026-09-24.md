@@ -288,6 +288,8 @@ adapter version 从 wheel 文件名读取，难以唯一标识源码和资产。
 
 **验收：**任意 trial 可还原具体运行配置；同一任务的新 run 不会误复用旧预算键；多驱动并发不会丢账；用量未知时明确显示覆盖缺口。
 
+**实施记录（2026-09-26）：**TB2/SWE 驱动现为每次新运行生成独立 run ID，TB2 仅用 `--resume-run-id` 复用旧键，且先核对冻结指纹。指纹包含源码 commit/dirty patch 摘要、wheel/锁文件、Harbor commit/补丁、任务内容摘要、模型部署地址摘要、effort、超时、并发与权限；TB2 trial 另记录容器 Python/libc/架构、实际 instruction 摘要，以及已开始 AgentRun 的 tool schema、prompt、policy 和 Provider 配置摘要（完成记录及增量诊断双通道）。本地预检在预算接纳前检查 Harbor、离线资产及任务 manifest，不读 verifier 内容；adapter 核对实际 wheel 和任务 checksum。预算 JSON 账本使用进程锁，按完整实耗结算，部分/未知用量保留 reservation 并单列已知下界及未知覆盖；修正 `agent/logs/` 路径下的结算和仅有部分指标时的回收。指标输出标记混合 campaign、诊断子集或满足 89 项及指纹覆盖条件的单 job 全量分。离线并发、重跑、部分用量及 adapter/CLI 测试已覆盖；**未做真实 Harbor trial 或 High 评测**。本账本仍是任务接纳额度，非模型请求级硬 token 上限；严格硬额度需要请求入口额外治理，不能以此账本宣称绝不超支。
+
 ## 4. 与主流开源 Agent 的基础机制比较
 
 比较对象选取能直接检查实现的 Terminus 2/Harbor、mini-swe-agent、Pi、Hermes。它们代表不同取舍，没有一个项目同时提供所有最优机制；更复杂也不必然更准确。

@@ -43,6 +43,13 @@ class FakeEnvironment:
 
     async def exec(self, command: str, **_kwargs: object) -> SimpleNamespace:
         self.commands.append(command)
+        if "platform.libc_ver()" in command:
+            return SimpleNamespace(
+                stdout=json.dumps(
+                    {"python": "3.12.14", "libc": ["glibc", "2.31"], "architecture": "x86_64"}
+                ),
+                return_code=0,
+            )
         if command == "pwd":
             return SimpleNamespace(stdout="/app\n", return_code=0)
         if "morrow run" in command:
@@ -126,6 +133,35 @@ class MorrowAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.n_output_tokens, 7)
         self.assertEqual((self.logs_dir / "morrow-run.jsonl").read_text(), env.log)
         self.assertTrue((self.logs_dir / "morrow-terminal-metrics.json").exists())
+
+    async def test_trial_fingerprint_uses_frozen_run_digests(self) -> None:
+        env = FakeEnvironment()
+        record = json.loads(_record())
+        record["fingerprint"] = {
+            "tool_schema_digest": "a" * 64,
+            "role_prompt_digest": "b" * 64,
+            "unexpected": "private content",
+        }
+        env.log = json.dumps(record) + "\n"
+        await self.agent.run("private prompt", env, AgentContext())
+        manifest = json.loads((self.logs_dir / "morrow-fingerprint.json").read_text())
+        self.assertEqual(manifest["frozen_agent_run"]["tool_schema_digest"], "a" * 64)
+        self.assertEqual(manifest["frozen_agent_run"]["role_prompt_digest"], "b" * 64)
+        self.assertNotIn("unexpected", manifest["frozen_agent_run"])
+        self.assertNotIn("private prompt", json.dumps(manifest))
+
+    async def test_missing_terminal_uses_committed_diagnostic_fingerprint(self) -> None:
+        env = FakeEnvironment()
+        env.log = ""
+        env.diagnostics = json.dumps(
+            {
+                "kind": "run.fingerprint",
+                "digests": {"tool_schema_digest": "c" * 64, "unexpected": "private"},
+            }
+        )
+        await self.agent.run("private prompt", env, AgentContext())
+        manifest = json.loads((self.logs_dir / "morrow-fingerprint.json").read_text())
+        self.assertEqual(manifest["frozen_agent_run"], {"tool_schema_digest": "c" * 64})
 
     async def test_resolved_harbor_timeout_reaches_morrow_run(self) -> None:
         task_dir = Path(self.temp.name) / "task"

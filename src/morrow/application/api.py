@@ -184,6 +184,22 @@ class OperationalApplicationService:
             lambda: self.journal.get_agent_run_observation(self.workspace_id, agent_run_id)
         )
 
+    def get_agent_run_fingerprint(self, agent_run_id: str) -> dict[str, str | None] | None:
+        """Return frozen digest evidence without exposing prompt or credentials."""
+        run = self._query(lambda: self.journal.get_agent_run(self.workspace_id, agent_run_id))
+        if run is None:
+            return None
+        snapshot = run.snapshot
+        return {
+            "tool_schema_digest": snapshot.tool_schema_digest,
+            "run_policy_digest": snapshot.run_policy_digest,
+            "provider_config_digest": snapshot.provider_runtime.config_digest,
+            "generation_digest": snapshot.provider_runtime.generation_digest,
+            "prompt_profile_digest": snapshot.prompt_profile_digest,
+            "role_prompt_digest": snapshot.role_prompt_digest,
+            "project_instruction_selection_digest": snapshot.project_instruction_selection_digest,
+        }
+
     def list_tasks(
         self, session_id: str, *, cursor: str | None = None, limit: int = 50
     ) -> QueryPage[DurableTaskRun]:

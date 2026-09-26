@@ -19,8 +19,10 @@ Design notes
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import math
+import os
 import re
 import shlex
 import time
@@ -46,6 +48,8 @@ from harbor.models.trajectories.step import Step
 from harbor.models.trajectories.tool_call import ToolCall
 from harbor.models.trajectories.trajectory import Trajectory
 from pydantic import Field
+
+from harness.fingerprint import run_fingerprint, sha256_file, sha256_tree, write_json
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 RUN_LOG_PATH = "/tmp/morrow-run.jsonl"
@@ -206,7 +210,10 @@ class MorrowAgent(BaseInstalledAgent):
         )
         await environment.upload_file(py_tarball, "/opt/bench/python.tar.gz")
         await environment.upload_dir(ASSETS_DIR / "wheelhouse", "/opt/bench/wheelhouse")
-        wheel = next(ASSETS_DIR.glob("morrow_agent-*.whl"))
+        wheels = list(ASSETS_DIR.glob("morrow_agent-*.whl"))
+        if len(wheels) != 1:
+            raise RuntimeError("benchmark assets require exactly one Morrow wheel")
+        wheel = wheels[0]
         await environment.upload_file(wheel, f"/opt/bench/{wheel.name}")
 
         await self.exec_as_root(
@@ -266,6 +273,80 @@ class MorrowAgent(BaseInstalledAgent):
         outer_timeout = _resolved_agent_timeout_seconds(self.logs_dir.parent)
         workspace = await self._workspace_dir(environment)
         state_root = opts.state_root
+
+        trial_config_path = self.logs_dir.parent / "config.json"
+        trial_config = (
+            json.loads(trial_config_path.read_text(encoding="utf-8"))
+            if trial_config_path.is_file()
+            else {}
+        )
+        task_path = (trial_config.get("task") or {}).get("path")
+        manifest_path = os.environ.get("MORROW_BENCH_RUN_MANIFEST")
+        if manifest_path and not Path(manifest_path).resolve().is_relative_to(
+            (ASSETS_DIR.parent / "runs" / "manifests").resolve()
+        ):
+            raise ValueError("benchmark run manifest must be in the manifest directory")
+        campaign = (
+            json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+            if manifest_path and Path(manifest_path).is_file()
+            else run_fingerprint(
+                ASSETS_DIR.parent,
+                settings={"run_id": self.logs_dir.parent.name, "origin": "direct_harbor"},
+            )
+        )
+        wheel = next(iter(ASSETS_DIR.glob("morrow_agent-*.whl")), None)
+        actual_wheel_sha = sha256_file(wheel) if wheel else None
+        expected_wheel_sha = (campaign.get("wheel") or {}).get("sha256")
+        if expected_wheel_sha and actual_wheel_sha != expected_wheel_sha:
+            raise RuntimeError("installed Morrow wheel differs from frozen run fingerprint")
+        actual_task_sha = sha256_tree(Path(task_path)) if isinstance(task_path, str) else None
+        expected_task_sha = ((campaign.get("settings") or {}).get("tasks") or {}).get(
+            Path(task_path).name if isinstance(task_path, str) else ""
+        )
+        if expected_task_sha and actual_task_sha != expected_task_sha:
+            raise RuntimeError("task contents differ from frozen run fingerprint")
+        runtime_result = await environment.exec(
+            command=(
+                "/opt/morrow/venv/bin/python -c "
+                '\'import json,platform,sys; print(json.dumps({"python":sys.version.split()[0],'
+                '"libc":platform.libc_ver(),"architecture":platform.machine()}))\''
+            ),
+            timeout_sec=10,
+        )
+        try:
+            runtime = json.loads(runtime_result.stdout) if runtime_result.return_code == 0 else None
+        except (TypeError, json.JSONDecodeError):
+            runtime = None
+        if not isinstance(runtime, dict) or not all(
+            runtime.get(key) for key in ("python", "libc", "architecture")
+        ):
+            raise RuntimeError("could not fingerprint trial Python/libc/architecture")
+        fingerprint = {
+            "schema_version": 1,
+            "campaign": campaign,
+            "task_checksum_sha256": actual_task_sha,
+            "installed_wheel_sha256": actual_wheel_sha,
+            "prompt_sha256": hashlib.sha256(instruction.encode("utf-8")).hexdigest(),
+            "runtime": runtime,
+            "resolved_agent_timeout_seconds": outer_timeout,
+            "permission_mode": "manual",
+            "provider_adapter": opts.provider_adapter,
+            "provider_id": opts.provider_id,
+            "provider_base_url_sha256": hashlib.sha256(
+                opts.provider_base_url.encode("utf-8")
+            ).hexdigest(),
+            "model_id": opts.model_id,
+            "api_model_id": opts.api_model_id,
+            "reasoning_effort": opts.reasoning_effort,
+            "context_window_tokens": opts.context_window_tokens,
+            "max_output_tokens": opts.max_output_tokens,
+            "tool_schema_digest": None,
+        }
+        write_json(self.logs_dir / "morrow-fingerprint.json", fingerprint)
+        context.metadata = {
+            **(context.metadata or {}),
+            "morrow_fingerprint": "morrow-fingerprint.json",
+        }
 
         prompt_path = "/tmp/morrow-prompt.txt"
         local_prompt = _write_temp(instruction)
@@ -358,6 +439,31 @@ class MorrowAgent(BaseInstalledAgent):
             if diagnostic_path.exists()
             else ""
         )
+        diagnostic_fingerprint = _last_jsonl_record(diagnostic_text, "run.fingerprint")
+        frozen = (completed or {}).get("fingerprint") or (diagnostic_fingerprint or {}).get(
+            "digests"
+        )
+        fingerprint_path = self.logs_dir / "morrow-fingerprint.json"
+        if isinstance(frozen, dict) and fingerprint_path.is_file():
+            manifest = json.loads(fingerprint_path.read_text(encoding="utf-8"))
+            manifest["frozen_agent_run"] = {
+                key: value
+                for key, value in frozen.items()
+                if key
+                in {
+                    "tool_schema_digest",
+                    "run_policy_digest",
+                    "provider_config_digest",
+                    "generation_digest",
+                    "prompt_profile_digest",
+                    "role_prompt_digest",
+                    "project_instruction_selection_digest",
+                }
+                and (
+                    value is None or isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value)
+                )
+            }
+            write_json(fingerprint_path, manifest)
         self._write_trajectory(diagnostic_text)
         if not completed:
             self.logger.warning("no run.completed record in morrow JSONL output")

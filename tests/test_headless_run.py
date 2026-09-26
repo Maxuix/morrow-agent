@@ -43,6 +43,10 @@ def test_run_emits_only_versioned_jsonl_and_terminal_safe_record(monkeypatch, tm
             yield DispatchResult()
 
     class FakeApi:
+        def get_agent_run_fingerprint(self, agent_run_id):
+            assert agent_run_id == "arun_1"
+            return {"tool_schema_digest": "a" * 64, "role_prompt_digest": "b" * 64}
+
         def get_agent_run_observation(self, agent_run_id):
             assert agent_run_id == "arun_1"
             return SimpleNamespace(
@@ -112,6 +116,10 @@ def test_run_emits_only_versioned_jsonl_and_terminal_safe_record(monkeypatch, tm
     assert all(record["schema_version"] == 1 for record in records)
     assert records[-1]["agent_run_id"] == "arun_1"
     assert records[-1]["metrics"]["usage"]["availability"] == "unavailable"
+    assert records[-1]["fingerprint"] == {
+        "tool_schema_digest": "a" * 64,
+        "role_prompt_digest": "b" * 64,
+    }
     assert "Traceback" not in result.output
 
 
