@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 import json
 import logging
@@ -103,13 +104,14 @@ MODEL_ERROR_STOPS = {
 }
 
 # Repeated identical tool failures fund a guessing loop instead of progress:
-# the second failure of one (tool, error, field path) signature carries a
-# directed correction in its envelope, and the third field-identified
-# validation failure stops the run instead of paying for another guess.
+# the second consecutive failure carries a directed correction, and the third
+# field-identified validation failure stops the run. Successful calls and
+# changed arguments or outcomes break the streak.
 # Operational failures without a field path stay hint-only: changing the
 # target may legitimately succeed.
 REPEATED_FAILURE_HINT_THRESHOLD = 2
 REPEATED_FAILURE_STOP_THRESHOLD = 3
+REPEATED_SUCCESS_HINT_THRESHOLD = 3
 REPEATED_FAILURE_HINT = (
     "这已是第 {count} 次以相同方式失败的工具调用（工具 {tool}，错误 {code}，"
     "位置 {path}）。请先阅读上方错误信息并改变方法，不要重复相同调用。"
@@ -322,6 +324,37 @@ def _with_failure_hint(result: ToolExecutionOutcome, count: int) -> ToolExecutio
     return replace(result, envelope=encoded)
 
 
+def _fingerprint(value: str) -> str:
+    """Compare JSON values without keeping raw tool arguments or results in run state."""
+
+    try:
+        normalized = json.dumps(
+            json.loads(value), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+    except (TypeError, ValueError):
+        normalized = value.strip()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _with_repeated_success_hint(
+    result: ToolExecutionOutcome, *, result_limit: int
+) -> ToolExecutionOutcome:
+    """Suggest a different approach after repeated identical successes; never stop a poll."""
+
+    try:
+        payload = json.loads(result.envelope)
+    except (TypeError, ValueError):
+        return result
+    if not isinstance(payload, dict) or "hint" in payload:
+        return result
+    hinted = {
+        **payload,
+        "hint": "连续三次相同工具调用返回相同结果，可能没有推进任务。请检查状态或尝试其他方法。",
+    }
+    encoded = json.dumps(hinted, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return replace(result, envelope=encoded) if len(encoded) <= result_limit else result
+
+
 @dataclass
 class _AgentRunState:
     """Mutable state for one AgentLoop run."""
@@ -366,7 +399,10 @@ class _AgentRunState:
     internal_phase: str = "run_setup"
     stop_detail: str | None = None
     pending_steering_text: str | None = None
-    failure_streaks: dict[tuple[str, str, str], int] = field(default_factory=dict)
+    failure_streak_key: tuple[str, str, str, str, str] | None = None
+    failure_streak_count: int = 0
+    success_streak_key: tuple[str, str, str] | None = None
+    success_streak_count: int = 0
 
 
 class _RunEventEmitter:
@@ -2304,14 +2340,24 @@ class AgentLoop:
                     durable = call_execution.durable_execution
                     failure_streak = 0
                     repeated_stop: str | None = None
+                    argument_fingerprint = _fingerprint(call.arguments)
                     if not result.ok and result.error_code is not None:
                         streak_key = (
                             call.name,
                             result.error_code.value,
                             result.validation_path or "",
+                            argument_fingerprint,
+                            _fingerprint(result.envelope),
                         )
-                        failure_streak = state.failure_streaks.get(streak_key, 0) + 1
-                        state.failure_streaks[streak_key] = failure_streak
+                        failure_streak = (
+                            state.failure_streak_count + 1
+                            if state.failure_streak_key == streak_key
+                            else 1
+                        )
+                        state.failure_streak_key = streak_key
+                        state.failure_streak_count = failure_streak
+                        state.success_streak_key = None
+                        state.success_streak_count = 0
                         if failure_streak >= REPEATED_FAILURE_HINT_THRESHOLD:
                             result = _with_failure_hint(result, failure_streak)
                         if (
@@ -2319,11 +2365,36 @@ class AgentLoop:
                             and result.validation_path is not None
                         ):
                             repeated_stop = (
-                                f"工具 {call.name} 已连续 {failure_streak} 次以完全相同的方式失败"
+                                f"工具 {call.name} 已连续 {failure_streak} 次以相同参数和错误结果失败"
                                 f"（错误 {result.error_code.value}，"
                                 f"位置 {result.validation_path}），继续重试无法取得进展，"
                                 "已停止本轮任务。请保留已有结论并修正完成方式。"
                             )
+                    else:
+                        state.failure_streak_key = None
+                        state.failure_streak_count = 0
+                        if result.ok:
+                            success_key = (
+                                call.name,
+                                argument_fingerprint,
+                                _fingerprint(result.envelope),
+                            )
+                            success_count = (
+                                state.success_streak_count + 1
+                                if state.success_streak_key == success_key
+                                else 1
+                            )
+                            state.success_streak_key = success_key
+                            state.success_streak_count = min(
+                                success_count, REPEATED_SUCCESS_HINT_THRESHOLD
+                            )
+                            if success_count == REPEATED_SUCCESS_HINT_THRESHOLD:
+                                result = _with_repeated_success_hint(
+                                    result, result_limit=per_call_result_limit
+                                )
+                        else:
+                            state.success_streak_key = None
+                            state.success_streak_count = 0
                     if durable is not None:
                         if durable_runtime is None:
                             raise RuntimeError(

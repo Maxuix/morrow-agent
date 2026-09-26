@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 
 import pytest
 from pydantic import BaseModel, ConfigDict
@@ -78,6 +79,14 @@ class _ExplodingExecutor(ToolExecutor):
 
 def _call(call_id: str, value: str) -> FunctionToolCall:
     return FunctionToolCall(id=call_id, name="echo", arguments=json.dumps({"value": value}))
+
+
+def _bad_call(call_id: str, extra: str) -> FunctionToolCall:
+    return FunctionToolCall(
+        id=call_id,
+        name="echo",
+        arguments=json.dumps({"value": "valid", "extra": extra}),
+    )
 
 
 async def _collect(aiter):
@@ -333,6 +342,177 @@ async def test_tool_failure_envelope_continues_loop_without_retry():
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
     assert executor.attempts == 1
     assert _envelope_code(_tool_messages(session)[0]) == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_interleaved_and_changed_validation_failures_do_not_stop_the_run():
+    provider = _provider(
+        *(
+            AssistantMessage(tool_calls=(call,))
+            for call in (
+                _bad_call("b1", "bad-one"),
+                _call("ok1", "ok"),
+                _bad_call("b2", "bad-two"),
+                _call("ok2", "ok"),
+                _bad_call("b3", "bad-three"),
+            )
+        ),
+        AssistantMessage(content="recovered"),
+    )
+    session = Session(session_id="s")
+
+    events = await _collect(
+        AgentLoop(provider, MODEL, make_context_builder(), tool_executor=_echo_executor()).run_task(
+            session, "question"
+        )
+    )
+
+    assert lifecycle_is_valid(events)
+    assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
+    assert len(provider.stream_calls) == 6
+    assert [json.loads(message.content)["ok"] for message in _tool_messages(session)] == [
+        False,
+        True,
+        False,
+        True,
+        False,
+    ]
+    assert all(
+        "hint" not in json.loads(message.content).get("error", {})
+        for message in _tool_messages(session)
+    )
+
+
+@pytest.mark.asyncio
+async def test_three_changed_validation_arguments_do_not_count_as_one_failure():
+    provider = _provider(
+        *(
+            AssistantMessage(tool_calls=(_bad_call(f"b{index}", f"bad-{index}"),))
+            for index in range(3)
+        ),
+        AssistantMessage(content="done"),
+    )
+    events = await _collect(
+        AgentLoop(provider, MODEL, make_context_builder(), tool_executor=_echo_executor()).run_task(
+            Session(session_id="s"), "question"
+        )
+    )
+
+    assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
+
+
+@pytest.mark.asyncio
+async def test_three_identical_validation_failures_stop_with_explanation():
+    reordered = FunctionToolCall(
+        id="b1", name="echo", arguments=json.dumps({"extra": "same", "value": "valid"})
+    )
+    provider = _provider(
+        AssistantMessage(tool_calls=(_bad_call("b0", "same"),)),
+        AssistantMessage(tool_calls=(reordered,)),
+        AssistantMessage(tool_calls=(_bad_call("b2", "same"),)),
+        AssistantMessage(content="should not be reached"),
+    )
+    session = Session(session_id="s")
+
+    events = await _collect(
+        AgentLoop(provider, MODEL, make_context_builder(), tool_executor=_echo_executor()).run_task(
+            session, "question"
+        )
+    )
+
+    assert lifecycle_is_valid(events)
+    assert events[-1].payload["finish_reason"] == FinishReason.ERROR.value
+    assert events[-1].payload["stop_code"] == "loop_detected"
+    assert len(provider.stream_calls) == 3
+    assert "相同参数和错误结果" in events[-2].payload["message"]
+    assert "same" not in events[-2].payload["message"]
+    assert "hint" in json.loads(_tool_messages(session)[1].content)["error"]
+
+
+@pytest.mark.asyncio
+async def test_changed_error_result_breaks_an_identical_argument_streak():
+    class _ChangingErrorExecutor(ToolExecutor):
+        def __init__(self, tool_set: ToolSet) -> None:
+            super().__init__(tool_set, make_run_policy())
+            self.attempts = 0
+
+        async def execute(self, call, **kwargs):
+            result = await super().execute(call, **kwargs)
+            self.attempts += 1
+            payload = json.loads(result.envelope)
+            payload["error"]["message"] = f"validation state {self.attempts}"
+            return replace(result, envelope=json.dumps(payload, ensure_ascii=False))
+
+    provider = _provider(
+        *(AssistantMessage(tool_calls=(_bad_call(f"b{index}", "same"),)) for index in range(3)),
+        AssistantMessage(content="done"),
+    )
+    executor = _ChangingErrorExecutor(_echo_executor().tool_set)
+    session = Session(session_id="s")
+
+    events = await _collect(
+        AgentLoop(provider, MODEL, make_context_builder(), tool_executor=executor).run_task(
+            session, "question"
+        )
+    )
+
+    assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
+    assert executor.attempts == 3
+    assert all(
+        "hint" not in json.loads(message.content)["error"] for message in _tool_messages(session)
+    )
+
+
+@pytest.mark.asyncio
+async def test_repeated_unchanged_success_only_suggests_another_approach():
+    provider = _provider(
+        *(AssistantMessage(tool_calls=(_call(f"p{index}", "poll"),)) for index in range(3)),
+        AssistantMessage(content="done"),
+    )
+    session = Session(session_id="s")
+
+    events = await _collect(
+        AgentLoop(provider, MODEL, make_context_builder(), tool_executor=_echo_executor()).run_task(
+            session, "question"
+        )
+    )
+
+    assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
+    assert "hint" not in json.loads(_tool_messages(session)[1].content)
+    assert "hint" in json.loads(_tool_messages(session)[2].content)
+
+
+@pytest.mark.asyncio
+async def test_changing_success_results_do_not_receive_a_repetition_hint():
+    counter = 0
+
+    async def changing(arguments: EchoArguments) -> object:
+        nonlocal counter
+        counter += 1
+        return {"echo": arguments.value, "revision": counter}
+
+    registry = ToolRegistry()
+    registry.register(
+        make_tool(name="echo", description="echo", arguments_model=EchoArguments, handler=changing)
+    )
+    provider = _provider(
+        *(AssistantMessage(tool_calls=(_call(f"c{index}", "edit"),)) for index in range(3)),
+        AssistantMessage(content="done"),
+    )
+    session = Session(session_id="s")
+
+    events = await _collect(
+        AgentLoop(
+            provider,
+            MODEL,
+            make_context_builder(),
+            tool_executor=ToolExecutor(registry.snapshot(), make_run_policy()),
+        ).run_task(session, "question")
+    )
+
+    assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
+    assert counter == 3
+    assert all("hint" not in json.loads(message.content) for message in _tool_messages(session))
 
 
 @pytest.mark.asyncio
