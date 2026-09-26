@@ -48,7 +48,8 @@ class TrackedExecution:
     signal: int | None = None
     validation_kind: str | None = None
     validation_scope: str | None = None
-    terminal_fact: tuple[str | None, str | None, int] | None = None
+    started_run_id: str | None = None
+    terminal_fact: tuple[str | None, str | None, int, str | None] | None = None
 
 
 class TrackedProcessRegistry:
@@ -73,6 +74,7 @@ class TrackedProcessRegistry:
         cwd_relative: str,
         validation_kind: str | None = None,
         validation_scope: str | None = None,
+        started_run_id: str | None = None,
     ) -> TrackedExecution:
         spawned = await adapter.spawn(
             argv=argv,
@@ -90,6 +92,7 @@ class TrackedProcessRegistry:
             cwd_relative=cwd_relative,
             validation_kind=validation_kind,
             validation_scope=validation_scope,
+            started_run_id=started_run_id,
             adapter=adapter,
             spawned=spawned,
         )
@@ -182,7 +185,7 @@ class TrackedProcessRegistry:
 
     def claim_terminal_fact(
         self, execution_id: str, *, session_id: str, task_id: str
-    ) -> tuple[str | None, str | None, int] | None:
+    ) -> tuple[str | None, str | None, int, str | None] | None:
         """Claim the first observed terminal state for one fact projection."""
 
         with self._lock:
@@ -201,12 +204,13 @@ class TrackedProcessRegistry:
                 execution.validation_kind,
                 execution.validation_scope,
                 duration_ms,
+                execution.started_run_id,
             )
             return execution.terminal_fact
 
     def settled_terminal_fact(
         self, execution_id: str, *, session_id: str, task_id: str
-    ) -> tuple[str | None, str | None, int] | None:
+    ) -> tuple[str | None, str | None, int, str | None] | None:
         """Read an already-claimed terminal state without settling it again."""
 
         with self._lock:

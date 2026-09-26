@@ -7,7 +7,13 @@ tracked registry. Poll and stop never receive a command.
 from __future__ import annotations
 
 from morrow.adapters.local.process import HostProcessAdapter, ProcessAdapterError
-from morrow.core.capabilities import CommandToolFact, OperationIntent, OperationKind, ValidationFact
+from morrow.core.capabilities import (
+    ChangeToolFact,
+    CommandToolFact,
+    OperationIntent,
+    OperationKind,
+    ValidationFact,
+)
 from morrow.core.local_tools import TrackedCommandStatus
 from morrow.core.models import ToolEffect
 from morrow.services.process import (
@@ -80,7 +86,9 @@ async def run_bash(
             "当前没有任务，不能启动、查询或停止已跟踪进程。",
         )
     if prepared.action == "start":
-        execution_id = await _start(service, prepared, session_id=session_id, task_id=task_id)
+        execution_id = await _start(
+            service, prepared, session_id=session_id, task_id=task_id, run_id=run.run_id
+        )
         view = _read(
             service,
             execution_id,
@@ -163,7 +171,12 @@ async def run_bash(
 
 
 async def _start(
-    service: ProcessExecutionService, prepared: PreparedBash, *, session_id: str, task_id: str
+    service: ProcessExecutionService,
+    prepared: PreparedBash,
+    *,
+    session_id: str,
+    task_id: str,
+    run_id: str | None,
 ) -> str:
     if service.requires_sandbox:
         raise ProcessServiceError(
@@ -193,6 +206,7 @@ async def _start(
             cwd_relative=plan.cwd_relative,
             validation_kind=plan.validation_kind,
             validation_scope=plan.validation_scope,
+            started_run_id=run_id,
         )
     except ProcessAdapterError as exc:
         raise ProcessServiceError(exc.code, exc.message) from exc
@@ -216,27 +230,32 @@ def _tracked_facts(
     started: bool = False,
 ) -> tuple:
     terminal = None
-    historical = False
     if view.status is not TrackedCommandStatus.RUNNING:
         terminal = service.tracked.claim_terminal_fact(
             view.execution_id, session_id=session_id, task_id=task_id
         )
         if terminal is None:
             # An earlier observation may have settled the terminal state; this
-            # run still projects the stored evidence instead of reclaiming it.
+            # run still reads the stored evidence instead of reclaiming it.
             terminal = service.tracked.settled_terminal_fact(
                 view.execution_id, session_id=session_id, task_id=task_id
             )
             if terminal is None:
                 return ()
-            historical = True
     if not started and _state_already_projected(run, view):
         return ()
     kind = plan.validation_kind if plan is not None else None
     scope = plan.validation_scope if plan is not None else None
     duration_ms = 0
+    historical = False
     if terminal is not None:
-        kind, scope, duration_ms = terminal
+        # Claiming and re-reading only change the observation state. Whether
+        # the result proves the current workspace version is decided by the
+        # execution's origin and the facts recorded since, identically for both.
+        kind, scope, duration_ms, origin_run_id = terminal
+        historical = not _terminal_covers_current(
+            run, view, origin_run_id=origin_run_id, kind=kind, scope=scope
+        )
     fact = CommandToolFact(
         call_id=call_id,
         tool_name=tool_name,
@@ -289,6 +308,45 @@ def _state_already_projected(run, view) -> bool:
         if isinstance(fact, CommandToolFact) and fact.execution_id == view.execution_id:
             return fact.status == view.status.value
     return False
+
+
+def _terminal_covers_current(run, view, *, origin_run_id, kind, scope) -> bool:
+    """Whether a tracked terminal proves the run's current workspace version.
+
+    The anchor is this run's start observation for executions started here;
+    anything else cannot be ordered against the run, so the whole fact chain
+    is suspect. A change, an opaque command, or a newer validation of the same
+    scope after the anchor keeps the result historical.
+    """
+
+    facts = run.facts
+    anchor = -1
+    if origin_run_id is not None and origin_run_id == run.run_id:
+        for index, fact in enumerate(facts):
+            if isinstance(fact, CommandToolFact) and fact.execution_id == view.execution_id:
+                anchor = index
+                break
+        if anchor < 0:
+            return False
+    later = facts[anchor + 1 :]
+    validator_calls = {fact.call_id for fact in later if isinstance(fact, ValidationFact)}
+    for fact in later:
+        if isinstance(fact, ChangeToolFact) and fact.status not in {"failed", "rejected"}:
+            return False
+        if (
+            isinstance(fact, CommandToolFact)
+            and fact.execution_id != view.execution_id
+            and fact.call_id not in validator_calls
+        ):
+            return False
+        if (
+            kind is not None
+            and isinstance(fact, ValidationFact)
+            and not fact.historical
+            and (fact.validator_kind, fact.scope) == (kind, scope)
+        ):
+            return False
+    return True
 
 
 def _read(

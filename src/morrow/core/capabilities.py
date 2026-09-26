@@ -272,7 +272,8 @@ class CommandToolFact(ToolFactHeader):
     redaction_flags: tuple[str, ...] = ()
     redaction_count: int = Field(default=0, ge=0, le=100_000)
     execution_id: str | None = Field(default=None, pattern=r"^exec_[0-9a-f]{24}$")
-    # A re-read of a state settled before this run; not a new execution.
+    # Observed evidence that does not cover the current workspace version (a
+    # re-read, or an execution predating later changes or validations).
     historical: bool = False
 
     @field_validator("command_class", "status")
@@ -302,8 +303,8 @@ class ValidationFact(ToolFactHeader):
     status: Literal["passed", "failed", "timeout", "cancelled", "inconclusive"]
     exit_code: int | None = Field(default=None, ge=0, le=255)
     evidence_summary: str = Field(min_length=1, max_length=80)
-    # A re-read of a validation settled before this run; never proof of the
-    # current run's artifacts regardless of its position in the fact chain.
+    # Historical evidence only: the validation did not run against the current
+    # workspace version, so it must never decide this run's outcome.
     historical: bool = False
 
     @field_validator("validator_kind", "evidence_summary")
@@ -409,7 +410,7 @@ class ToolRunContext:
     @property
     def validation_facts(self) -> tuple[ValidationFact, ...]:
         """Latest fact per validator/scope pair in ordinal order; historical
-        re-reads of earlier runs are evidence, not this run's validations."""
+        evidence that predates the current version is not this run's proof."""
 
         latest: dict[tuple[str, str], ValidationFact] = {}
         for fact in self._facts:

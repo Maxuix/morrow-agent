@@ -63,8 +63,8 @@ def check_completion(run: ToolRunContext) -> CompletionCheck:
     )
     if changed_paths:
         evidence.append("已记录的文件变更：" + "、".join(tuple(changed_paths)[:16]))
-    # A re-read of an earlier run's settled result stays visible, but only a
-    # validation executed against the current version can decide the outcome.
+    # Historical results stay visible, but only a validation executed against
+    # the current workspace version can decide the outcome.
     for (kind, scope), fact in sorted(historical.items()):
         evidence.append(
             f"{kind} ({scope}) 的历史结果：{fact.status}（先前执行的回读，不代表当前版本）"
