@@ -122,6 +122,8 @@ def main() -> int:
                 "model_id": env["MORROW_BENCH_MODEL_ID"],
                 "api_model_id": env["MORROW_BENCH_API_MODEL_ID"],
                 "reasoning_effort": reasoning_effort,
+                "context_window_tokens": env.get("MORROW_BENCH_CONTEXT_WINDOW_TOKENS", ""),
+                "max_output_tokens": env.get("MORROW_BENCH_MAX_OUTPUT_TOKENS", ""),
             },
             timeout_sec=args.timeout,
         )

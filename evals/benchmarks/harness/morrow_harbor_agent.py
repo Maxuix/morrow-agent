@@ -60,6 +60,12 @@ class MorrowOptions(InstalledAgentOptions):
     api_model_id: Annotated[str, Cli("--api-model-id", fallback="MORROW_BENCH_API_MODEL_ID")] = (
         Field(...)
     )
+    context_window_tokens: Annotated[
+        int | None, Cli("--context-window-tokens", fallback="MORROW_BENCH_CONTEXT_WINDOW_TOKENS")
+    ] = Field(default=None, gt=0)
+    max_output_tokens: Annotated[
+        int | None, Cli("--max-output-tokens", fallback="MORROW_BENCH_MAX_OUTPUT_TOKENS")
+    ] = Field(default=None, gt=0)
     workspace_dir: Annotated[
         str | None, Cli("--workspace-dir", fallback="MORROW_BENCH_WORKSPACE_DIR")
     ] = Field(default=None)
@@ -220,6 +226,16 @@ class MorrowAgent(BaseInstalledAgent):
                 f"--base-url {shlex.quote(opts.provider_base_url)} "
                 f"--model-id {shlex.quote(opts.model_id)} "
                 f"--api-model-id {shlex.quote(opts.api_model_id)}"
+                + (
+                    f" --context-window-tokens {opts.context_window_tokens}"
+                    if opts.context_window_tokens is not None
+                    else ""
+                )
+                + (
+                    f" --max-output-tokens {opts.max_output_tokens}"
+                    if opts.max_output_tokens is not None
+                    else ""
+                )
             ),
             timeout_sec=300,
         )

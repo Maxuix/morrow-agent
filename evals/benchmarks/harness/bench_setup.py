@@ -13,6 +13,10 @@ from pathlib import Path
 
 from morrow.bootstrap import build_application
 from morrow.core.models import ModelCapabilityOverrides
+from morrow.core.runtime_policy import (
+    AGENT_MAX_CONTEXT_WINDOW_TOKENS,
+    AGENT_MAX_RESERVE_TOKENS,
+)
 
 
 def main() -> None:
@@ -24,7 +28,26 @@ def main() -> None:
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--api-model-id", required=True)
+    parser.add_argument("--context-window-tokens", type=int)
+    parser.add_argument("--max-output-tokens", type=int)
     args = parser.parse_args()
+    if args.context_window_tokens is not None and args.context_window_tokens <= 0:
+        parser.error("--context-window-tokens must be positive")
+    if (
+        args.context_window_tokens is not None
+        and args.context_window_tokens > AGENT_MAX_CONTEXT_WINDOW_TOKENS
+    ):
+        parser.error("--context-window-tokens exceeds the supported range")
+    if args.max_output_tokens is not None and args.max_output_tokens <= 0:
+        parser.error("--max-output-tokens must be positive")
+    if args.max_output_tokens is not None and args.max_output_tokens > AGENT_MAX_RESERVE_TOKENS:
+        parser.error("--max-output-tokens exceeds the supported range")
+    if (
+        args.context_window_tokens is not None
+        and args.max_output_tokens is not None
+        and args.max_output_tokens >= args.context_window_tokens
+    ):
+        parser.error("--max-output-tokens must be below --context-window-tokens")
 
     app = build_application(state_root=Path(args.state_root))
 
@@ -55,10 +78,33 @@ def main() -> None:
             api_model_id=args.api_model_id,
             capabilities=ModelCapabilityOverrides(
                 reasoning_efforts=app.registry.capabilities(args.adapter).reasoning_efforts,
+                context_window_tokens=args.context_window_tokens,
+                max_output_tokens=args.max_output_tokens,
             ),
         )
         print(f"model added: {args.provider_id}/{args.model_id}")
     else:
+        if args.context_window_tokens is not None or args.max_output_tokens is not None:
+            existing = provider.models[args.model_id]
+            capabilities = existing.capabilities or ModelCapabilityOverrides()
+            app.provider_service.configure_model(
+                args.provider_id,
+                args.model_id,
+                capabilities=capabilities.model_copy(
+                    update={
+                        "context_window_tokens": (
+                            args.context_window_tokens
+                            if args.context_window_tokens is not None
+                            else capabilities.context_window_tokens
+                        ),
+                        "max_output_tokens": (
+                            args.max_output_tokens
+                            if args.max_output_tokens is not None
+                            else capabilities.max_output_tokens
+                        ),
+                    }
+                ),
+            )
         print(f"model exists: {args.provider_id}/{args.model_id}")
 
     app.provider_service.use_model(args.provider_id, args.model_id)

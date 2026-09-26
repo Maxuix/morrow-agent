@@ -462,7 +462,8 @@ async def test_compaction_failure_drops_old_turns_without_changing_the_log() -> 
     probe = make_context_builder()
     mandatory = (*probe._system_messages(session), UserMessage(content="CURRENT_REQUEST"))
     before = session.log.snapshot()
-    limit = estimate_request_chars(mandatory, ())
+    # Leave room for the bounded omission notice that the model must see.
+    limit = estimate_request_chars(mandatory, ()) + 600
     provider = SummaryFails()
     events = [
         event
@@ -480,6 +481,7 @@ async def test_compaction_failure_drops_old_turns_without_changing_the_log() -> 
     assert "ALPHA_OLD" not in sent
     assert "BETA_OLD" not in sent
     assert "CURRENT_REQUEST" in sent
+    assert "上下文降级" in sent
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
     assert any(
         event.payload.get("status") == "context_degraded"

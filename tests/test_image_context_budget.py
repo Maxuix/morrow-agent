@@ -302,7 +302,8 @@ async def test_provider_usage_anchor_adds_only_new_image_tokens():
     assert session.latest_model_usage.input_tokens == 1_230
     session.begin_user_turn(_user("加上图片", ref))
     pack = builder.build(session)
-    assert pack.accounting_basis is TokenAccountingBasis.PROVIDER_USAGE
+    # The new image is an estimated delta on top of the Provider's earlier usage.
+    assert pack.accounting_basis is TokenAccountingBasis.PI_ESTIMATOR
     assert pack.estimated_context_tokens >= 1_230 + 20 + estimate_image_tokens(96, 96)
 
 

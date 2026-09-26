@@ -936,7 +936,8 @@ async def test_context_usage_anchor_survives_tools_and_invalidates_changed_prefi
     provider = Provider()
     loop = AgentLoop(provider, MODEL, builder, tool_executor=_echo_executor(builder.run_policy))
     [event async for event in loop.run_task(session, "work")]
-    assert provider.observed.accounting_basis is TokenAccountingBasis.PROVIDER_USAGE
+    # The tool result is estimated on top of exact Provider usage.
+    assert provider.observed.accounting_basis is TokenAccountingBasis.PI_ESTIMATOR
     assert provider.observed.estimated_context_tokens > 1230
 
     session.latest_model_usage = ModelUsage(

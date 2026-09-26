@@ -138,7 +138,17 @@ class SweLiteRunner:
             f"--adapter {shlex.quote(env['adapter'])} "
             f"--base-url {shlex.quote(env['base_url'])} "
             f"--model-id {shlex.quote(env['model_id'])} "
-            f"--api-model-id {shlex.quote(env['api_model_id'])}",
+            f"--api-model-id {shlex.quote(env['api_model_id'])}"
+            + (
+                f" --context-window-tokens {shlex.quote(str(env['context_window_tokens']))}"
+                if env.get("context_window_tokens")
+                else ""
+            )
+            + (
+                f" --max-output-tokens {shlex.quote(str(env['max_output_tokens']))}"
+                if env.get("max_output_tokens")
+                else ""
+            ),
         )
 
     # -- main entry --------------------------------------------------------
