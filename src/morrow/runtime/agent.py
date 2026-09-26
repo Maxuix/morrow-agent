@@ -1649,7 +1649,6 @@ class AgentLoop:
                         state.pending_steering_text = None
                     if pending_completion_review is not None:
                         call_messages.append(UserMessage(content=pending_completion_review))
-                        pending_completion_review = None
                     if deadline is not None:
                         remaining = deadline.require_work()
                         if remaining <= 120:
@@ -1961,6 +1960,9 @@ class AgentLoop:
                     raise asyncio.CancelledError
                 outcome = runner.outcome
                 if outcome.failure is None and outcome.message is not None:
+                    # A review belongs to the logical request, not one network
+                    # attempt. Keep it through transient and malformed responses.
+                    pending_completion_review = None
                     session.latest_model_usage = outcome.usage
                     context_digest = getattr(context_builder, "context_digest", None)
                     usage_messages = (*call_messages, outcome.message)
@@ -1978,18 +1980,27 @@ class AgentLoop:
                             state.overflow_recovery_count += 1
                             yield event("status.changed", {"status": "compacting"})
                             try:
-                                compacted = await self._compact_context(
-                                    session,
-                                    provider,
-                                    model,
-                                    context_builder,
-                                    tools=tools,
-                                    retry_observer=observe_compaction_retry,
-                                    request_admitter=admit_compaction_request,
-                                    request_settler=settle_model_request,
-                                    retry_wait=state.retry_wait,
-                                )
+                                async with asyncio.timeout(
+                                    deadline.require_work() if deadline is not None else None
+                                ):
+                                    compacted = await self._compact_context(
+                                        session,
+                                        provider,
+                                        model,
+                                        context_builder,
+                                        tools=tools,
+                                        retry_observer=observe_compaction_retry,
+                                        request_admitter=admit_compaction_request,
+                                        request_settler=settle_model_request,
+                                        retry_wait=state.retry_wait,
+                                    )
                             except ContextBudgetError:
+                                compacted = False
+                            except TimeoutError as exc:
+                                if deadline is not None and deadline.remaining_seconds() <= 0:
+                                    raise RunDeadlineExceeded(
+                                        "任务运行时间已用尽，正在保存已有结果"
+                                    ) from exc
                                 compacted = False
                             if not compacted:
                                 degraded = context_builder.degrade_model_input(

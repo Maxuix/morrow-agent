@@ -11,10 +11,12 @@ from __future__ import annotations
 import os
 import secrets
 import threading
+import time
 from dataclasses import dataclass
 
 from morrow.adapters.local.process import HostProcessAdapter, ProcessAdapterError, SpawnedCommand
 from morrow.core.local_tools import TrackedCommandStatus, TrackedCommandView, TrackedLifecycle
+from morrow.core.runtime_policy import COMMAND_DURATION_MAX_MS
 
 TRACKED_OUTPUT_RETAIN_BYTES = 256 * 1024
 _POLL_CHUNK_BYTES = 8 * 1024
@@ -44,6 +46,9 @@ class TrackedExecution:
     status: TrackedCommandStatus = TrackedCommandStatus.RUNNING
     exit_code: int | None = None
     signal: int | None = None
+    validation_kind: str | None = None
+    validation_scope: str | None = None
+    terminal_fact_recorded: bool = False
 
 
 class TrackedProcessRegistry:
@@ -66,6 +71,8 @@ class TrackedProcessRegistry:
         lifecycle: TrackedLifecycle,
         command_class: str,
         cwd_relative: str,
+        validation_kind: str | None = None,
+        validation_scope: str | None = None,
     ) -> TrackedExecution:
         spawned = await adapter.spawn(
             argv=argv,
@@ -81,6 +88,8 @@ class TrackedProcessRegistry:
             lifecycle=lifecycle,
             command_class=command_class,
             cwd_relative=cwd_relative,
+            validation_kind=validation_kind,
+            validation_scope=validation_scope,
             adapter=adapter,
             spawned=spawned,
         )
@@ -171,6 +180,26 @@ class TrackedProcessRegistry:
             execution.adapter.request_stop(execution.spawned)
         return tuple(item.execution_id for item in signalled)
 
+    def claim_terminal_fact(
+        self, execution_id: str, *, session_id: str, task_id: str
+    ) -> tuple[str | None, str | None, int] | None:
+        """Claim the first observed terminal state for one fact projection."""
+
+        with self._lock:
+            execution = self._visible(execution_id, session_id=session_id, task_id=task_id)
+            if execution.status is TrackedCommandStatus.RUNNING or execution.terminal_fact_recorded:
+                return None
+            if execution.status is TrackedCommandStatus.CANCELLED and _group_alive(
+                execution.spawned.process.pid
+            ):
+                return None
+            execution.terminal_fact_recorded = True
+            duration_ms = min(
+                COMMAND_DURATION_MAX_MS,
+                max(0, int((time.monotonic() - execution.spawned.started) * 1000)),
+            )
+            return execution.validation_kind, execution.validation_scope, duration_ms
+
     def _visible(self, execution_id: str, *, session_id: str, task_id: str) -> TrackedExecution:
         if (
             not isinstance(execution_id, str)
@@ -232,29 +261,14 @@ class TrackedProcessRegistry:
     ) -> TrackedCommandView:
         chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
         try:
-            stdout_raw, next_stdout, stdout_skipped = execution.spawned.stdout.read(
-                offset, chunk_limit
+            stdout, next_stdout, stdout_skipped = _safe_page(
+                execution.spawned.stdout, offset, chunk_limit, redactor.secret_bytes
             )
-            stderr_raw, next_stderr, stderr_skipped = execution.spawned.stderr.read(
-                stderr_offset, chunk_limit
+            stderr, next_stderr, stderr_skipped = _safe_page(
+                execution.spawned.stderr, stderr_offset, chunk_limit, redactor.secret_bytes
             )
         except ProcessAdapterError as exc:
             raise TrackedProcessError(exc.code, exc.message) from exc
-        running = execution.status is TrackedCommandStatus.RUNNING
-        stdout_raw, next_stdout = _hold_secret_tail(
-            stdout_raw,
-            next_offset=next_stdout,
-            hold=redactor.max_secret_length,
-            running=running,
-        )
-        stderr_raw, next_stderr = _hold_secret_tail(
-            stderr_raw,
-            next_offset=next_stderr,
-            hold=redactor.max_secret_length,
-            running=running,
-        )
-        stdout, _, _ = redactor.redact(stdout_raw)
-        stderr, _, _ = redactor.redact(stderr_raw)
         return TrackedCommandView(
             execution_id=execution.execution_id,
             status=execution.status,
@@ -303,14 +317,82 @@ def _group_alive(pid: int) -> bool:
     return HostProcessAdapter._group_alive(pid)
 
 
-def _hold_secret_tail(
-    raw: bytes, *, next_offset: int, hold: int, running: bool
-) -> tuple[bytes, int]:
-    """Keep a secret split across polls inside the unread tail."""
+def _safe_page(
+    buffer, offset: int, limit: int, secrets: tuple[bytes, ...]
+) -> tuple[str, int, bool]:
+    """Page by raw byte cursors after finding secret spans in the retained window.
 
-    if not running or hold <= 0 or len(raw) <= hold:
-        if running and hold > 0 and len(raw) <= hold:
-            return b"", next_offset - len(raw)
-        return raw, next_offset
-    kept = raw[:-hold]
-    return kept, next_offset - hold
+    The bounded capture is scanned before a page is cut. This protects arbitrary
+    cursors, tiny limits, and a ring buffer whose left edge bisects a secret.
+    """
+
+    base = buffer.base
+    raw, total, skipped = buffer.read(base, max(1, buffer.total - base))
+    if offset < 0 or offset > total:
+        raise ProcessAdapterError("invalid_range", "输出读取位置无效")
+    start = max(offset, base)
+    if start == total:
+        return "", start, skipped or offset < base
+    if any(len(secret) > buffer.limit for secret in secrets):
+        # A credential longer than the entire ring can leave an unrecognizable
+        # middle fragment after truncation. Keep the byte cursor advancing,
+        # but do not disclose that window.
+        return "<redacted>", min(total, start + limit), skipped or offset < base
+    spans: list[tuple[int, int]] = []
+    for secret in secrets:
+        position = raw.find(secret)
+        while position >= 0:
+            spans.append((position, position + len(secret)))
+            position = raw.find(secret, position + 1)
+        # The ring's left edge or a still-growing right edge may retain only
+        # part of an exact secret. Suppress those boundary fragments as well.
+        if base:
+            width = _boundary_overlap(secret[::-1], raw[::-1])
+            if width:
+                spans.append((0, width))
+        width = _boundary_overlap(secret, raw)
+        if width:
+            spans.append((len(raw) - width, len(raw)))
+    local_start = start - base
+    end = min(len(raw), local_start + limit)
+    for left, right in spans:
+        if left < end < right:
+            end = right
+    # Never split a UTF-8 code point between pages. Invalid bytes still decode
+    # with replacement; the cursor always advances in the original byte stream.
+    while end < len(raw) and raw[end] & 0xC0 == 0x80:
+        end += 1
+    page = bytearray()
+    position = local_start
+    for left, right in sorted(spans):
+        if right <= position or left >= end:
+            continue
+        if left > position:
+            page.extend(raw[position:left])
+        page.extend(b"<redacted>")
+        position = min(right, end)
+    if position < end:
+        page.extend(raw[position:end])
+    return page.decode("utf-8", errors="replace"), base + end, skipped or offset < base
+
+
+def _boundary_overlap(pattern: bytes, data: bytes) -> int:
+    """Longest proper pattern prefix at the data tail, in linear time."""
+
+    failure = [0] * len(pattern)
+    matched = 0
+    for index in range(1, len(pattern)):
+        while matched and pattern[index] != pattern[matched]:
+            matched = failure[matched - 1]
+        if pattern[index] == pattern[matched]:
+            matched += 1
+        failure[index] = matched
+    matched = 0
+    for value in data:
+        while matched and value != pattern[matched]:
+            matched = failure[matched - 1]
+        if value == pattern[matched]:
+            matched += 1
+        if matched == len(pattern):
+            matched = failure[matched - 1]
+    return matched

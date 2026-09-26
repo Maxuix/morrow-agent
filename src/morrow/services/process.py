@@ -110,7 +110,8 @@ class SecretRedactor:
     def __init__(self, secrets: tuple[str, ...] = ()) -> None:
         unique = sorted({value for value in secrets if len(value) >= 4}, key=len, reverse=True)
         self._exact = tuple(unique)
-        self.max_secret_length = max((len(value) for value in unique), default=0)
+        self.secret_bytes = tuple(value.encode("utf-8") for value in unique)
+        self.max_secret_length = max((len(value) for value in self.secret_bytes), default=0)
 
     def redact(self, raw: bytes) -> tuple[str, tuple[str, ...], int]:
         invalid_utf8 = False

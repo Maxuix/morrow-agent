@@ -271,6 +271,7 @@ class CommandToolFact(ToolFactHeader):
     output_truncated: bool = False
     redaction_flags: tuple[str, ...] = ()
     redaction_count: int = Field(default=0, ge=0, le=100_000)
+    execution_id: str | None = Field(default=None, pattern=r"^exec_[0-9a-f]{24}$")
 
     @field_validator("command_class", "status")
     @classmethod
@@ -337,6 +338,8 @@ ToolFact = Annotated[
 def validation_evidence_stale(facts: tuple[ToolFact, ...], index: int) -> bool:
     """A later file change or opaque command makes earlier validation uncertain."""
 
+    if active_tracked_executions(facts):
+        return True
     later = facts[index + 1 :]
     validator_calls = {fact.call_id for fact in later if isinstance(fact, ValidationFact)}
     return any(
@@ -344,6 +347,14 @@ def validation_evidence_stale(facts: tuple[ToolFact, ...], index: int) -> bool:
         or (isinstance(fact, CommandToolFact) and fact.call_id not in validator_calls)
         for fact in later
     )
+
+
+def active_tracked_executions(facts: tuple[ToolFact, ...]) -> tuple[str, ...]:
+    latest: dict[str, str] = {}
+    for fact in facts:
+        if isinstance(fact, CommandToolFact) and fact.execution_id is not None:
+            latest[fact.execution_id] = fact.status
+    return tuple(key for key, status in latest.items() if status == "running")
 
 
 class RunMetricsSnapshot(LocalCapabilityModel):

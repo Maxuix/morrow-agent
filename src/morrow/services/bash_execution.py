@@ -7,7 +7,8 @@ tracked registry. Poll and stop never receive a command.
 from __future__ import annotations
 
 from morrow.adapters.local.process import HostProcessAdapter, ProcessAdapterError
-from morrow.core.capabilities import OperationIntent, OperationKind
+from morrow.core.capabilities import CommandToolFact, OperationIntent, OperationKind, ValidationFact
+from morrow.core.local_tools import TrackedCommandStatus
 from morrow.core.models import ToolEffect
 from morrow.services.process import (
     BashExecution,
@@ -80,16 +81,29 @@ async def run_bash(
         )
     if prepared.action == "start":
         execution_id = await _start(service, prepared, session_id=session_id, task_id=task_id)
+        view = _read(
+            service,
+            execution_id,
+            session_id=session_id,
+            task_id=task_id,
+            offset=0,
+            stderr_offset=0,
+            limit=result_limit,
+        )
         return BashExecution(
-            payload=_read(
+            payload=view,
+            facts=_tracked_facts(
                 service,
-                execution_id,
+                view,
                 session_id=session_id,
                 task_id=task_id,
-                offset=0,
-                stderr_offset=0,
-                limit=result_limit,
-            )
+                call_id=call_id,
+                tool_name=tool_name,
+                ordinal=ordinal,
+                approval_verdict=approval_verdict,
+                plan=prepared.plan,
+                started=True,
+            ),
         )
     if prepared.execution_id is None:
         raise ProcessServiceError(
@@ -97,28 +111,50 @@ async def run_bash(
             "缺少执行编号。poll 和 stop 不会启动新进程。",
         )
     if prepared.action == "poll":
+        view = _read(
+            service,
+            prepared.execution_id,
+            session_id=session_id,
+            task_id=task_id,
+            offset=prepared.output_offset,
+            stderr_offset=prepared.stderr_offset,
+            limit=result_limit,
+        )
         return BashExecution(
-            payload=_read(
+            payload=view,
+            facts=_tracked_facts(
                 service,
-                prepared.execution_id,
+                view,
                 session_id=session_id,
                 task_id=task_id,
-                offset=prepared.output_offset,
-                stderr_offset=prepared.stderr_offset,
-                limit=result_limit,
-            )
+                call_id=call_id,
+                tool_name=tool_name,
+                ordinal=ordinal,
+                approval_verdict=approval_verdict,
+            ),
         )
     if prepared.action == "stop":
+        view = await _stop(
+            service,
+            prepared.execution_id,
+            session_id=session_id,
+            task_id=task_id,
+            offset=prepared.output_offset,
+            stderr_offset=prepared.stderr_offset,
+            limit=result_limit,
+        )
         return BashExecution(
-            payload=await _stop(
+            payload=view,
+            facts=_tracked_facts(
                 service,
-                prepared.execution_id,
+                view,
                 session_id=session_id,
                 task_id=task_id,
-                offset=prepared.output_offset,
-                stderr_offset=prepared.stderr_offset,
-                limit=result_limit,
-            )
+                call_id=call_id,
+                tool_name=tool_name,
+                ordinal=ordinal,
+                approval_verdict=approval_verdict,
+            ),
         )
     raise ProcessServiceError("invalid_mode", "未知的 bash 操作")
 
@@ -152,12 +188,77 @@ async def _start(
             lifecycle=prepared.lifecycle,
             command_class=plan.command_class,
             cwd_relative=plan.cwd_relative,
+            validation_kind=plan.validation_kind,
+            validation_scope=plan.validation_scope,
         )
     except ProcessAdapterError as exc:
         raise ProcessServiceError(exc.code, exc.message) from exc
     except TrackedProcessError as exc:
         raise ProcessServiceError(exc.code, exc.message) from exc
     return execution.execution_id
+
+
+def _tracked_facts(
+    service: ProcessExecutionService,
+    view,
+    *,
+    session_id: str,
+    task_id: str,
+    call_id: str,
+    tool_name: str,
+    ordinal: int,
+    approval_verdict,
+    plan=None,
+    started: bool = False,
+) -> tuple:
+    terminal = None
+    if view.status is not TrackedCommandStatus.RUNNING:
+        terminal = service.tracked.claim_terminal_fact(
+            view.execution_id, session_id=session_id, task_id=task_id
+        )
+    if not started and terminal is None:
+        return ()
+    kind = plan.validation_kind if plan is not None else None
+    scope = plan.validation_scope if plan is not None else None
+    duration_ms = 0
+    if terminal is not None:
+        kind, scope, duration_ms = terminal
+    fact = CommandToolFact(
+        call_id=call_id,
+        tool_name=tool_name,
+        ordinal=ordinal,
+        relative_paths=(view.cwd,),
+        approval_verdict=approval_verdict,
+        command_class=view.command_class,
+        status=view.status.value,
+        exit_code=view.exit_code,
+        signal=view.signal,
+        duration_ms=duration_ms,
+        output_truncated=view.output_truncated,
+        execution_id=view.execution_id,
+    )
+    if terminal is None or kind is None or scope is None:
+        return (fact,)
+    if view.status is TrackedCommandStatus.EXITED:
+        status = "passed" if view.exit_code == 0 else "failed"
+        evidence = "exit_zero" if status == "passed" else "exit_nonzero"
+    elif view.status is TrackedCommandStatus.CANCELLED:
+        status, evidence = "cancelled", "cancelled"
+    else:
+        status, evidence = "inconclusive", "lost_or_signaled"
+    validation = ValidationFact(
+        call_id=call_id,
+        tool_name=tool_name,
+        ordinal=ordinal,
+        relative_paths=(scope,),
+        approval_verdict=approval_verdict,
+        validator_kind=kind,
+        scope=scope,
+        status=status,
+        exit_code=view.exit_code,
+        evidence_summary=evidence,
+    )
+    return fact, validation
 
 
 def _read(

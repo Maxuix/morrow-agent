@@ -9,6 +9,7 @@ from morrow.core.capabilities import (
     ChangeToolFact,
     ToolRunContext,
     ValidationFact,
+    active_tracked_executions,
     validation_evidence_stale,
 )
 
@@ -48,6 +49,8 @@ def check_completion(run: ToolRunContext) -> CompletionCheck:
             latest[(fact.validator_kind, fact.scope)] = (index, fact)
     issues: list[str] = []
     evidence: list[str] = []
+    if active_tracked_executions(facts):
+        issues.append("后台命令仍在运行，可能继续改变工作区；请等待终态并重新验证")
     changed_paths = dict.fromkeys(
         path
         for fact in facts
