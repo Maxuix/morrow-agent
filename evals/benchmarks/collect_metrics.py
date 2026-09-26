@@ -3,9 +3,8 @@
 Inputs
 ------
 * Terminal-Bench 2.0: ``runs/jobs/<job>/trials/**/result.json`` (official Harbor
-  trial results, verifier rewards untouched) + per-trial
-  ``morrow-terminal-metrics.json`` / ``morrow-run.jsonl`` for Morrow-internal
-  counters (tool calls, retries, attempts, compaction drops, usage).
+  trial results, verifier rewards untouched) + per-trial terminal and partial
+  metrics for Morrow-internal counters and incomplete usage coverage.
 * SWE-bench Lite: official ``run_evaluation`` report under ``results/`` plus
   per-instance runner records ``runs/swebench-lite/instances-*.jsonl``.
 
@@ -72,12 +71,21 @@ def collect_tb2(jobs_dir: Path) -> dict:
         exception = result.get("exception_info") or {}
 
         metrics_file = result_path.parent / "agent" / "logs" / "morrow-terminal-metrics.json"
+        partial_file = result_path.parent / "agent" / "logs" / "morrow-partial-metrics.json"
         morrow_metrics: dict = {}
         if metrics_file.exists():
             try:
                 morrow_metrics = json.loads(metrics_file.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 morrow_metrics = {}
+        partial_usage = (agent_ctx.get("metadata") or {}).get("morrow_partial_usage")
+        if not isinstance(partial_usage, dict) and partial_file.exists():
+            try:
+                partial_usage = json.loads(partial_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                partial_usage = None
+        if not isinstance(partial_usage, dict):
+            partial_usage = None
 
         status = "resolved" if reward == 1 else "unresolved"
         failure_kind = None
@@ -113,6 +121,7 @@ def collect_tb2(jobs_dir: Path) -> dict:
                 "agent_input_tokens": agent_ctx.get("n_input_tokens"),
                 "agent_output_tokens": agent_ctx.get("n_output_tokens"),
                 "agent_cost_usd": agent_ctx.get("cost_usd"),
+                "partial_usage": partial_usage,
             }
         )
 
@@ -126,6 +135,18 @@ def collect_tb2(jobs_dir: Path) -> dict:
         "by_category": _breakdown(tasks, "category"),
         "duration_sec": _p50_p95([t["duration_sec"] for t in tasks if t["duration_sec"]]),
         "tokens": _token_totals(tasks),
+        "partial_usage": {
+            "tasks_with_partial_evidence": sum(t["partial_usage"] is not None for t in tasks),
+            "known_input_tokens": sum(
+                (t["partial_usage"] or {}).get("known_input_tokens") or 0 for t in tasks
+            ),
+            "known_output_tokens": sum(
+                (t["partial_usage"] or {}).get("known_output_tokens") or 0 for t in tasks
+            ),
+            "unknown_request_count": sum(
+                (t["partial_usage"] or {}).get("unknown_request_count") or 0 for t in tasks
+            ),
+        },
         "tool_calls_total": sum(t["tool_calls"] or 0 for t in tasks),
         "model_requests_total": sum(t["model_attempts"] or 0 for t in tasks),
         "retry_total": sum(t["retry_count"] or 0 for t in tasks),

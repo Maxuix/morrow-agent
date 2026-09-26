@@ -35,8 +35,11 @@ class FakeEnvironment:
         self.commands: list[str] = []
         self.uploads: list[str] = []
         self.log = _record()
+        self.diagnostics = ""
         self.run_stdout = "MORROW_EXIT=0\n"
         self.download_error: OSError | None = None
+        self.block_download = False
+        self.download_started = asyncio.Event()
 
     async def exec(self, command: str, **_kwargs: object) -> SimpleNamespace:
         self.commands.append(command)
@@ -56,9 +59,15 @@ class FakeEnvironment:
         self.uploads.append(target)
 
     async def download_file(self, _source: str, target: Path) -> None:
+        self.download_started.set()
+        if self.block_download:
+            await asyncio.Event().wait()
         if self.download_error:
             raise self.download_error
-        target.write_text(self.log, encoding="utf-8")
+        target.write_text(
+            self.diagnostics if _source.endswith("morrow-diagnostics.jsonl") else self.log,
+            encoding="utf-8",
+        )
 
 
 class MorrowAgentTests(unittest.IsolatedAsyncioTestCase):
@@ -110,6 +119,9 @@ class MorrowAgentTests(unittest.IsolatedAsyncioTestCase):
         await self.agent.run("do work", env, context)
         self.assertIn("PATH=/opt/morrow/tools:$PATH", "\n".join(env.commands))
         self.assertIn("--workspace /app", "\n".join(env.commands))
+        self.assertIn(
+            "--diagnostic-log /logs/agent/morrow-diagnostics.jsonl", "\n".join(env.commands)
+        )
         self.assertEqual(context.n_input_tokens, 11)
         self.assertEqual(context.n_output_tokens, 7)
         self.assertEqual((self.logs_dir / "morrow-run.jsonl").read_text(), env.log)
@@ -146,6 +158,161 @@ class MorrowAgentTests(unittest.IsolatedAsyncioTestCase):
             await task
         self.assertEqual((self.logs_dir / "morrow-run.jsonl").read_text(), env.log)
         self.assertIsNone(context.n_input_tokens)
+
+    async def test_cancel_exports_known_usage_and_unknown_exposure(self) -> None:
+        env = FakeEnvironment(block_run=True)
+        env.log = '{"kind":"agent_event"}\n'
+        env.diagnostics = (
+            "\n".join(
+                json.dumps(row)
+                for row in (
+                    {
+                        "kind": "model.request",
+                        "request_id": "mreq_one",
+                        "state": "completed",
+                        "usage": {
+                            "availability": "available",
+                            "input_tokens": 13,
+                            "output_tokens": 5,
+                        },
+                    },
+                    {
+                        "kind": "model.request",
+                        "request_id": "mreq_two",
+                        "state": "admitted",
+                        "usage": {
+                            "availability": "unavailable",
+                            "input_tokens": None,
+                            "output_tokens": None,
+                        },
+                    },
+                )
+            )
+            + "\n"
+        )
+        context = AgentContext()
+        task = asyncio.create_task(self.agent.run("do work", env, context))
+        await env.run_started.wait()
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertEqual(context.n_input_tokens, 13)
+        self.assertEqual(context.n_output_tokens, 5)
+        self.assertEqual(
+            context.metadata["morrow_partial_usage"],
+            {
+                "known_request_count": 1,
+                "unknown_request_count": 1,
+                "complete": False,
+                "known_input_tokens": 13,
+                "known_output_tokens": 5,
+                "known_usd_cost_minor": None,
+                "unknown_cost_request_count": 2,
+            },
+        )
+        self.assertTrue((self.logs_dir / "trajectory.json").exists())
+
+    async def test_diagnostic_tool_projection_contains_only_fingerprints(self) -> None:
+        env = FakeEnvironment()
+        env.log = ""
+        env.diagnostics = (
+            json.dumps(
+                {
+                    "kind": "tool.execution",
+                    "execution_id": "tex_one",
+                    "tool_name": "bash",
+                    "state": "closed",
+                    "argument_fingerprint": "opaque123",
+                    "result_fingerprint": "opaque456",
+                    "exit_code": 1,
+                }
+            )
+            + "\n"
+        )
+        await self.agent.run("do work", env, AgentContext())
+        trajectory = json.loads((self.logs_dir / "trajectory.json").read_text())
+        self.assertEqual(trajectory["schema_version"], "ATIF-v1.7")
+        self.assertEqual(trajectory["steps"][0]["extra"]["morrow_diagnostic"]["exit_code"], 1)
+
+    async def test_download_failure_does_not_mask_agent_exit(self) -> None:
+        env = FakeEnvironment()
+        env.download_error = OSError("download failed")
+        env.run_stdout = "MORROW_EXIT=1\n"
+        with self.assertRaises(NonZeroAgentExitCodeError):
+            await self.agent.run("do work", env, AgentContext())
+
+    async def test_container_exit_preserves_partial_request_usage(self) -> None:
+        env = FakeEnvironment()
+        env.log = ""
+        env.run_stdout = "container exited"
+        env.diagnostics = json.dumps(
+            {
+                "kind": "model.request",
+                "request_id": "mreq_one",
+                "state": "completed",
+                "usage": {"availability": "available", "input_tokens": 9, "output_tokens": 2},
+            }
+        )
+        context = AgentContext()
+        with self.assertRaises(NonZeroAgentExitCodeError):
+            await self.agent.run("do work", env, context)
+        self.assertEqual(context.n_input_tokens, 9)
+        self.assertEqual(context.metadata["morrow_partial_usage"]["unknown_request_count"], 0)
+
+    async def test_second_cancel_keeps_mounted_diagnostics(self) -> None:
+        env = FakeEnvironment(block_run=True)
+        env.block_download = True
+        mounted = self.logs_dir / "morrow-diagnostics.jsonl"
+        mounted.write_text('{"kind":"model.request","request_id":"mreq_one"}\n')
+        task = asyncio.create_task(self.agent.run("do work", env, AgentContext()))
+        await env.run_started.wait()
+        task.cancel()
+        await env.download_started.wait()
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertIn("mreq_one", mounted.read_text())
+
+    async def test_atif_drops_unrecognized_diagnostic_fields(self) -> None:
+        env = FakeEnvironment()
+        env.diagnostics = json.dumps(
+            {
+                "kind": "tool.execution",
+                "execution_id": "tex_one",
+                "tool_name": "bash",
+                "raw_command": "private-token",
+                "artifact_ids": [],
+            }
+        )
+        await self.agent.run("do work", env, AgentContext())
+        assert "private-token" not in (self.logs_dir / "trajectory.json").read_text()
+
+    async def test_total_only_usage_is_not_misreported_as_input(self) -> None:
+        env = FakeEnvironment()
+        env.log = json.dumps({"kind": "run.completed", "metrics": {"usage": {"total_tokens": 17}}})
+        context = AgentContext()
+        await self.agent.run("do work", env, context)
+        self.assertIsNone(context.n_input_tokens)
+        self.assertIsNone(context.n_output_tokens)
+        self.assertEqual(context.metadata["morrow_terminal_total_tokens"], 17)
+
+    async def test_partial_one_sided_request_does_not_invent_output(self) -> None:
+        env = FakeEnvironment()
+        env.log = ""
+        env.diagnostics = json.dumps(
+            {
+                "kind": "model.request",
+                "request_id": "mreq_one",
+                "state": "completed",
+                "usage": {"availability": "available", "input_tokens": 9, "output_tokens": None},
+            }
+        )
+        context = AgentContext()
+        await self.agent.run("do work", env, context)
+        self.assertEqual(context.n_input_tokens, 9)
+        self.assertIsNone(context.n_output_tokens)
+        self.assertIsNone(context.model_usage)
+        self.assertFalse(context.metadata["morrow_partial_usage"]["complete"])
 
     async def test_nonzero_process_exit_is_an_agent_error_after_log_recovery(self) -> None:
         env = FakeEnvironment()

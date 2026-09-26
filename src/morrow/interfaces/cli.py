@@ -59,6 +59,7 @@ from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.interfaces.approval_cli import approval_app
 from morrow.interfaces.attach_cli import register as _register_attach
 from morrow.interfaces.gui_cli import register as _register_gui
+from morrow.interfaces.headless_diagnostics import HeadlessDiagnostics
 from morrow.interfaces.learning_cli import learning_app, memory_app
 from morrow.interfaces.management_cli import management_app
 from morrow.interfaces.mcp_cli import mcp_app
@@ -256,6 +257,7 @@ async def _headless_stream(
     *,
     reasoning_effort: str | None = None,
     run_timeout_seconds: float | None = None,
+    diagnostics: HeadlessDiagnostics | None = None,
 ) -> _HeadlessStreamResult:
     if run_timeout_seconds is not None:
         session_app.orchestrator.run_timeout_seconds = run_timeout_seconds
@@ -279,6 +281,12 @@ async def _headless_stream(
         async for item in session_app.orchestrator.stream(prompt):
             if isinstance(item, AgentEvent):
                 _headless_echo("agent_event", event=_headless_dump(item))
+                if diagnostics is not None:
+                    try:
+                        diagnostics.record_event(item)
+                    except Exception as exc:
+                        typer.echo(f"headless diagnostics stopped: {type(exc).__name__}", err=True)
+                        diagnostics = None
                 if item.type == "turn.started":
                     started_turn_id = item.turn_id
                     started_session_id = item.session_id
@@ -287,6 +295,11 @@ async def _headless_stream(
             elif isinstance(item, DispatchResult):
                 dispatch = item
     except asyncio.CancelledError:
+        if diagnostics is not None:
+            try:
+                diagnostics.snapshot()
+            except Exception:
+                pass
         return _HeadlessStreamResult(
             terminal_event=terminal_event,
             dispatch=dispatch,
@@ -295,7 +308,13 @@ async def _headless_stream(
             failed=terminal_event is None,
             cancelled=True,
         )
-    except Exception:
+    except Exception as exc:
+        if diagnostics is not None:
+            try:
+                diagnostics.record_error(exc, "headless_stream")
+                diagnostics.snapshot()
+            except Exception:
+                pass
         return _HeadlessStreamResult(
             terminal_event=terminal_event,
             dispatch=dispatch,
@@ -471,6 +490,9 @@ def run_headless(
     run_timeout_seconds: float | None = typer.Option(
         None, "--run-timeout-seconds", help="宿主提供的本次运行总时限（秒）。"
     ),
+    diagnostic_log: Path | None = typer.Option(
+        None, "--diagnostic-log", help="将脱敏运行诊断持续写入 JSONL 文件。"
+    ),
 ) -> None:
     """Run one ordinary prompt and emit versioned JSONL records only."""
 
@@ -525,17 +547,30 @@ def run_headless(
                 resume_session_id=resume_session_id,
             )
             try:
+                diagnostics = (
+                    HeadlessDiagnostics(diagnostic_log, session_app) if diagnostic_log else None
+                )
+            except OSError as exc:
+                typer.echo(f"headless diagnostics unavailable: {type(exc).__name__}", err=True)
+                diagnostics = None
+            try:
                 streamed = asyncio.run(
                     _headless_stream(
                         session_app,
                         prompt,
                         reasoning_effort=reasoning_effort,
                         run_timeout_seconds=run_timeout_seconds,
+                        diagnostics=diagnostics,
                     )
                 )
             except KeyboardInterrupt:
                 streamed = _HeadlessStreamResult(failed=True, cancelled=True)
-            except Exception:
+            except Exception as exc:
+                if diagnostics is not None:
+                    try:
+                        diagnostics.record_error(exc, "headless_runner")
+                    except Exception:
+                        pass
                 streamed = _HeadlessStreamResult(failed=True)
             if streamed.failed or streamed.cancelled:
                 typer.echo("headless run ended before a normal stop", err=True)
@@ -549,9 +584,20 @@ def run_headless(
                     started_turn_id=streamed.started_turn_id,
                     started_session_id=streamed.started_session_id,
                 )
-            except Exception:
+            except Exception as exc:
+                if diagnostics is not None:
+                    try:
+                        diagnostics.record_error(exc, "headless_terminal")
+                    except Exception:
+                        pass
                 typer.echo("headless run observation is unavailable", err=True)
                 success = False
+            finally:
+                if diagnostics is not None:
+                    try:
+                        diagnostics.close()
+                    except OSError:
+                        pass
     except typer.Exit:
         raise
     except (CredentialAccessError, StorageError, WorkspaceError, ApplicationError, ValueError):

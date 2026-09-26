@@ -83,6 +83,15 @@ logger = logging.getLogger("morrow.runtime")
 MODEL_ATTEMPT_MAX_SECONDS = 600.0
 
 
+def _internal_error_fingerprint(exc: Exception, phase: str) -> str:
+    """Identify a failure site without serializing its message or traceback."""
+    frame = exc.__traceback__
+    while frame is not None and frame.tb_next is not None:
+        frame = frame.tb_next
+    site = f"{frame.tb_frame.f_code.co_name}:{frame.tb_lineno}" if frame is not None else "unknown"
+    return hashlib.sha256(f"{type(exc).__name__}:{phase}:{site}".encode()).hexdigest()[:24]
+
+
 class ModelAttemptExceeded(TimeoutError):
     """A single request ran past its total attempt budget."""
 
@@ -2057,6 +2066,17 @@ class AgentLoop:
                         stop_code = MODEL_ERROR_STOPS[failure.code]
                     if failure.code is ModelErrorCode.INTERNAL:
                         state.stop_detail = f"{failure.origin.value}_internal"
+                        yield event(
+                            "status.changed",
+                            {
+                                "status": "internal_error",
+                                "error_class": "ModelFailure",
+                                "phase": state.stop_detail,
+                                "reason_fingerprint": hashlib.sha256(
+                                    f"ModelFailure:{state.stop_detail}".encode()
+                                ).hexdigest()[:24],
+                            },
+                        )
                     persist_retry_progress()
                     # An interrupted terminal is meaningful only when the host
                     # supplied a pause authority (durable chat/workflow). The
@@ -2535,7 +2555,13 @@ class AgentLoop:
             )
             return
         except Exception as exc:
-            logger.error("task failed: %s: %s", type(exc).__name__, exc)
+            fingerprint = _internal_error_fingerprint(exc, state.internal_phase)
+            logger.error(
+                "task failed: class=%s phase=%s fingerprint=%s",
+                type(exc).__name__,
+                state.internal_phase,
+                fingerprint,
+            )
             if not state.started:
                 state.started = True
                 yield event("turn.started", {})
@@ -2571,6 +2597,18 @@ class AgentLoop:
             state.terminal_finish_reason = FinishReason.ERROR
             state.stop_code = stop_code
             retain_facts(FinishReason.ERROR.value)
+            if stop_code is AgentStopCode.INTERNAL and state.agent_run_id is not None:
+                error_class = type(exc).__name__
+                phase = state.internal_phase
+                yield event(
+                    "status.changed",
+                    {
+                        "status": "internal_error",
+                        "error_class": error_class[:64],
+                        "phase": phase,
+                        "reason_fingerprint": fingerprint,
+                    },
+                )
             if isinstance(exc, ApplicationError):
                 message = exc.message
             elif isinstance(exc, PublicDiagnosticError):

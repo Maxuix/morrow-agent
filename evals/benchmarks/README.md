@@ -32,8 +32,9 @@ agent 为自定义 installed-agent `harness.morrow_harbor_agent:MorrowAgent`：
 setup 阶段把离线资产（python-build-standalone 3.12 + Morrow wheel + x86_64 wheelhouse）
 上传进任务容器并完成安装；run 阶段使用任务声明的 workdir（若未声明则读取容器
 `pwd`）执行 `morrow run`。`uv` / `uvx` 只进入 agent 进程的 PATH，不修改容器
-全局工具链。运行结束或超时取消时都会尝试回收 JSONL 日志；有 `run.completed`
-时解析终端指标填充 Harbor `AgentContext`。
+全局工具链。运行中将脱敏诊断持续写入 Harbor agent 日志目录，并在结束或取消时
+尽力回收原始 JSONL；有 `run.completed` 时解析终端指标，缺失时从已落盘的请求诊断
+汇总已知用量并标明未知请求，不把未知量记作零。脱敏诊断还生成 ATIF `trajectory.json`。
 任务成败只由每个任务自带的官方 verifier（`tests/` + task.toml）判定，harness 不做任何自定义解释。
 
 **SWE-bench Lite**：`run_swebench_lite.py` 逐实例启动官方实例镜像
@@ -101,7 +102,8 @@ python3 collect_metrics.py
   Input/Output/Total tokens（含每任务 p50/p95）；tool_calls/tool_rounds/
   model_attempts（模型请求）/retry_count/上下文压缩（dropped+cleared cycles）；
   单任务成本、单成功任务成本；失败分类（模型失败/工具失败/超时/环境失败/预算耗尽，
-  来自 exception_info + stop_code）。
+  来自 exception_info + stop_code）。缺少终态时的已知 token 下界与未知请求数
+  单列为 `partial_usage`，不混入完整终态 token 总数。
 - SWE-bench Lite：% Resolved（官方 report）；按 repo 通过率；p50/p95 完成时间；
   tokens 总量与单实例分布；patch 统计（patched/empty/error）；官方 results.json 原文引用。
 
@@ -111,7 +113,7 @@ python3 collect_metrics.py
 |---|---|---|
 | 预算账本 | `runs/budget-ledger.json`（原子写入） | `admit` 按 run_key 幂等：已 admitted/finalized 的任务重跑不重复计费；被中途杀死的任务保留预留计量，完成后以精确 usage 修正 |
 | TB2 任务 | `runs/jobs/<job>/trials/*/result.json` | 原命令重跑同一 `--job-name`：Harbor 校验配置一致后，**有 result.json 的 trial 直接跳过，没有的自动重跑**（Harbor 启动时清理半成品 trial 目录） |
-| TB2 过程日志 | `runs/jobs/<job>/trials/*/agent/logs/morrow-run.jsonl` + `morrow-terminal-metrics.json` | 随 trial 保留；`_finalize_from_job_logs` 只补正仍处于 admitted 状态的条目 |
+| TB2 过程日志 | `runs/jobs/<job>/trials/*/agent/logs/` 下的 `morrow-diagnostics.jsonl`、`trajectory.json`、尽力回收的 `morrow-run.jsonl` 以及终态或部分指标 JSON | 脱敏诊断随运行逐条刷盘；`_finalize_from_job_logs` 只补正仍处于 admitted 状态的条目 |
 | SWE-bench 实例 | `runs/swebench-lite/instances-shard<N>.jsonl`（append）+ `workspaces/*__patch.diff` + `*__morrow-run.jsonl` | 默认跳过 jsonl 中已记录的实例（`--rerun` 可强制重跑）；predictions CSV 每次从磁盘上的 patch 文件重建，已完成的实例不会丢 patch |
 | 容器残留 | docker | SWE runner 每次启动实例前 `docker rm -f` 同名残留容器，驱动被杀不会卡死续跑 |
 

@@ -1055,6 +1055,14 @@ async def test_unexpected_context_failure_records_internal_source_without_public
         assert events[-1].payload["finish_reason"] == FinishReason.ERROR.value
         assert events[-1].payload["stop_code"] == AgentStopCode.INTERNAL.value
         assert "stop_detail" not in events[-1].payload
+        diagnostics = [
+            event.payload
+            for event in events
+            if event.type == "status.changed" and event.payload.get("status") == "internal_error"
+        ]
+        assert diagnostics[0]["error_class"] == "RuntimeError"
+        assert diagnostics[0]["phase"] == "context_build"
+        assert "private context failure" not in str(diagnostics)
         observation = persistence.get_agent_run_observation()
         assert observation is not None and observation.terminal_metrics is not None
         assert observation.terminal_metrics.stop_detail == "context_build"
@@ -1089,6 +1097,13 @@ async def test_model_internal_failure_origin_reaches_safe_terminal_evidence(tmp_
 
         assert events[-1].payload["stop_code"] == AgentStopCode.INTERNAL.value
         assert "stop_detail" not in events[-1].payload
+        diagnostics = [
+            event.payload
+            for event in events
+            if event.type == "status.changed" and event.payload.get("status") == "internal_error"
+        ]
+        assert diagnostics[0]["error_class"] == "ModelFailure"
+        assert diagnostics[0]["phase"] == "provider_internal"
         observation = persistence.get_agent_run_observation()
         assert observation is not None and observation.terminal_metrics is not None
         assert observation.requests[0].error_code is ModelErrorCode.INTERNAL

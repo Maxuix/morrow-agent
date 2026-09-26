@@ -10,10 +10,10 @@ Design notes
 * The model credential is forwarded only through per-exec environment
   variables (Morrow's ``MORROW_<PROVIDER>_API_KEY`` convention). It never
   lands in config files, command lines, or logs.
-* ``morrow run`` emits versioned JSONL records; the final ``run.completed``
-  record carries Morrow's terminal metrics (token usage, cost, tool calls,
-  retries, attempts). The adapter parses that record and populates the
-  Harbor ``AgentContext`` so trial results carry the same numbers.
+* ``morrow run`` emits versioned JSONL records and a bounded diagnostic sidecar
+  in Harbor's agent log directory. Terminal metrics populate ``AgentContext``;
+  if the terminal record is missing, settled request observations supply known
+  usage with explicit unknown exposure.
 """
 
 from __future__ import annotations
@@ -25,9 +25,11 @@ import re
 import shlex
 import time
 import tomllib
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
+from harbor.agents.capabilities import AgentCapabilities
 from harbor.agents.installed.base import (
     BaseInstalledAgent,
     NonZeroAgentExitCodeError,
@@ -36,6 +38,13 @@ from harbor.agents.installed.base import (
 from harbor.agents.options import Cli, InstalledAgentOptions
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
+from harbor.models.trajectories.agent import Agent
+from harbor.models.trajectories.metrics import Metrics
+from harbor.models.trajectories.observation import Observation
+from harbor.models.trajectories.observation_result import ObservationResult
+from harbor.models.trajectories.step import Step
+from harbor.models.trajectories.tool_call import ToolCall
+from harbor.models.trajectories.trajectory import Trajectory
 from pydantic import Field
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
@@ -129,6 +138,7 @@ class MorrowAgent(BaseInstalledAgent):
     """Run Morrow (``morrow run`` headless JSONL mode) inside the environment."""
 
     options_model = MorrowOptions
+    capabilities = AgentCapabilities(atif=True)
 
     _MORROW_VENV = "/opt/morrow/venv"
     _MORROW_BIN = "/opt/morrow/venv/bin/morrow"
@@ -162,6 +172,9 @@ class MorrowAgent(BaseInstalledAgent):
         assert self.options is not None
         provider_key = f"MORROW_{self.options.provider_id.upper().replace('-', '_')}_API_KEY"
         return {provider_key: self._secret()}
+
+    def _diagnostic_path(self) -> str:
+        return (self.environment_logs_dir / "morrow-diagnostics.jsonl").as_posix()
 
     async def _workspace_dir(self, environment: BaseEnvironment) -> str:
         assert self.options is not None
@@ -280,27 +293,53 @@ class MorrowAgent(BaseInstalledAgent):
             "--permission-mode manual "
             f"{reasoning_arg}"
             f"{remaining_arg}"
+            f"--diagnostic-log {shlex.quote(self._diagnostic_path())} "
             f'--prompt "$(cat {prompt_path})" '
             f"> {RUN_LOG_PATH} 2>&1; echo MORROW_EXIT=$?"
         )
+        log_text = ""
         try:
             result = await environment.exec(command=command, env=self._run_env(), timeout_sec=None)
         finally:
+            recovery_until = time.monotonic() + LOG_COPY_TIMEOUT_SEC
             # Harbor cancels this coroutine on agent timeout. The container log
             # survives that cancellation until the environment is torn down.
             copy = asyncio.create_task(
                 environment.download_file(RUN_LOG_PATH, self.logs_dir / "morrow-run.jsonl")
             )
             try:
-                await asyncio.wait_for(asyncio.shield(copy), timeout=LOG_COPY_TIMEOUT_SEC)
+                await asyncio.wait_for(
+                    asyncio.shield(copy), timeout=max(0.01, recovery_until - time.monotonic())
+                )
+            except asyncio.CancelledError:
+                copy.cancel()
+                raise
             except (OSError, RuntimeError, TimeoutError) as exc:
                 self.logger.warning("could not recover morrow run log: %s", type(exc).__name__)
                 copy.cancel()
             else:
-                log_text = (self.logs_dir / "morrow-run.jsonl").read_text(
-                    encoding="utf-8", errors="replace"
-                )
-                self._populate_context(context, log_text)
+                try:
+                    log_text = (self.logs_dir / "morrow-run.jsonl").read_text(
+                        encoding="utf-8", errors="replace"
+                    )
+                except OSError:
+                    pass
+            finally:
+                diagnostic_path = self.logs_dir / "morrow-diagnostics.jsonl"
+                if not diagnostic_path.exists() and time.monotonic() < recovery_until:
+                    try:
+                        await asyncio.wait_for(
+                            environment.download_file(self._diagnostic_path(), diagnostic_path),
+                            timeout=max(0.01, recovery_until - time.monotonic()),
+                        )
+                    except (OSError, RuntimeError, TimeoutError, asyncio.CancelledError):
+                        pass
+                try:
+                    self._populate_context(context, log_text)
+                except Exception as exc:
+                    self.logger.warning(
+                        "could not project morrow diagnostics: %s", type(exc).__name__
+                    )
         status = re.search(r"(?:^|\n)MORROW_EXIT=(\d+)(?:\n|$)", result.stdout or "")
         if result.return_code != 0 or status is None:
             raise NonZeroAgentExitCodeError("morrow run did not report a successful exit")
@@ -313,35 +352,327 @@ class MorrowAgent(BaseInstalledAgent):
 
     def _populate_context(self, context: AgentContext, log_text: str) -> None:
         completed = _last_jsonl_record(log_text, "run.completed")
+        diagnostic_path = self.logs_dir / "morrow-diagnostics.jsonl"
+        diagnostic_text = (
+            diagnostic_path.read_text(encoding="utf-8", errors="replace")
+            if diagnostic_path.exists()
+            else ""
+        )
+        self._write_trajectory(diagnostic_text)
         if not completed:
             self.logger.warning("no run.completed record in morrow JSONL output")
+            self._populate_partial_context(context, diagnostic_text)
             return
         metrics = completed.get("metrics") or {}
+        if not metrics:
+            self._populate_partial_context(context, diagnostic_text)
+            return
         usage = metrics.get("usage") or {}
         cost = metrics.get("cost") or {}
         context.n_input_tokens = usage.get("input_tokens")
         context.n_output_tokens = usage.get("output_tokens")
-        if usage.get("total_tokens") is not None:
-            # Harbor sums input+output; keep totals consistent when both absent.
-            if context.n_input_tokens is None and context.n_output_tokens is None:
-                context.n_input_tokens = usage["total_tokens"]
+        if isinstance(usage.get("total_tokens"), int):
+            context.metadata = {
+                **(context.metadata or {}),
+                "morrow_terminal_total_tokens": usage["total_tokens"],
+            }
         if cost.get("availability") == "available" and cost.get("amount_minor") is not None:
             amount = cost["amount_minor"] / 100.0
             context.cost_usd = amount if cost.get("currency") == "USD" else None
         from harbor.models.agent.context import ModelUsage
 
-        context.model_usage = {
-            "morrow-terminal-metrics": ModelUsage(
-                n_input_tokens=usage.get("input_tokens") or 0,
-                n_output_tokens=usage.get("output_tokens") or 0,
-                cost_usd=context.cost_usd,
-            )
-        }
+        if isinstance(usage.get("input_tokens"), int) and isinstance(
+            usage.get("output_tokens"), int
+        ):
+            context.model_usage = {
+                "morrow-terminal-metrics": ModelUsage(
+                    n_input_tokens=usage["input_tokens"],
+                    n_output_tokens=usage["output_tokens"],
+                    cost_usd=context.cost_usd,
+                )
+            }
         # Full Morrow terminal metrics are preserved next to the JSONL log for
         # the metrics collector (tool calls, rounds, attempts, retries, stops).
         (self.logs_dir / "morrow-terminal-metrics.json").write_text(
             json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        if context.n_input_tokens is None and context.n_output_tokens is None:
+            self._populate_partial_context(context, diagnostic_text)
+
+    def _populate_partial_context(self, context: AgentContext, diagnostic_text: str) -> None:
+        requests = _latest_diagnostic_records(diagnostic_text, "model.request", "request_id")
+        if not requests:
+            return
+        known = [
+            row
+            for row in requests.values()
+            if (row.get("usage") or {}).get("availability") == "available"
+        ]
+        unknown = len(requests) - len(known)
+        input_values = [(row.get("usage") or {}).get("input_tokens") for row in known]
+        output_values = [(row.get("usage") or {}).get("output_tokens") for row in known]
+        known_input = sum(value for value in input_values if isinstance(value, int))
+        known_output = sum(value for value in output_values if isinstance(value, int))
+        usd_costs = [
+            (row.get("cost") or {}).get("amount_minor")
+            for row in requests.values()
+            if (row.get("cost") or {}).get("availability") == "available"
+            and (row.get("cost") or {}).get("currency") == "USD"
+            and isinstance((row.get("cost") or {}).get("amount_minor"), int)
+        ]
+        known_cost_minor = sum(value for value in usd_costs if isinstance(value, int))
+        if any(isinstance(value, int) for value in input_values):
+            context.n_input_tokens = known_input
+        if any(isinstance(value, int) for value in output_values):
+            context.n_output_tokens = known_output
+        if len(usd_costs) == len(requests) and usd_costs:
+            context.cost_usd = known_cost_minor / 100.0
+        if input_values and all(isinstance(value, int) for value in input_values + output_values):
+            from harbor.models.agent.context import ModelUsage
+
+            context.model_usage = {
+                "morrow-known-requests": ModelUsage(
+                    n_input_tokens=known_input,
+                    n_output_tokens=known_output,
+                    cost_usd=context.cost_usd,
+                )
+            }
+        context.metadata = {
+            **(context.metadata or {}),
+            "morrow_partial_usage": {
+                "known_request_count": len(known),
+                "unknown_request_count": unknown,
+                "complete": unknown == 0
+                and len(input_values) == len(requests)
+                and all(isinstance(value, int) for value in input_values + output_values),
+                "known_input_tokens": known_input
+                if any(isinstance(value, int) for value in input_values)
+                else None,
+                "known_output_tokens": known_output
+                if any(isinstance(value, int) for value in output_values)
+                else None,
+                "known_usd_cost_minor": known_cost_minor if usd_costs else None,
+                "unknown_cost_request_count": len(requests) - len(usd_costs),
+            },
+        }
+        (self.logs_dir / "morrow-partial-metrics.json").write_text(
+            json.dumps(context.metadata["morrow_partial_usage"], indent=2), encoding="utf-8"
+        )
+
+    def _write_trajectory(self, diagnostic_text: str) -> None:
+        requests = _latest_diagnostic_records(diagnostic_text, "model.request", "request_id")
+        tools = _latest_diagnostic_records(diagnostic_text, "tool.execution", "execution_id")
+        steps = []
+        order: dict[tuple[str, str], int] = {}
+        events: list[tuple[int, dict]] = []
+        for index, line in enumerate(diagnostic_text.splitlines()):
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(item, dict):
+                continue
+            kind = item.get("kind")
+            identifier = item.get("request_id" if kind == "model.request" else "execution_id")
+            if isinstance(kind, str) and isinstance(identifier, str):
+                order.setdefault((kind, identifier), index)
+            if kind == "run.error":
+                error = {
+                    key: item.get(key)
+                    for key in ("error_class", "phase", "correlation_id", "reason_fingerprint")
+                }
+                if all(value is None or _safe_diagnostic_token(value) for value in error.values()):
+                    events.append((index, {"kind": kind, **error}))
+            elif kind == "context.compaction" and item.get("boundary") in {
+                "compacting",
+                "compacted",
+            }:
+                events.append((index, {"kind": kind, "boundary": item["boundary"]}))
+        timeline = [
+            (
+                order.get((row["kind"], row.get("request_id") or row.get("execution_id")), 10**12),
+                row,
+            )
+            for row in [*requests.values(), *tools.values()]
+        ]
+        timeline.extend(events)
+        timeline.sort(key=lambda pair: pair[0])
+        for _, row in timeline:
+            kind = row["kind"]
+            is_request = kind == "model.request"
+            is_tool = kind == "tool.execution"
+            call_id = (row.get("call_id") or row["execution_id"]) if is_tool else None
+            usage = row.get("usage") or {}
+            steps.append(
+                Step(
+                    step_id=len(steps) + 1,
+                    source="agent",
+                    timestamp=row.get("admitted_at")
+                    if kind == "model.request"
+                    else row.get("created_at"),
+                    message="[redacted model request]"
+                    if is_request
+                    else "[redacted tool execution]"
+                    if is_tool
+                    else "[redacted run diagnostic]",
+                    llm_call_count=1 if is_request else 0,
+                    metrics=Metrics(
+                        prompt_tokens=usage.get("input_tokens"),
+                        completion_tokens=usage.get("output_tokens"),
+                    )
+                    if is_request
+                    else None,
+                    tool_calls=[
+                        ToolCall(
+                            tool_call_id=call_id,
+                            function_name=row.get("tool_name") or "unknown",
+                            arguments={"fingerprint": row.get("argument_fingerprint")},
+                            extra={"execution_id": row["execution_id"]},
+                        )
+                    ]
+                    if is_tool
+                    else None,
+                    observation=Observation(
+                        results=[
+                            ObservationResult(
+                                source_call_id=call_id,
+                                content="[redacted tool result]",
+                                extra={
+                                    "disposition": row.get("disposition"),
+                                    "exit_code": row.get("exit_code"),
+                                },
+                            )
+                        ]
+                    )
+                    if is_tool
+                    else None,
+                    extra={"morrow_diagnostic": row},
+                )
+            )
+        if not steps:
+            return
+        trajectory = Trajectory(
+            schema_version="ATIF-v1.7",
+            agent=Agent(name="morrow", version=self._morrow_version()),
+            steps=steps,
+            extra={"projection": "redacted journal evidence; no prompts or tool output"},
+        )
+        (self.logs_dir / "trajectory.json").write_text(
+            json.dumps(trajectory.to_json_dict(), ensure_ascii=False), encoding="utf-8"
+        )
+
+
+def _latest_diagnostic_records(text: str, kind: str, id_field: str) -> dict[str, dict]:
+    records: dict[str, dict] = {}
+    for line in text.splitlines():
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict) or row.get("kind") != kind:
+            continue
+        identifier = row.get(id_field)
+        if not _safe_diagnostic_token(identifier):
+            continue
+        if kind == "model.request":
+            usage = row.get("usage") or {}
+            if not isinstance(usage, dict):
+                usage = {}
+            cost = row.get("cost") or {}
+            if not isinstance(cost, dict):
+                cost = {}
+            clean = {
+                "kind": kind,
+                "request_id": identifier,
+                "ordinal": _safe_nonnegative_int(row.get("ordinal")),
+                "purpose": row.get("purpose")
+                if row.get("purpose") in {"agent", "compaction", "outcome_intent"}
+                else None,
+                "state": row.get("state")
+                if row.get("state") in {"admitted", "completed", "failed", "cancelled"}
+                else None,
+                "usage": {
+                    "availability": usage.get("availability")
+                    if usage.get("availability") in {"available", "unavailable"}
+                    else "unavailable",
+                    "input_tokens": _safe_nonnegative_int(usage.get("input_tokens")),
+                    "output_tokens": _safe_nonnegative_int(usage.get("output_tokens")),
+                },
+                "admitted_at": _safe_timestamp(row.get("admitted_at")),
+                "settled_at": _safe_timestamp(row.get("settled_at")),
+                "compaction_required": row.get("compaction_required")
+                if type(row.get("compaction_required")) is bool
+                else None,
+                "dropped_record_count": _safe_nonnegative_int(row.get("dropped_record_count")),
+                "cost": {
+                    "availability": cost.get("availability")
+                    if cost.get("availability") in {"available", "unavailable"}
+                    else "unavailable",
+                    "amount_minor": _safe_nonnegative_int(cost.get("amount_minor")),
+                    "currency": cost.get("currency")
+                    if cost.get("currency") in {"USD", "EUR", "CNY"}
+                    else None,
+                },
+            }
+        elif kind == "tool.execution":
+            clean = {"kind": kind, "execution_id": identifier}
+            clean["created_at"] = _safe_timestamp(row.get("created_at"))
+            clean["executing_at"] = _safe_timestamp(row.get("executing_at"))
+            clean["closed_at"] = _safe_timestamp(row.get("closed_at"))
+            for key in (
+                "call_id",
+                "tool_name",
+                "state",
+                "disposition",
+                "argument_fingerprint",
+                "result_fingerprint",
+                "error_code",
+                "command_class",
+            ):
+                clean[key] = row.get(key) if _safe_diagnostic_token(row.get(key)) else None
+            cwd = row.get("cwd")
+            clean["cwd"] = (
+                cwd
+                if isinstance(cwd, str)
+                and len(cwd) <= 512
+                and not cwd.startswith("/")
+                and "\x00" not in cwd
+                and all(part not in {"", ".."} for part in cwd.split("/"))
+                else None
+            )
+            clean["exit_code"] = _safe_nonnegative_int(row.get("exit_code"))
+            clean["duration_ms"] = _safe_nonnegative_int(row.get("duration_ms"))
+            clean["artifact_ids"] = (
+                [
+                    value
+                    for value in (row.get("artifact_ids") or [])[:64]
+                    if _safe_diagnostic_token(value)
+                ]
+                if isinstance(row.get("artifact_ids"), list)
+                else []
+            )
+        else:
+            continue
+        records[identifier] = clean
+    return records
+
+
+def _safe_diagnostic_token(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.\-/]{1,128}", value) is not None
+
+
+def _safe_nonnegative_int(value: object) -> int | None:
+    return value if type(value) is int and 0 <= value <= 10**12 else None
+
+
+def _safe_timestamp(value: object) -> str | None:
+    if not isinstance(value, str) or len(value) > 40:
+        return None
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return value
 
 
 def _write_temp(text: str) -> Path:

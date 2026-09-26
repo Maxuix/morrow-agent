@@ -268,6 +268,8 @@ Morrow 内部已经有 ConversationLog、工具执行记录与 model-request jou
 
 **验收：**故障注入测试全部保留最后已提交事件与部分 usage 状态；用脱敏指纹能区分“模型长请求”“长工具”“相同命令重复”“工具快速失败”“内部终结失败”。
 
+**实施记录（2026-09-26）：**`morrow run --diagnostic-log` 现在把有界、逐条刷盘的 JSONL 诊断写入 Harbor agent 日志挂载目录；旧 `/tmp` 运行日志继续在 `finally` 中限时回收。诊断从已落盘的 request observation 与 ToolExecution 读取请求序号/起止时间、状态、活动、压缩边界、工具 execution ID、参数和结果的会话内 HMAC 指纹、命令类别、相对 cwd、退出码及 Artifact ID，不复制提示词、命令正文、结果正文或异常消息。内部错误记录受控类型、阶段、关联 ID 与失败位置指纹，运行时错误日志也只写这些安全字段。Harbor 在缺少 `run.completed` 时导出已知 token 下界、未知请求数与完整性标记；费用未知时保持 unknown。指标汇总将部分用量单列，避免混入完整终态 token 合计。脱敏诊断还投影为 Harbor ATIF `trajectory.json`，原始 ConversationLog 仍是唯一聊天历史写入者。离线故障注入覆盖模型等待/工具运行时的已提交证据、取消、二次取消、日志下载失败、容器异常退出和恶意诊断字段过滤；**尚未在真实 Harbor 超时和 High 评测中验证挂载目录及分数影响**。
+
 ### H9｜P1：当前评测缺少足够的版本指纹和预算实耗约束
 
 **证据：B；影响是结论可信度与实验可持续性。**

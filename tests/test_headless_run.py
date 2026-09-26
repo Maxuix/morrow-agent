@@ -180,6 +180,7 @@ def test_run_uses_the_real_session_builder_with_a_scripted_provider(monkeypatch,
     resolution = real_application.workspace_service.resolve(workspace)
     identity = real_application.workspace_service.confirm(resolution)
     provider = ScriptedModelProvider(["done"])
+    diagnostic_log = tmp_path / "diagnostics.jsonl"
     real_application.provider_service.build_active = lambda: (
         provider,
         ModelRef(provider_id="scripted", model_id="test-model"),
@@ -195,6 +196,8 @@ def test_run_uses_the_real_session_builder_with_a_scripted_provider(monkeypatch,
             str(workspace),
             "--state-root",
             str(state_root),
+            "--diagnostic-log",
+            str(diagnostic_log),
         ],
     )
 
@@ -217,6 +220,10 @@ def test_run_uses_the_real_session_builder_with_a_scripted_provider(monkeypatch,
     assert terminal["metrics"]["finish_reason"] == "stop"
     assert identity.workspace_id
     assert "Traceback" not in result.output
+    diagnostics = [json.loads(line) for line in diagnostic_log.read_text().splitlines()]
+    requests = [row for row in diagnostics if row["kind"] == "model.request"]
+    assert [row["state"] for row in requests] == ["admitted", "completed"]
+    assert "done" not in diagnostic_log.read_text()
 
 
 def test_run_requires_explicit_prompt_and_workspace_without_reading_stdin(tmp_path):
