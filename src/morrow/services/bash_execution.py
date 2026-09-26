@@ -313,21 +313,24 @@ def _state_already_projected(run, view) -> bool:
 def _terminal_covers_current(run, view, *, origin_run_id, kind, scope) -> bool:
     """Whether a tracked terminal proves the run's current workspace version.
 
-    The anchor is this run's start observation for executions started here;
-    anything else cannot be ordered against the run, so the whole fact chain
-    is suspect. A change, an opaque command, or a newer validation of the same
-    scope after the anchor keeps the result historical.
+    Only an execution started by this run can prove version consistency; a
+    cross-run or unknown-origin result is historical evidence no matter how
+    empty this run's fact chain is — prior runs changed the workspace without
+    leaving facts here. For a same-run execution the anchor is its start
+    observation: a later change, opaque command, or newer same-scope
+    validation keeps the result historical.
     """
 
+    if origin_run_id is None or origin_run_id != run.run_id:
+        return False
     facts = run.facts
     anchor = -1
-    if origin_run_id is not None and origin_run_id == run.run_id:
-        for index, fact in enumerate(facts):
-            if isinstance(fact, CommandToolFact) and fact.execution_id == view.execution_id:
-                anchor = index
-                break
-        if anchor < 0:
-            return False
+    for index, fact in enumerate(facts):
+        if isinstance(fact, CommandToolFact) and fact.execution_id == view.execution_id:
+            anchor = index
+            break
+    if anchor < 0:
+        return False
     later = facts[anchor + 1 :]
     validator_calls = {fact.call_id for fact in later if isinstance(fact, ValidationFact)}
     for fact in later:

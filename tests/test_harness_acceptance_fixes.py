@@ -455,6 +455,7 @@ async def test_tracked_validator_terminal_failure_is_evidence(tmp_path: Path, mo
         command_class="shell",
         cwd_relative=".",
         adapter=HostProcessAdapter(),
+        started_run_id="run",
         spawned=SimpleNamespace(
             stdout=_CursorBuffer(1024),
             stderr=_CursorBuffer(1024),
@@ -584,21 +585,26 @@ async def test_settled_terminal_state_stays_visible_to_later_runs(tmp_path: Path
         lifecycle=TrackedLifecycle.ACCEPTANCE,
         validation_kind="pytest",
         validation_scope=".",
+        started_run_id="first-run",
     )
     execution.status, execution.exit_code = TrackedCommandStatus.EXITED, 1
     first = ToolRunContext(run_id="first-run", session_id="s", owner_task_id="t")
+    first.record((_start_fact(1),))
     claimed = await _poll(service, first)
     assert len(claimed.facts) == 2 and claimed.facts[1].status == "failed"
+    assert not any(fact.historical for fact in claimed.facts)
     first.record(claimed.facts)
 
     later = ToolRunContext(run_id="later-run", session_id="s", owner_task_id="next-task")
     visible = await _poll(service, later, task_id="next-task")
     assert len(visible.facts) == 2 and visible.facts[1].status == "failed"
+    # Cross-run evidence is historical even when this run's fact chain is
+    # empty: prior runs changed the workspace without leaving facts here.
+    assert all(fact.historical for fact in visible.facts)
     later.record(visible.facts)
-    # Nothing in the later run postdates the settled failure, so the unified
-    # validity rule keeps it decisive; a preceding change or newer validation
-    # would mark the re-read historical instead (third-round scenarios).
-    assert check_completion(later).validation_outcome == "failed"
+    later_check = check_completion(later)
+    assert later_check.validation_outcome == "not_run"
+    assert any("历史结果" in line and "failed" in line for line in later_check.evidence)
     # A repeated read in the same run does not settle or record again.
     repeated = await _poll(service, later, task_id="next-task", call_id="poll-again", ordinal=3)
     assert repeated.facts == ()
@@ -629,7 +635,7 @@ def _failed(call_id: str, ordinal: int) -> ValidationFact:
 
 
 async def _settled_validator_run(tmp_path: Path, monkeypatch, *, exit_code: int):
-    """One old run owns a finished acceptance validator and claims its terminal."""
+    """One old run starts an acceptance validator, and it finishes unpolled."""
 
     service, execution = _tracked_service(
         tmp_path,
@@ -637,10 +643,12 @@ async def _settled_validator_run(tmp_path: Path, monkeypatch, *, exit_code: int)
         lifecycle=TrackedLifecycle.ACCEPTANCE,
         validation_kind="pytest",
         validation_scope=".",
+        started_run_id="old-run",
     )
     execution.status, execution.exit_code = TrackedCommandStatus.EXITED, exit_code
     old = ToolRunContext(run_id="old-run", session_id="s", owner_task_id="old-task")
-    claimed = await _poll(service, old, task_id="old-task", call_id="poll-old", ordinal=1)
+    old.record((_start_fact(1),))
+    claimed = await _poll(service, old, task_id="old-task", call_id="poll-old", ordinal=2)
     assert not any(fact.historical for fact in claimed.facts)
     old.record(claimed.facts)
     return service, old
@@ -852,3 +860,41 @@ async def test_background_validator_started_before_change_stays_historical(
     # Revalidation after the terminal observation recovers passed.
     run.record((_passed("recheck", 4),))
     assert check_completion(run).validation_outcome == "passed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("settled_before_change", [False, True])
+async def test_empty_later_run_does_not_revive_old_pass(
+    tmp_path: Path, monkeypatch, settled_before_change
+):
+    # A new run's empty fact list is not proof of an unchanged workspace: the
+    # prior run's change left no facts here, so the old pass stays historical.
+    service, execution = _tracked_service(
+        tmp_path,
+        monkeypatch,
+        lifecycle=TrackedLifecycle.ACCEPTANCE,
+        validation_kind="pytest",
+        validation_scope=".",
+        started_run_id="old-run",
+    )
+    execution.status, execution.exit_code = TrackedCommandStatus.EXITED, 0
+    old = ToolRunContext(run_id="old-run", session_id="s", owner_task_id="t")
+    old.record((_start_fact(1),))
+    if settled_before_change:
+        claimed = await _poll(service, old, call_id="poll-old", ordinal=2)
+        assert not any(fact.historical for fact in claimed.facts)
+        old.record(claimed.facts)
+        assert check_completion(old).validation_outcome == "passed"
+    old.record((_change(3),))
+    assert check_completion(old).validation_outcome != "passed"
+    later = ToolRunContext(run_id="later-run", session_id="s", owner_task_id="t")
+    result = await _poll(service, later, call_id="poll-later", ordinal=2)
+    assert result.payload.status is TrackedCommandStatus.EXITED
+    assert len(result.facts) == 2 and all(fact.historical for fact in result.facts)
+    later.record(result.facts)
+    later_check = check_completion(later)
+    assert later_check.validation_outcome == "not_run"
+    assert any("历史结果" in line and "passed" in line for line in later_check.evidence)
+    # Revalidation in the new run recovers passed.
+    later.record((_passed("recheck", 3),))
+    assert check_completion(later).validation_outcome == "passed"
