@@ -29,7 +29,9 @@ import re
 import subprocess
 import sys
 import uuid
+from contextlib import nullcontext
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 BENCH_DIR = Path(__file__).resolve().parent
 VENDOR_HARBOR = BENCH_DIR / "vendor" / "harbor"
@@ -44,11 +46,13 @@ PROTOCOL = BENCH_DIR / "config" / "v2" / "protocol.json"
 MORROW_DEFAULT_RESERVE_TOKENS = 16_384
 MORROW_MAX_CONTEXT_TOKENS = 10_000_000
 MORROW_MAX_OUTPUT_TOKENS = 1_000_000
+LOOPBACK_PROXY_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 sys.path.insert(0, str(BENCH_DIR))
 from harness.assets import verify_bundle  # noqa: E402
 from harness.budget import TokenBudget  # noqa: E402
 from harness.fingerprint import run_fingerprint, sha256_tree, write_json  # noqa: E402
+from harness.verifier_proxy import VerifierProxyRelay  # noqa: E402
 
 
 def _preflight(tasks: list[str]) -> None:
@@ -105,6 +109,64 @@ def _load_dotenv() -> dict[str, str]:
                 key, _, value = line.partition("=")
                 values[key.strip()] = value.strip()
     return values
+
+
+def _selected_verifier_proxy(env: dict[str, str]) -> str | None:
+    return next(
+        (
+            env[key]
+            for key in (
+                "MORROW_BENCH_VERIFIER_PROXY_URL",
+                "HTTPS_PROXY",
+                "https_proxy",
+                "HTTP_PROXY",
+                "http_proxy",
+            )
+            if env.get(key)
+        ),
+        None,
+    )
+
+
+def _verifier_proxy_env(env: dict[str, str], *, relay_port: int | None = None) -> dict[str, str]:
+    """Route verifier downloads through a proxy reachable from Docker Desktop.
+
+    The proxy is verifier-only: Morrow's environment and the official task files
+    are left untouched. A non-loopback override supports other Docker hosts.
+    """
+    raw = _selected_verifier_proxy(env)
+    if raw is None:
+        return {}
+    try:
+        parsed = urlsplit(raw)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.port is None
+            or parsed.port == 0
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError
+    except ValueError as exc:
+        raise ValueError("verifier proxy must be an unauthenticated HTTP(S) host:port URL") from exc
+    loopback = parsed.hostname in LOOPBACK_PROXY_HOSTS
+    hostname = "host.docker.internal" if loopback else parsed.hostname
+    port = relay_port if loopback and relay_port is not None else parsed.port
+    netloc = f"[{hostname}]:{port}" if ":" in hostname else f"{hostname}:{port}"
+    proxy = urlunsplit((parsed.scheme, netloc, "", "", ""))
+    no_proxy = env.get("NO_PROXY") or env.get("no_proxy") or "localhost,127.0.0.1,::1"
+    return {
+        "HTTP_PROXY": proxy,
+        "HTTPS_PROXY": proxy,
+        "http_proxy": proxy,
+        "https_proxy": proxy,
+        "NO_PROXY": no_proxy,
+        "no_proxy": no_proxy,
+    }
 
 
 def main() -> int:
@@ -251,6 +313,11 @@ def main() -> int:
         print("model capacities are outside Morrow's supported range or reserve", file=sys.stderr)
         return 2
     try:
+        verifier_proxy_env = _verifier_proxy_env(env)
+    except ValueError as exc:
+        print(f"benchmark preflight failed: {exc}", file=sys.stderr)
+        return 2
+    try:
         _preflight(tasks)
     except (FileNotFoundError, PermissionError, ValueError) as exc:
         print(f"benchmark preflight failed: {exc}", file=sys.stderr)
@@ -278,6 +345,11 @@ def main() -> int:
             "harbor_max_retries": 0,
             "concurrency": args.concurrency,
             "permission_mode": "manual",
+            "verifier_proxy_sha256": (
+                hashlib.sha256(json.dumps(verifier_proxy_env, sort_keys=True).encode()).hexdigest()
+                if verifier_proxy_env
+                else None
+            ),
             "reservation": args.reservation,
             "budget_total": args.budget_total,
         },
@@ -289,68 +361,81 @@ def main() -> int:
     else:
         write_json(manifest_path, fingerprint)
 
-    budget = TokenBudget(ledger_path, budget_total=args.budget_total, reservation=args.reservation)
-    if not budget.admit_many([f"{run_key_prefix}:{task}" for task in tasks]):
-        print("budget cannot admit the complete task set; no tasks admitted")
-        return 1
+    proxy_url = _selected_verifier_proxy(env)
+    proxy_parts = urlsplit(proxy_url) if proxy_url else None
+    relay_context = (
+        VerifierProxyRelay(proxy_parts.hostname, proxy_parts.port)
+        if proxy_parts and proxy_parts.hostname in LOOPBACK_PROXY_HOSTS
+        else nullcontext()
+    )
+    with relay_context as relay:
+        active_proxy_env = _verifier_proxy_env(env, relay_port=relay.port if relay else None)
+        budget = TokenBudget(
+            ledger_path, budget_total=args.budget_total, reservation=args.reservation
+        )
+        if not budget.admit_many([f"{run_key_prefix}:{task}" for task in tasks]):
+            print("budget cannot admit the complete task set; no tasks admitted")
+            return 1
 
-    admitted = tasks
-    include_patterns = list(tasks)
-    cmd = [
-        str(HARBOR_BIN),
-        "run",
-        "-p",
-        str(VENDOR_TB2),
-        "-a",
-        "harness.morrow_harbor_agent:MorrowAgent",
-        "-o",
-        str(RUNS_DIR / "jobs" / reasoning_effort),
-        "--job-name",
-        job_name,
-        "--effort",
-        reasoning_effort,
-        "--agent-timeout-multiplier",
-        str(args.agent_timeout_multiplier),
-        "--n-attempts",
-        "1",
-        "--max-retries",
-        "0",
-        "-n",
-        str(args.concurrency),
-        "-y",
-        "--ak",
-        f"provider_adapter={env.get('MORROW_BENCH_PROVIDER_ADAPTER', 'openai-compatible')}",
-        "--ak",
-        f"provider_base_url={env['MORROW_BENCH_PROVIDER_BASE_URL']}",
-        "--ak",
-        f"provider_id={env.get('MORROW_BENCH_PROVIDER_ID', 'bench')}",
-        "--ak",
-        f"model_id={env['MORROW_BENCH_MODEL_ID']}",
-        "--ak",
-        f"api_model_id={env['MORROW_BENCH_API_MODEL_ID']}",
-        "--ak",
-        f"reasoning_effort={reasoning_effort}",
-        "--ak",
-        f"context_window_tokens={context_tokens}",
-        "--ak",
-        f"max_output_tokens={output_tokens}",
-    ]
-    for pattern in include_patterns:
-        cmd += ["-i", pattern]
+        admitted = tasks
+        include_patterns = list(tasks)
+        cmd = [
+            str(HARBOR_BIN),
+            "run",
+            "-p",
+            str(VENDOR_TB2),
+            "-a",
+            "harness.morrow_harbor_agent:MorrowAgent",
+            "-o",
+            str(RUNS_DIR / "jobs" / reasoning_effort),
+            "--job-name",
+            job_name,
+            "--effort",
+            reasoning_effort,
+            "--agent-timeout-multiplier",
+            str(args.agent_timeout_multiplier),
+            "--n-attempts",
+            "1",
+            "--max-retries",
+            "0",
+            "-n",
+            str(args.concurrency),
+            "-y",
+            "--ak",
+            f"provider_adapter={env.get('MORROW_BENCH_PROVIDER_ADAPTER', 'openai-compatible')}",
+            "--ak",
+            f"provider_base_url={env['MORROW_BENCH_PROVIDER_BASE_URL']}",
+            "--ak",
+            f"provider_id={env.get('MORROW_BENCH_PROVIDER_ID', 'bench')}",
+            "--ak",
+            f"model_id={env['MORROW_BENCH_MODEL_ID']}",
+            "--ak",
+            f"api_model_id={env['MORROW_BENCH_API_MODEL_ID']}",
+            "--ak",
+            f"reasoning_effort={reasoning_effort}",
+            "--ak",
+            f"context_window_tokens={context_tokens}",
+            "--ak",
+            f"max_output_tokens={output_tokens}",
+        ]
+        for key, value in active_proxy_env.items():
+            cmd += ["--verifier-env", f"{key}={value}"]
+        for pattern in include_patterns:
+            cmd += ["-i", pattern]
 
-    env_full = {**dotenv, **os.environ}
-    env_full["PYTHONPATH"] = str(BENCH_DIR) + os.pathsep + env_full.get("PYTHONPATH", "")
-    # Harbor's Docker environment passes per-exec env values to ``docker
-    # compose exec``.  Mirror the provider secret into the child process
-    # environment so the adapter can use the argv-safe ``-e KEY`` form; the
-    # credential never becomes a command-line argument.
-    provider_id = env.get("MORROW_BENCH_PROVIDER_ID", "bench")
-    provider_key = f"MORROW_{provider_id.upper().replace('-', '_')}_API_KEY"
-    env_full[provider_key] = env["MORROW_BENCH_API_KEY"]
-    env_full["MORROW_BENCH_RUN_MANIFEST"] = str(manifest_path)
-    print(f"running Harbor job {job_name} with {len(tasks)} tasks")
-    proc = subprocess.run(cmd, env=env_full)
-    rc = proc.returncode
+        env_full = {**dotenv, **os.environ}
+        env_full["PYTHONPATH"] = str(BENCH_DIR) + os.pathsep + env_full.get("PYTHONPATH", "")
+        # Harbor's Docker environment passes per-exec env values to ``docker
+        # compose exec``.  Mirror the provider secret into the child process
+        # environment so the adapter can use the argv-safe ``-e KEY`` form; the
+        # credential never becomes a command-line argument.
+        provider_id = env.get("MORROW_BENCH_PROVIDER_ID", "bench")
+        provider_key = f"MORROW_{provider_id.upper().replace('-', '_')}_API_KEY"
+        env_full[provider_key] = env["MORROW_BENCH_API_KEY"]
+        env_full["MORROW_BENCH_RUN_MANIFEST"] = str(manifest_path)
+        print(f"running Harbor job {job_name} with {len(tasks)} tasks")
+        proc = subprocess.run(cmd, env=env_full)
+        rc = proc.returncode
 
     # Write back exact usage from the morrow JSONL logs of this job.
     finalized = _finalize_from_job_logs(

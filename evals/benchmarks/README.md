@@ -138,12 +138,22 @@ python3 collect_metrics.py
 
 ## 已知限制（CN 网络环境）
 
+- TB2 官方 verifier 会自行从 `astral.sh`、GitHub 和 Python 包索引下载测试运行时；
+  Morrow 的离线资产不供 verifier 使用。驱动会把宿主机的 `HTTPS_PROXY` / `HTTP_PROXY`
+  只传给 Harbor verifier。宿主机代理若监听 `localhost` / `127.0.0.1` / `::1`，
+  驱动会在宿主机启动临时 TCP 转发，再将容器可达的 `host.docker.internal` 地址传给 verifier；
+  直接把容器连接交给本机代理曾出现 TLS 隧道中断。可用
+  `MORROW_BENCH_VERIFIER_PROXY_URL=http://<容器可达主机>:<端口>`
+  覆盖自动检测；代理 URL 不得含凭据。该配置进入运行指纹，变更后须开新 run。
+  Linux Docker 若不提供 `host.docker.internal`，应使用容器可达的非 loopback 代理地址显式覆盖。
+  启动模型评测前先从临时容器确认代理能访问上述下载源；verifier 下载超时没有
+  官方 reward，不能作为模型失败计分。
 - docker.io / ghcr.io 直连受限：docker hub 走 `docker.m.daocloud.io` 已可用；
   ghcr 的 SWE-bench 镜像需配 `MORROW_BENCH_SWE_IMAGE_TEMPLATE` 指向可达镜像站，
   或用 `swebench.image_builder` 按官方 spec 本地构建（base 镜像走 daocloud 代理）。
 - TB2 任务镜像（docker hub `alexgshaw/*`）走 daocloud 拉取；个别任务
-  `allow_internet=false` 时模型 API 需走宿主机可达网络（Harbor local 环境下
-  容器共享宿主机网络，一般无碍）。
+  `allow_internet=false` 时仍需单独确认 agent 能到达模型 API。本次 verifier 代理配置
+  只作用于 verifier，不改变 agent 的网络策略。
 - 首次 `harbor run` 会为 25 个 pilot 任务拉取镜像（每个 0.5–3 GB），请预留磁盘。
 
 ## 验证记录（2026-09-24）

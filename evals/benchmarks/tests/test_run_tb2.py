@@ -21,6 +21,32 @@ from morrow.core.runtime_policy import (
 
 
 class TerminalBenchDriverTests(unittest.TestCase):
+    def test_verifier_proxy_maps_host_loopback_without_changing_task_files(self) -> None:
+        proxy = run_tb2._verifier_proxy_env(
+            {
+                "HTTPS_PROXY": "http://127.0.0.1:6152",
+                "NO_PROXY": "localhost,127.0.0.1,service.local",
+            }
+        )
+        self.assertEqual(proxy["HTTPS_PROXY"], "http://host.docker.internal:6152")
+        self.assertEqual(proxy["http_proxy"], proxy["HTTPS_PROXY"])
+        self.assertEqual(proxy["NO_PROXY"], "localhost,127.0.0.1,service.local")
+        active = run_tb2._verifier_proxy_env(
+            {"HTTPS_PROXY": "http://127.0.0.1:6152"}, relay_port=18761
+        )
+        self.assertEqual(active["HTTPS_PROXY"], "http://host.docker.internal:18761")
+
+    def test_verifier_proxy_override_and_credential_rejection(self) -> None:
+        proxy = run_tb2._verifier_proxy_env(
+            {
+                "HTTPS_PROXY": "http://127.0.0.1:6152",
+                "MORROW_BENCH_VERIFIER_PROXY_URL": "http://proxy.example:8080",
+            }
+        )
+        self.assertEqual(proxy["HTTPS_PROXY"], "http://proxy.example:8080")
+        with self.assertRaisesRegex(ValueError, "unauthenticated"):
+            run_tb2._verifier_proxy_env({"HTTPS_PROXY": "http://user:secret@host:8080"})
+
     def test_capacity_below_morrow_reserve_is_rejected_before_launch(self) -> None:
         self.assertEqual(run_tb2.MORROW_DEFAULT_RESERVE_TOKENS, PI_DEFAULT_RESERVE_TOKENS)
         self.assertEqual(run_tb2.MORROW_MAX_CONTEXT_TOKENS, AGENT_MAX_CONTEXT_WINDOW_TOKENS)
@@ -158,6 +184,7 @@ class TerminalBenchDriverTests(unittest.TestCase):
             with (
                 patch.object(run_tb2, "RUNS_DIR", Path(directory)),
                 patch.object(run_tb2, "_load_dotenv", return_value=credentials),
+                patch.dict(run_tb2.os.environ, {}, clear=True),
                 patch.object(run_tb2, "_all_tasks", return_value=["demo"]),
                 patch.object(run_tb2, "_preflight"),
                 patch.object(run_tb2, "run_fingerprint", return_value={"schema_version": 1}),
@@ -175,6 +202,46 @@ class TerminalBenchDriverTests(unittest.TestCase):
         self.assertEqual(command[command.index("--max-retries") + 1], "0")
         self.assertIn("context_window_tokens=65536", command)
         self.assertIn("max_output_tokens=1000", command)
+
+    def test_proxy_reaches_only_harbor_verifier_env(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            captured: list[list[str]] = []
+
+            def run(command, *, env):
+                captured.append(command)
+                return SimpleNamespace(returncode=0)
+
+            config = {
+                "MORROW_BENCH_API_KEY": "fake",
+                "MORROW_BENCH_PROVIDER_BASE_URL": "https://example.invalid/v1",
+                "MORROW_BENCH_MODEL_ID": "model",
+                "MORROW_BENCH_API_MODEL_ID": "model",
+                "MORROW_BENCH_CONTEXT_WINDOW_TOKENS": "65536",
+                "MORROW_BENCH_MAX_OUTPUT_TOKENS": "1000",
+                "HTTPS_PROXY": "http://127.0.0.1:6152",
+            }
+            with (
+                patch.object(run_tb2, "RUNS_DIR", Path(directory)),
+                patch.object(run_tb2, "_load_dotenv", return_value=config),
+                patch.dict(run_tb2.os.environ, {}, clear=True),
+                patch.object(run_tb2, "_all_tasks", return_value=["demo"]),
+                patch.object(run_tb2, "_preflight"),
+                patch.object(run_tb2, "run_fingerprint", return_value={"schema_version": 1}),
+                patch.object(run_tb2, "_finalize_from_job_logs", return_value=0),
+                patch.object(run_tb2, "VerifierProxyRelay") as relay_class,
+                patch.object(run_tb2.subprocess, "run", side_effect=run),
+                patch("sys.argv", ["run_tb2.py", "--tasks", "demo"]),
+                redirect_stdout(io.StringIO()),
+            ):
+                relay_class.return_value.__enter__.return_value.port = 18761
+                self.assertEqual(run_tb2.main(), 0)
+        command = captured[0]
+        self.assertIn("HTTPS_PROXY=http://host.docker.internal:18761", command)
+        self.assertEqual(
+            command[command.index("HTTPS_PROXY=http://host.docker.internal:18761") - 1],
+            "--verifier-env",
+        )
+        self.assertNotIn("HTTPS_PROXY=http://127.0.0.1:6152", command)
 
     def test_finalizes_actual_harbor_log_layout_and_partial_usage(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
