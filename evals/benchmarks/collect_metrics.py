@@ -86,9 +86,9 @@ def collect_tb2(jobs_dir: Path) -> dict:
         timing = result.get("agent_execution") or {}
         exception = result.get("exception_info") or {}
 
-        metrics_file = result_path.parent / "agent" / "logs" / "morrow-terminal-metrics.json"
-        partial_file = result_path.parent / "agent" / "logs" / "morrow-partial-metrics.json"
-        fingerprint_file = result_path.parent / "agent" / "logs" / "morrow-fingerprint.json"
+        metrics_file = _agent_log_file(result_path.parent, "morrow-terminal-metrics.json")
+        partial_file = _agent_log_file(result_path.parent, "morrow-partial-metrics.json")
+        fingerprint_file = _agent_log_file(result_path.parent, "morrow-fingerprint.json")
         fingerprint = None
         if fingerprint_file.is_file():
             try:
@@ -120,7 +120,7 @@ def collect_tb2(jobs_dir: Path) -> dict:
         duration = _duration_sec(timing)
         trial_duration = _duration_sec(result)
         usage = morrow_metrics.get("usage") or {}
-        diagnostic_file = result_path.parent / "agent" / "logs" / "morrow-diagnostics.jsonl"
+        diagnostic_file = _agent_log_file(result_path.parent, "morrow-diagnostics.jsonl")
         tasks.append(
             {
                 "task": short,
@@ -152,7 +152,8 @@ def collect_tb2(jobs_dir: Path) -> dict:
                 + (morrow_metrics.get("cleared_cycle_count") or 0),
                 "cost_usd": _cost_usd(morrow_metrics.get("cost") or {}),
                 "usage_availability": usage.get("availability"),
-                "exception": (exception.get("type") or "")[:120] or None,
+                "exception": (exception.get("exception_type") or exception.get("type") or "")[:120]
+                or None,
                 "trial_id": result["id"],
                 "trial_name": result["trial_name"],
                 "result_path": str(result_path),
@@ -467,6 +468,11 @@ def _trial_job(result_path: Path) -> Path:
     return parent.parent if parent.name == "trials" else parent
 
 
+def _agent_log_file(trial_dir: Path, name: str) -> Path:
+    direct = trial_dir / "agent" / name
+    return direct if direct.is_file() else trial_dir / "agent" / "logs" / name
+
+
 def _campaign_for_job(job_dir: Path) -> dict | None:
     manifest_dir = BENCH_DIR / "runs" / "manifests"
     if not manifest_dir.is_dir():
@@ -515,13 +521,18 @@ def _cost_usd(cost: dict) -> float | None:
 
 
 def _classify_failure(exception: dict) -> str:
-    text = f"{exception.get('type', '')} {exception.get('message', '')}".lower()
+    text = (
+        f"{exception.get('exception_type') or exception.get('type') or ''} "
+        f"{exception.get('exception_message') or exception.get('message') or ''}"
+    ).lower()
     if "verifier" in text or "verify" in text:
         return "verifier_failure"
     if "timeout" in text or "timed out" in text:
         return "agent_deadline"
     if "rate" in text or "usage limit" in text or "quota" in text:
         return "provider_network"
+    if "nonzeroagentexitcodeerror" in text or "agent exited" in text:
+        return "agent_exit"
     if "docker" in text or "image" in text or "environment" in text or "setup" in text:
         return "environment_setup"
     if "tool" in text or "harbor" in text:

@@ -40,6 +40,10 @@ RUNS_DIR = BENCH_DIR / "runs"
 RESULTS_DIR = BENCH_DIR / "results"
 REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 PROTOCOL = BENCH_DIR / "config" / "v2" / "protocol.json"
+# Keep aligned with morrow.core.runtime_policy.PI_DEFAULT_RESERVE_TOKENS.
+MORROW_DEFAULT_RESERVE_TOKENS = 16_384
+MORROW_MAX_CONTEXT_TOKENS = 10_000_000
+MORROW_MAX_OUTPUT_TOKENS = 1_000_000
 
 sys.path.insert(0, str(BENCH_DIR))
 from harness.assets import verify_bundle  # noqa: E402
@@ -238,8 +242,13 @@ def main() -> int:
     except ValueError:
         print("model capacities must be integers", file=sys.stderr)
         return 2
-    if not 0 < output_tokens < context_tokens:
-        print("model capacities must satisfy 0 < output < context", file=sys.stderr)
+    if not (
+        0 < output_tokens <= MORROW_MAX_OUTPUT_TOKENS
+        and max(output_tokens, MORROW_DEFAULT_RESERVE_TOKENS)
+        < context_tokens
+        <= MORROW_MAX_CONTEXT_TOKENS
+    ):
+        print("model capacities are outside Morrow's supported range or reserve", file=sys.stderr)
         return 2
     try:
         _preflight(tasks)

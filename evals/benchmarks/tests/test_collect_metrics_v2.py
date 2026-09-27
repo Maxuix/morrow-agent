@@ -35,7 +35,9 @@ class CollectorV2Tests(unittest.TestCase):
                     "verifier_result": {"rewards": {"reward": reward}}
                     if reward is not None
                     else None,
-                    "exception_info": {"type": "AgentTimeoutError"} if exception else None,
+                    "exception_info": {"exception_type": "AgentTimeoutError"}
+                    if exception
+                    else None,
                 }
             )
         )
@@ -52,9 +54,47 @@ class CollectorV2Tests(unittest.TestCase):
             self.assertEqual(report["n_tasks"], 1)
             self.assertEqual(report["resolution_rate"], 1)
             self.assertEqual(report["tasks"][0]["agent_status"], "exception")
+            self.assertEqual(report["tasks"][0]["exception"], "AgentTimeoutError")
             self.assertEqual(report["failure_taxonomy"], {"agent_deadline": 1})
             self.assertIsNone(report["cost_usd_total"])
             self.assertEqual(report["cost_coverage"], {"known": 0, "expected": 1})
+
+    def test_current_harbor_agent_log_layout_is_read(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            job = Path(directory) / "job"
+            self._trial(job, "demo")
+            trial = next(job.glob("*/result.json")).parent
+            direct = trial / "agent" / "morrow-terminal-metrics.json"
+            direct.write_text(
+                json.dumps(
+                    {
+                        "usage": {
+                            "availability": "available",
+                            "input_tokens": 10,
+                            "output_tokens": 3,
+                            "total_tokens": 13,
+                        },
+                        "cost": {"availability": "unavailable"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch.object(collect_metrics, "_task_meta", return_value={}):
+                report = collect_metrics.collect_tb2(job)
+            self.assertEqual(report["tasks"][0]["total_tokens"], 13)
+            self.assertEqual(report["tasks"][0]["terminal_metrics_file"], str(direct))
+            self.assertIsNone(report["cost_usd_total"])
+
+    def test_harbor_nonzero_agent_exit_is_classified(self) -> None:
+        self.assertEqual(
+            collect_metrics._classify_failure(
+                {
+                    "exception_type": "NonZeroAgentExitCodeError",
+                    "exception_message": "morrow run exited with code 2",
+                }
+            ),
+            "agent_exit",
+        )
 
     def test_full_requires_exact_tasks_reward_and_matching_fingerprints(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

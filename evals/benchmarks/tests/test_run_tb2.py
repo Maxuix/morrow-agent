@@ -13,8 +13,41 @@ from unittest.mock import patch
 
 import run_tb2
 
+from morrow.core.runtime_policy import (
+    AGENT_MAX_CONTEXT_WINDOW_TOKENS,
+    AGENT_MAX_RESERVE_TOKENS,
+    PI_DEFAULT_RESERVE_TOKENS,
+)
+
 
 class TerminalBenchDriverTests(unittest.TestCase):
+    def test_capacity_below_morrow_reserve_is_rejected_before_launch(self) -> None:
+        self.assertEqual(run_tb2.MORROW_DEFAULT_RESERVE_TOKENS, PI_DEFAULT_RESERVE_TOKENS)
+        self.assertEqual(run_tb2.MORROW_MAX_CONTEXT_TOKENS, AGENT_MAX_CONTEXT_WINDOW_TOKENS)
+        self.assertEqual(run_tb2.MORROW_MAX_OUTPUT_TOKENS, AGENT_MAX_RESERVE_TOKENS)
+        with tempfile.TemporaryDirectory() as directory:
+            config = {
+                "MORROW_BENCH_API_KEY": "fake",
+                "MORROW_BENCH_PROVIDER_BASE_URL": "https://example.invalid/v1",
+                "MORROW_BENCH_MODEL_ID": "model",
+                "MORROW_BENCH_API_MODEL_ID": "model",
+                "MORROW_BENCH_CONTEXT_WINDOW_TOKENS": "10000",
+                "MORROW_BENCH_MAX_OUTPUT_TOKENS": "1000",
+            }
+            with (
+                patch.object(run_tb2, "RUNS_DIR", Path(directory)),
+                patch.object(run_tb2, "_load_dotenv", return_value=config),
+                patch.dict(run_tb2.os.environ, {}, clear=True),
+                patch.object(run_tb2, "_all_tasks", return_value=["demo"]),
+                patch.object(run_tb2, "_preflight") as preflight,
+                patch.object(run_tb2.subprocess, "run") as launch,
+                patch("sys.argv", ["run_tb2.py", "--tasks", "demo"]),
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(run_tb2.main(), 2)
+            preflight.assert_not_called()
+            launch.assert_not_called()
+
     def test_insufficient_budget_does_not_launch_any_task(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -27,7 +60,7 @@ class TerminalBenchDriverTests(unittest.TestCase):
                 "MORROW_BENCH_PROVIDER_BASE_URL": "https://example.invalid/v1",
                 "MORROW_BENCH_MODEL_ID": "model",
                 "MORROW_BENCH_API_MODEL_ID": "model",
-                "MORROW_BENCH_CONTEXT_WINDOW_TOKENS": "10000",
+                "MORROW_BENCH_CONTEXT_WINDOW_TOKENS": "65536",
                 "MORROW_BENCH_MAX_OUTPUT_TOKENS": "1000",
             }
             with (
@@ -119,7 +152,7 @@ class TerminalBenchDriverTests(unittest.TestCase):
                 "MORROW_BENCH_PROVIDER_BASE_URL": "https://example.invalid/v1",
                 "MORROW_BENCH_MODEL_ID": "model",
                 "MORROW_BENCH_API_MODEL_ID": "model",
-                "MORROW_BENCH_CONTEXT_WINDOW_TOKENS": "10000",
+                "MORROW_BENCH_CONTEXT_WINDOW_TOKENS": "65536",
                 "MORROW_BENCH_MAX_OUTPUT_TOKENS": "1000",
             }
             with (
@@ -140,7 +173,7 @@ class TerminalBenchDriverTests(unittest.TestCase):
         self.assertEqual(command[command.index("reasoning_effort=high") - 1], "--ak")
         self.assertEqual(command[command.index("--n-attempts") + 1], "1")
         self.assertEqual(command[command.index("--max-retries") + 1], "0")
-        self.assertIn("context_window_tokens=10000", command)
+        self.assertIn("context_window_tokens=65536", command)
         self.assertIn("max_output_tokens=1000", command)
 
     def test_finalizes_actual_harbor_log_layout_and_partial_usage(self) -> None:

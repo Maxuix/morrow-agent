@@ -59,6 +59,10 @@ setup 阶段把离线资产（python-build-standalone 3.12 + Morrow wheel + x86_
 收集结果时将 `--tb2-jobs` 指向单个 job；只有任务、reward 和关键指纹完整匹配时
 `report_kind` 才为 `fixed_version_full`。费用和 usage 缺失在报告中保留覆盖缺口。
 无模型容器检查入口为 `bash evals/benchmarks/scripts/container_contracts.sh`。
+真实 Harbor 链路可在仓库根目录依次执行
+`evals/benchmarks/.venv/bin/python evals/benchmarks/scripts/g1_harbor_fake.py --task g1-neutral`、
+`--task g1-service`、`--task g1-interrupt`、`--task g1-kill`（后三条替换同一命令的 task 值）。
+这些 fixture 仅用本地脚本 Provider，不写模型预算账本；独立 trial 输出在 `runs/g1/`。
 
 ```bash
 cd evals/benchmarks
@@ -121,13 +125,13 @@ python3 collect_metrics.py
 |---|---|---|
 | 预算账本 | `runs/budget-ledger.json`（进程锁与原子写入） | 每次新运行使用独立 run ID；完整 usage 按实耗结算，未知或部分 usage 保留至少 reservation，并在汇总单列已知实耗和未知覆盖数 |
 | TB2 任务 | `runs/jobs/<effort>/<job>-<run-id>/trials/*/result.json` | 默认新建运行；`--resume-run-id <id>` 仅在指纹完全相同时续跑，Harbor 跳过已有 result.json 的 trial |
-| TB2 过程日志 | `runs/jobs/<job>/trials/*/agent/logs/` 下的 `morrow-diagnostics.jsonl`、`trajectory.json`、尽力回收的 `morrow-run.jsonl` 以及终态或部分指标 JSON | 脱敏诊断随运行逐条刷盘；`_finalize_from_job_logs` 只补正仍处于 admitted 状态的条目 |
+| TB2 过程日志 | 固定 Harbor 版本的 trial `agent/` 下的 `morrow-diagnostics.jsonl`、`trajectory.json`、尽力回收的 `morrow-run.jsonl` 以及终态或部分指标 JSON；收集器也兼容旧 `agent/logs/` 布局 | 脱敏诊断随运行逐条刷盘；`_finalize_from_job_logs` 只补正仍处于 admitted 状态的条目 |
 | SWE-bench 实例 | `runs/swebench-lite/instances-shard<N>.jsonl`（append）+ `workspaces/*__patch.diff` + `*__morrow-run.jsonl` | 默认跳过 jsonl 中已记录的实例（`--rerun` 可强制重跑）；predictions CSV 每次从磁盘上的 patch 文件重建，已完成的实例不会丢 patch |
 | 容器残留 | docker | SWE runner 每次启动实例前 `docker rm -f` 同名残留容器，驱动被杀不会卡死续跑 |
 
 两个注意点：
 
-1. TB2 新运行自动生成 run ID，并在 `runs/manifests/<id>.json` 冻结源码、dirty patch、wheel、锁文件、Harbor 及补丁、任务内容与非密配置。每个 trial 的 `agent/logs/morrow-fingerprint.json` 另记实际 prompt 摘要、容器 Python/libc/架构、有效超时和已完成 AgentRun 的冻结 schema/prompt 摘要。使用 `--resume-run-id` 才复用旧预算键；改动配置时开启新运行。
+1. TB2 新运行自动生成 run ID，并在 `runs/manifests/<id>.json` 冻结源码、dirty patch、wheel、锁文件、Harbor 及补丁、任务内容与非密配置。每个 trial 的 `agent/morrow-fingerprint.json` 另记实际 prompt 摘要、容器 Python/libc/架构、有效超时和已完成 AgentRun 的冻结 schema/prompt 摘要。使用 `--resume-run-id` 才复用旧预算键；改动配置时开启新运行。
 2. 若驱动进程被 SIGKILL，按原 run ID 续跑；SWE 侧最后一个实例无 jsonl 记录时会以新 run ID 重跑并单独计费。已有账本 reservation 会保留未知用量，不能当作真实 token 硬上限。
 
 `collect_metrics.py --tb2-jobs` 应指向**单个固定配置 job**，才可解释为该版本的分数；默认扫全部 jobs 的输出只表示混合 campaign。诊断子集单独保存，不能与全量分混用。预算账本仅控制任务接纳；请求可能超出预留量，严格硬预算需要在模型请求接纳处实现额外上限。
