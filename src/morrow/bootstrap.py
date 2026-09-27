@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from morrow.adapters.credentials.keyring import CredentialAccessError, KeyringCredentialStore
+from morrow.adapters.local.process import HostProcessAdapter
 from morrow.adapters.local.sandbox import (
     NativeSandboxProcessAdapter,
     default_sandbox_backend,
@@ -661,6 +662,7 @@ def build_session_application(
     activity_observer: ModelContentObserver | None = None,
     pause_control=None,
     persist_session: bool = True,
+    headless: bool = False,
 ):
     inspection = app.workspace_state_service.inspect(identity.workspace_id)
     profile_result = inspection.profile
@@ -795,6 +797,7 @@ def build_session_application(
     else:
         process = ProcessExecutionService(
             files,
+            adapter=HostProcessAdapter(persistent_acceptance_stdio=headless),
             secrets=(active_credential,) if active_credential else (),
             tracked=tracked_commands,
         )

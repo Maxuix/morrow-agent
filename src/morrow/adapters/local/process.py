@@ -152,12 +152,14 @@ class HostProcessAdapter:
         termination_grace_seconds: float = 1.0,
         drain_timeout_seconds: float = 2.0,
         shell: PinnedShell | None = None,
+        persistent_acceptance_stdio: bool = False,
     ) -> None:
         if drain_timeout_seconds <= 0:
             raise ProcessAdapterError("invalid_drain_timeout", "进程输出收尾预算无效")
         self.termination_grace_seconds = termination_grace_seconds
         self.drain_timeout_seconds = drain_timeout_seconds
         self.shell = pinned_shell() if shell is None else shell
+        self.persistent_acceptance_stdio = persistent_acceptance_stdio
 
     async def run(
         self,
@@ -285,6 +287,7 @@ class HostProcessAdapter:
         cwd: Path,
         environment: dict[str, str],
         output_limit: int,
+        persistent_stdio: bool = False,
     ) -> SpawnedCommand:
         """Start a process group and return without waiting or reaping it.
 
@@ -297,7 +300,11 @@ class HostProcessAdapter:
         readers: tuple[asyncio.Task, ...] = ()
         try:
             process = await self._open_process(
-                argv=argv, shell=shell, cwd=cwd, environment=environment
+                argv=argv,
+                shell=shell,
+                cwd=cwd,
+                environment=environment,
+                persistent_stdio=persistent_stdio,
             )
             stdout = _CursorBuffer(output_limit)
             stderr = _CursorBuffer(output_limit)
@@ -374,13 +381,14 @@ class HostProcessAdapter:
         shell: str | None,
         cwd: Path,
         environment: dict[str, str],
+        persistent_stdio: bool = False,
     ):
         kwargs = {
             "cwd": str(cwd),
             "env": environment,
             "stdin": asyncio.subprocess.DEVNULL,
-            "stdout": asyncio.subprocess.PIPE,
-            "stderr": asyncio.subprocess.PIPE,
+            "stdout": asyncio.subprocess.DEVNULL if persistent_stdio else asyncio.subprocess.PIPE,
+            "stderr": asyncio.subprocess.DEVNULL if persistent_stdio else asyncio.subprocess.PIPE,
         }
         if os.name == "posix":
             kwargs["start_new_session"] = True

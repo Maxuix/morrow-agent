@@ -76,13 +76,18 @@ class TrackedProcessRegistry:
         validation_scope: str | None = None,
         started_run_id: str | None = None,
     ) -> TrackedExecution:
-        spawned = await adapter.spawn(
-            argv=argv,
-            shell=shell,
-            cwd=cwd,
-            environment=environment,
-            output_limit=TRACKED_OUTPUT_RETAIN_BYTES,
-        )
+        spawn_args = {
+            "argv": argv,
+            "shell": shell,
+            "cwd": cwd,
+            "environment": environment,
+            "output_limit": TRACKED_OUTPUT_RETAIN_BYTES,
+        }
+        if lifecycle is TrackedLifecycle.ACCEPTANCE and getattr(
+            adapter, "persistent_acceptance_stdio", False
+        ):
+            spawn_args["persistent_stdio"] = True
+        spawned = await adapter.spawn(**spawn_args)
         execution = TrackedExecution(
             execution_id="exec_" + secrets.token_hex(12),
             session_id=session_id,

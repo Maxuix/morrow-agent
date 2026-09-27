@@ -554,6 +554,7 @@ def run_headless(
                 approval_port=HeadlessApprovalPort(),
                 permission_profile=PermissionProfile.from_preset(permission_mode),
                 resume_session_id=resume_session_id,
+                headless=True,
             )
             try:
                 diagnostics = (

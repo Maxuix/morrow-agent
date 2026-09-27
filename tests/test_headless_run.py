@@ -89,6 +89,7 @@ def test_run_emits_only_versioned_jsonl_and_terminal_safe_record(monkeypatch, tm
 
     def build_session(**kwargs):
         assert kwargs["approval_port"].__class__.__name__ == "HeadlessApprovalPort"
+        assert kwargs["headless"] is True
         return fake_session_app
 
     monkeypatch.setattr(cli_module, "build_session_application", build_session)
