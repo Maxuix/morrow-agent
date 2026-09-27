@@ -51,7 +51,7 @@ def build_manifest(repo: Path, assets: Path, wheel: Path) -> dict:
     )
     return {
         "schema_version": 1,
-        "source": git_fingerprint(repo),
+        "source_commit": git_fingerprint(repo)["commit"],
         "source_tree_sha256": sha256_tree(repo / "src" / "morrow"),
         "gui_static_sha256": sha256_tree(repo / "src" / "morrow" / "gui_static"),
         "wheel_name": wheel.name,
