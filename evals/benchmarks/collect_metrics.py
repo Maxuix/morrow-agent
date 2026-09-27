@@ -175,10 +175,15 @@ def collect_tb2(jobs_dir: Path) -> dict:
     n = len(tasks)
     counts = Counter(task["task"] for task in tasks)
     duplicates = sorted(task for task, count in counts.items() if count > 1)
-    one_job = bool(tasks) and all(
-        _trial_job(Path(task["result_path"])) == jobs_dir for task in tasks
+    saved_campaign = _campaign_for_job(jobs_dir)
+    one_job = (
+        bool(saved_campaign)
+        or bool(tasks)
+        and all(_trial_job(Path(task["result_path"])) == jobs_dir for task in tasks)
     )
-    campaign = (tasks[0]["fingerprint"] or {}).get("campaign") if one_job else None
+    campaign = saved_campaign or (
+        (tasks[0]["fingerprint"] or {}).get("campaign") if one_job and tasks else None
+    )
     settings = (campaign or {}).get("settings") or {}
     planned = settings.get("tasks") or {}
     if not isinstance(planned, dict):
@@ -186,10 +191,13 @@ def collect_tb2(jobs_dir: Path) -> dict:
     protocol = json.loads((BENCH_DIR / "config" / "v2" / "protocol.json").read_text())
     frozen = protocol["benchmark"]["task_checksums"]
     full_intent = one_job and (len(planned) == len(frozen) or "full" in jobs_dir.name)
+    admitted_tasks = _admitted_tasks(campaign)
     validity_errors = []
     if duplicates:
         validity_errors.append(f"duplicate tasks: {duplicates}")
     if full_intent:
+        if admitted_tasks is not None and admitted_tasks != set(frozen):
+            validity_errors.append("budget admissions differ from frozen task set")
         for field in ("source", "wheel", "assets", "harbor", "dataset"):
             if not isinstance((campaign or {}).get(field), dict):
                 validity_errors.append(f"campaign {field} fingerprint missing")
@@ -251,7 +259,7 @@ def collect_tb2(jobs_dir: Path) -> dict:
                     validity_errors.append(f"{field} mismatch: {task['task']}")
         if len({task["trial_id"] for task in tasks}) != n:
             validity_errors.append("duplicate trial ids")
-        if len({task["run_id"] for task in tasks}) != 1 or not tasks[0]["run_id"]:
+        if len({task["run_id"] for task in tasks}) != 1 or not tasks or not tasks[0]["run_id"]:
             validity_errors.append("run id missing or mixed")
     report_kind = (
         "fixed_version_full"
@@ -266,8 +274,12 @@ def collect_tb2(jobs_dir: Path) -> dict:
         {
             "task": name,
             "planned": True,
-            "admitted": name in counts,
-            "started": name in counts,
+            "admitted": name in admitted_tasks
+            if admitted_tasks is not None
+            else True
+            if name in counts
+            else None,
+            "started": name in counts or _trial_started(jobs_dir, name),
             "terminal": name in counts
             and any(row["terminal"] for row in tasks if row["task"] == name),
             "reward": next((row["reward"] for row in tasks if row["task"] == name), None),
@@ -293,9 +305,9 @@ def collect_tb2(jobs_dir: Path) -> dict:
         "fingerprinted_trials": sum(t["fingerprint_file"] is not None for t in tasks),
         "run_ids": sorted({t["run_id"] for t in tasks if t["run_id"]}),
         "n_tasks": n,
-        "resolution_rate": (len(resolved) / len(frozen))
+        "resolution_rate": (sum(task["reward"] for task in tasks) / len(frozen))
         if report_kind == "fixed_version_full"
-        else (len(resolved) / n)
+        else (sum(task["reward"] for task in tasks) / n)
         if n and not full_intent and all(task["reward"] is not None for task in tasks)
         else None,
         "by_difficulty": _breakdown(tasks, "difficulty"),
@@ -455,6 +467,46 @@ def _trial_job(result_path: Path) -> Path:
     return parent.parent if parent.name == "trials" else parent
 
 
+def _campaign_for_job(job_dir: Path) -> dict | None:
+    manifest_dir = BENCH_DIR / "runs" / "manifests"
+    if not manifest_dir.is_dir():
+        return None
+    for path in manifest_dir.glob("*.json"):
+        try:
+            campaign = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            isinstance(campaign, dict)
+            and (campaign.get("settings") or {}).get("job_name") == job_dir.name
+        ):
+            return campaign
+    return None
+
+
+def _admitted_tasks(campaign: dict | None) -> set[str] | None:
+    run_id = ((campaign or {}).get("settings") or {}).get("run_id")
+    ledger = BENCH_DIR / "runs" / "budget-ledger.json"
+    if not run_id or not ledger.is_file():
+        return None
+    try:
+        entries = json.loads(ledger.read_text(encoding="utf-8"))["entries"]
+    except (OSError, json.JSONDecodeError, KeyError):
+        return None
+    prefix = f"tb2:{run_id}:"
+    return {
+        entry["run_key"][len(prefix) :]
+        for entry in entries
+        if entry.get("status") in {"admitted", "finalized"}
+        and isinstance(entry.get("run_key"), str)
+        and entry["run_key"].startswith(prefix)
+    }
+
+
+def _trial_started(job_dir: Path, task: str) -> bool:
+    return any(job_dir.glob(f"{task}__*")) or any((job_dir / "trials").glob(f"{task}__*"))
+
+
 def _cost_usd(cost: dict) -> float | None:
     if cost.get("availability") == "available" and cost.get("amount_minor") is not None:
         if cost.get("currency") == "USD":
@@ -464,13 +516,15 @@ def _cost_usd(cost: dict) -> float | None:
 
 def _classify_failure(exception: dict) -> str:
     text = f"{exception.get('type', '')} {exception.get('message', '')}".lower()
+    if "verifier" in text or "verify" in text:
+        return "verifier_failure"
     if "timeout" in text or "timed out" in text:
         return "agent_deadline"
     if "rate" in text or "usage limit" in text or "quota" in text:
         return "provider_network"
-    if "docker" in text or "image" in text or "environment" in text:
+    if "docker" in text or "image" in text or "environment" in text or "setup" in text:
         return "environment_setup"
-    if "tool" in text:
+    if "tool" in text or "harbor" in text:
         return "harness"
     return "unknown"
 
@@ -495,6 +549,14 @@ def _token_totals(tasks: list[dict]) -> dict:
     def total(field: str) -> int:
         return sum(t[field] or 0 for t in tasks)
 
+    def known_tokens(task: dict) -> int:
+        if task["total_tokens"] is not None:
+            return task["total_tokens"]
+        if task["input_tokens"] is not None or task["output_tokens"] is not None:
+            return (task["input_tokens"] or 0) + (task["output_tokens"] or 0)
+        partial = task["partial_usage"] or {}
+        return (partial.get("known_input_tokens") or 0) + (partial.get("known_output_tokens") or 0)
+
     values = [t["total_tokens"] for t in tasks if t["total_tokens"] is not None]
     return {
         "input": total("input_tokens"),
@@ -505,13 +567,7 @@ def _token_totals(tasks: list[dict]) -> dict:
         "missing_usage_tasks": sum(
             t["usage_availability"] != "available" and t["partial_usage"] is None for t in tasks
         ),
-        "known_lower_bound": sum(
-            t["total_tokens"]
-            if t["total_tokens"] is not None
-            else ((t["partial_usage"] or {}).get("known_input_tokens") or 0)
-            + ((t["partial_usage"] or {}).get("known_output_tokens") or 0)
-            for t in tasks
-        ),
+        "known_lower_bound": sum(known_tokens(task) for task in tasks),
         "p50_per_task": _p50_p95(values)["p50"],
         "p95_per_task": _p50_p95(values)["p95"],
     }

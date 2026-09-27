@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +13,56 @@ from harness.fingerprint import write_json
 
 
 class AssetTests(unittest.TestCase):
+    def test_product_commit_ignores_later_documentation_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            source = repo / "src" / "morrow"
+            source.mkdir(parents=True)
+            (source / "__init__.py").write_text("version = 1\n")
+            subprocess.run(["git", "-C", str(repo), "add", "src/morrow"], check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.invalid",
+                    "commit",
+                    "-qm",
+                    "source",
+                ],
+                check=True,
+            )
+            assets = repo / "assets"
+            assets.mkdir()
+            (assets / "wheelhouse").mkdir()
+            (assets / "cpython-3.12-x86_64-unknown-linux-gnu-install_only.tar.gz").touch()
+            wheel = assets / "morrow_agent-0.1.0-py3-none-any.whl"
+            with ZipFile(wheel, "w") as archive:
+                archive.writestr("morrow/__init__.py", "version = 1\n")
+            first = build_manifest(repo, assets, wheel)["source_commit"]
+            (repo / "README.md").write_text("documentation\n")
+            subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.invalid",
+                    "commit",
+                    "-qm",
+                    "docs",
+                ],
+                check=True,
+            )
+            self.assertEqual(build_manifest(repo, assets, wheel)["source_commit"], first)
+
     def test_stale_wheel_is_rejected_even_with_same_filename(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)

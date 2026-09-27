@@ -24,9 +24,27 @@ for image in "${MORROW_BENCH_COMPAT_IMAGE:-debian:11}" \
       /opt/morrow/bin/pip install --no-index --find-links /assets/wheelhouse \
         /assets/morrow_agent-*.whl "pytest>=8.3,<9" "pytest-asyncio>=0.24,<1"
       /opt/morrow/bin/morrow --help >/dev/null
-      /opt/morrow/bin/python -m pytest -c /dev/null -q -m "not live" \
+      /opt/morrow/bin/python -m pytest -c /dev/null -o asyncio_mode=auto \
+        -q -m "not live" \
         /tests/test_shell_contract.py /tests/test_tracked_commands.py \
         /tests/test_run_deadline.py /tests/test_headless_run.py \
         /tests/test_harness_acceptance_fixes.py
     ' sh "$PY_TARBALL"
 done
+
+# An isolated fixture checks that a forced agent-container stop leaves a
+# bind-mounted partial log readable by the host. It never targets a job container.
+INTERRUPT_LOGS="$(mktemp -d)"
+trap 'rm -rf "$INTERRUPT_LOGS"' EXIT
+for signal in TERM KILL; do
+  container="$(docker run -d --rm --platform linux/amd64 --network none \
+    -v "$INTERRUPT_LOGS:/bench-logs" \
+    "${MORROW_BENCH_TASK_IMAGE:-alexgshaw/fix-git:20251031}" \
+    sh -c 'sleep 300')"
+  docker exec "$container" sh -c \
+    "printf '{\"availability\":\"partial\",\"unknown_request_count\":1}' > /bench-logs/$signal.json"
+  docker kill --signal="$signal" "$container" >/dev/null
+  test -s "$INTERRUPT_LOGS/$signal.json"
+  docker rm -f "$container" >/dev/null 2>&1 || true
+done
+echo "==> external TERM/KILL mounted-log retention passed"

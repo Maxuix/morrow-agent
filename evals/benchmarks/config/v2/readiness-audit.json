@@ -2,6 +2,8 @@
   "as_of": "2026-09-27",
   "source_commit": "6018258dd3276c37c4a8b8b5f7915eb80064a6fd",
   "read_only": true,
+  "historical_snapshot_before_implementation": true,
+  "current_state_document": "docs/acceptance/benchmark-v2-2026-09-27.md",
   "task_lists": {
     "smoke-3.txt": {
       "count": 3,

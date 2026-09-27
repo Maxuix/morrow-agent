@@ -10,7 +10,17 @@ import subprocess
 from pathlib import Path
 from zipfile import ZipFile
 
-from harness.fingerprint import git_fingerprint, sha256_file, sha256_tree, write_json
+from harness.fingerprint import sha256_file, sha256_tree, write_json
+
+
+def _product_source_commit(repo: Path) -> str | None:
+    result = subprocess.run(
+        ["git", "-C", str(repo), "log", "-1", "--format=%H", "--", "src/morrow"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else None
 
 
 def wheel_source_mismatches(wheel: Path, source_root: Path) -> list[str]:
@@ -51,7 +61,7 @@ def build_manifest(repo: Path, assets: Path, wheel: Path) -> dict:
     )
     return {
         "schema_version": 1,
-        "source_commit": git_fingerprint(repo)["commit"],
+        "source_commit": _product_source_commit(repo),
         "source_tree_sha256": sha256_tree(repo / "src" / "morrow"),
         "gui_static_sha256": sha256_tree(repo / "src" / "morrow" / "gui_static"),
         "wheel_name": wheel.name,

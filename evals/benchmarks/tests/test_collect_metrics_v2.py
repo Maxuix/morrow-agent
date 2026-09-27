@@ -141,6 +141,7 @@ class CollectorV2Tests(unittest.TestCase):
                 "dataset": {"commit": "dataset"},
                 "settings": settings,
             }
+            settings["job_name"] = "job-full"
 
             def fingerprint(name: str) -> dict:
                 return {
@@ -164,15 +165,37 @@ class CollectorV2Tests(unittest.TestCase):
                 }
 
             job = root / "job-full"
+            manifests = root / "runs" / "manifests"
+            manifests.mkdir(parents=True)
+            (manifests / "run.json").write_text(json.dumps(campaign))
+            (root / "runs" / "budget-ledger.json").write_text(
+                json.dumps(
+                    {
+                        "entries": [
+                            {"run_key": "tb2:run:a", "status": "admitted"},
+                            {"run_key": "tb2:run:b", "status": "admitted"},
+                        ]
+                    }
+                )
+            )
+            with (
+                patch.object(collect_metrics, "BENCH_DIR", root),
+                patch.object(collect_metrics, "_task_meta", return_value={}),
+            ):
+                empty = collect_metrics.collect_tb2(job)
+            self.assertEqual(empty["report_kind"], "incomplete_full")
+            self.assertEqual(len(empty["task_table"]), 2)
+            self.assertTrue(empty["task_table"][0]["admitted"])
+            self.assertFalse(empty["task_table"][0]["started"])
             self._trial(job, "a", fingerprint=fingerprint("a"))
-            self._trial(job, "b", reward=0, fingerprint=fingerprint("b"))
+            self._trial(job, "b", reward=0.5, fingerprint=fingerprint("b"))
             with (
                 patch.object(collect_metrics, "BENCH_DIR", root),
                 patch.object(collect_metrics, "_task_meta", return_value={}),
             ):
                 complete = collect_metrics.collect_tb2(job)
             self.assertEqual(complete["report_kind"], "fixed_version_full")
-            self.assertEqual(complete["resolution_rate"], 0.5)
+            self.assertEqual(complete["resolution_rate"], 0.75)
             broken = fingerprint("b")
             broken["model_id"] = "other"
             self._trial(job, "b", reward=0, fingerprint=broken)
