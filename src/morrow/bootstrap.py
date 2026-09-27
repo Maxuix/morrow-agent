@@ -928,6 +928,7 @@ def build_session_application(
             else:
                 process = ProcessExecutionService(
                     files,
+                    adapter=HostProcessAdapter(persistent_acceptance_stdio=headless),
                     secrets=(credential,) if credential else (),
                     foreground_timeout_seconds=run_policy.tool_timeout_seconds,
                     tracked=tracked_commands,
