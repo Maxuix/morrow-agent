@@ -6,6 +6,7 @@ import asyncio
 import codecs
 import os
 import signal
+import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -135,12 +136,36 @@ class _CursorBuffer:
 class SpawnedCommand:
     """A live process group that outlives the tool call which started it."""
 
-    process: asyncio.subprocess.Process
+    process: asyncio.subprocess.Process | _PersistentProcess
     readers: tuple[asyncio.Task, ...]
     stdout: _CursorBuffer
     stderr: _CursorBuffer
     started: float
     loop: asyncio.AbstractEventLoop
+
+
+class _PersistentProcess:
+    """OS child handle that is not owned by an asyncio loop transport."""
+
+    stdout = None
+    stderr = None
+
+    def __init__(self, process: subprocess.Popen[bytes]) -> None:
+        self._process = process
+
+    @property
+    def pid(self) -> int:
+        return self._process.pid
+
+    @property
+    def returncode(self) -> int | None:
+        return self._process.poll()
+
+    def terminate(self) -> None:
+        self._process.terminate()
+
+    def kill(self) -> None:
+        self._process.kill()
 
 
 class HostProcessAdapter:
@@ -299,12 +324,14 @@ class HostProcessAdapter:
         process = None
         readers: tuple[asyncio.Task, ...] = ()
         try:
-            process = await self._open_process(
-                argv=argv,
-                shell=shell,
-                cwd=cwd,
-                environment=environment,
-                persistent_stdio=persistent_stdio,
+            process = (
+                self._open_persistent_process(
+                    argv=argv, shell=shell, cwd=cwd, environment=environment
+                )
+                if persistent_stdio
+                else await self._open_process(
+                    argv=argv, shell=shell, cwd=cwd, environment=environment
+                )
             )
             stdout = _CursorBuffer(output_limit)
             stderr = _CursorBuffer(output_limit)
@@ -381,14 +408,13 @@ class HostProcessAdapter:
         shell: str | None,
         cwd: Path,
         environment: dict[str, str],
-        persistent_stdio: bool = False,
     ):
         kwargs = {
             "cwd": str(cwd),
             "env": environment,
             "stdin": asyncio.subprocess.DEVNULL,
-            "stdout": asyncio.subprocess.DEVNULL if persistent_stdio else asyncio.subprocess.PIPE,
-            "stderr": asyncio.subprocess.DEVNULL if persistent_stdio else asyncio.subprocess.PIPE,
+            "stdout": asyncio.subprocess.PIPE,
+            "stderr": asyncio.subprocess.PIPE,
         }
         if os.name == "posix":
             kwargs["start_new_session"] = True
@@ -402,6 +428,36 @@ class HostProcessAdapter:
                 ) from exc
             return await asyncio.create_subprocess_exec(program, flag, script, **kwargs)
         return await asyncio.create_subprocess_exec(*(argv or ()), **kwargs)
+
+    def _open_persistent_process(
+        self,
+        *,
+        argv: tuple[str, ...] | None,
+        shell: str | None,
+        cwd: Path,
+        environment: dict[str, str],
+    ) -> _PersistentProcess:
+        """Keep an acceptance child alive when the headless event loop ends."""
+        if shell is not None:
+            try:
+                command = shell_invocation(self.shell, shell)
+            except LookupError as exc:
+                raise ProcessAdapterError(
+                    "invalid_command",
+                    "命令未启动，进程没有执行。当前环境没有可用的 shell",
+                ) from exc
+        else:
+            command = argv or ()
+        process = subprocess.Popen(
+            command,
+            cwd=str(cwd),
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=os.name == "posix",
+        )
+        return _PersistentProcess(process)
 
     def _signal_group(self, process) -> None:
         if os.name == "posix":
