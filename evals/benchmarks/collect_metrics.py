@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import tomllib
+from collections import Counter
 from pathlib import Path
 
 BENCH_DIR = Path(__file__).resolve().parent
@@ -57,15 +59,29 @@ def collect_tb2(jobs_dir: Path) -> dict:
     meta = _task_meta()
     tasks: list[dict] = []
     for result_path in sorted(jobs_dir.rglob("result.json")):
+        # Harbor writes a second result.json at the job root. A trial has a
+        # named directory and an official trial id; never count job summaries.
+        if result_path.parent == jobs_dir or result_path.parent.name in {"trials", "jobs"}:
+            continue
         try:
             result = json.loads(result_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+        if not isinstance(result, dict) or not isinstance(result.get("id"), str):
+            continue
         task_name = str(result.get("task_name", ""))
         short = task_name.split("/")[-1]
+        if not short or result.get("trial_name") != result_path.parent.name:
+            continue
         verifier = result.get("verifier_result") or {}
         rewards = verifier.get("rewards") or {}
         reward = rewards.get("reward", rewards.get("verify")) if rewards else None
+        if (
+            isinstance(reward, bool)
+            or not isinstance(reward, (int, float))
+            or not math.isfinite(reward)
+        ):
+            reward = None
         agent_ctx = result.get("agent_result") or {}
         timing = result.get("agent_execution") or {}
         exception = result.get("exception_info") or {}
@@ -94,26 +110,37 @@ def collect_tb2(jobs_dir: Path) -> dict:
         if not isinstance(partial_usage, dict):
             partial_usage = None
 
-        status = "resolved" if reward == 1 else "unresolved"
+        status = "resolved" if reward == 1 else "unresolved" if reward == 0 else "unknown"
         failure_kind = None
         if exception:
-            status = "exception"
             failure_kind = _classify_failure(exception)
         elif reward == 0:
-            status = "failed"
-            failure_kind = "model_failure"
+            failure_kind = "unknown"
 
         duration = _duration_sec(timing)
+        trial_duration = _duration_sec(result)
         usage = morrow_metrics.get("usage") or {}
+        diagnostic_file = result_path.parent / "agent" / "logs" / "morrow-diagnostics.jsonl"
         tasks.append(
             {
                 "task": short,
                 "difficulty": (meta.get(short) or {}).get("difficulty", "unknown"),
                 "category": (meta.get(short) or {}).get("category", "unknown"),
                 "status": status,
+                "agent_status": "exception"
+                if exception
+                else "completed"
+                if timing.get("finished_at")
+                else "unknown",
                 "failure_kind": failure_kind,
                 "reward": reward,
                 "duration_sec": duration,
+                "agent_started": bool(timing.get("started_at")),
+                "trial_duration_sec": trial_duration,
+                "stop_code": morrow_metrics.get("stop_code"),
+                "finish_reason": morrow_metrics.get("finish_reason"),
+                "validation_outcome": morrow_metrics.get("validation_outcome"),
+                "goal_verification": morrow_metrics.get("goal_verification"),
                 "input_tokens": usage.get("input_tokens"),
                 "output_tokens": usage.get("output_tokens"),
                 "total_tokens": usage.get("total_tokens"),
@@ -124,7 +151,12 @@ def collect_tb2(jobs_dir: Path) -> dict:
                 "context_compactions": (morrow_metrics.get("dropped_cycle_count") or 0)
                 + (morrow_metrics.get("cleared_cycle_count") or 0),
                 "cost_usd": _cost_usd(morrow_metrics.get("cost") or {}),
+                "usage_availability": usage.get("availability"),
                 "exception": (exception.get("type") or "")[:120] or None,
+                "trial_id": result["id"],
+                "trial_name": result["trial_name"],
+                "result_path": str(result_path),
+                "terminal": bool(result.get("finished_at")),
                 "agent_input_tokens": agent_ctx.get("n_input_tokens"),
                 "agent_output_tokens": agent_ctx.get("n_output_tokens"),
                 "agent_cost_usd": agent_ctx.get("cost_usd"),
@@ -133,36 +165,160 @@ def collect_tb2(jobs_dir: Path) -> dict:
                     "run_id"
                 ),
                 "fingerprint_file": str(fingerprint_file) if fingerprint is not None else None,
+                "diagnostic_file": str(diagnostic_file) if diagnostic_file.is_file() else None,
+                "terminal_metrics_file": str(metrics_file) if metrics_file.is_file() else None,
+                "fingerprint": fingerprint,
             }
         )
 
-    resolved = [t for t in tasks if t["status"] == "resolved"]
+    resolved = [t for t in tasks if t["reward"] == 1]
     n = len(tasks)
-    one_job = (jobs_dir / "trials").is_dir()
-    complete_fingerprints = all(task["fingerprint_file"] is not None for task in tasks)
-    unique_tasks = len({task["task"] for task in tasks}) == n
+    counts = Counter(task["task"] for task in tasks)
+    duplicates = sorted(task for task, count in counts.items() if count > 1)
+    one_job = bool(tasks) and all(
+        _trial_job(Path(task["result_path"])) == jobs_dir for task in tasks
+    )
+    campaign = (tasks[0]["fingerprint"] or {}).get("campaign") if one_job else None
+    settings = (campaign or {}).get("settings") or {}
+    planned = settings.get("tasks") or {}
+    if not isinstance(planned, dict):
+        planned = {}
+    protocol = json.loads((BENCH_DIR / "config" / "v2" / "protocol.json").read_text())
+    frozen = protocol["benchmark"]["task_checksums"]
+    full_intent = one_job and (len(planned) == len(frozen) or "full" in jobs_dir.name)
+    validity_errors = []
+    if duplicates:
+        validity_errors.append(f"duplicate tasks: {duplicates}")
+    if full_intent:
+        for field in ("source", "wheel", "assets", "harbor", "dataset"):
+            if not isinstance((campaign or {}).get(field), dict):
+                validity_errors.append(f"campaign {field} fingerprint missing")
+        if not ((campaign or {}).get("assets") or {}).get("build_manifest_sha256"):
+            validity_errors.append("asset build manifest fingerprint missing")
+        if ((campaign or {}).get("harbor") or {}).get("commit") != protocol["benchmark"][
+            "harbor_commit"
+        ]:
+            validity_errors.append("Harbor commit differs from frozen protocol")
+        if ((campaign or {}).get("dataset") or {}).get("commit") != protocol["benchmark"][
+            "dataset_commit"
+        ]:
+            validity_errors.append("dataset commit differs from frozen protocol")
+        for field in (
+            "run_id",
+            "provider_adapter",
+            "provider_base_url_sha256",
+            "model_id",
+            "api_model_id",
+            "reasoning_effort",
+            "context_window_tokens",
+            "max_output_tokens",
+            "agent_timeout_multiplier",
+            "permission_mode",
+        ):
+            if settings.get(field) is None:
+                validity_errors.append(f"campaign setting missing: {field}")
+        if settings.get("attempts_per_task") != 1 or settings.get("harbor_max_retries") != 0:
+            validity_errors.append("campaign attempts or retries differ from protocol")
+        if planned != frozen:
+            validity_errors.append("planned task checksums differ from frozen protocol")
+        if set(counts) != set(frozen):
+            validity_errors.append("observed task set differs from frozen protocol")
+        if any(task["reward"] is None for task in tasks):
+            validity_errors.append("missing verifier reward")
+        if n != len(frozen):
+            validity_errors.append("trial count differs from frozen protocol")
+        for task in tasks:
+            fp = task["fingerprint"]
+            if not isinstance(fp, dict) or fp.get("campaign") != campaign:
+                validity_errors.append(f"missing or mixed campaign fingerprint: {task['task']}")
+                continue
+            if fp.get("task_checksum_sha256") != frozen.get(task["task"]):
+                validity_errors.append(f"task checksum mismatch: {task['task']}")
+            if fp.get("installed_wheel_sha256") != (campaign.get("wheel") or {}).get("sha256"):
+                validity_errors.append(f"wheel mismatch: {task['task']}")
+            for field in (
+                "provider_adapter",
+                "provider_id",
+                "provider_base_url_sha256",
+                "model_id",
+                "api_model_id",
+                "reasoning_effort",
+                "context_window_tokens",
+                "max_output_tokens",
+                "permission_mode",
+            ):
+                if fp.get(field) != settings.get(field):
+                    validity_errors.append(f"{field} mismatch: {task['task']}")
+        if len({task["trial_id"] for task in tasks}) != n:
+            validity_errors.append("duplicate trial ids")
+        if len({task["run_id"] for task in tasks}) != 1 or not tasks[0]["run_id"]:
+            validity_errors.append("run id missing or mixed")
     report_kind = (
         "fixed_version_full"
-        if one_job
-        and n == 89
-        and unique_tasks
-        and complete_fingerprints
-        and len({task["run_id"] for task in tasks}) == 1
-        and tasks[0]["run_id"] is not None
+        if full_intent and not validity_errors
+        else "incomplete_full"
+        if full_intent
         else "diagnostic_subset"
         if one_job
         else "mixed_campaign"
     )
+    task_table = [
+        {
+            "task": name,
+            "planned": True,
+            "admitted": name in counts,
+            "started": name in counts,
+            "terminal": name in counts
+            and any(row["terminal"] for row in tasks if row["task"] == name),
+            "reward": next((row["reward"] for row in tasks if row["task"] == name), None),
+            "trials": [row for row in tasks if row["task"] == name],
+        }
+        for name in (frozen if full_intent else planned or counts)
+    ]
     report = {
         "benchmark": "Terminal-Bench 2.0",
         "report_kind": report_kind,
+        "validity_errors": validity_errors,
+        "duplicate_tasks": duplicates,
+        "unknown_tasks": sorted(set(counts) - set(frozen if full_intent else planned))
+        if planned or full_intent
+        else [],
+        "missing_tasks": sorted(set(planned) - set(counts)),
+        "outcome_coverage": {
+            "known": sum(t["reward"] is not None for t in tasks),
+            "expected": len(frozen) if full_intent else len(planned) or n,
+        },
+        "operational_lower_bound": len(resolved) / len(frozen) if full_intent else None,
+        "task_table": task_table,
         "fingerprinted_trials": sum(t["fingerprint_file"] is not None for t in tasks),
         "run_ids": sorted({t["run_id"] for t in tasks if t["run_id"]}),
         "n_tasks": n,
-        "resolution_rate": (len(resolved) / n) if n else None,
+        "resolution_rate": (len(resolved) / len(frozen))
+        if report_kind == "fixed_version_full"
+        else (len(resolved) / n)
+        if n and not full_intent and all(task["reward"] is not None for task in tasks)
+        else None,
         "by_difficulty": _breakdown(tasks, "difficulty"),
         "by_category": _breakdown(tasks, "category"),
-        "duration_sec": _p50_p95([t["duration_sec"] for t in tasks if t["duration_sec"]]),
+        "duration_sec": _p50_p95(
+            [t["duration_sec"] for t in tasks if t["duration_sec"] is not None]
+        ),
+        "trial_duration_sec": _p50_p95(
+            [t["trial_duration_sec"] for t in tasks if t["trial_duration_sec"] is not None]
+        ),
+        "diagnostics_coverage": {
+            "entered_agent_run": sum(t["agent_started"] for t in tasks),
+            "with_evidence": sum(
+                t["agent_started"]
+                and (
+                    t["fingerprint_file"] is not None
+                    or t["diagnostic_file"] is not None
+                    or t["terminal_metrics_file"] is not None
+                    or t["partial_usage"] is not None
+                )
+                for t in tasks
+            ),
+        },
         "tokens": _token_totals(tasks),
         "partial_usage": {
             "tasks_with_partial_evidence": sum(t["partial_usage"] is not None for t in tasks),
@@ -180,10 +336,21 @@ def collect_tb2(jobs_dir: Path) -> dict:
         "model_requests_total": sum(t["model_attempts"] or 0 for t in tasks),
         "retry_total": sum(t["retry_count"] or 0 for t in tasks),
         "context_compaction_total": sum(t["context_compactions"] or 0 for t in tasks),
-        "cost_usd_total": sum(t["cost_usd"] or 0 for t in tasks),
-        "cost_per_task": (sum(t["cost_usd"] or 0 for t in tasks) / n) if n else None,
-        "cost_per_resolved": (sum(t["cost_usd"] or 0 for t in tasks) / len(resolved))
-        if resolved
+        "cost_known_lower_bound_usd": sum(
+            t["cost_usd"] for t in tasks if t["cost_usd"] is not None
+        ),
+        "cost_coverage": {
+            "known": sum(t["cost_usd"] is not None for t in tasks),
+            "expected": len(frozen) if full_intent else n,
+        },
+        "cost_usd_total": sum(t["cost_usd"] for t in tasks if t["cost_usd"] is not None)
+        if n and all(t["cost_usd"] is not None for t in tasks) and not validity_errors
+        else None,
+        "cost_per_task": (sum(t["cost_usd"] for t in tasks) / n)
+        if n and all(t["cost_usd"] is not None for t in tasks) and not validity_errors
+        else None,
+        "cost_per_resolved": (sum(t["cost_usd"] for t in tasks) / len(resolved))
+        if resolved and all(t["cost_usd"] is not None for t in tasks) and not validity_errors
         else None,
         "failure_taxonomy": _failure_counts(tasks),
         "tasks": tasks,
@@ -283,6 +450,11 @@ def _duration_sec(timing: dict) -> float | None:
         return None
 
 
+def _trial_job(result_path: Path) -> Path:
+    parent = result_path.parent.parent
+    return parent.parent if parent.name == "trials" else parent
+
+
 def _cost_usd(cost: dict) -> float | None:
     if cost.get("availability") == "available" and cost.get("amount_minor") is not None:
         if cost.get("currency") == "USD":
@@ -293,14 +465,14 @@ def _cost_usd(cost: dict) -> float | None:
 def _classify_failure(exception: dict) -> str:
     text = f"{exception.get('type', '')} {exception.get('message', '')}".lower()
     if "timeout" in text or "timed out" in text:
-        return "timeout"
+        return "agent_deadline"
     if "rate" in text or "usage limit" in text or "quota" in text:
-        return "budget_exhausted"
+        return "provider_network"
     if "docker" in text or "image" in text or "environment" in text:
-        return "environment_failure"
+        return "environment_setup"
     if "tool" in text:
-        return "tool_failure"
-    return "model_failure"
+        return "harness"
+    return "unknown"
 
 
 def _breakdown(tasks: list[dict], key: str) -> dict:
@@ -310,9 +482,9 @@ def _breakdown(tasks: list[dict], key: str) -> dict:
     return {
         name: {
             "n": len(items),
-            "resolved": sum(1 for t in items if t["status"] == "resolved"),
-            "rate": sum(1 for t in items if t["status"] == "resolved") / len(items)
-            if items
+            "resolved": sum(1 for t in items if t["reward"] == 1),
+            "rate": sum(1 for t in items if t["reward"] == 1) / len(items)
+            if items and all(t["reward"] is not None for t in items)
             else None,
         }
         for name, items in sorted(groups.items())
@@ -328,6 +500,18 @@ def _token_totals(tasks: list[dict]) -> dict:
         "input": total("input_tokens"),
         "output": total("output_tokens"),
         "total": total("total_tokens"),
+        "complete_usage_tasks": sum(t["usage_availability"] == "available" for t in tasks),
+        "partial_usage_tasks": sum(t["partial_usage"] is not None for t in tasks),
+        "missing_usage_tasks": sum(
+            t["usage_availability"] != "available" and t["partial_usage"] is None for t in tasks
+        ),
+        "known_lower_bound": sum(
+            t["total_tokens"]
+            if t["total_tokens"] is not None
+            else ((t["partial_usage"] or {}).get("known_input_tokens") or 0)
+            + ((t["partial_usage"] or {}).get("known_output_tokens") or 0)
+            for t in tasks
+        ),
         "p50_per_task": _p50_p95(values)["p50"],
         "p95_per_task": _p50_p95(values)["p95"],
     }
@@ -336,7 +520,7 @@ def _token_totals(tasks: list[dict]) -> dict:
 def _failure_counts(tasks: list[dict]) -> dict:
     counts: dict[str, int] = {}
     for task in tasks:
-        if task["status"] in ("failed", "exception"):
+        if task["exception"] or task["reward"] == 0:
             kind = task["failure_kind"] or "unknown"
             counts[kind] = counts.get(kind, 0) + 1
     return counts

@@ -1,0 +1,88 @@
+{
+  "as_of": "2026-09-27",
+  "source_commit": "6018258dd3276c37c4a8b8b5f7915eb80064a6fd",
+  "read_only": true,
+  "task_lists": {
+    "smoke-3.txt": {
+      "count": 3,
+      "unique": true,
+      "all_exist": true
+    },
+    "diagnostic-12.txt": {
+      "count": 12,
+      "unique": true,
+      "all_exist": true
+    },
+    "full-89.txt": {
+      "count": 89,
+      "unique": true,
+      "all_exist": true
+    }
+  },
+  "task_checksums_verified": 89,
+  "wheel_comparison": [
+    {
+      "path": "evals/benchmarks/assets/morrow_agent-0.1.0-py3-none-any.whl",
+      "sha256": "6d973c68dbd448e54b9d50df0fa2e446717f146db1f068820345b21c620de926",
+      "different_python_files": [
+        "morrow/bootstrap.py",
+        "morrow/core/execution.py",
+        "morrow/core/task_artifacts.py",
+        "morrow/core/local_tools.py",
+        "morrow/core/runtime_policy.py",
+        "morrow/core/observability.py",
+        "morrow/core/capabilities.py",
+        "morrow/runtime/tools.py",
+        "morrow/runtime/completion_check.py",
+        "morrow/runtime/agent.py",
+        "morrow/runtime/provider_retry.py",
+        "morrow/runtime/tool_arguments.py",
+        "morrow/runtime/deadline.py",
+        "morrow/server/projections.py",
+        "morrow/application/tasks.py",
+        "morrow/application/local_tools.py",
+        "morrow/application/bash_tool.py",
+        "morrow/application/api.py",
+        "morrow/application/context.py",
+        "morrow/application/orchestrator.py",
+        "morrow/application/api_recovery.py",
+        "morrow/application/prompt.py",
+        "morrow/services/bash_execution.py",
+        "morrow/services/process.py",
+        "morrow/services/tracked_process.py",
+        "morrow/interfaces/terminal.py",
+        "morrow/interfaces/headless_diagnostics.py",
+        "morrow/interfaces/cli.py",
+        "morrow/adapters/models/openai_compatible.py",
+        "morrow/adapters/state/observability_journal.py",
+        "morrow/adapters/local/shell.py",
+        "morrow/adapters/local/sandbox.py",
+        "morrow/adapters/local/process.py"
+      ]
+    }
+  ],
+  "budget_snapshot": {
+    "budget_total": 300000000,
+    "charged_or_reserved": 175290098,
+    "remaining_admission": 124709902
+  },
+  "model_capacity_configuration": "not provided in inspected nonsecret configuration",
+  "collector_synthetic_probe": {
+    "actual_trials": 1,
+    "job_summary_files": 1,
+    "reward": 1,
+    "agent_exception": "AgentTimeoutError",
+    "observed_collector_n_tasks": 2,
+    "observed_resolution_rate": 0.0,
+    "observed_unknown_cost_total": 0
+  },
+  "execution_ready": false,
+  "blocking_work": [
+    "B1 report correctness",
+    "B2 driver preflight/admission",
+    "B3 current assets and provenance",
+    "B4 container contracts",
+    "B5 deployment configuration freeze"
+  ],
+  "live_model_calls": 0
+}

@@ -18,6 +18,21 @@ def _admit(path: str, run_key: str) -> bool:
 
 
 class BudgetFingerprintTests(unittest.TestCase):
+    def test_preview_is_read_only_and_batch_admission_is_all_or_none(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ledger.json"
+            self.assertEqual(
+                TokenBudget.preview(path, budget_total=100, reservation=60)["remaining"], 100
+            )
+            self.assertEqual(list(Path(directory).iterdir()), [])
+            budget = TokenBudget(path, budget_total=100, reservation=60)
+            self.assertFalse(budget.admit_many(["a", "b"]))
+            self.assertEqual(budget.summary()["admitted"], 0)
+            self.assertTrue(budget.admit_many(["a"]))
+            self.assertTrue(budget.admit_many(["a"]))
+            self.assertFalse(budget.admit_many(["a", "b"]))
+            self.assertEqual(budget.summary()["admitted"], 1)
+
     def test_parallel_drivers_cannot_oversubscribe(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "ledger.json"

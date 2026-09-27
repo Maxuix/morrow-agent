@@ -25,6 +25,12 @@ STAGING="$(mktemp -d "$ASSETS/.build.XXXXXX")"
 trap 'rm -rf "$STAGING"' EXIT
 mkdir -p "$STAGING/wheelhouse"
 
+echo "==> building and checking packaged GUI"
+pnpm --dir "$REPO_ROOT/gui" install --frozen-lockfile
+pnpm --dir "$REPO_ROOT/gui" typecheck
+pnpm --dir "$REPO_ROOT/gui" test
+pnpm --dir "$REPO_ROOT/gui" build
+
 echo "==> building current Morrow wheel"
 (cd "$REPO_ROOT" && uv build --wheel --out-dir "$STAGING")
 
@@ -52,7 +58,8 @@ docker run --rm --platform linux/amd64 \
     --index-url "$index_url" --only-binary=:all: \
     "$@" --python-version 3.12 \
     --implementation cp --abi cp312 \
-    --dest /candidate/wheelhouse /candidate/morrow_agent-*.whl' \
+    --dest /candidate/wheelhouse /candidate/morrow_agent-*.whl \
+    "pytest>=8.3,<9" "pytest-asyncio>=0.24,<1"' \
     sh "$PY_TARBALL" "$PYPI_MIRROR" "${PLATFORMS[@]}"
 
 echo "==> testing offline install in $COMPAT_IMAGE"
@@ -65,8 +72,21 @@ docker run --rm --platform linux/amd64 --network none \
       /candidate/morrow_agent-*.whl; \
     /opt/morrow/bin/morrow --help >/dev/null' sh "$PY_TARBALL"
 
+ln -s "$ASSETS/$PY_TARBALL" "$STAGING/$PY_TARBALL"
+for binary in uv-x86_64-unknown-linux-gnu uvx-x86_64-unknown-linux-gnu; do
+  if [ -f "$ASSETS/$binary" ]; then
+    ln -s "$ASSETS/$binary" "$STAGING/$binary"
+  fi
+done
+echo "==> verifying wheel source and recording asset provenance"
+(cd "$REPO_ROOT" && PYTHONPATH="$BENCH_DIR" uv run python -m harness.assets write \
+  --repo "$REPO_ROOT" --assets "$STAGING" --wheel "$STAGING"/morrow_agent-*.whl)
+
 rm -f "$ASSETS"/morrow_agent-*.whl
 mv "$STAGING"/morrow_agent-*.whl "$ASSETS/"
 rm -rf "$ASSETS/wheelhouse"
 mv "$STAGING/wheelhouse" "$ASSETS/wheelhouse"
+mv "$STAGING/asset-manifest.json" "$ASSETS/asset-manifest.json"
+PYTHONPATH="$BENCH_DIR" uv run python -m harness.assets verify \
+  --repo "$REPO_ROOT" --assets "$ASSETS"
 echo "==> compatible asset bundle ready"

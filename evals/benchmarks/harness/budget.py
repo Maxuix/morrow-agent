@@ -36,6 +36,35 @@ class TokenBudget:
         with self._locked() as state:
             if state["budget_total"] != self.budget_total:
                 raise ValueError("budget_total differs from existing ledger")
+            if state["reservation"] != self.reservation:
+                raise ValueError("reservation differs from existing ledger")
+
+    @classmethod
+    def preview(cls, path: Path, *, budget_total: int, reservation: int) -> dict[str, Any]:
+        """Inspect admission capacity without creating a ledger or lock file."""
+        if budget_total <= 0 or reservation <= 0:
+            raise ValueError("budget_total and reservation must be positive")
+        if path.is_file():
+            state = json.loads(path.read_text(encoding="utf-8"))
+            if state.get("schema_version") != cls.SCHEMA_VERSION:
+                raise ValueError(f"unsupported budget ledger version: {path}")
+            if state.get("budget_total") != budget_total:
+                raise ValueError("budget_total differs from existing ledger")
+            if state.get("reservation") != reservation:
+                raise ValueError("reservation differs from existing ledger")
+            charged = cls._charged(state)
+            return {
+                "budget_total": budget_total,
+                "used_tokens": charged,
+                "remaining": budget_total - charged,
+                "read_only_snapshot": True,
+            }
+        return {
+            "budget_total": budget_total,
+            "used_tokens": 0,
+            "remaining": budget_total,
+            "read_only_snapshot": True,
+        }
 
     @contextmanager
     def _locked(self) -> Iterator[dict[str, Any]]:
@@ -132,6 +161,33 @@ class TokenBudget:
                 }
             )
             self._save(state)
+            return True
+
+    def admit_many(self, run_keys: list[str]) -> bool:
+        """Admit an entire job under one lock, or admit none of it."""
+        if len(run_keys) != len(set(run_keys)):
+            raise ValueError("duplicate run keys")
+        with self._locked() as state:
+            existing = {
+                entry["run_key"]
+                for entry in state["entries"]
+                if entry["status"] in ("admitted", "finalized")
+            }
+            new_keys = [key for key in run_keys if key not in existing]
+            if self._charged(state) + len(new_keys) * self.reservation > self.budget_total:
+                return False
+            for key in new_keys:
+                state["entries"].append(
+                    {
+                        "run_key": key,
+                        "status": "admitted",
+                        "reservation": self.reservation,
+                        "charged_tokens": self.reservation,
+                        "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                    }
+                )
+            if new_keys:
+                self._save(state)
             return True
 
     def finalize(self, run_key: str, *, usage: dict[str, Any] | None) -> None:

@@ -1,6 +1,8 @@
 # Morrow Benchmark Harness
 
-面向 Morrow（承序）的自动化评测 harness，覆盖 **Terminal-Bench 2.0**（89 任务，Harbor 官方 harness + 官方 verifier）与 **SWE-bench Lite**（300 任务，官方 harness 评分）。全部运行共享一个默认 100M token 的任务接纳账本；已知实耗超出预算后会拒绝后续任务，运行中的请求仍可能超支。
+> **v2 执行入口：**使用[新版实施与执行方案](/Users/ruirui/Documents/Project/Agent/developing/docs/research/benchmark-v2-implementation-plan-2026-09-27.md)及 [v2 协议规格](/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/config/v2/protocol.json)。协议 JSON 是冻结规格，不是 CLI `--profile` 输入。先完成离线和容器门禁并确认模型容量，再按 3 → 12 → 独立 89 题执行。SWE Lite 暂不纳入主线。
+
+面向 Morrow（承序）的自动化评测 harness，覆盖 **Terminal-Bench 2.0**（89 任务，Harbor 官方 harness + 官方 verifier）与 **SWE-bench Lite**（300 任务，官方 harness 评分）。TB2 驱动默认使用 300M token 任务接纳账本，须与已有账本一致；运行中的请求仍可能超出任务预留。
 
 > 报告与简历必须标注 **SWE-bench Lite**（300），不得写成 Verified（500）。
 
@@ -40,14 +42,23 @@ setup 阶段把离线资产（python-build-standalone 3.12 + Morrow wheel + x86_
 **SWE-bench Lite**：`run_swebench_lite.py` 逐实例启动官方实例镜像
 （`ghcr.io/swe-bench/{repo}:{version}`，可用 `MORROW_BENCH_SWE_IMAGE_TEMPLATE` 换镜像站），
 在同一容器内离线安装 Morrow、以 `problem_statement` 为 prompt 运行，
-取 `git diff` 为 model patch，合并成官方 predictions CSV 后调用官方
-`swebench.harness.run_evaluation` 评分（FAIL_TO_PASS / PASS_TO_PASS，% Resolved）。
+取 `git diff` 为 model patch。旧实现输出 predictions CSV，但本地固定版本的官方
+`swebench.harness.run_evaluation` 仅接受 JSON/JSONL；安装路径、镜像解析、patch 完整性
+和运行隔离也需按新版方案修正后，才能进行官方评分。
 
 **密钥处理**：provider 以 `secret=None` 创建，运行时通过 per-exec 环境变量
-`MORROW_<PROVIDER>_API_KEY` 解析；密钥不写入任何配置文件、命令行或日志。
-容器内 headless Linux 无 Keychain，这条路径同时绕开了 keyring 限制。
+`MORROW_<PROVIDER>_API_KEY` 解析。TB2 adapter 使用环境传递；SWE 旧 runner 的
+`docker exec -e KEY=value` 仍把值放入 argv，须按新版方案修正后再运行。
+容器内 headless Linux 无 Keychain，环境凭据路径绕开了 keyring 限制。
 
-## 快速开始
+## 旧版快速开始（新版执行请使用上方方案）
+
+新版驱动的 `--dry-run` 只读取账本并核对任务；`--full` 还核对冻结的 89 个任务及目录摘要。
+正式运行先在一个账本锁内接纳整批任务，不能只启动余额容许的子集。`prepare_assets.sh`
+先构建 GUI，再生成源码、wheel 和依赖资产绑定清单；运行预检拒绝过期 wheel。
+收集结果时将 `--tb2-jobs` 指向单个 job；只有任务、reward 和关键指纹完整匹配时
+`report_kind` 才为 `fixed_version_full`。费用和 usage 缺失在报告中保留覆盖缺口。
+无模型容器检查入口为 `bash evals/benchmarks/scripts/container_contracts.sh`。
 
 ```bash
 cd evals/benchmarks
@@ -64,11 +75,7 @@ python3 run_tb2.py --pilot
 # 通过后跑全量 89
 python3 run_tb2.py --full
 
-# 3. SWE-bench Lite（先 1 个实例冒烟，再按预算分批）
-python3 run_swebench_lite.py --limit 1
-python3 run_swebench_lite.py --limit 50
-# 分片并行
-python3 run_swebench_lite.py --shards 4 --shard 0
+# 3. SWE-bench Lite 暂不直接运行；先完成新版方案第 9 节适配。
 
 # 4. 聚合指标
 python3 collect_metrics.py
@@ -78,13 +85,15 @@ python3 collect_metrics.py
 `manylinux_2_28_x86_64` 解析依赖，并在无网络的 Debian 11 容器中完成安装冒烟，
 成功后才替换评测资产。准备阶段需要可用的 Docker 镜像和包镜像源；试次安装不访问网络。
 
-## 预算方案（默认 100M token 接纳额度）
+## 预算方案（默认 300M token 接纳额度）
 
 每个任务 admission 先占用 reservation。完整用量在任务结束后按 Morrow
 `run.completed.usage.total_tokens` 结算；部分或未知用量保留至少 reservation，
 并单列已知实耗与未知覆盖数。所有驱动经进程锁共享 `runs/budget-ledger.json`。
 
-建议分配（按经验值，pilot 后按实测修正）：
+以下为旧预算安排，不适用于新版独立全量 job。新版采用 3+12+89 个新 trials，按
+1M/trial 预留 104M；继续使用当前 300M 总额账本，并在每阶段核算后决定是否接纳。
+旧版分配仅保留作历史参考：
 
 | 阶段 | 内容 | 预留 |
 |---|---|---|

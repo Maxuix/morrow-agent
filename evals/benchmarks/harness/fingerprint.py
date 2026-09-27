@@ -80,6 +80,7 @@ def run_fingerprint(bench_dir: Path, *, settings: dict[str, Any]) -> dict[str, A
             "sha256": sha256_file(wheel) if wheel else None,
         },
         "assets": {
+            "build_manifest_sha256": sha256_file(assets / "asset-manifest.json"),
             "python_sha256": sha256_file(python_asset) if python_asset else None,
             "uv_sha256": sha256_file(assets / "uv-x86_64-unknown-linux-gnu"),
             "uvx_sha256": sha256_file(assets / "uvx-x86_64-unknown-linux-gnu"),
@@ -87,6 +88,7 @@ def run_fingerprint(bench_dir: Path, *, settings: dict[str, Any]) -> dict[str, A
         },
         "dependency_lock_sha256": sha256_file(repo / "uv.lock"),
         "harbor": git_fingerprint(bench_dir / "vendor" / "harbor"),
+        "dataset": git_fingerprint(bench_dir / "vendor" / "terminal-bench-2"),
         "settings": settings,
     }
 

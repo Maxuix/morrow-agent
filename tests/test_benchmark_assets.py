@@ -26,15 +26,23 @@ def test_prepare_assets_replaces_bundle_only_after_compatible_smoke(
     stale_wheel.touch()
     stale_dep = assets / "wheelhouse/cryptography-old-manylinux_2_34_x86_64.whl"
     stale_dep.touch()
+    stale_manifest = assets / "asset-manifest.json"
+    stale_manifest.write_text('{"old": true}')
     (assets / "cpython-3.12.14+20260901-x86_64-unknown-linux-gnu-install_only.tar.gz").touch()
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "uv").write_text(
         "#!/bin/sh\n"
-        'while [ "$1" != --out-dir ]; do shift; done\n'
-        'shift; touch "$1/morrow_agent-0.1.0-py3-none-any.whl"\n'
+        'case "$1" in\n'
+        '  build) while [ "$1" != --out-dir ]; do shift; done; '
+        'shift; touch "$1/morrow_agent-0.1.0-py3-none-any.whl";;\n'
+        '  run) case " $* " in *" write "*) '
+        'while [ "$1" != --assets ]; do shift; done; '
+        'shift; printf \'{"new": true}\' > "$1/asset-manifest.json";; esac;;\n'
+        "esac\n"
     )
+    (bin_dir / "pnpm").write_text("#!/bin/sh\nexit 0\n")
     (bin_dir / "docker").write_text(
         "#!/bin/sh\n"
         'printf \'%s\\n\' "$*" >> "$FAKE_DOCKER_CALLS"\n'
@@ -48,7 +56,7 @@ def test_prepare_assets_replaces_bundle_only_after_compatible_smoke(
         "     done ;;\n"
         "esac\n"
     )
-    for executable in (bin_dir / "uv", bin_dir / "docker"):
+    for executable in (bin_dir / "uv", bin_dir / "docker", bin_dir / "pnpm"):
         executable.chmod(0o755)
 
     calls = tmp_path / "docker-calls.txt"
@@ -67,9 +75,11 @@ def test_prepare_assets_replaces_bundle_only_after_compatible_smoke(
         assert result.returncode != 0
         assert stale_wheel.exists()
         assert stale_dep.exists()
+        assert stale_manifest.read_text() == '{"old": true}'
     else:
         assert result.returncode == 0, result.stderr
         assert not stale_wheel.exists()
         assert not stale_dep.exists()
         assert (assets / "morrow_agent-0.1.0-py3-none-any.whl").exists()
         assert (assets / "wheelhouse/cryptography-new-manylinux_2_28_x86_64.whl").exists()
+        assert stale_manifest.read_text() == '{"new": true}'

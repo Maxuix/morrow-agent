@@ -299,6 +299,12 @@ class MorrowAgent(BaseInstalledAgent):
         expected_wheel_sha = (campaign.get("wheel") or {}).get("sha256")
         if expected_wheel_sha and actual_wheel_sha != expected_wheel_sha:
             raise RuntimeError("installed Morrow wheel differs from frozen run fingerprint")
+        expected_asset_manifest_sha = (campaign.get("assets") or {}).get("build_manifest_sha256")
+        if (
+            expected_asset_manifest_sha
+            and sha256_file(ASSETS_DIR / "asset-manifest.json") != expected_asset_manifest_sha
+        ):
+            raise RuntimeError("benchmark assets differ from frozen build manifest")
         actual_task_sha = sha256_tree(Path(task_path)) if isinstance(task_path, str) else None
         expected_task_sha = ((campaign.get("settings") or {}).get("tasks") or {}).get(
             Path(task_path).name if isinstance(task_path, str) else ""

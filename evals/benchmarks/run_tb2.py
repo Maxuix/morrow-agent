@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -38,8 +39,10 @@ PILOT_TASKS = BENCH_DIR / "config" / "pilot-tasks.txt"
 RUNS_DIR = BENCH_DIR / "runs"
 RESULTS_DIR = BENCH_DIR / "results"
 REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+PROTOCOL = BENCH_DIR / "config" / "v2" / "protocol.json"
 
 sys.path.insert(0, str(BENCH_DIR))
+from harness.assets import verify_bundle  # noqa: E402
 from harness.budget import TokenBudget  # noqa: E402
 from harness.fingerprint import run_fingerprint, sha256_tree, write_json  # noqa: E402
 
@@ -58,6 +61,7 @@ def _preflight(tasks: list[str]) -> None:
     for task in tasks:
         if not (VENDOR_TB2 / task / "task.toml").is_file():
             raise FileNotFoundError(f"task manifest missing: {task}")
+    verify_bundle(BENCH_DIR.parent.parent, assets)
 
 
 def _task_metadata() -> dict[str, dict]:
@@ -112,18 +116,16 @@ def main() -> int:
         default=None,
         help="Morrow reasoning effort forwarded to the model",
     )
-    parser.add_argument(
-        "--concurrency", type=int, default=int(os.environ.get("MORROW_BENCH_CONCURRENCY", "4"))
-    )
+    parser.add_argument("--concurrency", type=int)
     parser.add_argument(
         "--budget-total",
         type=int,
-        default=int(os.environ.get("MORROW_BENCH_TOKEN_BUDGET", "100_000_000")),
+        default=None,
     )
     parser.add_argument(
         "--reservation",
         type=int,
-        default=int(os.environ.get("MORROW_BENCH_RESERVATION", "1_000_000")),
+        default=None,
     )
     parser.add_argument(
         "--agent-timeout-multiplier",
@@ -140,11 +142,31 @@ def main() -> int:
     if args.resume_run_id and not re.fullmatch(r"[0-9a-f]{32}", args.resume_run_id):
         parser.error("--resume-run-id must be a 32-character lowercase hex run ID")
 
-    if args.agent_timeout_multiplier <= 0:
-        parser.error("--agent-timeout-multiplier must be greater than zero")
+    if not math.isfinite(args.agent_timeout_multiplier) or args.agent_timeout_multiplier <= 0:
+        parser.error("--agent-timeout-multiplier must be finite and greater than zero")
 
     dotenv = _load_dotenv()
     env = {**dotenv, **os.environ}
+    try:
+        args.concurrency = (
+            args.concurrency
+            if args.concurrency is not None
+            else int(env.get("MORROW_BENCH_CONCURRENCY", "2"))
+        )
+        args.budget_total = (
+            args.budget_total
+            if args.budget_total is not None
+            else int(env.get("MORROW_BENCH_TOKEN_BUDGET", "300000000"))
+        )
+        args.reservation = (
+            args.reservation
+            if args.reservation is not None
+            else int(env.get("MORROW_BENCH_RESERVATION", "1000000"))
+        )
+    except ValueError:
+        parser.error("concurrency, budget total and reservation must be integers")
+    if min(args.concurrency, args.budget_total, args.reservation) <= 0:
+        parser.error("concurrency, budget total and reservation must be positive")
     reasoning_effort = args.reasoning_effort or env.get("MORROW_BENCH_REASONING_EFFORT", "high")
     if reasoning_effort not in REASONING_EFFORTS:
         print("invalid reasoning effort", file=sys.stderr)
@@ -155,8 +177,20 @@ def main() -> int:
         if args.pilot
         else _all_tasks()
         if args.full
-        else (args.tasks.split(",") if args.tasks else _pilot_tasks())
+        else ([task.strip() for task in args.tasks.split(",")] if args.tasks else _pilot_tasks())
     )
+    if not tasks or len(tasks) != len(set(tasks)) or any(not task for task in tasks):
+        parser.error("task list must be nonempty and contain unique task names")
+    missing = [task for task in tasks if task not in _all_tasks()]
+    if missing:
+        parser.error(f"unknown tasks: {missing}")
+    if args.full:
+        protocol = json.loads(PROTOCOL.read_text(encoding="utf-8"))
+        frozen = protocol["benchmark"]["task_checksums"]
+        if set(tasks) != set(frozen) or any(
+            sha256_tree(VENDOR_TB2 / task) != frozen[task] for task in tasks
+        ):
+            parser.error("full task set or task contents differ from frozen protocol")
     job_label = args.job_name or (
         "tb2-pilot" if args.pilot else "tb2-full" if args.full else "tb2-subset"
     )
@@ -164,7 +198,12 @@ def main() -> int:
     job_name = f"{job_label}-{run_id[:12]}"
     run_key_prefix = f"tb2:{run_id}"
     ledger_path = RUNS_DIR / "budget-ledger.json"
-    budget = TokenBudget(ledger_path, budget_total=args.budget_total, reservation=args.reservation)
+    try:
+        budget_snapshot = TokenBudget.preview(
+            ledger_path, budget_total=args.budget_total, reservation=args.reservation
+        )
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        parser.error(f"budget preview failed: {exc}")
 
     plan = {
         "job_name": job_name,
@@ -173,22 +212,38 @@ def main() -> int:
         "tasks": tasks,
         "n_tasks": len(tasks),
         "concurrency": args.concurrency,
-        "budget": budget.summary(),
+        "budget": budget_snapshot,
+        "required_reservation": len(tasks) * args.reservation,
+        "admission_possible_at_snapshot": budget_snapshot["remaining"]
+        >= len(tasks) * args.reservation,
     }
     print(json.dumps(plan, ensure_ascii=False, indent=2))
     if args.dry_run:
-        return 0
+        return 0 if plan["admission_possible_at_snapshot"] else 1
 
-    missing = [t for t in tasks if t not in _all_tasks()]
-    if missing:
-        print(f"unknown tasks: {missing}", file=sys.stderr)
+    required = (
+        "MORROW_BENCH_API_KEY",
+        "MORROW_BENCH_PROVIDER_BASE_URL",
+        "MORROW_BENCH_MODEL_ID",
+        "MORROW_BENCH_API_MODEL_ID",
+        "MORROW_BENCH_CONTEXT_WINDOW_TOKENS",
+        "MORROW_BENCH_MAX_OUTPUT_TOKENS",
+    )
+    if any(not env.get(key) for key in required):
+        print("benchmark model configuration is incomplete", file=sys.stderr)
         return 2
-    if not env.get("MORROW_BENCH_API_KEY"):
-        print("MORROW_BENCH_API_KEY is required", file=sys.stderr)
+    try:
+        context_tokens = int(env["MORROW_BENCH_CONTEXT_WINDOW_TOKENS"])
+        output_tokens = int(env["MORROW_BENCH_MAX_OUTPUT_TOKENS"])
+    except ValueError:
+        print("model capacities must be integers", file=sys.stderr)
+        return 2
+    if not 0 < output_tokens < context_tokens:
+        print("model capacities must satisfy 0 < output < context", file=sys.stderr)
         return 2
     try:
         _preflight(tasks)
-    except (FileNotFoundError, PermissionError) as exc:
+    except (FileNotFoundError, PermissionError, ValueError) as exc:
         print(f"benchmark preflight failed: {exc}", file=sys.stderr)
         return 2
 
@@ -207,9 +262,11 @@ def main() -> int:
             "model_id": env["MORROW_BENCH_MODEL_ID"],
             "api_model_id": env["MORROW_BENCH_API_MODEL_ID"],
             "reasoning_effort": reasoning_effort,
-            "context_window_tokens": env.get("MORROW_BENCH_CONTEXT_WINDOW_TOKENS"),
-            "max_output_tokens": env.get("MORROW_BENCH_MAX_OUTPUT_TOKENS"),
+            "context_window_tokens": context_tokens,
+            "max_output_tokens": output_tokens,
             "agent_timeout_multiplier": args.agent_timeout_multiplier,
+            "attempts_per_task": 1,
+            "harbor_max_retries": 0,
             "concurrency": args.concurrency,
             "permission_mode": "manual",
             "reservation": args.reservation,
@@ -223,16 +280,13 @@ def main() -> int:
     else:
         write_json(manifest_path, fingerprint)
 
-    # One admission per task; harbor runs the admitted set in one job.
-    admitted: list[str] = []
-    for task in tasks:
-        if budget.admit(f"{run_key_prefix}:{task}"):
-            admitted.append(task)
-    if not admitted:
-        print("budget exhausted; no tasks admitted")
+    budget = TokenBudget(ledger_path, budget_total=args.budget_total, reservation=args.reservation)
+    if not budget.admit_many([f"{run_key_prefix}:{task}" for task in tasks]):
+        print("budget cannot admit the complete task set; no tasks admitted")
         return 1
 
-    include_patterns = list(admitted)
+    admitted = tasks
+    include_patterns = list(tasks)
     cmd = [
         str(HARBOR_BIN),
         "run",
@@ -248,6 +302,10 @@ def main() -> int:
         reasoning_effort,
         "--agent-timeout-multiplier",
         str(args.agent_timeout_multiplier),
+        "--n-attempts",
+        "1",
+        "--max-retries",
+        "0",
         "-n",
         str(args.concurrency),
         "-y",
@@ -263,6 +321,10 @@ def main() -> int:
         f"api_model_id={env['MORROW_BENCH_API_MODEL_ID']}",
         "--ak",
         f"reasoning_effort={reasoning_effort}",
+        "--ak",
+        f"context_window_tokens={context_tokens}",
+        "--ak",
+        f"max_output_tokens={output_tokens}",
     ]
     for pattern in include_patterns:
         cmd += ["-i", pattern]
@@ -277,7 +339,7 @@ def main() -> int:
     provider_key = f"MORROW_{provider_id.upper().replace('-', '_')}_API_KEY"
     env_full[provider_key] = env["MORROW_BENCH_API_KEY"]
     env_full["MORROW_BENCH_RUN_MANIFEST"] = str(manifest_path)
-    print("running:", " ".join(cmd))
+    print(f"running Harbor job {job_name} with {len(tasks)} tasks")
     proc = subprocess.run(cmd, env=env_full)
     rc = proc.returncode
 

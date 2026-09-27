@@ -1,0 +1,12 @@
+qemu-alpine-ssh
+gpt2-codegolf
+large-scale-text-editing
+make-doom-for-mips
+configure-git-webserver
+filter-js-from-html
+cancel-async-tasks
+nginx-request-logging
+financial-document-processor
+rstan-to-pystan
+fix-ocaml-gc
+regex-chess

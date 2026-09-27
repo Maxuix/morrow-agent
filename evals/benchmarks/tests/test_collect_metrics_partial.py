@@ -15,12 +15,14 @@ class PartialMetricsTests(unittest.TestCase):
     def test_missing_terminal_keeps_known_lower_bound_and_unknown_count(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             jobs = Path(directory)
-            trial = jobs / "job" / "trials" / "sample"
+            trial = jobs / "job" / "trials" / "sample__one"
             logs = trial / "agent" / "logs"
             logs.mkdir(parents=True)
             (trial / "result.json").write_text(
                 json.dumps(
                     {
+                        "id": "trial-one",
+                        "trial_name": "sample__one",
                         "task_name": "sample",
                         "agent_result": {
                             "n_input_tokens": 13,

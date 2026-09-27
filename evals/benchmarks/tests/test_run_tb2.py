@@ -15,6 +15,59 @@ import run_tb2
 
 
 class TerminalBenchDriverTests(unittest.TestCase):
+    def test_insufficient_budget_does_not_launch_any_task(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            budget = run_tb2.TokenBudget(
+                root / "budget-ledger.json", budget_total=100, reservation=60
+            )
+            self.assertTrue(budget.admit("earlier"))
+            config = {
+                "MORROW_BENCH_API_KEY": "fake",
+                "MORROW_BENCH_PROVIDER_BASE_URL": "https://example.invalid/v1",
+                "MORROW_BENCH_MODEL_ID": "model",
+                "MORROW_BENCH_API_MODEL_ID": "model",
+                "MORROW_BENCH_CONTEXT_WINDOW_TOKENS": "10000",
+                "MORROW_BENCH_MAX_OUTPUT_TOKENS": "1000",
+            }
+            with (
+                patch.object(run_tb2, "RUNS_DIR", root),
+                patch.object(run_tb2, "_load_dotenv", return_value=config),
+                patch.object(run_tb2, "_all_tasks", return_value=["demo"]),
+                patch.object(run_tb2, "_preflight"),
+                patch.object(run_tb2, "run_fingerprint", return_value={"schema_version": 1}),
+                patch.object(run_tb2.subprocess, "run") as launch,
+                patch(
+                    "sys.argv",
+                    [
+                        "run_tb2.py",
+                        "--tasks",
+                        "demo",
+                        "--budget-total",
+                        "100",
+                        "--reservation",
+                        "60",
+                    ],
+                ),
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(run_tb2.main(), 1)
+            launch.assert_not_called()
+            self.assertEqual(budget.summary()["admitted"], 1)
+
+    def test_dry_run_validates_tasks_without_writing_budget_or_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                patch.object(run_tb2, "RUNS_DIR", root),
+                patch.object(run_tb2, "_all_tasks", return_value=["demo"]),
+                patch.object(run_tb2, "_load_dotenv", return_value={}),
+                patch("sys.argv", ["run_tb2.py", "--tasks", "demo", "--dry-run"]),
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(run_tb2.main(), 0)
+            self.assertEqual(list(root.iterdir()), [])
+
     def test_preflight_rejects_missing_task_before_admission(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             bench = Path(directory)
@@ -66,6 +119,8 @@ class TerminalBenchDriverTests(unittest.TestCase):
                 "MORROW_BENCH_PROVIDER_BASE_URL": "https://example.invalid/v1",
                 "MORROW_BENCH_MODEL_ID": "model",
                 "MORROW_BENCH_API_MODEL_ID": "model",
+                "MORROW_BENCH_CONTEXT_WINDOW_TOKENS": "10000",
+                "MORROW_BENCH_MAX_OUTPUT_TOKENS": "1000",
             }
             with (
                 patch.object(run_tb2, "RUNS_DIR", Path(directory)),
@@ -83,6 +138,10 @@ class TerminalBenchDriverTests(unittest.TestCase):
         command = captured[0]
         self.assertIn("reasoning_effort=high", command)
         self.assertEqual(command[command.index("reasoning_effort=high") - 1], "--ak")
+        self.assertEqual(command[command.index("--n-attempts") + 1], "1")
+        self.assertEqual(command[command.index("--max-retries") + 1], "0")
+        self.assertIn("context_window_tokens=10000", command)
+        self.assertIn("max_output_tokens=1000", command)
 
     def test_finalizes_actual_harbor_log_layout_and_partial_usage(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
