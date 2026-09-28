@@ -583,6 +583,11 @@ def run_headless(
                         pass
                 streamed = _HeadlessStreamResult(failed=True)
             if streamed.failed or streamed.cancelled:
+                if diagnostics is not None:
+                    try:
+                        diagnostics.record_headless_failure("stream_incomplete")
+                    except OSError:
+                        pass
                 typer.echo("headless run ended before a normal stop", err=True)
             try:
                 success = _headless_terminal_record(
@@ -598,6 +603,7 @@ def run_headless(
                 if diagnostics is not None:
                     try:
                         diagnostics.record_error(exc, "headless_terminal")
+                        diagnostics.record_headless_failure("terminal_observation_unavailable")
                     except Exception:
                         pass
                 typer.echo("headless run observation is unavailable", err=True)

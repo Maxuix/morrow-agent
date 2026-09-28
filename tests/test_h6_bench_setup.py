@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from morrow.core.models import ModelCapabilityOverrides
+from morrow.runtime.policy import load_runtime_policy
 
 SETUP_PATH = Path(__file__).resolve().parents[1] / "evals/benchmarks/harness/bench_setup.py"
 
@@ -33,6 +34,7 @@ def test_bench_setup_configures_supplied_limits_without_guessing(monkeypatch, tm
             )
         ),
         provider_service=service,
+        runtime_policy=load_runtime_policy(),
     )
     monkeypatch.setattr(module, "build_application", lambda **_kwargs: app)
     monkeypatch.setattr(

@@ -85,7 +85,9 @@ class CollectorV2Tests(unittest.TestCase):
             with patch.object(collect_metrics, "_task_meta", return_value={}):
                 report = collect_metrics.collect_tb2(job)
             self.assertEqual(report["tasks"][0]["total_tokens"], 13)
-            self.assertEqual(report["context_compaction_total"], 2)
+            self.assertEqual(report["summary_success_total"], 2)
+            self.assertNotIn("context_compaction_total", report)
+            self.assertNotIn("context_compactions", report["tasks"][0])
             self.assertEqual(report["dropped_cycle_total"], 7)
             self.assertEqual(report["cleared_cycle_total"], 3)
             self.assertEqual(report["tasks"][0]["terminal_metrics_file"], str(direct))

@@ -33,6 +33,9 @@ from contextlib import nullcontext
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
+from morrow.core.models import ModelRef
+from morrow.runtime.policy import load_runtime_policy
+
 BENCH_DIR = Path(__file__).resolve().parent
 VENDOR_HARBOR = BENCH_DIR / "vendor" / "harbor"
 VENDOR_TB2 = BENCH_DIR / "vendor" / "terminal-bench-2"
@@ -42,11 +45,6 @@ RUNS_DIR = BENCH_DIR / "runs"
 RESULTS_DIR = BENCH_DIR / "results"
 REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 PROTOCOL = BENCH_DIR / "config" / "v2" / "protocol.json"
-# Keep aligned with morrow.core.runtime_policy.PI_DEFAULT_RESERVE_TOKENS.
-MORROW_DEFAULT_RESERVE_TOKENS = 16_384
-MORROW_MAX_CONTEXT_TOKENS = 10_000_000
-MORROW_MAX_OUTPUT_TOKENS = 1_000_000
-MORROW_KEEP_RECENT_TOKENS = 20_000
 VERIFIED_MODEL_OUTPUT_LIMITS = {"glm-5.3-flash": 131_072}
 LOOPBACK_PROXY_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
@@ -306,23 +304,26 @@ def main() -> int:
     except ValueError:
         print("model capacities must be integers", file=sys.stderr)
         return 2
-    if not (
-        0 < output_tokens <= MORROW_MAX_OUTPUT_TOKENS
-        and min(MORROW_DEFAULT_RESERVE_TOKENS, output_tokens)
-        < context_tokens
-        <= MORROW_MAX_CONTEXT_TOKENS
-    ):
-        print("model capacities are outside Morrow's supported range or reserve", file=sys.stderr)
-        return 2
     verified_limit = VERIFIED_MODEL_OUTPUT_LIMITS.get(env["MORROW_BENCH_API_MODEL_ID"])
     if verified_limit is not None and output_tokens > verified_limit:
         print("declared model output exceeds the verified deployment example", file=sys.stderr)
         return 2
-    reserve_tokens = min(MORROW_DEFAULT_RESERVE_TOKENS, output_tokens)
-    input_budget = context_tokens - reserve_tokens
-    if input_budget <= MORROW_KEEP_RECENT_TOKENS + reserve_tokens:
-        print("model input budget cannot cover recent history and prompt overhead", file=sys.stderr)
+    try:
+        resolved_policy = load_runtime_policy().agent_run.resolve(
+            ModelRef(
+                provider_id="benchmark",
+                model_id=env["MORROW_BENCH_MODEL_ID"],
+            ),
+            tool_protocol="openai_function",
+            multiple_tool_calls=True,
+            context_window_tokens=context_tokens,
+            max_output_tokens=output_tokens,
+        )
+    except ValueError as exc:
+        print(f"model capacities are invalid: {exc}", file=sys.stderr)
         return 2
+    reserve_tokens = resolved_policy.reserve_tokens
+    input_budget = context_tokens - reserve_tokens
     try:
         verifier_proxy_env = _verifier_proxy_env(env)
     except ValueError as exc:

@@ -13,12 +13,24 @@ import os
 import re
 import secrets
 from pathlib import Path
+from typing import Literal
 
 from morrow.core.models import AgentEvent
 
 _MAX_BYTES = 8 * 1024 * 1024
 _SAFE_TOKEN = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
 _SAFE_DIGEST = re.compile(r"^[a-f0-9]{64}$")
+_CAUSE_EVENT_EXPORTS = {
+    "model_attempt_timeout": (
+        "model.timeout",
+        ("cause_phase", "cause_code", "last_activity", "internal_remaining_seconds"),
+    ),
+    "compaction_failure": (
+        "context.compaction_failure",
+        ("cause_phase", "cause_code", "http_status_class", "request_output_tokens"),
+    ),
+    "terminal_cause": ("run.terminal_cause", ("cause_phase", "cause_code")),
+}
 _RUN_DIGEST_KEYS = frozenset(
     {
         "tool_schema_digest",
@@ -47,6 +59,13 @@ class HeadlessDiagnostics:
 
     def close(self) -> None:
         self._file.close()
+
+    def record_headless_failure(
+        self,
+        reason: Literal["stream_incomplete", "terminal_observation_unavailable"],
+    ) -> None:
+        """Export fixed CLI failure reasons without copying process stderr."""
+        self._write("run.headless_failure", reason=reason)
 
     def record_error(self, exc: Exception, phase: str) -> None:
         error_class = safe_error_class(exc)
@@ -91,31 +110,9 @@ class HeadlessDiagnostics:
                 chunk_count=event.payload.get("chunk_count"),
                 elapsed_seconds=event.payload.get("elapsed_seconds"),
             )
-        elif (
-            event.type == "status.changed"
-            and event.payload.get("status") == "model_attempt_timeout"
-        ):
-            self._write(
-                "model.timeout",
-                cause_phase=event.payload.get("cause_phase"),
-                cause_code=event.payload.get("cause_code"),
-                last_activity=event.payload.get("last_activity"),
-                internal_remaining_seconds=event.payload.get("internal_remaining_seconds"),
-            )
-        elif event.type == "status.changed" and event.payload.get("status") == "compaction_failure":
-            self._write(
-                "context.compaction_failure",
-                cause_phase=event.payload.get("cause_phase"),
-                cause_code=event.payload.get("cause_code"),
-                http_status_class=event.payload.get("http_status_class"),
-                request_output_tokens=event.payload.get("request_output_tokens"),
-            )
-        elif event.type == "status.changed" and event.payload.get("status") == "terminal_cause":
-            self._write(
-                "run.terminal_cause",
-                cause_phase=event.payload.get("cause_phase"),
-                cause_code=event.payload.get("cause_code"),
-            )
+        elif event.type == "status.changed" and event.payload.get("status") in _CAUSE_EVENT_EXPORTS:
+            kind, fields = _CAUSE_EVENT_EXPORTS[event.payload["status"]]
+            self._write(kind, **{field: event.payload.get(field) for field in fields})
         elif event.type == "status.changed" and event.payload.get("status") == "internal_error":
             self._write(
                 "run.error",

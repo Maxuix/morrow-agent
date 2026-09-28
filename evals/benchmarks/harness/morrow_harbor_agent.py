@@ -386,8 +386,8 @@ class MorrowAgent(BaseInstalledAgent):
             f"{remaining_arg}"
             f"--diagnostic-log {shlex.quote(self._diagnostic_path())} "
             f'--prompt "$(cat {prompt_path})" '
-            # Keep stderr out of the structured JSONL evidence. Provider/SDK
-            # diagnostics are exported separately through the bounded sidecar.
+            # Keep raw Provider/SDK stderr out of structured evidence. Safe
+            # headless failure reasons are written to the diagnostics sidecar.
             f"> {RUN_LOG_PATH} 2>/dev/null; echo MORROW_EXIT=$?"
         )
         log_text = ""

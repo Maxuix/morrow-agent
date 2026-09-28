@@ -173,6 +173,20 @@ def test_model_timeout_export_distinguishes_active_stream_from_idle(tmp_path) ->
     }
 
 
+def test_headless_failure_records_fixed_reason_without_stderr(tmp_path) -> None:
+    path = tmp_path / "diagnostics.jsonl"
+    diagnostics = HeadlessDiagnostics(path, SimpleNamespace())
+    diagnostics.record_headless_failure("stream_incomplete")
+    diagnostics.record_headless_failure("terminal_observation_unavailable")
+    diagnostics.close()
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    assert [row["reason"] for row in rows] == [
+        "stream_incomplete",
+        "terminal_observation_unavailable",
+    ]
+    assert all(row["kind"] == "run.headless_failure" for row in rows)
+
+
 def test_compaction_failure_export_has_no_response_body(tmp_path) -> None:
     path = tmp_path / "diagnostics.jsonl"
     diagnostics = HeadlessDiagnostics(path, SimpleNamespace())
@@ -205,7 +219,7 @@ def test_terminal_cause_exports_only_fixed_structural_fields(tmp_path) -> None:
             payload={
                 "status": "terminal_cause",
                 "cause_phase": "tool_intent_prepare",
-                "cause_code": "commit_or_visibility_rejected",
+                "cause_code": "committed_intent_invisible",
                 "untrusted_body": "secret",
             },
         )
@@ -215,5 +229,5 @@ def test_terminal_cause_exports_only_fixed_structural_fields(tmp_path) -> None:
         "schema_version": 1,
         "kind": "run.terminal_cause",
         "cause_phase": "tool_intent_prepare",
-        "cause_code": "commit_or_visibility_rejected",
+        "cause_code": "committed_intent_invisible",
     }

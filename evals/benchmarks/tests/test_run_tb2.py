@@ -13,12 +13,6 @@ from unittest.mock import patch
 
 import run_tb2
 
-from morrow.core.runtime_policy import (
-    AGENT_MAX_CONTEXT_WINDOW_TOKENS,
-    AGENT_MAX_RESERVE_TOKENS,
-    PI_DEFAULT_RESERVE_TOKENS,
-)
-
 
 class TerminalBenchDriverTests(unittest.TestCase):
     def test_verifier_proxy_maps_host_loopback_without_changing_task_files(self) -> None:
@@ -48,9 +42,6 @@ class TerminalBenchDriverTests(unittest.TestCase):
             run_tb2._verifier_proxy_env({"HTTPS_PROXY": "http://user:secret@host:8080"})
 
     def test_capacity_below_morrow_reserve_is_rejected_before_launch(self) -> None:
-        self.assertEqual(run_tb2.MORROW_DEFAULT_RESERVE_TOKENS, PI_DEFAULT_RESERVE_TOKENS)
-        self.assertEqual(run_tb2.MORROW_MAX_CONTEXT_TOKENS, AGENT_MAX_CONTEXT_WINDOW_TOKENS)
-        self.assertEqual(run_tb2.MORROW_MAX_OUTPUT_TOKENS, AGENT_MAX_RESERVE_TOKENS)
         with tempfile.TemporaryDirectory() as directory:
             config = {
                 "MORROW_BENCH_API_KEY": "fake",

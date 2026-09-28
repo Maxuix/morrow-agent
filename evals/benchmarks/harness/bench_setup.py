@@ -12,13 +12,7 @@ import argparse
 from pathlib import Path
 
 from morrow.bootstrap import build_application
-from morrow.core.models import ModelCapabilityOverrides
-from morrow.core.runtime_policy import (
-    AGENT_MAX_CONTEXT_WINDOW_TOKENS,
-    AGENT_MAX_RESERVE_TOKENS,
-    PI_DEFAULT_KEEP_RECENT_TOKENS,
-    PI_DEFAULT_RESERVE_TOKENS,
-)
+from morrow.core.models import ModelCapabilityOverrides, ModelRef
 
 
 def main() -> None:
@@ -33,25 +27,17 @@ def main() -> None:
     parser.add_argument("--context-window-tokens", type=int)
     parser.add_argument("--max-output-tokens", type=int)
     args = parser.parse_args()
-    if args.context_window_tokens is not None and args.context_window_tokens <= 0:
-        parser.error("--context-window-tokens must be positive")
-    if (
-        args.context_window_tokens is not None
-        and args.context_window_tokens > AGENT_MAX_CONTEXT_WINDOW_TOKENS
-    ):
-        parser.error("--context-window-tokens exceeds the supported range")
-    if args.max_output_tokens is not None and args.max_output_tokens <= 0:
-        parser.error("--max-output-tokens must be positive")
-    if args.max_output_tokens is not None and args.max_output_tokens > AGENT_MAX_RESERVE_TOKENS:
-        parser.error("--max-output-tokens exceeds the supported range")
-    reserve = min(PI_DEFAULT_RESERVE_TOKENS, args.max_output_tokens or PI_DEFAULT_RESERVE_TOKENS)
-    if (
-        args.context_window_tokens is not None
-        and args.context_window_tokens - reserve <= PI_DEFAULT_KEEP_RECENT_TOKENS + reserve
-    ):
-        parser.error("--context-window-tokens cannot cover recent history and prompt overhead")
-
     app = build_application(state_root=Path(args.state_root))
+    try:
+        app.runtime_policy.agent_run.resolve(
+            ModelRef(provider_id=args.provider_id, model_id=args.model_id),
+            tool_protocol="openai_function",
+            multiple_tool_calls=True,
+            context_window_tokens=args.context_window_tokens,
+            max_output_tokens=args.max_output_tokens,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     resolution = app.workspace_service.resolve(Path(args.workspace))
     if resolution.status == "candidate":
