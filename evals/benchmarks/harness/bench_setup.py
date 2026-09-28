@@ -35,6 +35,7 @@ def main() -> None:
             multiple_tool_calls=True,
             context_window_tokens=args.context_window_tokens,
             max_output_tokens=args.max_output_tokens,
+            settings=app.runtime_policy.long_horizon,
         )
     except ValueError as exc:
         parser.error(str(exc))

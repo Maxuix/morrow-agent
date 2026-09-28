@@ -13,6 +13,8 @@ from unittest.mock import patch
 
 import run_tb2
 
+from morrow.runtime.policy import LongHorizonPolicySettings, load_runtime_policy
+
 
 class TerminalBenchDriverTests(unittest.TestCase):
     def test_verifier_proxy_maps_host_loopback_without_changing_task_files(self) -> None:
@@ -54,6 +56,34 @@ class TerminalBenchDriverTests(unittest.TestCase):
             with (
                 patch.object(run_tb2, "RUNS_DIR", Path(directory)),
                 patch.object(run_tb2, "_load_dotenv", return_value=config),
+                patch.dict(run_tb2.os.environ, {}, clear=True),
+                patch.object(run_tb2, "_all_tasks", return_value=["demo"]),
+                patch.object(run_tb2, "_preflight") as preflight,
+                patch.object(run_tb2.subprocess, "run") as launch,
+                patch("sys.argv", ["run_tb2.py", "--tasks", "demo"]),
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(run_tb2.main(), 2)
+            preflight.assert_not_called()
+            launch.assert_not_called()
+
+    def test_capacity_preflight_uses_long_horizon_override(self) -> None:
+        policy = load_runtime_policy().model_copy(
+            update={"long_horizon": LongHorizonPolicySettings(keep_recent_tokens=64_000)}
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            config = {
+                "MORROW_BENCH_API_KEY": "fake",
+                "MORROW_BENCH_PROVIDER_BASE_URL": "https://example.invalid/v1",
+                "MORROW_BENCH_MODEL_ID": "model",
+                "MORROW_BENCH_API_MODEL_ID": "model",
+                "MORROW_BENCH_CONTEXT_WINDOW_TOKENS": "65536",
+                "MORROW_BENCH_MAX_OUTPUT_TOKENS": "1000",
+            }
+            with (
+                patch.object(run_tb2, "RUNS_DIR", Path(directory)),
+                patch.object(run_tb2, "_load_dotenv", return_value=config),
+                patch.object(run_tb2, "load_runtime_policy", return_value=policy),
                 patch.dict(run_tb2.os.environ, {}, clear=True),
                 patch.object(run_tb2, "_all_tasks", return_value=["demo"]),
                 patch.object(run_tb2, "_preflight") as preflight,

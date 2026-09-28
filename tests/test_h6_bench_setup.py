@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from morrow.core.models import ModelCapabilityOverrides
-from morrow.runtime.policy import load_runtime_policy
+from morrow.runtime.policy import LongHorizonPolicySettings, load_runtime_policy
 
 SETUP_PATH = Path(__file__).resolve().parents[1] / "evals/benchmarks/harness/bench_setup.py"
 
@@ -27,6 +27,14 @@ def test_bench_setup_configures_supplied_limits_without_guessing(monkeypatch, tm
         configure_model=lambda _provider, _model, *, capabilities: configured.append(capabilities),
         use_model=lambda *_args: None,
     )
+    policy = load_runtime_policy()
+    custom_settings = LongHorizonPolicySettings(reserve_tokens=4_096)
+    resolved_settings = []
+
+    def resolve(*args, **kwargs):
+        resolved_settings.append(kwargs.get("settings"))
+        return policy.agent_run.resolve(*args, **kwargs)
+
     app = SimpleNamespace(
         workspace_service=SimpleNamespace(
             resolve=lambda _path: SimpleNamespace(
@@ -34,7 +42,9 @@ def test_bench_setup_configures_supplied_limits_without_guessing(monkeypatch, tm
             )
         ),
         provider_service=service,
-        runtime_policy=load_runtime_policy(),
+        runtime_policy=SimpleNamespace(
+            agent_run=SimpleNamespace(resolve=resolve), long_horizon=custom_settings
+        ),
     )
     monkeypatch.setattr(module, "build_application", lambda **_kwargs: app)
     monkeypatch.setattr(
@@ -69,3 +79,4 @@ def test_bench_setup_configures_supplied_limits_without_guessing(monkeypatch, tm
     assert configured[0].context_window_tokens == 131_072
     assert configured[0].max_output_tokens == 8192
     assert configured[0].reasoning_efforts == ("low",)
+    assert resolved_settings == [custom_settings]

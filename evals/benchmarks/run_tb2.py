@@ -309,7 +309,8 @@ def main() -> int:
         print("declared model output exceeds the verified deployment example", file=sys.stderr)
         return 2
     try:
-        resolved_policy = load_runtime_policy().agent_run.resolve(
+        runtime_policy = load_runtime_policy()
+        resolved_policy = runtime_policy.agent_run.resolve(
             ModelRef(
                 provider_id="benchmark",
                 model_id=env["MORROW_BENCH_MODEL_ID"],
@@ -318,6 +319,7 @@ def main() -> int:
             multiple_tool_calls=True,
             context_window_tokens=context_tokens,
             max_output_tokens=output_tokens,
+            settings=runtime_policy.long_horizon,
         )
     except ValueError as exc:
         print(f"model capacities are invalid: {exc}", file=sys.stderr)
