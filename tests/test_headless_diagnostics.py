@@ -194,3 +194,26 @@ def test_compaction_failure_export_has_no_response_body(tmp_path) -> None:
     assert row["http_status_class"] == "4xx"
     assert row["request_output_tokens"] == 4_096
     assert "response" not in row
+
+
+def test_terminal_cause_exports_only_fixed_structural_fields(tmp_path) -> None:
+    path = tmp_path / "diagnostics.jsonl"
+    diagnostics = HeadlessDiagnostics(path, SimpleNamespace())
+    diagnostics.record_event(
+        SimpleNamespace(
+            type="status.changed",
+            payload={
+                "status": "terminal_cause",
+                "cause_phase": "tool_intent_prepare",
+                "cause_code": "commit_or_visibility_rejected",
+                "untrusted_body": "secret",
+            },
+        )
+    )
+    diagnostics.close()
+    assert json.loads(path.read_text()) == {
+        "schema_version": 1,
+        "kind": "run.terminal_cause",
+        "cause_phase": "tool_intent_prepare",
+        "cause_code": "commit_or_visibility_rejected",
+    }

@@ -2231,6 +2231,14 @@ class AgentLoop:
                         freeze_permissions()
                         session.append_assistant(message)
                     except ConversationLogError:
+                        yield event(
+                            "status.changed",
+                            {
+                                "status": "terminal_cause",
+                                "cause_phase": "answer_commit",
+                                "cause_code": "conversation_commit_rejected",
+                            },
+                        )
                         for item in terminal_error(
                             "模型响应未正常结束", AgentStopCode.INVALID_RESPONSE
                         ):
@@ -2262,6 +2270,14 @@ class AgentLoop:
                     )
                     return
                 if tool_executor is None or message is None:
+                    yield event(
+                        "status.changed",
+                        {
+                            "status": "terminal_cause",
+                            "cause_phase": "response_interpretation",
+                            "cause_code": "missing_tool_response",
+                        },
+                    )
                     for item in terminal_error(
                         "模型响应未正常结束", AgentStopCode.INVALID_RESPONSE
                     ):
@@ -2305,6 +2321,14 @@ class AgentLoop:
                     else:
                         session.commit_append(planned)
                 except (ConversationLogError, PreparedIntentError):
+                    yield event(
+                        "status.changed",
+                        {
+                            "status": "terminal_cause",
+                            "cause_phase": "tool_intent_prepare",
+                            "cause_code": "commit_or_visibility_rejected",
+                        },
+                    )
                     for item in terminal_error(
                         "模型响应未正常结束", AgentStopCode.INVALID_RESPONSE
                     ):

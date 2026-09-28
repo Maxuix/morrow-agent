@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -393,6 +394,36 @@ async def test_history_admission_failure_is_invalid_response_not_internal():
     assert events[-2].payload["stop_code"] == "invalid_response"
     assert events[-1].payload["stop_code"] == "invalid_response"
     assert events[-2].payload["message"] != "模型服务发生未预期错误"
+    assert any(
+        event.payload.get("status") == "terminal_cause"
+        and event.payload["cause_phase"] == "answer_commit"
+        for event in events
+    )
+
+
+@pytest.mark.asyncio
+async def test_tool_intent_prepare_failure_has_safe_terminal_cause():
+    class RejectingLog(ConversationLog):
+        def plan_append_assistant(self, message):
+            raise ConversationLogError("untrusted tool argument")
+
+    session = Session(session_id="s", log=RejectingLog())
+    events = [
+        event
+        async for event in AgentLoop(
+            ScriptedModelProvider([AssistantMessage(tool_calls=(_tool_call(),))]),
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+            tool_executor=SimpleNamespace(definitions=()),
+        ).run_task(session, "go")
+    ]
+    assert events[-1].payload["stop_code"] == "invalid_response"
+    assert any(
+        event.payload.get("status") == "terminal_cause"
+        and event.payload["cause_phase"] == "tool_intent_prepare"
+        and event.payload["cause_code"] == "commit_or_visibility_rejected"
+        for event in events
+    )
 
 
 @pytest.mark.asyncio

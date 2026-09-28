@@ -110,6 +110,12 @@ class HeadlessDiagnostics:
                 http_status_class=event.payload.get("http_status_class"),
                 request_output_tokens=event.payload.get("request_output_tokens"),
             )
+        elif event.type == "status.changed" and event.payload.get("status") == "terminal_cause":
+            self._write(
+                "run.terminal_cause",
+                cause_phase=event.payload.get("cause_phase"),
+                cause_code=event.payload.get("cause_code"),
+            )
         elif event.type == "status.changed" and event.payload.get("status") == "internal_error":
             self._write(
                 "run.error",
