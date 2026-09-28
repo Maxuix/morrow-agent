@@ -421,7 +421,7 @@ async def test_tool_intent_prepare_failure_has_safe_terminal_cause():
     assert any(
         event.payload.get("status") == "terminal_cause"
         and event.payload["cause_phase"] == "tool_intent_prepare"
-        and event.payload["cause_code"] == "commit_or_visibility_rejected"
+        and event.payload["cause_code"] == "conversation_plan_rejected"
         for event in events
     )
 

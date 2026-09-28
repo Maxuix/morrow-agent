@@ -109,9 +109,27 @@ class ContextPack(ProtocolModel):
 class ContextBudgetError(ValueError):
     code = "context_budget"
 
-    def __init__(self, message: str, *, kind: str = "history") -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: str = "history",
+        cause_phase: Literal[
+            "context_budget",
+            "source_projection",
+            "summary_request",
+            "summary_parse",
+            "completion_request",
+            "completion_parse",
+        ] = "context_budget",
+        cause_code: str = "no_safe_boundary",
+        http_status_class: Literal["1xx", "2xx", "3xx", "4xx", "5xx"] | None = None,
+    ) -> None:
         super().__init__(message)
         self.kind = kind
+        self.cause_phase = cause_phase
+        self.cause_code = cause_code
+        self.http_status_class = http_status_class
 
 
 @dataclass(frozen=True, slots=True)
@@ -711,12 +729,20 @@ class ContextBuilder:
         """Select an old complete-turn/cycle prefix for one LLM compaction request."""
 
         if not isinstance(instructions, str) or len(instructions) > 512:
-            raise ContextBudgetError("上下文压缩指令超出安全边界")
+            raise ContextBudgetError(
+                "上下文压缩指令超出安全边界",
+                cause_phase="source_projection",
+                cause_code="invalid_instructions",
+            )
         instructions = instructions.strip()
         try:
             refuse_secret_material(instructions, label="compaction instructions")
         except ValueError as exc:
-            raise ContextBudgetError("上下文压缩指令不符合安全边界") from exc
+            raise ContextBudgetError(
+                "上下文压缩指令不符合安全边界",
+                cause_phase="source_projection",
+                cause_code="invalid_instructions",
+            ) from exc
         snapshot = session.log.snapshot()
         boundary = session.compaction_boundary_sequence
         units = self._projection_units(session, floor=boundary)

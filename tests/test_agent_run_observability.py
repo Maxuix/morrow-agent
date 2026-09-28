@@ -1518,6 +1518,12 @@ async def test_compaction_shares_request_accounting_and_preserves_usage(tmp_path
         else:
             assert requests[1].state.value == "failed"
             assert requests[1].finish_reason is ModelFinishReason.LENGTH
+            assert any(
+                event.payload.get("status") == "compaction_failure"
+                and event.payload["cause_phase"] == "summary_parse"
+                and event.payload["cause_code"] == "invalid_response"
+                for event in events
+            )
             assert not session.compaction_entries
             assert [item.purpose.value for item in requests] == ["agent", "compaction", "agent"]
             assert observation.terminal_metrics.usage.total_tokens == 670

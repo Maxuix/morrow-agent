@@ -313,8 +313,9 @@ async def test_oversized_pixels_reject_current_input_without_provider_call():
     ref = _ref("huge")
     builder = _builder(
         _resolver({ref.attachment_id: (data, width, height)}),
-        context_window_tokens=8_192,
+        context_window_tokens=32_768,
         reserve_tokens=4_096,
+        keep_recent_tokens=1,
     )
     provider = ScriptedModelProvider(["should not run"])
     _session, provider, events = await _run_loop(builder, _user("超大图", ref), provider)

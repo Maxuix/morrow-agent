@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from typer.testing import CliRunner
 
 from morrow.adapters.models.openai_compatible import estimate_request_chars
+from morrow.application.context import ContextBudgetError
 from morrow.application.outcome_budget import build_bounded_task_outcome
 from morrow.application.tasks import TaskOutcomeAssembler
 from morrow.core.domain import (
@@ -441,8 +442,32 @@ async def test_jitter_lowers_the_exponential_component_without_ignoring_retry_af
     )
 
 
+def test_compaction_instruction_validation_keeps_source_projection_phase(monkeypatch) -> None:
+    def reject(_value, *, label):
+        raise ValueError("untrusted instruction text")
+
+    monkeypatch.setattr("morrow.application.context.refuse_secret_material", reject)
+    with pytest.raises(ContextBudgetError) as raised:
+        make_context_builder().prepare_compaction(
+            Session(session_id="s"), instructions="focus on the API"
+        )
+    assert isinstance(raised.value.__cause__, ValueError)
+    assert raised.value.cause_phase == "source_projection"
+    assert raised.value.cause_code == "invalid_instructions"
+
+
+@pytest.mark.parametrize(
+    ("failure_kind", "expected_phase", "expected_code", "expected_http_class"),
+    [
+        ("auth", "summary_request", "auth", None),
+        ("overflow", "summary_request", "context_overflow", "4xx"),
+        ("empty", "summary_parse", "invalid_response", None),
+    ],
+)
 @pytest.mark.asyncio
-async def test_compaction_failure_drops_old_turns_without_changing_the_log() -> None:
+async def test_compaction_failure_drops_old_turns_without_changing_the_log(
+    failure_kind, expected_phase, expected_code, expected_http_class
+) -> None:
     class SummaryFails:
         def __init__(self) -> None:
             self.stream_calls: list[list] = []
@@ -454,13 +479,21 @@ async def test_compaction_failure_drops_old_turns_without_changing_the_log() -> 
 
         async def complete(self, _model, _messages):
             self.complete_calls += 1
+            if failure_kind == "empty":
+                return ""
             raise ModelProviderError(
                 ModelFailure(
-                    code=ModelErrorCode.AUTH,
+                    code=(
+                        ModelErrorCode.CONTEXT_OVERFLOW
+                        if failure_kind == "overflow"
+                        else ModelErrorCode.AUTH
+                    ),
                     origin=ModelFailureOrigin.PROVIDER,
                     retryable=False,
                     message="summary unavailable",
-                )
+                ),
+                cause_phase="completion_request" if failure_kind == "overflow" else None,
+                http_status_class="4xx" if failure_kind == "overflow" else None,
             )
 
     session = Session(session_id="s")
@@ -492,8 +525,9 @@ async def test_compaction_failure_drops_old_turns_without_changing_the_log() -> 
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
     assert any(
         event.payload.get("status") == "compaction_failure"
-        and event.payload["cause_phase"] == "summary_request"
-        and event.payload["cause_code"] == "auth"
+        and event.payload["cause_phase"] == expected_phase
+        and event.payload["cause_code"] == expected_code
+        and event.payload["http_status_class"] == expected_http_class
         and event.payload["request_output_tokens"] == 4_096
         for event in events
     )

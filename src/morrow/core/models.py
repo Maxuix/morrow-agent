@@ -453,9 +453,20 @@ class ModelCost(ProtocolModel):
 class ModelProviderError(RuntimeError):
     """Exception transport for model APIs that cannot return a `ModelEvent`."""
 
-    def __init__(self, failure: ModelFailure) -> None:
+    def __init__(
+        self,
+        failure: ModelFailure,
+        *,
+        cause_phase: Literal[
+            "completion_request", "completion_parse", "summary_request", "summary_parse"
+        ]
+        | None = None,
+        http_status_class: Literal["1xx", "2xx", "3xx", "4xx", "5xx"] | None = None,
+    ) -> None:
         super().__init__(failure.message)
         self.failure = failure
+        self.cause_phase = cause_phase
+        self.http_status_class = http_status_class
 
     @property
     def code(self) -> ModelErrorCode:

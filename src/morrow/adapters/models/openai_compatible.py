@@ -913,11 +913,15 @@ class OpenAICompatibleProvider:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            failure = ModelProviderError(classify_failure(exc, phase=failure_phase))
-            failure.cause_phase = failure_phase
             status = _provider_status(exc)
-            failure.http_status_class = f"{status // 100}xx" if status is not None else None
-            raise failure from None
+            status_class = f"{status // 100}xx" if status is not None else None
+            raise ModelProviderError(
+                classify_failure(exc, phase=failure_phase),
+                cause_phase=failure_phase,
+                http_status_class=status_class
+                if status_class in {"1xx", "2xx", "3xx", "4xx", "5xx"}
+                else None,
+            ) from None
 
 
 def make_openai_compatible(config, credential: str) -> OpenAICompatibleProvider:

@@ -104,6 +104,17 @@ def test_policy_rejects_run_reserve_that_consumes_the_window():
         )
 
 
+def test_policy_rejects_window_without_recent_history_and_prompt_allowance():
+    with pytest.raises(ValueError, match="recent history and prompt overhead"):
+        load_runtime_policy().agent_run.resolve(
+            ModelRef(provider_id="vendor", model_id="small-window"),
+            tool_protocol="openai_function",
+            multiple_tool_calls=True,
+            context_window_tokens=40_000,
+            max_output_tokens=131_072,
+        )
+
+
 @pytest.mark.parametrize(
     ("safe", "expected_request"),
     [(100000, 100000), (1000000, 800000)],

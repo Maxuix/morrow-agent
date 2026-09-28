@@ -179,6 +179,18 @@ class AgentPolicy(ProtocolModel):
             reserve_tokens = max_output_tokens
         if context_window_tokens is not None and reserve_tokens >= context_window_tokens:
             raise ValueError("model output reserve must be below the context window")
+        if context_window_tokens is not None:
+            input_budget_tokens = context_window_tokens - reserve_tokens
+            # A second reserve is a conservative allowance for the system prompt
+            # and tool schemas that accompany the retained conversation history.
+            prompt_overhead_allowance_tokens = reserve_tokens
+            if (
+                input_budget_tokens
+                <= selected.keep_recent_tokens + prompt_overhead_allowance_tokens
+            ):
+                raise ValueError(
+                    "model input budget cannot cover recent history and prompt overhead"
+                )
         exact_key = f"{model.provider_id}/{model.model_id}"
         safe = self.model_safe_request_chars.get(exact_key)
         # When the exact token window is unavailable, this remains an explicit conservative

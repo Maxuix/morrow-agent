@@ -61,13 +61,15 @@ async def test_agent_loop_reports_request_wait_and_tool_preparation_stages():
         for event in events
         if event.type == "status.changed"
     ]
-    # The tool-fragment marker is real output: it reports the responding stage,
-    # then the tool-preparation stage, without ever leaking the arguments.
+    # The tool-fragment marker reports preparation; without an executor, the
+    # terminal cause records why this response cannot be applied.
     assert statuses == [
         ("status.changed", "awaiting_model"),
         ("status.changed", "model_responding"),
         ("status.changed", "tool_preparing"),
+        ("status.changed", "terminal_cause"),
     ]
+    assert events[-3].payload["cause_code"] == "missing_tool_response"
     assert lifecycle_is_valid(events)
     assert not any(
         "call_1" in str(event.payload) or "path" in str(event.payload)

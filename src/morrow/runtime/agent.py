@@ -793,7 +793,11 @@ class AgentLoop:
                 if not callable(getattr(provider, "complete", None)) and not callable(
                     getattr(provider, "complete_result", None)
                 ):
-                    raise ContextBudgetError("当前 Provider 不支持上下文压缩")
+                    raise ContextBudgetError(
+                        "当前 Provider 不支持上下文压缩",
+                        cause_phase="summary_request",
+                        cause_code="unsupported_provider",
+                    )
                 completion = await self._complete_compaction_summary(
                     provider,
                     model,
@@ -804,15 +808,33 @@ class AgentLoop:
                     request_settler=request_settler,
                     retry_wait=retry_wait,
                 )
-                summary = CompactionSummary.from_provider_text(completion.content)
+                try:
+                    summary = CompactionSummary.from_provider_text(completion.content)
+                except ValueError as exc:
+                    raise ContextBudgetError(
+                        "上下文压缩摘要无效",
+                        cause_phase="summary_parse",
+                        cause_code="invalid_summary",
+                    ) from exc
             except asyncio.CancelledError:
                 raise
             except ContextBudgetError:
                 raise
+            except ModelProviderError as exc:
+                raise ContextBudgetError(
+                    "上下文压缩失败，请稍后重试",
+                    cause_phase=exc.cause_phase or "summary_request",
+                    cause_code=exc.code.value,
+                    http_status_class=exc.http_status_class,
+                ) from exc
             except ApplicationError:
                 raise
             except Exception as exc:
-                raise ContextBudgetError("上下文压缩失败，请稍后重试") from exc
+                raise ContextBudgetError(
+                    "上下文压缩失败，请稍后重试",
+                    cause_phase="summary_request",
+                    cause_code="internal_error",
+                ) from exc
             # Persistence and in-memory installation are outside the summary
             # fallback boundary. A failed commit must not become an omission.
             durable_runtime = session.durable_runtime
@@ -884,7 +906,8 @@ class AgentLoop:
                             code=ModelErrorCode.INVALID_RESPONSE,
                             origin=ModelFailureOrigin.PROVIDER,
                             message="上下文压缩响应未正常结束",
-                        )
+                        ),
+                        cause_phase="summary_parse",
                     )
             except asyncio.CancelledError:
                 cancelled = True
@@ -898,9 +921,21 @@ class AgentLoop:
                             code=ModelErrorCode.INTERNAL,
                             origin=ModelFailureOrigin.ADAPTER,
                             message="上下文压缩请求失败",
-                        )
+                        ),
+                        cause_phase="summary_request",
                     )
                 )
+                if failure.cause_phase is None or failure.cause_phase.startswith("completion_"):
+                    phase = (
+                        "summary_parse"
+                        if failure.cause_phase == "completion_parse"
+                        else "summary_request"
+                    )
+                    failure = ModelProviderError(
+                        failure.failure,
+                        cause_phase=phase,
+                        http_status_class=failure.http_status_class,
+                    )
             finally:
                 if admission is not None and request_settler is not None:
                     request_settler(
@@ -921,7 +956,12 @@ class AgentLoop:
                 wait.reset_window()
                 return completion
             if failure.code is ModelErrorCode.CONTEXT_OVERFLOW:
-                raise ContextBudgetError("上下文压缩请求超过模型上下文限制") from None
+                raise ContextBudgetError(
+                    "上下文压缩请求超过模型上下文限制",
+                    cause_phase=failure.cause_phase or "summary_request",
+                    cause_code=failure.code.value,
+                    http_status_class=failure.http_status_class,
+                ) from failure
             if not policy.retry_enabled or not _can_retry_provider_failure(failure.failure):
                 raise failure
             wait.begin(self._wall_now())
@@ -1297,10 +1337,40 @@ class AgentLoop:
             stop_code: AgentStopCode,
             *,
             interrupted: tuple[str, ...] = (),
-        ) -> tuple[AgentEvent, AgentEvent]:
+            cause_phase: str | None = None,
+            cause_code: str | None = None,
+        ) -> tuple[AgentEvent, ...]:
             state.terminal_finish_reason = FinishReason.ERROR
             state.stop_code = stop_code
-            return emit_terminal_error(message, stop_code, interrupted=interrupted)
+            diagnostic = (
+                (
+                    event(
+                        "status.changed",
+                        {
+                            "status": "terminal_cause",
+                            "cause_phase": cause_phase,
+                            "cause_code": cause_code,
+                        },
+                    ),
+                )
+                if cause_phase is not None and cause_code is not None
+                else ()
+            )
+            return (*diagnostic, *emit_terminal_error(message, stop_code, interrupted=interrupted))
+
+        def compaction_failure_event(exc: ContextBudgetError) -> AgentEvent:
+            return event(
+                "status.changed",
+                {
+                    "status": "compaction_failure",
+                    "cause_phase": exc.cause_phase,
+                    "cause_code": exc.cause_code,
+                    "http_status_class": exc.http_status_class,
+                    "request_output_tokens": min(
+                        COMPACTION_MAX_OUTPUT_TOKENS, policy.reserve_tokens
+                    ),
+                },
+            )
 
         def synthetic_statuses(
             unresolved: tuple[str, ...], *, code: ToolErrorCode, running_status: str
@@ -1610,28 +1680,7 @@ class AgentLoop:
                         except ContextBudgetError as exc:
                             compacted = False
                             compact_error = str(exc)
-                            cause = exc.__cause__
-                            if isinstance(cause, ModelProviderError):
-                                cause_phase = getattr(cause, "cause_phase", "summary_request")
-                                cause_code = cause.code.value
-                            elif isinstance(cause, ValueError):
-                                cause_phase = "summary_parse"
-                                cause_code = "invalid_summary"
-                            else:
-                                cause_phase = "context_budget"
-                                cause_code = "no_safe_boundary"
-                            yield event(
-                                "status.changed",
-                                {
-                                    "status": "compaction_failure",
-                                    "cause_phase": cause_phase,
-                                    "cause_code": cause_code,
-                                    "http_status_class": getattr(cause, "http_status_class", None),
-                                    "request_output_tokens": min(
-                                        COMPACTION_MAX_OUTPUT_TOKENS, policy.reserve_tokens
-                                    ),
-                                },
-                            )
+                            yield compaction_failure_event(exc)
                         except TimeoutError as exc:
                             if deadline is not None and deadline.remaining_seconds() <= 0:
                                 raise RunDeadlineExceeded(
@@ -2042,8 +2091,9 @@ class AgentLoop:
                                         request_settler=settle_model_request,
                                         retry_wait=state.retry_wait,
                                     )
-                            except ContextBudgetError:
+                            except ContextBudgetError as exc:
                                 compacted = False
+                                yield compaction_failure_event(exc)
                             except TimeoutError as exc:
                                 if deadline is not None and deadline.remaining_seconds() <= 0:
                                     raise RunDeadlineExceeded(
@@ -2231,16 +2281,11 @@ class AgentLoop:
                         freeze_permissions()
                         session.append_assistant(message)
                     except ConversationLogError:
-                        yield event(
-                            "status.changed",
-                            {
-                                "status": "terminal_cause",
-                                "cause_phase": "answer_commit",
-                                "cause_code": "conversation_commit_rejected",
-                            },
-                        )
                         for item in terminal_error(
-                            "模型响应未正常结束", AgentStopCode.INVALID_RESPONSE
+                            "模型响应未正常结束",
+                            AgentStopCode.INVALID_RESPONSE,
+                            cause_phase="answer_commit",
+                            cause_code="conversation_commit_rejected",
                         ):
                             yield item
                         return
@@ -2270,16 +2315,11 @@ class AgentLoop:
                     )
                     return
                 if tool_executor is None or message is None:
-                    yield event(
-                        "status.changed",
-                        {
-                            "status": "terminal_cause",
-                            "cause_phase": "response_interpretation",
-                            "cause_code": "missing_tool_response",
-                        },
-                    )
                     for item in terminal_error(
-                        "模型响应未正常结束", AgentStopCode.INVALID_RESPONSE
+                        "模型响应未正常结束",
+                        AgentStopCode.INVALID_RESPONSE,
+                        cause_phase="response_interpretation",
+                        cause_code="missing_tool_response",
                     ):
                         yield item
                     return
@@ -2302,9 +2342,11 @@ class AgentLoop:
 
                 try:
                     state.internal_phase = "conversation_commit"
+                    commit_cause_code = "conversation_plan_rejected"
                     freeze_permissions()
                     planned = session.log.plan_append_assistant(message)
                     if durable_runtime is not None:
+                        commit_cause_code = "conversation_commit_rejected"
                         state.durable_executions = durable_runtime.prepare_and_commit_assistant(
                             planned,
                             message,
@@ -2317,20 +2359,21 @@ class AgentLoop:
                             if not durable_runtime.execution_is_visible(item.tool_execution_id)
                         ]
                         if missing:
+                            commit_cause_code = "committed_intent_invisible"
                             raise ConversationLogError("committed tool intent is not observable")
                     else:
+                        commit_cause_code = "conversation_commit_rejected"
                         session.commit_append(planned)
-                except (ConversationLogError, PreparedIntentError):
-                    yield event(
-                        "status.changed",
-                        {
-                            "status": "terminal_cause",
-                            "cause_phase": "tool_intent_prepare",
-                            "cause_code": "commit_or_visibility_rejected",
-                        },
-                    )
+                except (ConversationLogError, PreparedIntentError) as exc:
                     for item in terminal_error(
-                        "模型响应未正常结束", AgentStopCode.INVALID_RESPONSE
+                        "模型响应未正常结束",
+                        AgentStopCode.INVALID_RESPONSE,
+                        cause_phase="tool_intent_prepare",
+                        cause_code=(
+                            "prepared_intent_rejected"
+                            if isinstance(exc, PreparedIntentError)
+                            else commit_cause_code
+                        ),
                     ):
                         yield item
                     return
