@@ -145,3 +145,52 @@ def test_diagnostics_has_a_bounded_export(tmp_path, monkeypatch) -> None:
     diagnostics.close()
     assert "secret-value" not in path.read_text()
     assert json.loads(path.read_text())["kind"] == "diagnostics.truncated"
+
+
+def test_model_timeout_export_distinguishes_active_stream_from_idle(tmp_path) -> None:
+    path = tmp_path / "diagnostics.jsonl"
+    diagnostics = HeadlessDiagnostics(path, SimpleNamespace())
+    diagnostics.record_event(
+        SimpleNamespace(
+            type="status.changed",
+            payload={
+                "status": "model_attempt_timeout",
+                "cause_phase": "task_deadline",
+                "cause_code": "active_stream",
+                "last_activity": "reasoning",
+                "internal_remaining_seconds": 0.0,
+            },
+        )
+    )
+    diagnostics.close()
+    assert json.loads(path.read_text()) == {
+        "schema_version": 1,
+        "kind": "model.timeout",
+        "cause_phase": "task_deadline",
+        "cause_code": "active_stream",
+        "last_activity": "reasoning",
+        "internal_remaining_seconds": 0.0,
+    }
+
+
+def test_compaction_failure_export_has_no_response_body(tmp_path) -> None:
+    path = tmp_path / "diagnostics.jsonl"
+    diagnostics = HeadlessDiagnostics(path, SimpleNamespace())
+    diagnostics.record_event(
+        SimpleNamespace(
+            type="status.changed",
+            payload={
+                "status": "compaction_failure",
+                "cause_phase": "completion_request",
+                "cause_code": "invalid_response",
+                "http_status_class": "4xx",
+                "request_output_tokens": 4_096,
+            },
+        )
+    )
+    diagnostics.close()
+    row = json.loads(path.read_text())
+    assert row["kind"] == "context.compaction_failure"
+    assert row["http_status_class"] == "4xx"
+    assert row["request_output_tokens"] == 4_096
+    assert "response" not in row

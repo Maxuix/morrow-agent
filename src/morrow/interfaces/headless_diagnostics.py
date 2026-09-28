@@ -91,6 +91,25 @@ class HeadlessDiagnostics:
                 chunk_count=event.payload.get("chunk_count"),
                 elapsed_seconds=event.payload.get("elapsed_seconds"),
             )
+        elif (
+            event.type == "status.changed"
+            and event.payload.get("status") == "model_attempt_timeout"
+        ):
+            self._write(
+                "model.timeout",
+                cause_phase=event.payload.get("cause_phase"),
+                cause_code=event.payload.get("cause_code"),
+                last_activity=event.payload.get("last_activity"),
+                internal_remaining_seconds=event.payload.get("internal_remaining_seconds"),
+            )
+        elif event.type == "status.changed" and event.payload.get("status") == "compaction_failure":
+            self._write(
+                "context.compaction_failure",
+                cause_phase=event.payload.get("cause_phase"),
+                cause_code=event.payload.get("cause_code"),
+                http_status_class=event.payload.get("http_status_class"),
+                request_output_tokens=event.payload.get("request_output_tokens"),
+            )
         elif event.type == "status.changed" and event.payload.get("status") == "internal_error":
             self._write(
                 "run.error",

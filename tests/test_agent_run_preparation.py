@@ -278,7 +278,7 @@ def test_configured_model_window_and_output_capacity_drive_long_horizon_policy(
     policy = _open_session_application(app, project).context_builder.run_policy
 
     assert policy.context_window_tokens == 1_000_000
-    assert policy.reserve_tokens == 384_000
+    assert policy.reserve_tokens == 16_384
 
 
 def test_retired_bounded_policy_overrides_are_rejected() -> None:

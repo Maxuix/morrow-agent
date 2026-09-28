@@ -165,6 +165,72 @@ class TerminalBenchDriverTests(unittest.TestCase):
             self.assertEqual(run_tb2._finalize_from_job_logs(budget, "tb2:high:job", job_dir), 1)
             self.assertEqual(budget.used_tokens, 2_000_000)
 
+    def test_incomplete_terminal_usage_uses_larger_partial_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            budget = run_tb2.TokenBudget(
+                root / "ledger.json", budget_total=5_000_000, reservation=1_000_000
+            )
+            self.assertTrue(budget.admit("tb2:run:demo"))
+            logs = root / "job" / "demo__123" / "agent"
+            logs.mkdir(parents=True)
+            (logs / "morrow-run.jsonl").write_text(
+                json.dumps(
+                    {"kind": "run.completed", "metrics": {"usage": {"availability": "unavailable"}}}
+                ),
+                encoding="utf-8",
+            )
+            (logs / "morrow-partial-metrics.json").write_text(
+                json.dumps({"known_input_tokens": 1_200_000, "known_output_tokens": 50_000}),
+                encoding="utf-8",
+            )
+            self.assertEqual(run_tb2._finalize_from_job_logs(budget, "tb2:run", root / "job"), 1)
+            self.assertEqual(budget.used_tokens, 1_250_000)
+
+    def test_known_model_rejects_unverified_output_capacity_before_harbor(self) -> None:
+        config = {
+            "MORROW_BENCH_API_KEY": "fake",
+            "MORROW_BENCH_PROVIDER_BASE_URL": "https://example.invalid/v1",
+            "MORROW_BENCH_MODEL_ID": "glm-5.3-flash",
+            "MORROW_BENCH_API_MODEL_ID": "glm-5.3-flash",
+            "MORROW_BENCH_CONTEXT_WINDOW_TOKENS": "256000",
+            "MORROW_BENCH_MAX_OUTPUT_TOKENS": "239616",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch.object(run_tb2, "RUNS_DIR", Path(directory)),
+                patch.object(run_tb2, "_load_dotenv", return_value=config),
+                patch.object(run_tb2, "_all_tasks", return_value=["demo"]),
+                patch.object(run_tb2, "_preflight"),
+                patch.object(run_tb2.subprocess, "run") as launch,
+                patch("sys.argv", ["run_tb2.py", "--tasks", "demo"]),
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(run_tb2.main(), 2)
+            launch.assert_not_called()
+
+    def test_preflight_rejects_input_budget_below_recent_history_margin(self) -> None:
+        config = {
+            "MORROW_BENCH_API_KEY": "fake",
+            "MORROW_BENCH_PROVIDER_BASE_URL": "https://example.invalid/v1",
+            "MORROW_BENCH_MODEL_ID": "model",
+            "MORROW_BENCH_API_MODEL_ID": "model",
+            "MORROW_BENCH_CONTEXT_WINDOW_TOKENS": "40000",
+            "MORROW_BENCH_MAX_OUTPUT_TOKENS": "30000",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch.object(run_tb2, "RUNS_DIR", Path(directory)),
+                patch.object(run_tb2, "_load_dotenv", return_value=config),
+                patch.object(run_tb2, "_all_tasks", return_value=["demo"]),
+                patch.object(run_tb2, "_preflight"),
+                patch.object(run_tb2.subprocess, "run") as launch,
+                patch("sys.argv", ["run_tb2.py", "--tasks", "demo"]),
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(run_tb2.main(), 2)
+            launch.assert_not_called()
+
     def test_reasoning_effort_reaches_harbor_agent_kwargs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             captured: list[list[str]] = []

@@ -133,6 +133,13 @@ class MorrowAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.n_output_tokens, 7)
         self.assertEqual((self.logs_dir / "morrow-run.jsonl").read_text(), env.log)
         self.assertTrue((self.logs_dir / "morrow-terminal-metrics.json").exists())
+        self.assertIn("2>/dev/null", "\n".join(env.commands))
+        diagnostics = [
+            json.loads(line)
+            for line in (self.logs_dir / "morrow-diagnostics.jsonl").read_text().splitlines()
+        ]
+        self.assertEqual(diagnostics[-1]["kind"], "harbor.phase")
+        self.assertGreaterEqual(diagnostics[-1]["log_recovery_seconds"], 0)
 
     async def test_trial_fingerprint_uses_frozen_run_digests(self) -> None:
         env = FakeEnvironment()

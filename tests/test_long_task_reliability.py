@@ -48,7 +48,8 @@ from morrow.core.runtime_policy import (
 )
 from morrow.interfaces import cli as cli_module
 from morrow.interfaces.cli import app
-from morrow.runtime.agent import AgentLoop
+from morrow.runtime.agent import AgentLoop, _model_attempt_seconds
+from morrow.runtime.deadline import RunDeadline
 from morrow.runtime.provider_retry import next_provider_retry_delay
 from morrow.runtime.session import Session
 from morrow.runtime.tools import ToolExecutor, ToolRegistry, make_tool
@@ -56,6 +57,12 @@ from morrow.services.workspace import DataRoot
 from morrow.testing import FixedClock, FixedIdSource, make_context_builder, seed_user_turn
 
 MODEL = ModelRef(provider_id="p", model_id="m")
+
+
+def test_host_deadline_allows_active_request_past_default_600_seconds():
+    deadline = RunDeadline.from_seconds(1_800, clock=lambda: 0.0)
+    assert _model_attempt_seconds(deadline) == 1_770
+    assert _model_attempt_seconds(None) == 600
 
 
 async def _no_sleep(_delay: float) -> None:
@@ -483,6 +490,13 @@ async def test_compaction_failure_drops_old_turns_without_changing_the_log() -> 
     assert "CURRENT_REQUEST" in sent
     assert "上下文降级" in sent
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
+    assert any(
+        event.payload.get("status") == "compaction_failure"
+        and event.payload["cause_phase"] == "summary_request"
+        and event.payload["cause_code"] == "auth"
+        and event.payload["request_output_tokens"] == 4_096
+        for event in events
+    )
     assert any(
         event.payload.get("status") == "context_degraded"
         and event.payload["dropped_turn_count"] >= 1

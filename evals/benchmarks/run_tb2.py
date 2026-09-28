@@ -46,6 +46,8 @@ PROTOCOL = BENCH_DIR / "config" / "v2" / "protocol.json"
 MORROW_DEFAULT_RESERVE_TOKENS = 16_384
 MORROW_MAX_CONTEXT_TOKENS = 10_000_000
 MORROW_MAX_OUTPUT_TOKENS = 1_000_000
+MORROW_KEEP_RECENT_TOKENS = 20_000
+VERIFIED_MODEL_OUTPUT_LIMITS = {"glm-5.3-flash": 131_072}
 LOOPBACK_PROXY_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 sys.path.insert(0, str(BENCH_DIR))
@@ -306,11 +308,20 @@ def main() -> int:
         return 2
     if not (
         0 < output_tokens <= MORROW_MAX_OUTPUT_TOKENS
-        and max(output_tokens, MORROW_DEFAULT_RESERVE_TOKENS)
+        and min(MORROW_DEFAULT_RESERVE_TOKENS, output_tokens)
         < context_tokens
         <= MORROW_MAX_CONTEXT_TOKENS
     ):
         print("model capacities are outside Morrow's supported range or reserve", file=sys.stderr)
+        return 2
+    verified_limit = VERIFIED_MODEL_OUTPUT_LIMITS.get(env["MORROW_BENCH_API_MODEL_ID"])
+    if verified_limit is not None and output_tokens > verified_limit:
+        print("declared model output exceeds the verified deployment example", file=sys.stderr)
+        return 2
+    reserve_tokens = min(MORROW_DEFAULT_RESERVE_TOKENS, output_tokens)
+    input_budget = context_tokens - reserve_tokens
+    if input_budget <= MORROW_KEEP_RECENT_TOKENS + reserve_tokens:
+        print("model input budget cannot cover recent history and prompt overhead", file=sys.stderr)
         return 2
     try:
         verifier_proxy_env = _verifier_proxy_env(env)
@@ -340,6 +351,8 @@ def main() -> int:
             "reasoning_effort": reasoning_effort,
             "context_window_tokens": context_tokens,
             "max_output_tokens": output_tokens,
+            "response_reserve_tokens": reserve_tokens,
+            "input_budget_tokens": input_budget,
             "agent_timeout_multiplier": args.agent_timeout_multiplier,
             "attempts_per_task": 1,
             "harbor_max_retries": 0,
@@ -510,18 +523,24 @@ def _finalize_from_job_logs(budget: TokenBudget, run_key_prefix: str, job_dir: P
                 pass
         metrics = (record or {}).get("metrics") or {}
         usage = metrics.get("usage")
-        if not usage:
+        if not isinstance(usage, dict) or usage.get("availability") != "available":
             partial_path = log_dir / "morrow-partial-metrics.json"
             if partial_path.is_file():
                 try:
                     partial = json.loads(partial_path.read_text(encoding="utf-8"))
-                    usage = {
-                        "availability": "partial",
-                        "input_tokens": partial.get("known_input_tokens"),
-                        "output_tokens": partial.get("known_output_tokens"),
-                        "unknown_request_count": partial.get("unknown_request_count"),
-                    }
-                except (OSError, json.JSONDecodeError):
+                    if isinstance(partial, dict):
+                        partial_known = int(partial.get("known_input_tokens") or 0) + int(
+                            partial.get("known_output_tokens") or 0
+                        )
+                        terminal_known = TokenBudget._known_tokens(usage)
+                        if partial_known >= terminal_known:
+                            usage = {
+                                "availability": "partial",
+                                "input_tokens": partial.get("known_input_tokens"),
+                                "output_tokens": partial.get("known_output_tokens"),
+                                "unknown_request_count": partial.get("unknown_request_count"),
+                            }
+                except (OSError, json.JSONDecodeError, TypeError, ValueError):
                     pass
         if not usage:
             continue

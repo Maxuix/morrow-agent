@@ -171,7 +171,12 @@ class AgentPolicy(ProtocolModel):
         ):
             raise ValueError("exact model maximum output is outside the supported range")
         selected = settings or LongHorizonPolicySettings()
-        reserve_tokens = max(selected.reserve_tokens, max_output_tokens or 0)
+        # Model capacity describes what the endpoint can emit. The context reserve
+        # describes what this run allows one response to consume; conflating the
+        # two can leave almost no room for input on large-output models.
+        reserve_tokens = selected.reserve_tokens
+        if max_output_tokens is not None and reserve_tokens > max_output_tokens:
+            reserve_tokens = max_output_tokens
         if context_window_tokens is not None and reserve_tokens >= context_window_tokens:
             raise ValueError("model output reserve must be below the context window")
         exact_key = f"{model.provider_id}/{model.model_id}"

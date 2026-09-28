@@ -148,8 +148,10 @@ def collect_tb2(jobs_dir: Path) -> dict:
                 "tool_rounds": morrow_metrics.get("tool_rounds"),
                 "model_attempts": morrow_metrics.get("model_attempts"),
                 "retry_count": morrow_metrics.get("retry_count"),
-                "context_compactions": (morrow_metrics.get("dropped_cycle_count") or 0)
-                + (morrow_metrics.get("cleared_cycle_count") or 0),
+                "context_compactions": morrow_metrics.get("compaction_count") or 0,
+                "summary_success_count": morrow_metrics.get("compaction_count") or 0,
+                "dropped_cycle_count": morrow_metrics.get("dropped_cycle_count") or 0,
+                "cleared_cycle_count": morrow_metrics.get("cleared_cycle_count") or 0,
                 "cost_usd": _cost_usd(morrow_metrics.get("cost") or {}),
                 "usage_availability": usage.get("availability"),
                 "exception": (exception.get("exception_type") or exception.get("type") or "")[:120]
@@ -349,6 +351,9 @@ def collect_tb2(jobs_dir: Path) -> dict:
         "model_requests_total": sum(t["model_attempts"] or 0 for t in tasks),
         "retry_total": sum(t["retry_count"] or 0 for t in tasks),
         "context_compaction_total": sum(t["context_compactions"] or 0 for t in tasks),
+        "summary_success_total": sum(t["summary_success_count"] for t in tasks),
+        "dropped_cycle_total": sum(t["dropped_cycle_count"] for t in tasks),
+        "cleared_cycle_total": sum(t["cleared_cycle_count"] for t in tasks),
         "cost_known_lower_bound_usd": sum(
             t["cost_usd"] for t in tasks if t["cost_usd"] is not None
         ),

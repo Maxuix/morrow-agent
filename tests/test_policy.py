@@ -79,7 +79,7 @@ def test_unknown_window_keeps_conservative_character_fallback():
     assert run.effective_request_chars == 262144
 
 
-def test_policy_reserves_known_maximum_output_capacity():
+def test_policy_separates_model_output_capacity_from_run_reserve():
     run = load_runtime_policy().agent_run.resolve(
         ModelRef(provider_id="vendor", model_id="large-context"),
         tool_protocol="openai_function",
@@ -89,16 +89,17 @@ def test_policy_reserves_known_maximum_output_capacity():
     )
 
     assert run.context_window_tokens == 1_000_000
-    assert run.reserve_tokens == 384_000
+    assert run.reserve_tokens == 16_384
+    assert run.context_window_tokens - run.reserve_tokens == 983_616
 
 
-def test_policy_rejects_output_capacity_that_consumes_the_window():
+def test_policy_rejects_run_reserve_that_consumes_the_window():
     with pytest.raises(ValueError, match="output reserve"):
         load_runtime_policy().agent_run.resolve(
             ModelRef(provider_id="vendor", model_id="invalid-window"),
             tool_protocol="openai_function",
             multiple_tool_calls=True,
-            context_window_tokens=100_000,
+            context_window_tokens=16_384,
             max_output_tokens=100_000,
         )
 

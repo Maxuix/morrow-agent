@@ -16,6 +16,7 @@ from morrow.core.models import ModelCapabilityOverrides
 from morrow.core.runtime_policy import (
     AGENT_MAX_CONTEXT_WINDOW_TOKENS,
     AGENT_MAX_RESERVE_TOKENS,
+    PI_DEFAULT_KEEP_RECENT_TOKENS,
     PI_DEFAULT_RESERVE_TOKENS,
 )
 
@@ -43,10 +44,12 @@ def main() -> None:
         parser.error("--max-output-tokens must be positive")
     if args.max_output_tokens is not None and args.max_output_tokens > AGENT_MAX_RESERVE_TOKENS:
         parser.error("--max-output-tokens exceeds the supported range")
-    if args.context_window_tokens is not None and args.context_window_tokens <= max(
-        args.max_output_tokens or 0, PI_DEFAULT_RESERVE_TOKENS
+    reserve = min(PI_DEFAULT_RESERVE_TOKENS, args.max_output_tokens or PI_DEFAULT_RESERVE_TOKENS)
+    if (
+        args.context_window_tokens is not None
+        and args.context_window_tokens - reserve <= PI_DEFAULT_KEEP_RECENT_TOKENS + reserve
     ):
-        parser.error("--context-window-tokens must exceed the output and default reserve")
+        parser.error("--context-window-tokens cannot cover recent history and prompt overhead")
 
     app = build_application(state_root=Path(args.state_root))
 

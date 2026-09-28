@@ -1509,7 +1509,7 @@ async def test_compaction_shares_request_accounting_and_preserves_usage(tmp_path
         assert requests[0].state.value == "failed"
         assert requests[1].purpose.value == "compaction"
         assert requests[1].usage.total_tokens == 450
-        assert provider.output_limit == builder.run_policy.reserve_tokens * 4 // 5
+        assert provider.output_limit == min(4_096, builder.run_policy.reserve_tokens)
         if summary_finish is ModelFinishReason.STOP:
             assert [r.purpose.value for r in requests] == ["agent", "compaction", "agent"]
             assert session.compaction_entries[-1].usage.total_tokens == 450

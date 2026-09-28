@@ -75,6 +75,9 @@ class CollectorV2Tests(unittest.TestCase):
                             "total_tokens": 13,
                         },
                         "cost": {"availability": "unavailable"},
+                        "compaction_count": 2,
+                        "dropped_cycle_count": 7,
+                        "cleared_cycle_count": 3,
                     }
                 ),
                 encoding="utf-8",
@@ -82,6 +85,9 @@ class CollectorV2Tests(unittest.TestCase):
             with patch.object(collect_metrics, "_task_meta", return_value={}):
                 report = collect_metrics.collect_tb2(job)
             self.assertEqual(report["tasks"][0]["total_tokens"], 13)
+            self.assertEqual(report["context_compaction_total"], 2)
+            self.assertEqual(report["dropped_cycle_total"], 7)
+            self.assertEqual(report["cleared_cycle_total"], 3)
             self.assertEqual(report["tasks"][0]["terminal_metrics_file"], str(direct))
             self.assertIsNone(report["cost_usd_total"])
 

@@ -1250,6 +1250,29 @@ async def test_completion_facts_preserve_usage_and_output_limit_and_do_not_hide_
 
 
 @pytest.mark.asyncio
+async def test_nonstream_failure_exposes_only_safe_phase_and_http_class():
+    class Rejected(Exception):
+        status_code = 400
+
+    class RejectingCompletions:
+        async def create(self, **_kwargs):
+            raise Rejected("secret upstream response body")
+
+    provider = provider_with_stream(None)
+    provider._client.chat.completions = RejectingCompletions()
+    with pytest.raises(ModelProviderError) as caught:
+        await provider.complete_result(
+            ModelRef(provider_id="test", model_id="summary"),
+            [UserMessage(content="Summarize")],
+            max_output_tokens=4_096,
+        )
+    failure = caught.value
+    assert failure.cause_phase == "completion_request"
+    assert failure.http_status_class == "4xx"
+    assert "secret upstream" not in str(failure)
+
+
+@pytest.mark.asyncio
 async def test_opaque_reasoning_payloads_stay_activity_only():
     """Encrypted/opaque reasoning objects are never decoded into visible text."""
     provider = provider_with_stream(

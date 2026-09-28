@@ -875,6 +875,7 @@ class OpenAICompatibleProvider:
             isinstance(max_output_tokens, bool) or max_output_tokens <= 0
         ):
             raise ValueError("completion output budget must be positive")
+        failure_phase = "completion_request"
         try:
             # The official endpoint requires the newer field for reasoning models; compatible
             # endpoints retain their broadly supported max_tokens wire contract.
@@ -891,6 +892,7 @@ class OpenAICompatibleProvider:
                 timeout=self.completion_timeout,
                 **options,
             )
+            failure_phase = "completion_parse"
             choices = getattr(response, "choices", None) or []
             if len(choices) != 1:
                 raise ValueError("model response must contain one choice")
@@ -911,7 +913,11 @@ class OpenAICompatibleProvider:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            raise ModelProviderError(classify_failure(exc)) from None
+            failure = ModelProviderError(classify_failure(exc, phase=failure_phase))
+            failure.cause_phase = failure_phase
+            status = _provider_status(exc)
+            failure.http_status_class = f"{status // 100}xx" if status is not None else None
+            raise failure from None
 
 
 def make_openai_compatible(config, credential: str) -> OpenAICompatibleProvider:

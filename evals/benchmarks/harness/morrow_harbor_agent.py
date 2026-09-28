@@ -346,6 +346,10 @@ class MorrowAgent(BaseInstalledAgent):
             "reasoning_effort": opts.reasoning_effort,
             "context_window_tokens": opts.context_window_tokens,
             "max_output_tokens": opts.max_output_tokens,
+            "response_reserve_tokens": (campaign.get("settings") or {}).get(
+                "response_reserve_tokens"
+            ),
+            "input_budget_tokens": (campaign.get("settings") or {}).get("input_budget_tokens"),
             "tool_schema_digest": None,
         }
         write_json(self.logs_dir / "morrow-fingerprint.json", fingerprint)
@@ -382,12 +386,16 @@ class MorrowAgent(BaseInstalledAgent):
             f"{remaining_arg}"
             f"--diagnostic-log {shlex.quote(self._diagnostic_path())} "
             f'--prompt "$(cat {prompt_path})" '
-            f"> {RUN_LOG_PATH} 2>&1; echo MORROW_EXIT=$?"
+            # Keep stderr out of the structured JSONL evidence. Provider/SDK
+            # diagnostics are exported separately through the bounded sidecar.
+            f"> {RUN_LOG_PATH} 2>/dev/null; echo MORROW_EXIT=$?"
         )
         log_text = ""
+        exec_started_at = time.monotonic()
         try:
             result = await environment.exec(command=command, env=self._run_env(), timeout_sec=None)
         finally:
+            exec_finished_at = time.monotonic()
             recovery_until = time.monotonic() + LOG_COPY_TIMEOUT_SEC
             # Harbor cancels this coroutine on agent timeout. The container log
             # survives that cancellation until the environment is torn down.
@@ -427,6 +435,34 @@ class MorrowAgent(BaseInstalledAgent):
                     self.logger.warning(
                         "could not project morrow diagnostics: %s", type(exc).__name__
                     )
+                # The run log may already contain run.completed while Docker exec
+                # or log recovery is still pending. Record only phase durations.
+                try:
+                    with diagnostic_path.open("a", encoding="utf-8") as diagnostics:
+                        diagnostics.write(
+                            json.dumps(
+                                {
+                                    "schema_version": 1,
+                                    "kind": "harbor.phase",
+                                    "exec_elapsed_seconds": round(
+                                        exec_finished_at - exec_started_at, 2
+                                    ),
+                                    "log_recovery_seconds": round(
+                                        time.monotonic() - exec_finished_at, 2
+                                    ),
+                                    "official_remaining_seconds": round(
+                                        max(0.0, outer_timeout - (time.monotonic() - started_at)),
+                                        2,
+                                    )
+                                    if outer_timeout is not None
+                                    else None,
+                                },
+                                separators=(",", ":"),
+                            )
+                            + "\n"
+                        )
+                except OSError:
+                    self.logger.warning("could not write Harbor phase diagnostics")
         status = re.search(r"(?:^|\n)MORROW_EXIT=(\d+)(?:\n|$)", result.stdout or "")
         if result.return_code != 0 or status is None:
             raise NonZeroAgentExitCodeError("morrow run did not report a successful exit")

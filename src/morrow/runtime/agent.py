@@ -81,6 +81,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger("morrow.runtime")
 
 MODEL_ATTEMPT_MAX_SECONDS = 600.0
+COMPACTION_MAX_OUTPUT_TOKENS = 4_096
+
+
+def _model_attempt_seconds(deadline: RunDeadline | None) -> float:
+    """Use the run work window when a host deadline already bounds the request."""
+    return deadline.require_work() if deadline is not None else MODEL_ATTEMPT_MAX_SECONDS
 
 
 def _internal_error_fingerprint(exc: Exception, phase: str) -> str:
@@ -855,7 +861,9 @@ class AgentLoop:
                 complete_result = getattr(provider, "complete_result", None)
                 if callable(complete_result):
                     result = await complete_result(
-                        model, messages, max_output_tokens=max(1, policy.reserve_tokens * 4 // 5)
+                        model,
+                        messages,
+                        max_output_tokens=min(COMPACTION_MAX_OUTPUT_TOKENS, policy.reserve_tokens),
                     )
                     if not isinstance(result, ModelCompletion):
                         raise TypeError("completion result must contain normalized facts")
@@ -1602,6 +1610,28 @@ class AgentLoop:
                         except ContextBudgetError as exc:
                             compacted = False
                             compact_error = str(exc)
+                            cause = exc.__cause__
+                            if isinstance(cause, ModelProviderError):
+                                cause_phase = getattr(cause, "cause_phase", "summary_request")
+                                cause_code = cause.code.value
+                            elif isinstance(cause, ValueError):
+                                cause_phase = "summary_parse"
+                                cause_code = "invalid_summary"
+                            else:
+                                cause_phase = "context_budget"
+                                cause_code = "no_safe_boundary"
+                            yield event(
+                                "status.changed",
+                                {
+                                    "status": "compaction_failure",
+                                    "cause_phase": cause_phase,
+                                    "cause_code": cause_code,
+                                    "http_status_class": getattr(cause, "http_status_class", None),
+                                    "request_output_tokens": min(
+                                        COMPACTION_MAX_OUTPUT_TOKENS, policy.reserve_tokens
+                                    ),
+                                },
+                            )
                         except TimeoutError as exc:
                             if deadline is not None and deadline.remaining_seconds() <= 0:
                                 raise RunDeadlineExceeded(
@@ -1699,10 +1729,10 @@ class AgentLoop:
                     state.retry_wait.reset_window()
                 if deadline is not None:
                     deadline.require_work()
-                attempt_until = asyncio.get_running_loop().time() + min(
-                    MODEL_ATTEMPT_MAX_SECONDS,
-                    deadline.require_work() if deadline is not None else MODEL_ATTEMPT_MAX_SECONDS,
-                )
+                # A task deadline already reserves time for persistence and Harbor
+                # log export. Let active reasoning use the remaining work window.
+                attempt_seconds = _model_attempt_seconds(deadline)
+                attempt_until = asyncio.get_running_loop().time() + attempt_seconds
                 state.model_attempts += 1
                 admission = None
                 if observation_runtime is not None and state.agent_run_id is not None:
@@ -1751,6 +1781,7 @@ class AgentLoop:
                 stream = runner.attempt(call_messages, tools)
                 model_started_at = self.monotonic_clock()
                 activity_counts: dict[str, int] = {}
+                last_activity_kind: str | None = None
                 attempt_timed_out = False
                 pause_signal = None
                 pause_waiter = None
@@ -1795,10 +1826,11 @@ class AgentLoop:
                             if model_event.kind == "text_delta"
                             else None
                         )
-                        if activity_kind is not None and deadline is not None:
+                        if activity_kind is not None:
+                            last_activity_kind = activity_kind
                             count = activity_counts.get(activity_kind, 0) + 1
                             activity_counts[activity_kind] = count
-                            if count == 1 or count % 128 == 0:
+                            if deadline is not None and (count == 1 or count % 128 == 0):
                                 yield event(
                                     "status.changed",
                                     {
@@ -1929,6 +1961,22 @@ class AgentLoop:
                                 )
                 # Attempt end: release or drop the redactor's held tail —
                 if attempt_timed_out:
+                    yield event(
+                        "status.changed",
+                        {
+                            "status": "model_attempt_timeout",
+                            "cause_phase": "task_deadline"
+                            if deadline is not None and deadline.remaining_seconds() <= 0
+                            else "local_attempt_limit",
+                            "cause_code": "active_stream"
+                            if activity_counts
+                            else "no_stream_activity",
+                            "last_activity": last_activity_kind,
+                            "internal_remaining_seconds": round(deadline.remaining_seconds(), 2)
+                            if deadline is not None
+                            else None,
+                        },
+                    )
                     if deadline is not None and deadline.remaining_seconds() <= 0:
                         raise RunDeadlineExceeded("任务运行时间已用尽，正在保存已有结果")
                     raise ModelAttemptExceeded("单次模型请求超过总用时上限")
