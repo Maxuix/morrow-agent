@@ -287,6 +287,7 @@ class TerminalBenchDriverTests(unittest.TestCase):
         self.assertEqual(command[command.index("reasoning_effort=high") - 1], "--ak")
         self.assertEqual(command[command.index("--n-attempts") + 1], "1")
         self.assertEqual(command[command.index("--max-retries") + 1], "0")
+        self.assertEqual(command[command.index("--agent-timeout-multiplier") + 1], "2.0")
         self.assertIn("context_window_tokens=65536", command)
         self.assertIn("max_output_tokens=1000", command)
 

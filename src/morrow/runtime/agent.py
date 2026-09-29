@@ -1990,6 +1990,15 @@ class AgentLoop:
                                     state_name="failed",
                                     error_code=ModelErrorCode.TIMEOUT,
                                 )
+                            elif response_overflow:
+                                # The stream was closed before a provider completion. A
+                                # completed request without a finish reason is invalid and
+                                # leaves the whole run without terminal metrics.
+                                settle_model_request(
+                                    admission,
+                                    state_name="failed",
+                                    error_code=ModelErrorCode.INVALID_RESPONSE,
+                                )
                             else:
                                 attempt_outcome = runner.outcome
                                 if attempt_outcome.failure is not None:

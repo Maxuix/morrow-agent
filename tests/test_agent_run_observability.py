@@ -1031,6 +1031,39 @@ async def test_deadline_records_failed_request_and_terminal_metrics(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_response_overflow_settles_request_and_preserves_terminal_metrics(tmp_path):
+    class OversizedProvider:
+        async def stream(self, model, messages, tools=(), *, generation=None):
+            del model, messages, tools, generation
+            yield ModelEvent(kind="text_delta", text="x" * (256 * 1024 + 1))
+
+    handle, _journal, session, persistence = _open(tmp_path)
+    try:
+        loop = AgentLoop(
+            OversizedProvider(),
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+            id_source=FixedIdSource(),
+            clock=FixedClock(),
+        )
+
+        events = [event async for event in loop.run_task(session, "question")]
+
+        assert events[-1].payload["stop_code"] == AgentStopCode.MODEL_OUTPUT_LIMIT.value
+        observation = persistence.get_agent_run_observation()
+        assert observation is not None
+        assert len(observation.requests) == 1
+        assert observation.requests[0].state.value == "failed"
+        assert observation.requests[0].error_code is ModelErrorCode.INVALID_RESPONSE
+        assert observation.requests[0].usage.availability is UsageAvailability.UNAVAILABLE
+        assert observation.terminal_metrics is not None
+        assert observation.terminal_metrics.stop_code is AgentStopCode.MODEL_OUTPUT_LIMIT
+        assert observation.terminal_metrics.model_attempts == 1
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
 async def test_unexpected_context_failure_records_internal_source_without_public_change(
     tmp_path, monkeypatch
 ):

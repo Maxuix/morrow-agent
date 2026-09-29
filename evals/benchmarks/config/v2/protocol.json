@@ -115,7 +115,7 @@
     "platform": "linux/amd64",
     "permission_mode": "manual",
     "concurrency": 2,
-    "agent_timeout_multiplier": 1.0,
+    "agent_timeout_multiplier": 2.0,
     "attempts_per_task": 1,
     "harbor_max_retries": 0,
     "internal_provider_retry": "frozen Morrow run policy",

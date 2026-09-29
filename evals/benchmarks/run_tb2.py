@@ -196,8 +196,8 @@ def main() -> int:
     parser.add_argument(
         "--agent-timeout-multiplier",
         type=float,
-        default=1.0,
-        help="Harbor agent-execution timeout multiplier (default: 1.0)",
+        default=2.0,
+        help="Harbor agent-execution timeout multiplier (default: 2.0)",
     )
     parser.add_argument("--job-name", default=None)
     parser.add_argument(
