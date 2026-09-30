@@ -2555,12 +2555,16 @@ class AgentLoop:
                             raise RuntimeError(
                                 "durable execution requires a durable runtime coordinator"
                             )
-                        planned_tool = session.log.plan_append_tool_result(call.id, result.envelope)
+                        planned_tool = session.log.plan_append_tool_result(
+                            call.id, result.envelope, visual_refs=result.visual_refs
+                        )
                         durable_runtime.commit_tool_message(
                             planned_tool, durable, now=self._wall_now(session)
                         )
                     else:
-                        session.append_tool_result(call.id, result.envelope)
+                        session.append_tool_result(
+                            call.id, result.envelope, visual_refs=result.visual_refs
+                        )
                     state.run_context.note_tool_outcome(ok=result.ok, error_code=result.error_code)
                     state.active_running_id = None
                     yield tool_status(
@@ -2860,7 +2864,13 @@ class AgentLoop:
             }:
                 session.append_tool_result(call_id, outcome.envelope)
                 continue
-            planned = session.log.plan_append_tool_result(call_id, outcome.envelope)
+            planned = session.log.plan_append_tool_result(
+                call_id,
+                outcome.envelope,
+                visual_refs=(
+                    durable.result_envelope.visual_refs if durable.result_envelope else ()
+                ),
+            )
             durable_runtime.commit_tool_message(planned, durable, now=self._wall_now(session))
         return interrupted
 

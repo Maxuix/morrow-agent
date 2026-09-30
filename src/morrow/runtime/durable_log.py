@@ -70,6 +70,11 @@ def _redacted_message_payload(record: MessageRecord) -> dict:
             "role": "tool",
             "tool_call_id": durable_call_id(message.tool_call_id),
             "content": '{"redacted":true}',
+            **(
+                {"visual_refs": [ref.model_dump(mode="json") for ref in message.visual_refs]}
+                if message.visual_refs
+                else {}
+            ),
         }
     return message.model_dump(mode="json")
 

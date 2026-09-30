@@ -43,7 +43,7 @@ from morrow.core.domain import (
     sha256_digest,
     validate_prefixed_id,
 )
-from morrow.core.models import TOOL_NAME_PATTERN, ProtocolModel, utc_now
+from morrow.core.models import TOOL_NAME_PATTERN, ProtocolModel, ToolVisualRef, utc_now
 from morrow.core.permissions import (
     CAPABILITY_GRANT_ID_PREFIX,
     CapabilityGrant,
@@ -577,6 +577,7 @@ class ValidationDiagnostic(ProtocolModel):
 
 
 class HandlerResultEnvelope(ProtocolModel):
+    visual_refs: tuple[ToolVisualRef, ...] = Field(default=(), max_length=1)
     text_safety_profile: TextSafetyProfile = TextSafetyProfile.LEGACY_STRICT
     ok: bool
     truncated: bool = False
@@ -758,6 +759,17 @@ class DurableToolExecution(ProtocolModel):
 
     @model_validator(mode="after")
     def intent_matches_call(self) -> DurableToolExecution:
+        if self.result_envelope is not None:
+            for ref in self.result_envelope.visual_refs:
+                if (
+                    ref.workspace_id != self.workspace_id
+                    or ref.session_id != self.session_id
+                    or ref.task_run_id != self.task_run_id
+                    or ref.agent_run_id != self.agent_run_id
+                    or ref.tool_execution_id != self.tool_execution_id
+                    or ref.artifact_id not in {item.artifact_id for item in self.artifact_refs}
+                ):
+                    raise ValueError("tool visual provenance does not match execution")
         if self.intent.tool_name != self.tool_name or self.intent.call_id != self.call_id:
             raise ValueError("prepared intent must match the execution call")
         if self.intent.ordinal != self.ordinal:

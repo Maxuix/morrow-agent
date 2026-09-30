@@ -158,10 +158,30 @@ class AssistantMessage(ProtocolModel):
         return self
 
 
+class ToolVisualRef(ProtocolModel):
+    """Immutable observation provenance; image bytes only exist in request hydration."""
+
+    version: Literal[1] = 1
+    artifact_id: str = Field(pattern=r"^art_[A-Za-z0-9_-]+$", max_length=128)
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    mime: Literal["image/png", "image/jpeg", "image/webp"]
+    byte_size: int = Field(strict=True, ge=1, le=8 * 1024 * 1024)
+    width: int = Field(strict=True, ge=1, le=1920)
+    height: int = Field(strict=True, ge=1, le=1920)
+    tool_execution_id: str = Field(pattern=r"^tex_[A-Za-z0-9_-]+$", max_length=128)
+    workspace_id: str = Field(pattern=r"^ws_[A-Za-z0-9_-]+$", max_length=128)
+    session_id: str = Field(pattern=r"^ses_[A-Za-z0-9_-]+$", max_length=128)
+    task_run_id: str = Field(pattern=r"^task_[A-Za-z0-9_-]+$", max_length=128)
+    agent_run_id: str = Field(pattern=r"^arun_[A-Za-z0-9_-]+$", max_length=128)
+    observation_id: str = Field(pattern=r"^cobs_[A-Za-z0-9_-]+$", max_length=128)
+
+
 class ToolMessage(ProtocolModel):
     role: Literal["tool"] = "tool"
     tool_call_id: str
     content: str
+    visual_refs: tuple[ToolVisualRef, ...] = Field(default=(), max_length=1)
+    input_parts: tuple[ProviderInputPart, ...] = Field(default=(), exclude=True, repr=False)
 
     @field_validator("tool_call_id")
     @classmethod

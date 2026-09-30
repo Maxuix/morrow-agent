@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from pydantic import field_validator, model_validator
@@ -15,6 +16,7 @@ from morrow.core.models import (
     Message,
     ProtocolModel,
     ToolMessage,
+    ToolVisualRef,
     UserMessage,
 )
 
@@ -312,7 +314,9 @@ class ConversationLog:
             MessageRecord(sequence=self._sequence + 1, message=message),
         )
 
-    def plan_append_tool_result(self, tool_call_id: str, content: str) -> ConversationAppend:
+    def plan_append_tool_result(
+        self, tool_call_id: str, content: str, *, visual_refs: tuple[ToolVisualRef, ...] = ()
+    ) -> ConversationAppend:
         if not self._active:
             raise ConversationLogError("no active turn")
         if not self._pending_call_ids:
@@ -322,7 +326,9 @@ class ConversationLog:
         return self._plan(
             MessageRecord(
                 sequence=self._sequence + 1,
-                message=ToolMessage(tool_call_id=tool_call_id, content=content),
+                message=ToolMessage(
+                    tool_call_id=tool_call_id, content=content, visual_refs=visual_refs
+                ),
             ),
         )
 
@@ -330,6 +336,8 @@ class ConversationLog:
         self,
         envelopes: tuple[tuple[str, str], ...],
         reason: FinishReason | None = None,
+        *,
+        visual_refs_by_call: Mapping[str, tuple[ToolVisualRef, ...]] | None = None,
     ) -> ConversationAppend:
         """Close an interrupted ToolCycle with error envelopes.
 
@@ -346,7 +354,9 @@ class ConversationLog:
         scratch = ConversationLog.from_snapshot(self.snapshot())
         added: list[ConversationRecord] = []
         for call_id, content in envelopes:
-            planned = scratch.plan_append_tool_result(call_id, content)
+            planned = scratch.plan_append_tool_result(
+                call_id, content, visual_refs=(visual_refs_by_call or {}).get(call_id, ())
+            )
             scratch.apply_committed(planned)
             added.extend(planned.added)
         if reason is not None:
@@ -449,8 +459,12 @@ class ConversationLog:
     def append_assistant(self, message: AssistantMessage) -> None:
         self.apply_committed(self.plan_append_assistant(message))
 
-    def append_tool_result(self, tool_call_id: str, content: str) -> None:
-        self.apply_committed(self.plan_append_tool_result(tool_call_id, content))
+    def append_tool_result(
+        self, tool_call_id: str, content: str, *, visual_refs: tuple[ToolVisualRef, ...] = ()
+    ) -> None:
+        self.apply_committed(
+            self.plan_append_tool_result(tool_call_id, content, visual_refs=visual_refs)
+        )
 
     def finish_turn(
         self,

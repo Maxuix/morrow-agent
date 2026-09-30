@@ -42,6 +42,7 @@ from morrow.core.models import (
     ToolDefinition,
     ToolEffect,
     ToolFunction,
+    ToolVisualRef,
 )
 from morrow.core.ports import ApprovalPort
 from morrow.runtime.capabilities import CapabilityPolicy, CapabilityReason
@@ -699,6 +700,7 @@ class ToolExecutionOutcome:
     disposition: ToolExecutionDisposition | None = None
     artifact_refs: tuple[ArtifactReference, ...] = ()
     mcp_result_artifact_refs: tuple[ArtifactReference, ...] = ()
+    visual_refs: tuple[ToolVisualRef, ...] = ()
     artifact_content: bytes | None = field(default=None, repr=False, compare=False)
     # Stable argument-validation evidence for loop diagnostics (reason/path
     # only; never raw argument values). Present on validation-class failures.
@@ -985,6 +987,7 @@ class ToolExecutor:
                         artifact_refs=outcome.artifact_refs,
                         mcp_result_artifact_refs=outcome.mcp_result_artifact_refs,
                         artifact_content=outcome.artifact_content,
+                        visual_refs=outcome.visual_refs,
                     )
                 return failed
             return ToolExecutionOutcome(
@@ -997,6 +1000,7 @@ class ToolExecutor:
                 facts=outcome.facts,
                 artifact_refs=outcome.artifact_refs,
                 mcp_result_artifact_refs=outcome.mcp_result_artifact_refs,
+                visual_refs=outcome.visual_refs,
                 artifact_content=outcome.artifact_content,
             )
         except asyncio.CancelledError:

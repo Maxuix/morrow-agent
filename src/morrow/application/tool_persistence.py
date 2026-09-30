@@ -312,7 +312,20 @@ class DurableToolExecutionCoordinator:
         final_disposition = disposition or (
             ToolExecutionDisposition.SUCCEEDED if result.ok else ToolExecutionDisposition.FAILED
         )
+        for ref in result.visual_refs:
+            if (
+                ref.workspace_id != execution.workspace_id
+                or ref.session_id != execution.session_id
+                or ref.task_run_id != execution.task_run_id
+                or ref.agent_run_id != execution.agent_run_id
+                or ref.tool_execution_id != execution.tool_execution_id
+            ):
+                raise ValueError("tool visual provenance does not match execution")
         artifact_refs: list[ArtifactReference] = []
+        for ref in result.visual_refs:
+            artifact_refs.append(
+                ArtifactReference(artifact_id=ref.artifact_id, role="computer_observation")
+            )
         for reference in (*result.artifact_refs, *result.mcp_result_artifact_refs):
             if reference not in artifact_refs:
                 artifact_refs.append(reference)
@@ -560,6 +573,7 @@ def _envelope_from_outcome(result: ToolExecutionOutcome) -> HandlerResultEnvelop
                 if len(diagnostics) >= 8:
                     break
     return HandlerResultEnvelope(
+        visual_refs=result.visual_refs,
         ok=bool(result.ok),
         truncated=bool(result.truncated),
         summary={"chars": len(result.envelope or "")},

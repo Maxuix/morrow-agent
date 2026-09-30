@@ -17,7 +17,7 @@ from typing import Annotated, Literal
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from morrow.core.domain import ArtifactReference
-from morrow.core.models import ProtocolModel, ToolEffect
+from morrow.core.models import ProtocolModel, ToolEffect, ToolVisualRef
 from morrow.core.runtime_policy import COMMAND_DURATION_MAX_MS
 
 _LOCAL_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -542,6 +542,7 @@ class ToolHandlerOutcome:
     facts: tuple[ToolFact, ...] = ()
     artifact_refs: tuple[ArtifactReference, ...] = ()
     mcp_result_artifact_refs: tuple[ArtifactReference, ...] = ()
+    visual_refs: tuple[ToolVisualRef, ...] = ()
     artifact_content: bytes | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -552,7 +553,16 @@ class ToolHandlerOutcome:
         ):
             raise TypeError("ToolHandlerOutcome facts must be validated ToolFact values")
         object.__setattr__(self, "facts", facts)
+        visuals = tuple(self.visual_refs)
+        if len(visuals) > 1 or any(not isinstance(ref, ToolVisualRef) for ref in visuals):
+            raise TypeError("ToolHandlerOutcome visual refs must be bounded validated references")
+        object.__setattr__(self, "visual_refs", visuals)
         artifact_refs = tuple(self.artifact_refs)
+        for ref in visuals:
+            link = ArtifactReference(artifact_id=ref.artifact_id, role="computer_observation")
+            if link not in artifact_refs:
+                artifact_refs += (link,)
+
         mcp_result_artifact_refs = tuple(self.mcp_result_artifact_refs)
         if any(not isinstance(ref, ArtifactReference) for ref in artifact_refs):
             raise TypeError("ToolHandlerOutcome artifact refs must be validated references")

@@ -18,7 +18,7 @@ from morrow.core.execution import (
     transition_execution,
 )
 from morrow.core.journal import RecoveryJournalPort
-from morrow.core.models import FinishReason, utc_now
+from morrow.core.models import FinishReason, ToolVisualRef, utc_now
 from morrow.core.ports import IdSource
 from morrow.core.recovery import (
     RECOVERY_ITEM_ID_PREFIX,
@@ -181,6 +181,24 @@ class RecoveryService:
         self.id_source = id_source
         self.workspace_root = workspace_root
 
+    def _visuals_for_recovery(self, report, log) -> dict[str, tuple[ToolVisualRef, ...]]:
+        by_durable_call = {}
+        for item in report.items:
+            execution = self.journal.get_execution(self.workspace_id, item.tool_execution_id)
+            if (
+                execution is not None
+                and execution.session_id == report.session_id
+                and execution.state
+                in {ToolExecutionState.HANDLER_COMPLETED, ToolExecutionState.CLOSED}
+                and execution.result_envelope is not None
+            ):
+                by_durable_call[execution.call_id] = execution.result_envelope.visual_refs
+        return {
+            call_id: by_durable_call[durable_call_id(call_id)]
+            for call_id in log.unresolved_call_ids
+            if durable_call_id(call_id) in by_durable_call
+        }
+
     def discover(self, session_id: str, log: ConversationLog) -> RecoveryReport | None:
         existing = self.journal.get_open_report(self.workspace_id, session_id)
         if existing is not None:
@@ -245,7 +263,11 @@ class RecoveryService:
                     "resolved_at": stamp,
                 }
             )
-            planned = log.plan_recovery_close(recovery_envelopes_for(log), FinishReason.CANCELLED)
+            planned = log.plan_recovery_close(
+                recovery_envelopes_for(log),
+                FinishReason.CANCELLED,
+                visual_refs_by_call=self._visuals_for_recovery(report, log),
+            )
         elif item_id is None and resolution is RecoveryResolution.QUARANTINE:
             updated = report.model_copy(update={"status": RecoveryReportStatus.QUARANTINED})
         else:
@@ -281,7 +303,11 @@ class RecoveryService:
                     else None
                 )
                 if envelopes or reason is not None:
-                    planned = log.plan_recovery_close(envelopes, reason)
+                    planned = log.plan_recovery_close(
+                        envelopes,
+                        reason,
+                        visual_refs_by_call=self._visuals_for_recovery(report, log),
+                    )
         receipt = RecoveryReceipt(
             session_id=report.session_id,
             command_id=command_id,

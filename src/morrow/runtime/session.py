@@ -32,6 +32,7 @@ from morrow.core.models import (
     Profile,
     StatePresence,
     ToolDefinition,
+    ToolVisualRef,
     UserMessage,
 )
 from morrow.core.observability import (
@@ -276,8 +277,12 @@ class Session:
     def append_assistant(self, message: AssistantMessage) -> None:
         self.commit_append(self.log.plan_append_assistant(message))
 
-    def append_tool_result(self, tool_call_id: str, content: str) -> None:
-        self.commit_append(self.log.plan_append_tool_result(tool_call_id, content))
+    def append_tool_result(
+        self, tool_call_id: str, content: str, *, visual_refs: tuple[ToolVisualRef, ...] = ()
+    ) -> None:
+        self.commit_append(
+            self.log.plan_append_tool_result(tool_call_id, content, visual_refs=visual_refs)
+        )
 
     def finish_turn(
         self,
