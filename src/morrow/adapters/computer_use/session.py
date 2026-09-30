@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import math
 import re
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,6 +34,7 @@ from morrow.core.computer_use import (
     RunSession,
     TargetRef,
     TransientCapture,
+    reject_untrusted_computer_use_authority,
 )
 from morrow.core.domain import (
     COMPUTER_OBSERVATION_ID_PREFIX,
@@ -75,25 +78,47 @@ class TypedComputerSession:
         registry: TrustedDesktopRegistry,
         id_source: IdSource,
         clock: Clock,
+        *,
+        session_name: str | None = None,
     ) -> None:
         self._sdk = sdk
         self._native = native_session
         self._registry = registry
         self._ids = id_source
         self._clock = clock
+        self._reserved_name = session_name
+        self._owner_loop: asyncio.AbstractEventLoop | None = None
+        self._owner_thread: int | None = None
+        self._closed = False
+        self._opening = False
         self._session_name: str | None = None
         self._agent_run_id: str | None = None
         self._generation: int | None = None
 
     async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession:
-        run_id = self._ids.new_id(COMPUTER_RUN_ID_PREFIX)
-        await self._require("start_session")(
-            self._sdk.StartSessionInput(
-                session=run_id,
-                capture_scope=self._sdk.CaptureScope.WINDOW,
-                cursor_theme=None,
+        self._check_owner(bind=True)
+        reject_untrusted_computer_use_authority(request.authority)
+        if request.agent_run_id != request.scope.agent_run_id:
+            raise ComputerUseContractError("subject_mismatch")
+        if self._closed or self._session_name is not None or self._opening:
+            raise ComputerUseContractError("session_not_reusable")
+        self._opening = True
+        run_id = self._reserved_name or self._ids.new_id(COMPUTER_RUN_ID_PREFIX)
+        try:
+            await self._require("start_session")(
+                self._sdk.StartSessionInput(
+                    session=run_id,
+                    capture_scope=self._sdk.CaptureScope.WINDOW,
+                    cursor_theme=None,
+                )
             )
-        )
+        except BaseException as exc:
+            self._closed = True
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            raise ComputerUseContractError("driver_error") from None
+        finally:
+            self._opening = False
         self._session_name = run_id
         self._agent_run_id = request.agent_run_id
         self._generation = request.scope.generation
@@ -104,9 +129,13 @@ class TypedComputerSession:
         )
 
     async def close_run_session(self, request: CloseRunSessionRequest) -> None:
+        self._check_owner()
+        reject_untrusted_computer_use_authority(request.authority)
         name = self._require_session()
         if request.run_session_id != name:
             raise ComputerUseContractError("subject_mismatch")
+        self._closed = True
+        self._registry.clear()
         failure: ComputerUseContractError | None = None
         try:
             await self._require("end_session")(self._sdk.EndSessionInput(session=name))
@@ -125,7 +154,10 @@ class TypedComputerSession:
             raise failure
 
     async def discover(self, request: DiscoverRequest) -> DiscoverResult:
+        reject_untrusted_computer_use_authority(request.authority)
         self._require_subject(request.scope.agent_run_id, request.scope.generation)
+        if request.run_session_id != self._require_session():
+            raise ComputerUseContractError("subject_mismatch")
         granted = {item.bundle_id for item in request.scope.apps}
         if request.bundle_id is not None:
             granted = {request.bundle_id}
@@ -159,6 +191,7 @@ class TypedComputerSession:
         *,
         settings: ComputerUseSettings | None = None,
     ) -> ObservedWindow:
+        reject_untrusted_computer_use_authority(request.authority)
         self._require_subject(request.scope.agent_run_id, request.scope.generation)
         window = self._registry.window(request.target.window_identity)
         if (
@@ -197,6 +230,7 @@ class TypedComputerSession:
         agent_run_id: str,
         generation: int,
     ) -> ActionOutcome:
+        self._require_subject(agent_run_id, generation)
         window = self._registry.window(window_identity)
         if window.agent_run_id != agent_run_id or window.generation != generation:
             raise ComputerUseContractError("stale_observation")
@@ -357,14 +391,24 @@ class TypedComputerSession:
                 return center
         raise ComputerUseContractError("rejected_action")
 
+    def _check_owner(self, *, bind: bool = False) -> None:
+        loop = asyncio.get_running_loop()
+        thread = threading.get_ident()
+        if bind and self._owner_loop is None:
+            self._owner_loop, self._owner_thread = loop, thread
+        if self._owner_loop is not loop or self._owner_thread != thread:
+            raise ComputerUseContractError("owner_mismatch")
+
     def _require(self, name: str) -> Any:
+        self._check_owner()
         method = getattr(self._native, name, None)
         if method is None:
             raise ComputerUseContractError("abi_mismatch")
         return method
 
     def _require_session(self) -> str:
-        if self._session_name is None:
+        self._check_owner()
+        if self._closed or self._session_name is None:
             raise ComputerUseContractError("driver_not_activated")
         return self._session_name
 

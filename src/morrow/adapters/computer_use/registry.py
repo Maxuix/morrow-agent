@@ -71,6 +71,14 @@ class TrustedDesktopRegistry:
             f"windows={len(self._windows)}, elements={len(self._elements)})"
         )
 
+    def clear(self) -> None:
+        """Discard live identities and tokens at the run lifecycle boundary."""
+        self._processes.clear()
+        self._windows.clear()
+        self._windows_by_identity.clear()
+        self._elements.clear()
+        self._snapshots.clear()
+
     def remember_window(
         self,
         *,
