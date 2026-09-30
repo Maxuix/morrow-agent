@@ -119,7 +119,7 @@ def publish(environment, **changes):
     )
 
 
-def complete(environment, reference):
+def complete(environment, reference, *, write_history=True):
     _, journal, _, _, _, execution = environment
     journal.save_execution(
         "ws_a",
@@ -139,23 +139,24 @@ def complete(environment, reference):
         ),
         expected_row_version=1,
     )
-    journal.append_records(
-        "ws_a",
-        (
-            DurableConversationRecord(
-                record_id="rec_1",
-                session_id="ses_1",
-                conversation_position=1,
-                kind="message",
-                payload={
-                    "role": "tool",
-                    "call_id": "call1",
-                    "content": {"redacted": True},
-                    "visual_refs": [reference.model_dump(mode="json")],
-                },
+    if write_history:
+        journal.append_records(
+            "ws_a",
+            (
+                DurableConversationRecord(
+                    record_id="rec_1",
+                    session_id="ses_1",
+                    conversation_position=1,
+                    kind="message",
+                    payload={
+                        "role": "tool",
+                        "call_id": "call1",
+                        "content": {"redacted": True},
+                        "visual_refs": [reference.model_dump(mode="json")],
+                    },
+                ),
             ),
-        ),
-    )
+        )
 
 
 def test_actual_bytes_readable_only_after_completion_for_exact_run_or_visible_history(environment):

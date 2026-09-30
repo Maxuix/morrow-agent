@@ -18,6 +18,7 @@ from morrow.core.artifacts import (
     ArtifactState,
 )
 from morrow.core.domain import ArtifactReference, canonical_json_bytes
+from morrow.core.models import ToolVisualRef
 from morrow.core.store import StorageError, StorageErrorCode
 
 _ARTIFACT_COLUMNS = (
@@ -333,6 +334,37 @@ class SqliteArtifactJournal:
                         StorageErrorCode.NEEDS_REPAIR,
                         "attachment artifact reference is incomplete",
                     ) from exc
+        # Safe observation refs in the authoritative chat remain a reachability
+        # root even if an auxiliary execution-reference index is damaged.
+        conversation_sql = (
+            "SELECT c.record_id, c.session_id, c.payload_json FROM conversation_records c "
+            "JOIN sessions s ON s.session_id=c.session_id WHERE s.workspace_id=?"
+        )
+        for record_id, session_id, payload_json in self.backend.read_all(
+            conversation_sql, (workspace_id,)
+        ):
+            try:
+                payload = json.loads(payload_json)
+                raw_refs = payload.get("visual_refs", [])
+                if not isinstance(raw_refs, list) or len(raw_refs) > 1:
+                    raise ValueError("invalid tool visual references")
+                for raw in raw_refs:
+                    reference = ToolVisualRef.model_validate(raw)
+                    if reference.workspace_id != workspace_id or reference.session_id != session_id:
+                        raise ValueError("tool visual reference outside its source")
+                    if artifact_id is None or reference.artifact_id == artifact_id:
+                        references.add(
+                            (
+                                reference.artifact_id,
+                                "conversation_record",
+                                str(record_id),
+                                "computer_observation",
+                            )
+                        )
+            except (ValueError, TypeError, AttributeError):
+                raise StorageError(
+                    StorageErrorCode.NEEDS_REPAIR, "conversation tool visual reference is invalid"
+                ) from None
         mcp_sql = (
             "SELECT tool_execution_id, mcp_artifact_links_json FROM tool_executions "
             "WHERE workspace_id=?"

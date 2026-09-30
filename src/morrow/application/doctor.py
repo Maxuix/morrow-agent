@@ -7,6 +7,7 @@ import stat
 from collections import Counter
 from pathlib import Path
 
+from morrow.adapters.computer_use.images import prepare_capture
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.definition_yaml import (
     AgentDefinitionYamlStore,
@@ -19,6 +20,7 @@ from morrow.adapters.state.preference_yaml import PreferenceYamlStore
 from morrow.adapters.state.preference_yaml_types import PreferenceYamlLoadStatus
 from morrow.adapters.state.preset_preference_yaml import AgentPresetPreferenceYamlStore
 from morrow.application.agent_definitions.integrity import verify_definition_rows
+from morrow.application.computer_visuals import validate_visual_source
 from morrow.application.learning.learning_doctor import inspect_learning
 from morrow.application.learning.memory_doctor import inspect_memory
 from morrow.application.preferences.backup import verify_preference_references
@@ -29,9 +31,11 @@ from morrow.application.workflows.integrity import verify_workflow_rows
 from morrow.core.artifacts import (
     ARTIFACT_FILE_SUFFIX,
     ARTIFACT_TEMP_SUFFIX,
+    ArtifactError,
     ArtifactIntegrityError,
     ArtifactState,
 )
+from morrow.core.computer_use import TransientCapture
 from morrow.core.doctor import DoctorHealth, DoctorIssue, DoctorReport, DoctorSeverity
 from morrow.core.domain import (
     WORKSPACE_ID_PREFIX,
@@ -41,6 +45,7 @@ from morrow.core.domain import (
     validate_prefixed_id,
 )
 from morrow.core.execution import ToolExecutionState
+from morrow.core.models import ToolVisualRef
 from morrow.core.permissions import capability_grant_digest
 from morrow.core.preference_models import PreferenceScope, PreferenceStatus
 from morrow.core.preference_persistence_models import (
@@ -575,6 +580,7 @@ class OperationalDoctor:
                     )
                 )
         filesystem = FilesystemArtifactStore(self.store.layout)
+        self._inspect_tool_visuals(journal, filesystem, workspace_id, counts, issues)
         for item in metadata:
             if item.state is ArtifactState.STAGING:
                 issues.append(
@@ -669,6 +675,66 @@ class OperationalDoctor:
                 )
         except StorageError:
             raise
+
+    def _inspect_tool_visuals(self, journal, filesystem, workspace_id, counts, issues):
+        """Audit durable image refs without hydration, native calls or journal writes."""
+        seen = set()
+        for session in journal.list_sessions(workspace_id):
+            for execution in journal.list_session_executions(workspace_id, session.session_id):
+                if execution.result_envelope is None:
+                    continue
+                for reference in execution.result_envelope.visual_refs:
+                    self._audit_tool_visual(
+                        journal, filesystem, workspace_id, reference, seen, counts, issues
+                    )
+            for record in journal.load_records(workspace_id, session.session_id):
+                raw_refs = record.payload.get("visual_refs", [])
+                if not isinstance(raw_refs, list) or len(raw_refs) > 1:
+                    issues.append(
+                        self._issue(
+                            "tool_visual_source",
+                            DoctorSeverity.ERROR,
+                            "Tool image reference is invalid",
+                        )
+                    )
+                    continue
+                for payload in raw_refs:
+                    try:
+                        reference = ToolVisualRef.model_validate(payload)
+                    except ValueError:
+                        issues.append(
+                            self._issue(
+                                "tool_visual_source",
+                                DoctorSeverity.ERROR,
+                                "Tool image reference is invalid",
+                            )
+                        )
+                        continue
+                    self._audit_tool_visual(
+                        journal, filesystem, workspace_id, reference, seen, counts, issues
+                    )
+
+    def _audit_tool_visual(
+        self, journal, filesystem, workspace_id, reference, seen, counts, issues
+    ):
+        if reference in seen:
+            return
+        seen.add(reference)
+        counts["tool_visual_references"] += 1
+        try:
+            metadata = validate_visual_source(journal, workspace_id, reference)
+            content = filesystem.read(metadata, max_bytes=reference.byte_size)
+            prepare_capture(
+                TransientCapture(content, reference.mime, reference.width, reference.height)
+            )
+        except (ValueError, ArtifactError, StorageError):
+            issues.append(
+                self._issue(
+                    "tool_visual_source",
+                    DoctorSeverity.ERROR,
+                    "Tool image source or content is inconsistent",
+                )
+            )
 
     @staticmethod
     def _global_artifact_authority(journal):

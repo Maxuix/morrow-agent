@@ -30,6 +30,50 @@ from morrow.core.permissions import CapabilityName, assert_grant_snapshot_matche
 from morrow.core.runtime_policy import ComputerUseSettings
 
 
+def validate_visual_source(journal, workspace_id: str, reference: ToolVisualRef):
+    """Read-only ownership check shared by the resolver and doctor."""
+    if reference.workspace_id != workspace_id:
+        raise ComputerUseContractError("image_source_not_authorized")
+    execution = journal.get_execution(workspace_id, reference.tool_execution_id)
+    if (
+        execution is None
+        or execution.tool_name not in COMPUTER_TOOL_NAMES
+        or execution.state not in {ToolExecutionState.HANDLER_COMPLETED, ToolExecutionState.CLOSED}
+        or execution.result_envelope is None
+        or reference not in execution.result_envelope.visual_refs
+        or (execution.session_id, execution.task_run_id, execution.agent_run_id)
+        != (reference.session_id, reference.task_run_id, reference.agent_run_id)
+    ):
+        raise ComputerUseContractError("image_source_not_authorized")
+    metadata = journal.get_artifact(workspace_id, reference.artifact_id)
+    expected_sources = {
+        (ArtifactProvenanceKind.TOOL_EXECUTION, reference.tool_execution_id),
+        (ArtifactProvenanceKind.AGENT_RUN, reference.agent_run_id),
+    }
+    if (
+        metadata is None
+        or metadata.kind is not ArtifactKind.COMPUTER_OBSERVATION
+        or (
+            metadata.workspace_id,
+            metadata.session_id,
+            metadata.task_run_id,
+            metadata.sha256,
+            metadata.byte_size,
+        )
+        != (
+            reference.workspace_id,
+            reference.session_id,
+            reference.task_run_id,
+            reference.sha256,
+            reference.byte_size,
+        )
+        or not expected_sources
+        <= {(item.kind, item.reference_id) for item in metadata.provenance_refs}
+    ):
+        raise ComputerUseContractError("image_source_not_authorized")
+    return metadata
+
+
 class ComputerVisualService:
     """Images are execution evidence, never grants or automatically deliverables."""
 
@@ -163,49 +207,11 @@ class ComputerVisualService:
         agent_run_id: str | None = None,
     ) -> TransientCapture:
         """Provider reads require this run; previews use the durable visible trajectory."""
-        if reference.workspace_id != self.workspace_id:
-            raise ComputerUseContractError("image_source_not_authorized")
-        execution = self.journal.get_execution(self.workspace_id, reference.tool_execution_id)
-        if (
-            execution is None
-            or execution.state
-            not in {ToolExecutionState.HANDLER_COMPLETED, ToolExecutionState.CLOSED}
-            or execution.result_envelope is None
-            or reference not in execution.result_envelope.visual_refs
-            or (execution.session_id, execution.task_run_id, execution.agent_run_id)
-            != (reference.session_id, reference.task_run_id, reference.agent_run_id)
-        ):
-            raise ComputerUseContractError("image_source_not_authorized")
+        validate_visual_source(self.journal, self.workspace_id, reference)
         if agent_run_id is not None:
             if (reference.session_id, reference.agent_run_id) != (session_id, agent_run_id):
                 raise ComputerUseContractError("image_source_not_authorized")
         elif not self._visible(reference, session_id):
-            raise ComputerUseContractError("image_source_not_authorized")
-        metadata = self.artifacts.get(reference.artifact_id)
-        expected_sources = {
-            (ArtifactProvenanceKind.TOOL_EXECUTION, reference.tool_execution_id),
-            (ArtifactProvenanceKind.AGENT_RUN, reference.agent_run_id),
-        }
-        if (
-            metadata is None
-            or metadata.kind is not ArtifactKind.COMPUTER_OBSERVATION
-            or (
-                metadata.workspace_id,
-                metadata.session_id,
-                metadata.task_run_id,
-                metadata.sha256,
-                metadata.byte_size,
-            )
-            != (
-                reference.workspace_id,
-                reference.session_id,
-                reference.task_run_id,
-                reference.sha256,
-                reference.byte_size,
-            )
-            or not expected_sources
-            <= {(item.kind, item.reference_id) for item in metadata.provenance_refs}
-        ):
             raise ComputerUseContractError("image_source_not_authorized")
         data = self.artifacts.read(reference.artifact_id, max_bytes=reference.byte_size).content
         capture = TransientCapture(data, reference.mime, reference.width, reference.height)
