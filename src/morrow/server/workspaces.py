@@ -201,7 +201,8 @@ class WorkspaceRuntimeRegistry:
     def busy(self, workspace_id, *, pending=False, subscriptions=True):
         context = self.contexts.get(workspace_id)
         if context is not None and (
-            context.chat.drivers
+            bool(getattr(getattr(context, "computer_use", None), "shutdown_pending", False))
+            or context.chat.drivers
             or context.chat.attachments.jobs
             or context.journal._backend.read_one(
                 "SELECT 1 FROM chat_attachments WHERE workspace_id=? AND state IN ('uploading','processing') LIMIT 1",
@@ -248,9 +249,14 @@ class WorkspaceRuntimeRegistry:
 
             await asyncio.shield(self.maintenance_task)
         for context in tuple(self.contexts.values()):
+            desktop = getattr(context, "computer_use", None)
+            if desktop is not None:
+                desktop.stop_admission()
             await context.chat.shutdown()
             await context.supervisor.shutdown()
             context.approval_waiters.cancel_all()
+            if desktop is not None:
+                await desktop.shutdown()
 
     def close(self):
         for wid, context in tuple(self.contexts.items()):

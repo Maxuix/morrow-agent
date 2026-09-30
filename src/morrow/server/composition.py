@@ -11,7 +11,11 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from morrow.application.management import ManagementService
-from morrow.bootstrap import build_session_application, build_skill_services
+from morrow.bootstrap import (
+    build_computer_use_lifecycle,
+    build_session_application,
+    build_skill_services,
+)
 from morrow.core.capabilities import PermissionProfile
 
 from .approvals import ServerApprovalPort
@@ -78,6 +82,7 @@ def build_server_context(
     context = ServerContext(
         workspace_id=identity.workspace_id,
         application=application,
+        computer_use=build_computer_use_lifecycle(application),
         journal=journal,
         api=products.api,
         management=products.workflow_management,
@@ -254,6 +259,7 @@ def _build_management_context(
         context = ServerContext(
             workspace_id=identity.workspace_id,
             application=application,
+            computer_use=build_computer_use_lifecycle(application),
             journal=journal,
             api=api,
             management=_ExecutionProxy(load, "workflow_management"),

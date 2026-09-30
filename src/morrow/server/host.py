@@ -176,6 +176,7 @@ class CoreHost:
         self._build_error: BaseException | None = None
         self._closing = False
         self._shutdown_closed = False
+        self._shutdown_future: concurrent.futures.Future | None = None
         self._startup_lock = threading.Lock()
         self.request_context = contextvars.ContextVar("morrow_workspace_context", default=None)
 
@@ -223,16 +224,27 @@ class CoreHost:
             return
         self._closing = True
         try:
-            future = asyncio.run_coroutine_threadsafe(self._shutdown(), loop)
+            future = self._shutdown_future
+            if future is None or (future.done() and future.exception() is not None):
+                future = asyncio.run_coroutine_threadsafe(self._shutdown(), loop)
+                self._shutdown_future = future
         except RuntimeError:
             self._reset()
             return
         try:
             future.result(timeout=timeout)
         except TimeoutError:
+            if self._desktop_shutdown_pending():
+                raise CoreHostShutdownError(
+                    "desktop shutdown is still settling; owner loop and lease retained"
+                ) from None
             self._abort_shutdown(future, loop, thread, min(1.0, max(timeout, 0.5)))
             return
         except BaseException:
+            if self._desktop_shutdown_pending():
+                raise CoreHostShutdownError(
+                    "desktop shutdown failed; owner loop and lease retained"
+                ) from None
             if not loop.is_closed():
                 loop.call_soon_threadsafe(loop.stop)
             thread.join(timeout=timeout)
@@ -242,6 +254,17 @@ class CoreHost:
             loop.call_soon_threadsafe(loop.stop)
         thread.join(timeout=timeout)
         self._reset()
+
+    def _desktop_shutdown_pending(self) -> bool:
+        context = self._context
+        contexts = [context] if context is not None else []
+        registry = getattr(context, "workspaces", None)
+        if registry is not None:
+            contexts.extend(getattr(registry, "contexts", {}).values())
+        return any(
+            bool(getattr(getattr(item, "computer_use", None), "shutdown_pending", False))
+            for item in contexts
+        )
 
     def _abort_shutdown(
         self,
@@ -301,6 +324,7 @@ class CoreHost:
     def _reset(self) -> None:
         self._thread = None
         self._loop = None
+        self._shutdown_future = None
         self._ready = threading.Event()
         self._context = None
         self._queue = None
@@ -467,16 +491,21 @@ class CoreHost:
             if self._consumer is not None:
                 await self._consumer
             if context is not None:
+                desktop = getattr(context, "computer_use", None)
+                if desktop is not None:
+                    desktop.stop_admission()
                 if getattr(context, "workspaces", None) is not None:
                     await context.workspaces.shutdown()
                 elif getattr(context, "chat", None) is not None:
                     await context.chat.shutdown()
                 await context.supervisor.shutdown()
                 context.approval_waiters.cancel_all()
+                if desktop is not None:
+                    await desktop.shutdown()
         finally:
             # Even a wedged or cancelled teardown must release the context
             # resources (workspace locks, SQLite): close() is synchronous, so
             # it still runs when the awaits above never finished.
-            if context is not None:
+            if context is not None and not self._desktop_shutdown_pending():
                 context.close()
                 self._shutdown_closed = True

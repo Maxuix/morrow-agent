@@ -135,3 +135,22 @@ def _permission_flags(module: Any) -> tuple[bool | None, bool | None]:
     if not isinstance(accessibility, bool) or not isinstance(screen_recording, bool):
         return None, None
     return accessibility, screen_recording
+
+
+def construct_run_session(sdk: Any, driver: Any, name: str, *, lifetime_seconds: int = 600) -> Any:
+    """The pinned SDK's immutable session-bound surface, never model options."""
+    if not 1 <= lifetime_seconds <= 600:
+        from morrow.core.computer_use import ComputerUseContractError
+
+        raise ComputerUseContractError("rejected_action")
+    return sdk.create_trusted_session(
+        driver,
+        sdk.TrustedSessionOptions(
+            public_session=name,
+            mode=sdk.SessionPermissionMode.STANDARD,
+            ttl_seconds=lifetime_seconds,
+            idle_ttl_seconds=lifetime_seconds,
+            capability_manifest_path=None,
+            bounded_manifest_path=None,
+        ),
+    )

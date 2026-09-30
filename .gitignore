@@ -41,6 +41,11 @@ docs/*
 # Generated acceptance/evaluation material and local test output.
 evals/*
 !evals/benchmarks/
+!evals/computer_use/
+evals/computer_use/*
+!evals/computer_use/*.py
+!evals/computer_use/*.swift
+!evals/computer_use/README.md
 scripts/*
 !scripts/build_release.py
 *.log

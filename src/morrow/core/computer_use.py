@@ -1184,3 +1184,18 @@ def computer_use_intent(tool_name: str) -> ComputerUseIntentSpec:
             requires_approval=True,
         )
     raise ComputerUseContractError("unknown_computer_use_tool")
+
+
+class ComputerUseLifecyclePort(Protocol):
+    """Async lifecycle on the runtime owner; no native handle crosses this port."""
+
+    @property
+    def shutdown_pending(self) -> bool: ...
+
+    def stop_admission(self) -> None: ...
+
+    async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession: ...
+
+    async def close_run_session(self, request: CloseRunSessionRequest) -> None: ...
+
+    async def shutdown(self) -> None: ...

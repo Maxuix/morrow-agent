@@ -29,4 +29,5 @@ class ServerContext:
     management_jobs: Any = None
     store_handle: Any = None
     workspaces: Any = None
+    computer_use: Any = None
     close: Callable[[], None] = lambda: None

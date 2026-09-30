@@ -30,7 +30,11 @@ from morrow.adapters.state.definition_yaml import (
 )
 from morrow.adapters.state.extension_yaml import ExtensionYamlStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
-from morrow.adapters.state.operational import OperationalStore, OperationalStoreSession
+from morrow.adapters.state.operational import (
+    OperationalStore,
+    OperationalStoreSession,
+    SystemStoreClock,
+)
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
 from morrow.adapters.state.preference_yaml_types import PreferenceYamlLoadStatus
 from morrow.adapters.state.preset_preference_yaml import AgentPresetPreferenceYamlStore
@@ -1462,3 +1466,39 @@ def build_session_application(
             handle.close()
         raise
     return products
+
+
+def build_computer_use_lifecycle(application, settings=None):
+    """Compose lifecycle without importing the optional native SDK or activating it."""
+    from morrow.adapters.computer_use.diagnostics import diagnose_host
+    from morrow.adapters.computer_use.sdk_loader import collect_host_probe
+    from morrow.application.computer_use import ComputerUseLifecycle
+    from morrow.core.computer_use import ComputerUsePreflight
+    from morrow.core.runtime_policy import ComputerUseSettings
+
+    resolved = settings or ComputerUseSettings()
+
+    def diagnostic():
+        if not resolved.enabled:
+            return ComputerUsePreflight(status="unavailable", reason="disabled")
+        return diagnose_host(
+            resolved, collect_host_probe(), images_required=resolved.mode == "hybrid"
+        )
+
+    def factory():
+        from morrow.adapters.computer_use.owner import ComputerDriverOwner
+        from morrow.adapters.computer_use.sdk_loader import construct_run_session, load_sdk
+
+        sdk = load_sdk()
+        return ComputerDriverOwner(
+            sdk,
+            application.id_source,
+            SystemStoreClock(),
+            session_factory=lambda driver, name: construct_run_session(
+                sdk, driver, name, lifetime_seconds=resolved.max_run_seconds
+            ),
+            call_timeout=resolved.max_call_seconds,
+        )
+
+    # Native read-only acceptance must be recorded before enabling this gate.
+    return ComputerUseLifecycle(factory, diagnostic, native_verified=False)

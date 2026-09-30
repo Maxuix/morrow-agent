@@ -1,8 +1,4 @@
-"""Loop-affine SDK lifecycle; deliberately not registered in production yet.
-
-A trusted composition must supply the session factory. Desktop lease and native
-acceptance are prerequisites for wiring this owner into a running application.
-"""
+"""Loop-affine SDK resources and a lease retained until admitted work settles."""
 
 from __future__ import annotations
 
@@ -11,6 +7,8 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
+from morrow.adapters.computer_use.calls import NativeCalls
+from morrow.adapters.computer_use.lease import DesktopLease, FileDesktopLease
 from morrow.adapters.computer_use.registry import TrustedDesktopRegistry
 from morrow.adapters.computer_use.sdk_loader import construct_driver
 from morrow.adapters.computer_use.session import TypedComputerSession
@@ -27,11 +25,7 @@ from morrow.core.ports import Clock, IdSource
 
 
 class ComputerDriverOwner:
-    """Create/use/close native resources exclusively on the constructing loop.
-
-    There is no thread dispatch, implicit activation, or second driver on error.
-    Failed lifecycle operations quarantine this owner until application shutdown.
-    """
+    """No native task is cancelled just because its Python caller stops waiting."""
 
     def __init__(
         self,
@@ -41,37 +35,54 @@ class ComputerDriverOwner:
         *,
         session_factory: Callable[[Any, str], Any],
         driver_factory: Callable[[Any], Any] = construct_driver,
+        lease: DesktopLease | None = None,
+        call_timeout: float = 15,
     ) -> None:
         self._loop = asyncio.get_running_loop()
         self._thread = threading.get_ident()
-        self._sdk = sdk
-        self._ids = ids
-        self._clock = clock
+        self._sdk, self._ids, self._clock = sdk, ids, clock
         self._session_factory = session_factory
         self._driver = driver_factory(sdk)
+        self._lease = lease if lease is not None else FileDesktopLease()
+        self._leased = False
+        self._call_timeout = call_timeout
         self._session: TypedComputerSession | None = None
         self._run: RunSession | None = None
         self._generations: dict[str, int] = {}
-        self._transitioning = False
         self._closed = False
         self._stopping = False
         self._quarantined = False
+        self._lifecycle = NativeCalls(self._quarantine, timeout=None)
 
     def __repr__(self) -> str:
         return (
             f"ComputerDriverOwner(active={self._run is not None}, "
-            f"closed={self._closed}, quarantined={self._quarantined})"
+            f"closed={self._closed}, quarantined={self.quarantined})"
         )
+
+    @property
+    def quarantined(self) -> bool:
+        return self._quarantined or bool(self._session and self._session.quarantined)
+
+    @property
+    def shutdown_pending(self) -> bool:
+        """A Host must keep its owner loop alive until shutdown actually succeeds."""
+        return not self._closed
 
     def _check_owner(self) -> None:
         if asyncio.get_running_loop() is not self._loop or threading.get_ident() != self._thread:
             raise ComputerUseContractError("owner_mismatch")
 
+    def _quarantine(self) -> None:
+        self._quarantined = True
+        if self._session is not None:
+            self._session.invalidate()
+
     def _admit(self) -> None:
         self._check_owner()
-        if self._closed or self._stopping or self._quarantined:
+        if self._closed or self._stopping or self.quarantined:
             raise ComputerUseContractError("driver_not_activated")
-        if self._transitioning:
+        if self._lifecycle.pending:
             raise ComputerUseContractError("desktop_busy")
 
     async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession:
@@ -79,39 +90,34 @@ class ComputerDriverOwner:
         reject_untrusted_computer_use_authority(request.authority)
         if request.agent_run_id != request.scope.agent_run_id:
             raise ComputerUseContractError("subject_mismatch")
-        if self._run is not None:
+        if self._session is not None:
             raise ComputerUseContractError("desktop_busy")
         if request.scope.generation <= self._generations.get(request.agent_run_id, 0):
             raise ComputerUseContractError("stale_observation")
-        self._transitioning = True
-        native = None
+        self._lease.acquire()
+        self._leased = True
+        return await self._lifecycle.run(lambda: self._open(request))
+
+    async def _open(self, request: OpenRunSessionRequest) -> RunSession:
         try:
             name = self._ids.new_id(COMPUTER_RUN_ID_PREFIX)
             native = self._session_factory(self._driver, name)
-            session = TypedComputerSession(
+            self._session = TypedComputerSession(
                 self._sdk,
                 native,
                 TrustedDesktopRegistry(self._ids),
                 self._ids,
                 self._clock,
                 session_name=name,
+                call_timeout=self._call_timeout,
             )
-            run = await session.open_run_session(request)
-            self._session, self._run = session, run
+            self._run = await self._session.open_run_session(request)
             self._generations[request.agent_run_id] = request.scope.generation
-            return run
-        except BaseException as exc:
-            self._quarantined = True
-            if native is not None:
-                try:
-                    native.close()
-                except Exception:
-                    pass
-            if isinstance(exc, asyncio.CancelledError):
-                raise
-            raise ComputerUseContractError("driver_error") from None
-        finally:
-            self._transitioning = False
+            return self._run
+        except BaseException:
+            # No release or handle disposal while a timed-out start may still run.
+            self._quarantine()
+            raise
 
     def session_for(self, run: RunSession) -> TypedComputerSession:
         self._admit()
@@ -120,50 +126,70 @@ class ComputerDriverOwner:
         return self._session
 
     async def close_run_session(self, request: CloseRunSessionRequest) -> None:
-        self._admit()
+        self._check_owner()
         reject_untrusted_computer_use_authority(request.authority)
+        if self._lifecycle.pending:
+            raise ComputerUseContractError("desktop_busy")
         if self._run is None or request.run_session_id != self._run.run_session_id:
             raise ComputerUseContractError("subject_mismatch")
         assert self._session is not None
-        self._transitioning = True
+        self._session.invalidate()
+        await self._lifecycle.run(lambda: self._close(request), cleanup=True)
+
+    async def _close(self, request: CloseRunSessionRequest) -> None:
+        assert self._session is not None
         try:
             await self._session.close_run_session(request)
             self._session, self._run = None, None
-        except BaseException as exc:
-            self._quarantined = True
-            if isinstance(exc, asyncio.CancelledError):
-                raise
-            raise ComputerUseContractError("driver_error") from None
-        finally:
-            self._transitioning = False
+            self._release()
+        except BaseException:
+            self._quarantine()
+            raise
+
+    def stop_admission(self) -> None:
+        self._check_owner()
+        self._stopping = True
+        if self._session is not None:
+            self._session.invalidate()
+
+    def _release(self) -> None:
+        if self._leased:
+            self._lease.release()
+            self._leased = False
 
     async def shutdown(self) -> None:
         self._check_owner()
         if self._closed:
             return
-        if self._transitioning:
-            raise ComputerUseContractError("desktop_busy")
-        self._stopping = True
-        self._transitioning = True
-        try:
-            if self._run is not None and self._session is not None:
+        # Lifecycle operations remain live after cancellation. Wait, never replace.
+        self.stop_admission()
+        await self._lifecycle.settle()
+        if self._closed:
+            return
+        await self._lifecycle.run(self._shutdown, cleanup=True)
+
+    async def _shutdown(self) -> None:
+        if self._session is not None:
+            await self._session.settle()
+            name = self._session._reserved_name
+            if name is not None:
                 try:
                     await self._session.close_run_session(
                         CloseRunSessionRequest(
                             authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                            run_session_id=self._run.run_session_id,
+                            run_session_id=name,
                         )
                     )
                 except Exception:
-                    self._quarantined = True
-            # Native shutdown is the settling boundary, including failed start/end.
+                    self._quarantine()
+                # End itself may have timed out. Driver shutdown is not proof that
+                # the admitted end call finished, so also settle that tracked work.
+                await self._session.settle()
+        try:
             await self._driver.shutdown()
-            self._session, self._run = None, None
-            self._closed = True
-        except BaseException as exc:
-            self._quarantined = True
-            if isinstance(exc, asyncio.CancelledError):
-                raise
-            raise ComputerUseContractError("driver_error") from None
-        finally:
-            self._transitioning = False
+        except BaseException:
+            self._quarantine()
+            raise
+        self._session, self._run = None, None
+        self._closed = True
+        self._release()

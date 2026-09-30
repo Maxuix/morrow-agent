@@ -10,6 +10,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any
 
+from morrow.adapters.computer_use.calls import NativeActionInterrupted, NativeCalls
 from morrow.adapters.computer_use.registry import TrustedDesktopRegistry
 from morrow.core.computer_use import (
     MAX_AX_DEPTH,
@@ -80,6 +81,7 @@ class TypedComputerSession:
         clock: Clock,
         *,
         session_name: str | None = None,
+        call_timeout: float = 15,
     ) -> None:
         self._sdk = sdk
         self._native = native_session
@@ -94,6 +96,7 @@ class TypedComputerSession:
         self._session_name: str | None = None
         self._agent_run_id: str | None = None
         self._generation: int | None = None
+        self._calls = NativeCalls(self.invalidate, timeout=call_timeout)
 
     async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession:
         self._check_owner(bind=True)
@@ -104,13 +107,15 @@ class TypedComputerSession:
             raise ComputerUseContractError("session_not_reusable")
         self._opening = True
         run_id = self._reserved_name or self._ids.new_id(COMPUTER_RUN_ID_PREFIX)
+        self._reserved_name = run_id
         try:
-            await self._require("start_session")(
+            await self._call(
+                "start_session",
                 self._sdk.StartSessionInput(
                     session=run_id,
                     capture_scope=self._sdk.CaptureScope.WINDOW,
                     cursor_theme=None,
-                )
+                ),
             )
         except BaseException as exc:
             self._closed = True
@@ -131,18 +136,19 @@ class TypedComputerSession:
     async def close_run_session(self, request: CloseRunSessionRequest) -> None:
         self._check_owner()
         reject_untrusted_computer_use_authority(request.authority)
-        name = self._require_session()
-        if request.run_session_id != name:
+        name = self._session_name or self._reserved_name
+        if name is None or request.run_session_id != name:
             raise ComputerUseContractError("subject_mismatch")
-        self._closed = True
-        self._registry.clear()
+        self.invalidate()
+        await self._calls.settle()
         failure: ComputerUseContractError | None = None
         try:
-            await self._require("end_session")(self._sdk.EndSessionInput(session=name))
+            await self._call("end_session", self._sdk.EndSessionInput(session=name), cleanup=True)
         except ComputerUseContractError as exc:
             failure = exc
         except Exception:
             failure = ComputerUseContractError("driver_error")
+        await self._calls.settle()
         close = getattr(self._native, "close", None)
         if close is not None:
             try:
@@ -159,9 +165,11 @@ class TypedComputerSession:
         if request.run_session_id != self._require_session():
             raise ComputerUseContractError("subject_mismatch")
         granted = {item.bundle_id for item in request.scope.apps}
+        if request.bundle_id is not None and request.bundle_id not in granted:
+            raise ComputerUseContractError("app_not_granted")
         if request.bundle_id is not None:
             granted = {request.bundle_id}
-        listed = await self._require("list_apps")(self._sdk.ListAppsInput())
+        listed = await self._call("list_apps", self._sdk.ListAppsInput())
         targets: list[TargetRef] = []
         for app in getattr(listed, "apps", ()) or ():
             bundle_id = getattr(app, "bundle_id", None)
@@ -176,8 +184,8 @@ class TypedComputerSession:
                 ComputerUseAppIdentity(bundle_id=bundle_id)
             except ValueError:
                 continue
-            windows = await self._require("list_windows")(
-                self._sdk.ListWindowsInput(pid=pid, on_screen_only=True)
+            windows = await self._call(
+                "list_windows", self._sdk.ListWindowsInput(pid=pid, on_screen_only=True)
             )
             for window in getattr(windows, "windows", ()) or ():
                 target = self._window_target(request, bundle_id, pid, window)
@@ -203,7 +211,8 @@ class TypedComputerSession:
         ):
             raise ComputerUseContractError("stale_observation")
         resolved = settings or ComputerUseSettings()
-        state = await self._require("get_window_state")(
+        state = await self._call(
+            "get_window_state",
             self._sdk.GetWindowStateInput(
                 pid=window.pid,
                 window_id=window.window_id,
@@ -217,7 +226,7 @@ class TypedComputerSession:
                 max_dimension=None,
                 max_image_dimension=min(resolved.image_long_edge_px, MAX_IMAGE_LONG_EDGE_PX),
                 timeout_ms=int(resolved.max_call_seconds * 1000),
-            )
+            ),
         )
         return self._observation(request, window.window_identity, window.bundle_id, state)
 
@@ -239,7 +248,8 @@ class TypedComputerSession:
         session_name = self._require_session()
         try:
             if action.type == "click":
-                result = await self._require("click")(
+                result = await self._call(
+                    "click",
                     self._sdk.ClickInput(
                         target=target,
                         position=self._click_position(action, prepared.window_point),
@@ -247,22 +257,24 @@ class TypedComputerSession:
                         session=session_name,
                         button=_click_button(self._sdk, action.button),
                         count=action.count,
-                    )
+                    ),
                 )
                 return outcome_from_action(result)
             if action.type == "type_text":
-                result = await self._require("type_text")(
+                result = await self._call(
+                    "type_text",
                     self._sdk.TypeTextInput(
                         text=action.text,
                         target=target,
                         scope=None,
                         session=session_name,
-                    )
+                    ),
                 )
                 return outcome_from_tool(result)
             if action.type == "scroll":
                 point = self._scroll_point(action, prepared.window_point)
-                result = await self._require("scroll")(
+                result = await self._call(
+                    "scroll",
                     self._sdk.ScrollInput(
                         x=point[0],
                         y=point[1],
@@ -272,32 +284,43 @@ class TypedComputerSession:
                         session=session_name,
                         by=None,
                         amount=action.amount,
-                    )
+                    ),
                 )
                 return outcome_from_tool(result)
             if action.type == "press_key":
-                result = await self._require("press_key")(
+                result = await self._call(
+                    "press_key",
                     self._sdk.PressKeyInput(
                         key=action.key,
                         target=target,
                         scope=None,
                         session=session_name,
                         modifiers=None,
-                    )
+                    ),
                 )
                 return outcome_from_tool(result)
             if action.type == "hotkey":
-                result = await self._require("hotkey")(
+                result = await self._call(
+                    "hotkey",
                     self._sdk.HotkeyInput(
                         keys=list(action.keys),
                         target=target,
                         scope=None,
                         session=session_name,
-                    )
+                    ),
                 )
                 return outcome_from_tool(result)
             raise ComputerUseContractError("rejected_action")
-        except ComputerUseContractError:
+        except NativeActionInterrupted as exc:
+            return ActionOutcome(
+                status={"NOT_STARTED": "not_started", "COMPLETED": "completed"}.get(
+                    exc.completion, "unknown"
+                ),
+                error_code="action_interrupted",
+            )
+        except ComputerUseContractError as exc:
+            if str(exc) == "driver_timeout":
+                return ActionOutcome(status="unknown", error_code="driver_timeout")
             raise
         except Exception as exc:
             if type(exc).__name__ == "ActionInterrupted":
@@ -390,6 +413,27 @@ class TypedComputerSession:
             if center is not None:
                 return center
         raise ComputerUseContractError("rejected_action")
+
+    @property
+    def pending(self) -> bool:
+        return self._calls.pending
+
+    @property
+    def quarantined(self) -> bool:
+        return self._calls.quarantined
+
+    def invalidate(self) -> None:
+        self._closed = True
+        self._registry.clear()
+        self._calls.stop()
+
+    async def settle(self) -> None:
+        self._check_owner()
+        await self._calls.settle()
+
+    async def _call(self, name: str, payload: Any, *, cleanup: bool = False) -> Any:
+        method = self._require(name)
+        return await self._calls.run(lambda: method(payload), cleanup=cleanup)
 
     def _check_owner(self, *, bind: bool = False) -> None:
         loop = asyncio.get_running_loop()
