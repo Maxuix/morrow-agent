@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from morrow.core.application import ApplicationErrorCode
+from morrow.core.computer_use import ComputerUseScope
 from morrow.core.journal import CapabilityGrantJournalPort
 from morrow.core.permissions import CapabilityGrant, CapabilityName, GrantSource
 
@@ -113,9 +114,41 @@ def _utc(value: datetime) -> datetime:
 
 def validate_capability_subset(
     capabilities: tuple[CapabilityName, ...],
+    *,
+    computer_use_enabled: bool = False,
+    computer_use_scope: ComputerUseScope | None = None,
 ) -> tuple[CapabilityName, ...]:
-    """Keep the UI command's requested subset explicit and deterministic."""
+    """Keep the requested subset explicit. Shell and desktop do not imply each other."""
 
-    if capabilities != (CapabilityName.UNCONFINED_HOST_PROCESS,):
+    shell_only = capabilities == (CapabilityName.UNCONFINED_HOST_PROCESS,)
+    if shell_only and computer_use_scope is None:
+        return (CapabilityName.UNCONFINED_HOST_PROCESS,)
+    contains_computer = any(value == CapabilityName.COMPUTER_USE_HOST for value in capabilities)
+    if not computer_use_enabled:
+        if contains_computer:
+            raise CapabilityGrantError("computer use is disabled")
         raise CapabilityGrantError("Stage 4 only grants unconfined_host_process")
-    return capabilities
+    allowed = {
+        CapabilityName.UNCONFINED_HOST_PROCESS,
+        CapabilityName.COMPUTER_USE_HOST,
+    }
+    if (
+        not capabilities
+        or any(value not in allowed for value in capabilities)
+        or len(set(capabilities)) != len(capabilities)
+    ):
+        raise CapabilityGrantError("Stage 4 only grants unconfined_host_process")
+    if not contains_computer:
+        if computer_use_scope is not None:
+            raise CapabilityGrantError("computer-use scope requires computer_use_host")
+        return (CapabilityName.UNCONFINED_HOST_PROCESS,)
+    if computer_use_scope is None:
+        raise CapabilityGrantError("computer-use grant requires a scope")
+    return tuple(
+        item
+        for item in (
+            CapabilityName.UNCONFINED_HOST_PROCESS,
+            CapabilityName.COMPUTER_USE_HOST,
+        )
+        if item in capabilities
+    )

@@ -14,6 +14,13 @@ from typing import Any, Literal
 from pydantic import Field, field_validator, model_validator
 
 from morrow.core.capabilities import AccessScope, PolicyVerdict, ProcessIsolation
+from morrow.core.computer_use import (
+    COMPUTER_ACTION_TOOL,
+    COMPUTER_OBSERVE_TOOL,
+    COMPUTER_TOOL_NAMES,
+    SHELL_TOOL_NAMES,
+    computer_use_intent,
+)
 from morrow.core.domain import (
     AGENT_RUN_ID_PREFIX,
     AGENT_RUN_SNAPSHOT_MAX_BYTES,
@@ -40,6 +47,7 @@ from morrow.core.models import TOOL_NAME_PATTERN, ProtocolModel, utc_now
 from morrow.core.permissions import (
     CAPABILITY_GRANT_ID_PREFIX,
     CapabilityGrant,
+    CapabilityName,
     IsolationLabel,
     PermissionEvidenceError,
     PermissionSnapshot,
@@ -159,7 +167,10 @@ def approval_risk_level(
 ) -> ApprovalRiskLevel:
     """Deterministic risk tier for the approval surface."""
 
-    if isolation is IsolationLabel.UNCONFINED_HOST or effect_class in (
+    if isolation in {
+        IsolationLabel.UNCONFINED_HOST,
+        IsolationLabel.COMPUTER_USE_HOST,
+    } or effect_class in (
         EffectClass.UNCONFINED_EXTERNAL_EFFECT,
         EffectClass.PROCESS_EFFECT_NON_DURABLE,
     ):
@@ -761,13 +772,19 @@ class DurableToolExecution(ProtocolModel):
             and self.disposition is ToolExecutionDisposition.PENDING
         ):
             raise ValueError("handler_completed requires a non-pending disposition")
+        required_isolation = _grant_isolation_for_tool(self.tool_name)
         if self.grant_id is not None and (
-            self.permission_snapshot_id is None
-            or self.isolation is not IsolationLabel.UNCONFINED_HOST
+            self.permission_snapshot_id is None or self.isolation is not required_isolation
         ):
+            if required_isolation is IsolationLabel.COMPUTER_USE_HOST:
+                raise ValueError(
+                    "computer-use execution requires a snapshot and computer_use_host label"
+                )
             raise ValueError("elevated execution requires a snapshot and unconfined_host label")
         if self.isolation is IsolationLabel.UNCONFINED_HOST and self.grant_id is None:
             raise ValueError("unconfined_host execution requires a capability grant")
+        if self.isolation is IsolationLabel.COMPUTER_USE_HOST and self.grant_id is None:
+            raise ValueError("computer_use_host execution requires a capability grant")
         if (self.cancel_requested_at is None) != (self.cancel_request_reason is None):
             raise ValueError("cancellation request requires a bounded reason and timestamp")
         return self
@@ -870,11 +887,14 @@ class DurableApproval(ProtocolModel):
             raise ValueError("only an approved approval can be consumed")
         if self.grant_id is not None and (
             self.permission_snapshot_id is None
-            or self.isolation is not IsolationLabel.UNCONFINED_HOST
+            or self.isolation
+            not in {IsolationLabel.UNCONFINED_HOST, IsolationLabel.COMPUTER_USE_HOST}
         ):
             raise ValueError("elevated approval requires a snapshot and unconfined_host label")
         if self.isolation is IsolationLabel.UNCONFINED_HOST and self.grant_id is None:
             raise ValueError("unconfined_host approval requires a capability grant")
+        if self.isolation is IsolationLabel.COMPUTER_USE_HOST and self.grant_id is None:
+            raise ValueError("computer_use_host approval requires a capability grant")
         if (self.revoked_at is None) != (self.revocation_reason is None):
             raise ValueError("approval revocation requires a bounded reason and timestamp")
         if self.revoked_at is not None:
@@ -1187,6 +1207,33 @@ def _clean_transition_reason(
     return cleaned
 
 
+def _grant_isolation_for_tool(tool_name: str) -> IsolationLabel:
+    if tool_name in COMPUTER_TOOL_NAMES:
+        return IsolationLabel.COMPUTER_USE_HOST
+    return IsolationLabel.UNCONFINED_HOST
+
+
+def _reject_cross_capability(
+    execution: DurableToolExecution, grant: CapabilityGrant | None
+) -> None:
+    if execution.tool_name in SHELL_TOOL_NAMES and grant is not None:
+        if CapabilityName.UNCONFINED_HOST_PROCESS not in grant.capabilities:
+            raise PermissionEvidenceError("computer-use grant does not authorize a host shell")
+    if execution.tool_name in COMPUTER_TOOL_NAMES:
+        if grant is None or CapabilityName.COMPUTER_USE_HOST not in grant.capabilities:
+            raise PermissionEvidenceError("host shell grant does not authorize computer use")
+        spec = computer_use_intent(execution.tool_name)
+        if execution.intent.effect_class.value != spec.effect_class:
+            raise PermissionEvidenceError("computer-use effect class is not admitted")
+        if execution.tool_name == COMPUTER_ACTION_TOOL and not execution.intent.requires_approval:
+            raise PermissionEvidenceError("computer-use action requires approval")
+        if (
+            execution.tool_name == COMPUTER_OBSERVE_TOOL
+            and execution.intent.effect_class is not EffectClass.BOUNDED_EXTERNAL_READ
+        ):
+            raise PermissionEvidenceError("computer-use effect class is not admitted")
+
+
 def assert_handler_may_enter(
     execution: DurableToolExecution,
     approval: DurableApproval | None,
@@ -1199,6 +1246,7 @@ def assert_handler_may_enter(
         raise ExecutionTransitionError("handler requires executing state")
     if execution.cancel_requested_at is not None:
         raise PermissionEvidenceError("handler cancellation has been requested")
+    _reject_cross_capability(execution, grant)
     if (
         permission_snapshot is not None
         and permission_snapshot.access_scope is AccessScope.FULL_ACCESS

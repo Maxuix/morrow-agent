@@ -34,6 +34,9 @@ class CapabilityReason(StrEnum):
     GIT_WRITE_NOT_ENABLED = "git_write_not_enabled"
     PRIVILEGE_ESCALATION_NOT_ENABLED = "privilege_escalation_not_enabled"
     EXTERNAL_EFFECT_NOT_ENABLED = "external_effect_not_enabled"
+    COMPUTER_USE_NOT_ALLOWED = "computer_use_not_allowed"
+    COMPUTER_USE_GRANT_REQUIRED = "computer_use_grant_required"
+    COMPUTER_ACTION_APPROVAL_REQUIRED = "computer_action_approval_required"
     SANDBOX_UNAVAILABLE = "sandbox_unavailable"
     HOST_PROCESS_NOT_ALLOWED = "host_process_not_allowed"
     HOST_PROCESS_APPROVAL_REQUIRED = "host_process_approval_required"
@@ -74,7 +77,11 @@ class CapabilityPolicy:
         self.sandbox_available = sandbox_available
 
     def evaluate(
-        self, intent: OperationIntent, *, allow_unconfined_host: bool = False
+        self,
+        intent: OperationIntent,
+        *,
+        allow_unconfined_host: bool = False,
+        allow_computer_use: bool = False,
     ) -> PolicyDecision:
         if not self._profile_supported():
             reason = (
@@ -85,6 +92,8 @@ class CapabilityPolicy:
             return self._deny(reason)
         if self.workspace.read_only and self._mutates_or_runs(intent):
             return self._deny(CapabilityReason.READ_ONLY_SESSION)
+        if intent.kind in {OperationKind.COMPUTER_OBSERVE, OperationKind.COMPUTER_ACTION}:
+            return self._computer_use(intent, allow_computer_use=allow_computer_use)
         full_access_host = self._is_full_access_host(intent)
         if full_access_host and not allow_unconfined_host:
             return self._deny(CapabilityReason.FULL_ACCESS_GRANT_REQUIRED)
@@ -149,7 +158,23 @@ class CapabilityPolicy:
             OperationKind.PROCESS,
             OperationKind.DESTRUCTIVE,
             OperationKind.EXTERNAL_EFFECT,
+            OperationKind.COMPUTER_OBSERVE,
+            OperationKind.COMPUTER_ACTION,
         }
+
+    def _computer_use(self, intent: OperationIntent, *, allow_computer_use: bool) -> PolicyDecision:
+        full_access_manual = (
+            self.profile.access_scope is AccessScope.FULL_ACCESS
+            and self.profile.approval_mode is ApprovalMode.MANUAL
+            and self.profile.process_isolation is ProcessIsolation.HOST
+        )
+        if not full_access_manual:
+            return self._deny(CapabilityReason.COMPUTER_USE_NOT_ALLOWED)
+        if not allow_computer_use:
+            return self._deny(CapabilityReason.COMPUTER_USE_GRANT_REQUIRED)
+        if intent.kind is OperationKind.COMPUTER_ACTION:
+            return self._approval(CapabilityReason.COMPUTER_ACTION_APPROVAL_REQUIRED, intent)
+        return self._allow()
 
     @staticmethod
     def _allow() -> PolicyDecision:

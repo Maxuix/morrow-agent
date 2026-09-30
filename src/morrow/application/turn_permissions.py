@@ -5,6 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 
+from morrow.core.computer_use import (
+    COMPUTER_TOOL_NAMES,
+    ComputerUseContractError,
+    ComputerUseDelivery,
+    ComputerUseScope,
+    assert_computer_use_device_gate,
+    reject_scope_expansion,
+)
 from morrow.core.domain import AgentRunSnapshot, sha256_digest
 from morrow.core.execution import (
     DurableToolExecution,
@@ -15,13 +23,16 @@ from morrow.core.journal import RunPermissionJournalPort
 from morrow.core.mcp import McpReviewEvidence
 from morrow.core.permissions import (
     PERMISSION_POLICY_VERSION,
+    PERMISSION_SCHEMA_VERSION,
     CapabilityGrant,
     CapabilityIsolation,
+    CapabilityName,
     IsolationLabel,
     PermissionEvidenceError,
     PermissionSnapshot,
     assert_grant_snapshot_matches,
     capability_grant_digest,
+    isolation_for_capability,
     workspace_root_digest,
 )
 from morrow.core.ports import IdSource
@@ -61,14 +72,20 @@ def build_permission_snapshot(
         isolations = tuple(
             CapabilityIsolation(
                 capability=item,
-                isolation=IsolationLabel.UNCONFINED_HOST,
+                isolation=isolation_for_capability(item),
             )
             for item in capabilities
         )
+        policy_version = grant.policy_version
+        schema_version = grant.schema_version
+        computer_use_scope = grant.computer_use_scope
     else:
         grant_digest = None
         capabilities = ()
         isolations = ()
+        policy_version = PERMISSION_POLICY_VERSION
+        schema_version = PERMISSION_SCHEMA_VERSION
+        computer_use_scope = None
     return PermissionSnapshot(
         permission_snapshot_id=permission_snapshot_id,
         workspace_id=workspace_id,
@@ -84,11 +101,13 @@ def build_permission_snapshot(
         tool_schema_digest=base_snapshot.tool_schema_digest,
         run_policy_digest=base_snapshot.run_policy_digest,
         permission_profile_digest=base_snapshot.permission_profile_digest,
-        policy_version=PERMISSION_POLICY_VERSION,
+        policy_version=policy_version,
+        schema_version=schema_version,
         source_revisions=base_snapshot.source_revisions,
         grant_id=grant.grant_id if grant is not None else None,
         grant_digest=grant_digest,
         granted_capabilities=capabilities,
+        computer_use_scope=computer_use_scope,
         capability_isolations=isolations,
         mcp_review_evidence=mcp_review_evidence,
         created_at=created_at,
@@ -183,6 +202,8 @@ class RunPermissionCoordinator:
         if snapshot.grant_id is None:
             if execution.grant_id is not None or execution.isolation is not None:
                 raise PermissionEvidenceError("execution cannot add elevated evidence")
+            if execution.tool_name in COMPUTER_TOOL_NAMES:
+                raise PermissionEvidenceError("host shell grant does not authorize computer use")
             return
         if execution.grant_id is None:
             if execution.isolation is not None:
@@ -193,8 +214,10 @@ class RunPermissionCoordinator:
                 and execution.intent.requires_approval
             ):
                 raise PermissionEvidenceError("elevated Host execution dropped grant evidence")
+            if execution.tool_name in COMPUTER_TOOL_NAMES:
+                raise PermissionEvidenceError("computer-use execution dropped grant evidence")
             return
-        if execution.isolation is not snapshot.isolation_label:
+        if execution.isolation is not snapshot.isolation_for_tool(execution.tool_name):
             raise PermissionEvidenceError("execution elevated evidence is mismatched")
         grant = self.journal.get_capability_grant(self.workspace_id, execution.grant_id)
         if grant is None:
@@ -246,22 +269,70 @@ class RunPermissionCoordinator:
         )
         return current
 
+    def assert_computer_use_before_device(
+        self,
+        execution: DurableToolExecution,
+        *,
+        now: datetime,
+        authority: str,
+        delivery: ComputerUseDelivery,
+        include_image: bool,
+        proposed_scope: ComputerUseScope | None = None,
+    ) -> DurableToolExecution:
+        """Reload handler evidence, then recheck scope before any device call."""
+
+        current = self.assert_handler_may_enter(execution, now=now)
+        grant = (
+            self.journal.get_capability_grant(self.workspace_id, current.grant_id)
+            if current.grant_id is not None
+            else None
+        )
+        scope = None if grant is None else grant.computer_use_scope
+        if proposed_scope is not None:
+            if scope is None:
+                raise ComputerUseContractError("computer_use_scope_required")
+            reject_scope_expansion(scope, proposed_scope)
+            scope = proposed_scope
+        assert_computer_use_device_gate(
+            tool_name=current.tool_name,
+            authority=authority,
+            scope=scope,
+            workspace_id=current.workspace_id,
+            task_run_id=current.task_run_id,
+            agent_run_id=current.agent_run_id,
+            delivery=delivery,
+            include_image=include_image,
+            grant_active=grant is not None and grant.is_active(now),
+        )
+        return current
+
     def has_active_unconfined_grant(
         self, execution: DurableToolExecution, *, now: datetime
     ) -> bool:
         if execution.grant_id is None:
             return False
         grant = self.journal.get_capability_grant(self.workspace_id, execution.grant_id)
-        return grant is not None and grant.is_active(now)
+        return (
+            grant is not None
+            and grant.is_active(now)
+            and CapabilityName.UNCONFINED_HOST_PROCESS in grant.capabilities
+        )
 
     def active_grant_evidence(
         self, snapshot: PermissionSnapshot, *, now: datetime
     ) -> tuple[str | None, IsolationLabel | None]:
-        """Return only currently valid grant evidence for a prepared execution."""
+        """Return shell evidence. A computer-only grant does not elevate a host command."""
 
         if snapshot.grant_id is None:
             return None, None
         grant = self.journal.get_capability_grant(self.workspace_id, snapshot.grant_id)
-        if grant is None or not grant.is_active(now):
+        if (
+            grant is None
+            or not grant.is_active(now)
+            or CapabilityName.UNCONFINED_HOST_PROCESS not in grant.capabilities
+        ):
             return None, None
-        return grant.grant_id, snapshot.isolation_label
+        label = snapshot.isolation_for(CapabilityName.UNCONFINED_HOST_PROCESS)
+        if label is not IsolationLabel.UNCONFINED_HOST:
+            return None, None
+        return grant.grant_id, label

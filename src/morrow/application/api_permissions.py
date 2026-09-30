@@ -17,6 +17,7 @@ from morrow.core.application import (
     ApplicationErrorCode,
 )
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
+from morrow.core.computer_use import ComputerUseScope
 from morrow.core.domain import canonical_json_bytes, sha256_digest
 from morrow.core.execution import (
     DurableApproval,
@@ -27,7 +28,11 @@ from morrow.core.execution import (
 )
 from morrow.core.permissions import (
     CAPABILITY_GRANT_ID_PREFIX,
+    COMPUTER_USE_HOST_WARNING_DIGEST,
+    COMPUTER_USE_PERMISSION_SCHEMA_VERSION,
+    COMPUTER_USE_POLICY_VERSION,
     PERMISSION_POLICY_VERSION,
+    PERMISSION_SCHEMA_VERSION,
     CapabilityGrant,
     CapabilityName,
 )
@@ -116,22 +121,35 @@ class PermissionApplicationService:
         expires_at: datetime | None = None,
         grant_id: str | None = None,
         command_id: str | None = None,
+        computer_use_enabled: bool = False,
+        computer_use_scope: ComputerUseScope | None = None,
     ) -> ApplicationCommandResult[CapabilityGrant]:
         api = self.context
         try:
-            capabilities = validate_capability_subset(capabilities)
+            capabilities = validate_capability_subset(
+                capabilities,
+                computer_use_enabled=computer_use_enabled,
+                computer_use_scope=computer_use_scope,
+            )
         except CapabilityGrantError as exc:
             raise api._translate_exception(exc) from exc
+        if CapabilityName.COMPUTER_USE_HOST in capabilities:
+            if preview_digest != COMPUTER_USE_HOST_WARNING_DIGEST:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "computer-use grant requires the computer-use warning digest",
+                )
         operation = "grant_create"
-        payload = {
-            "task_run_id": task_run_id,
-            "agent_run_id": agent_run_id,
-            "capabilities": tuple(value.value for value in capabilities),
-            "reason": reason,
-            "preview_digest": preview_digest,
-            "expires_at": expires_at.isoformat() if expires_at is not None else None,
-            "grant_id": grant_id,
-        }
+        payload = grant_create_command_payload(
+            task_run_id=task_run_id,
+            agent_run_id=agent_run_id,
+            capabilities=capabilities,
+            reason=reason,
+            preview_digest=preview_digest,
+            expires_at=expires_at,
+            grant_id=grant_id,
+            computer_use_scope=computer_use_scope,
+        )
         command_id, digest, replay = api._prepare(operation, payload, command_id)
         if replay is not None:
             value = api._query(
@@ -168,6 +186,7 @@ class PermissionApplicationService:
                     "CapabilityGrant requires a Full Access Manual AgentRun",
                 )
             created_at = _now(api.clock)
+            computer_grant = CapabilityName.COMPUTER_USE_HOST in capabilities
             value = CapabilityGrantService(txn, workspace_id=api.workspace_id).create(
                 CapabilityGrant(
                     grant_id=grant_id or api.id_source.new_id(CAPABILITY_GRANT_ID_PREFIX),
@@ -178,7 +197,15 @@ class PermissionApplicationService:
                     command_id=command_id,
                     reason=reason,
                     preview_digest=preview_digest,
-                    policy_version=PERMISSION_POLICY_VERSION,
+                    policy_version=(
+                        COMPUTER_USE_POLICY_VERSION if computer_grant else PERMISSION_POLICY_VERSION
+                    ),
+                    schema_version=(
+                        COMPUTER_USE_PERMISSION_SCHEMA_VERSION
+                        if computer_grant
+                        else PERMISSION_SCHEMA_VERSION
+                    ),
+                    computer_use_scope=computer_use_scope if computer_grant else None,
                     created_at=created_at,
                     expires_at=expires_at or created_at + timedelta(minutes=15),
                 ),
@@ -189,13 +216,7 @@ class PermissionApplicationService:
                 event_type="grant.created",
                 aggregate_kind="grant",
                 aggregate_id=value.grant_id,
-                payload={
-                    "task_run_id": value.task_run_id,
-                    "agent_run_id": value.agent_run_id,
-                    "capabilities": tuple(item.value for item in value.capabilities),
-                    "granted_by": value.granted_by.value,
-                    "expires_at": value.expires_at.isoformat(),
-                },
+                payload=grant_created_event_payload(value),
             )
             receipt = api._receipt(
                 txn,
@@ -421,3 +442,51 @@ class PermissionApplicationService:
             return ApplicationCommandResult((saved_execution, saved_approval, did_execute), receipt)
 
         return api._translate(lambda: api.journal.transact(work))
+
+
+def grant_create_command_payload(
+    *,
+    task_run_id: str,
+    agent_run_id: str,
+    capabilities: tuple[CapabilityName, ...],
+    reason: str,
+    preview_digest: str,
+    expires_at: datetime | None,
+    grant_id: str | None,
+    computer_use_scope: ComputerUseScope | None,
+) -> dict[str, object]:
+    """Build the grant command digest payload.
+
+    Shell grants keep the historical keys. ``computer_use_enabled`` is not part
+    of the digest. Scope JSON is included only when a scope is present.
+    """
+
+    payload: dict[str, object] = {
+        "task_run_id": task_run_id,
+        "agent_run_id": agent_run_id,
+        "capabilities": tuple(value.value for value in capabilities),
+        "reason": reason,
+        "preview_digest": preview_digest,
+        "expires_at": expires_at.isoformat() if expires_at is not None else None,
+        "grant_id": grant_id,
+    }
+    if computer_use_scope is not None:
+        payload["computer_use_scope"] = computer_use_scope.model_dump(mode="json")
+    return payload
+
+
+def grant_created_event_payload(grant: CapabilityGrant) -> dict[str, object]:
+    """Public grant event. A scope contributes a digest, not AX text or images."""
+
+    payload: dict[str, object] = {
+        "task_run_id": grant.task_run_id,
+        "agent_run_id": grant.agent_run_id,
+        "capabilities": tuple(item.value for item in grant.capabilities),
+        "granted_by": grant.granted_by.value,
+        "expires_at": grant.expires_at.isoformat(),
+    }
+    if grant.computer_use_scope is not None:
+        payload["computer_use_scope_digest"] = sha256_digest(
+            canonical_json_bytes(grant.computer_use_scope.model_dump(mode="json"))
+        )
+    return payload

@@ -8,6 +8,8 @@ accepted as an authority source here.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
@@ -19,6 +21,11 @@ from morrow.core.capabilities import (
     ApprovalMode,
     LocalCapabilityModel,
     ProcessIsolation,
+)
+from morrow.core.computer_use import (
+    COMPUTER_TOOL_NAMES,
+    SHELL_TOOL_NAMES,
+    ComputerUseScope,
 )
 from morrow.core.domain import (
     AGENT_RUN_ID_PREFIX,
@@ -42,6 +49,8 @@ from morrow.core.models import utc_now
 
 PERMISSION_POLICY_VERSION = "stage4-permissions-v1"
 PERMISSION_SCHEMA_VERSION = 9
+COMPUTER_USE_POLICY_VERSION = "computer-use-permissions-v1"
+COMPUTER_USE_PERMISSION_SCHEMA_VERSION = 10
 GRANT_MAX_LIFETIME = timedelta(hours=24)
 PERMISSION_SNAPSHOT_MAX_BYTES = 64 * 1024
 GRANT_REASON_MAX_CHARS = 1_024
@@ -54,12 +63,24 @@ UNCONFINED_HOST_APPROVAL_LANGUAGE = (
     "明确确认：批准后该 Host 命令不会获得操作系统隔离，可能以当前用户权限触达用户文件、"
     "网络、凭据、套接字和 Morrow 状态"
 )
+COMPUTER_USE_HOST_WARNING = (
+    "computer_use_host: this grant can observe and send input to the named applications "
+    "inside the frozen window boundary of the current user session"
+)
+COMPUTER_USE_HOST_WARNING_DIGEST = sha256_digest(canonical_json_bytes(COMPUTER_USE_HOST_WARNING))
 
 
 class CapabilityName(StrEnum):
-    """The deliberately small elevated capability set shipped in Stage 4."""
+    """Elevated capabilities. Stage 4 evidence carries only the host-process value."""
 
     UNCONFINED_HOST_PROCESS = "unconfined_host_process"
+    COMPUTER_USE_HOST = "computer_use_host"
+
+
+_CAPABILITY_ORDER = (
+    CapabilityName.UNCONFINED_HOST_PROCESS,
+    CapabilityName.COMPUTER_USE_HOST,
+)
 
 
 class GrantSource(StrEnum):
@@ -74,6 +95,7 @@ class IsolationLabel(StrEnum):
     WORKSPACE = "workspace"
     NATIVE_SANDBOX = "native_sandbox"
     UNCONFINED_HOST = "unconfined_host"
+    COMPUTER_USE_HOST = "computer_use_host"
 
 
 class CapabilityIsolation(LocalCapabilityModel):
@@ -84,10 +106,20 @@ class CapabilityIsolation(LocalCapabilityModel):
 
     @model_validator(mode="after")
     def supported_pair(self) -> CapabilityIsolation:
-        if self.capability is CapabilityName.UNCONFINED_HOST_PROCESS:
-            if self.isolation is not IsolationLabel.UNCONFINED_HOST:
+        expected = isolation_for_capability(self.capability)
+        if self.isolation is not expected:
+            if self.capability is CapabilityName.UNCONFINED_HOST_PROCESS:
                 raise ValueError("unconfined_host_process must use the unconfined_host label")
+            raise ValueError("computer_use_host must use the computer_use_host label")
         return self
+
+
+def isolation_for_capability(capability: CapabilityName) -> IsolationLabel:
+    if capability is CapabilityName.UNCONFINED_HOST_PROCESS:
+        return IsolationLabel.UNCONFINED_HOST
+    if capability is CapabilityName.COMPUTER_USE_HOST:
+        return IsolationLabel.COMPUTER_USE_HOST
+    raise ValueError("capability is not available in Stage 4")
 
 
 def _utc(value: datetime) -> datetime:
@@ -123,6 +155,42 @@ def workspace_root_digest(root: Path) -> str:
     return sha256_digest(str(root).encode("utf-8"))
 
 
+def _enforce_permission_schema(
+    *,
+    schema_version: int,
+    policy_version: str,
+    capabilities: tuple[CapabilityName, ...],
+    computer_use_scope: ComputerUseScope | None,
+    workspace_id: str,
+    task_run_id: str,
+    agent_run_id: str,
+    require_capabilities: bool,
+) -> None:
+    computer = CapabilityName.COMPUTER_USE_HOST in capabilities
+    if schema_version == PERMISSION_SCHEMA_VERSION:
+        if policy_version != PERMISSION_POLICY_VERSION:
+            raise ValueError("unsupported permission policy version")
+        if computer or computer_use_scope is not None:
+            raise ValueError("capability is not available in Stage 4")
+        return
+    if schema_version != COMPUTER_USE_PERMISSION_SCHEMA_VERSION:
+        raise ValueError("unsupported permission evidence schema version")
+    if policy_version != COMPUTER_USE_POLICY_VERSION:
+        raise ValueError("unsupported permission policy version")
+    if require_capabilities and not computer:
+        raise ValueError("computer-use evidence requires computer_use_host")
+    if not require_capabilities and not capabilities:
+        raise ValueError("computer-use snapshots require grant evidence")
+    if computer_use_scope is None:
+        raise ValueError("computer-use evidence requires a scope")
+    if (
+        computer_use_scope.workspace_id != workspace_id
+        or computer_use_scope.task_run_id != task_run_id
+        or computer_use_scope.agent_run_id != agent_run_id
+    ):
+        raise ValueError("computer-use scope subjects do not match the grant")
+
+
 class CapabilityGrant(LocalCapabilityModel):
     """Immutable authority metadata plus explicit revocation state."""
 
@@ -137,6 +205,7 @@ class CapabilityGrant(LocalCapabilityModel):
     preview_digest: str
     policy_version: str = PERMISSION_POLICY_VERSION
     schema_version: int = Field(default=PERMISSION_SCHEMA_VERSION, ge=1)
+    computer_use_scope: ComputerUseScope | None = None
     created_at: datetime = Field(default_factory=utc_now)
     expires_at: datetime
     revoked_at: datetime | None = None
@@ -186,7 +255,7 @@ class CapabilityGrant(LocalCapabilityModel):
     @field_validator("policy_version")
     @classmethod
     def valid_policy_version(cls, value: str) -> str:
-        if value != PERMISSION_POLICY_VERSION:
+        if value not in {PERMISSION_POLICY_VERSION, COMPUTER_USE_POLICY_VERSION}:
             raise ValueError("unsupported permission policy version")
         return value
 
@@ -202,17 +271,28 @@ class CapabilityGrant(LocalCapabilityModel):
             raise ValueError("capability grant must contain at least one capability")
         if len(values) > 8 or len(set(values)) != len(values):
             raise ValueError("capability grant contains a duplicate or too many capabilities")
-        # Stage 4 deliberately exposes only the one capability declared above.
-        if any(value is not CapabilityName.UNCONFINED_HOST_PROCESS for value in values):
+        allowed = {
+            CapabilityName.UNCONFINED_HOST_PROCESS,
+            CapabilityName.COMPUTER_USE_HOST,
+        }
+        if any(value not in allowed for value in values):
             raise ValueError("capability is not available in Stage 4")
-        return values
+        return tuple(item for item in _CAPABILITY_ORDER if item in values)
 
     @model_validator(mode="after")
     def enforce_contract(self) -> CapabilityGrant:
         if self.granted_by is not GrantSource.LOCAL_INTERFACE_COMMAND:
             raise ValueError("capability grants require a local interface command")
-        if self.schema_version != PERMISSION_SCHEMA_VERSION:
-            raise ValueError("unsupported permission evidence schema version")
+        _enforce_permission_schema(
+            schema_version=self.schema_version,
+            policy_version=self.policy_version,
+            capabilities=self.capabilities,
+            computer_use_scope=self.computer_use_scope,
+            workspace_id=self.workspace_id,
+            task_run_id=self.task_run_id,
+            agent_run_id=self.agent_run_id,
+            require_capabilities=True,
+        )
         if self.expires_at <= self.created_at:
             raise ValueError("grant expiry must be after creation")
         if self.expires_at - self.created_at > GRANT_MAX_LIFETIME:
@@ -253,6 +333,7 @@ class PermissionSnapshot(LocalCapabilityModel):
     permission_profile_digest: str
     policy_version: str = PERMISSION_POLICY_VERSION
     schema_version: int = Field(default=PERMISSION_SCHEMA_VERSION, ge=1)
+    computer_use_scope: ComputerUseScope | None = None
     source_revisions: tuple[SourceRevisionRef, ...] = ()
     grant_id: str | None = None
     grant_digest: str | None = None
@@ -312,7 +393,7 @@ class PermissionSnapshot(LocalCapabilityModel):
     @field_validator("policy_version")
     @classmethod
     def valid_policy_version(cls, value: str) -> str:
-        if value != PERMISSION_POLICY_VERSION:
+        if value not in {PERMISSION_POLICY_VERSION, COMPUTER_USE_POLICY_VERSION}:
             raise ValueError("unsupported permission policy version")
         return value
 
@@ -328,9 +409,13 @@ class PermissionSnapshot(LocalCapabilityModel):
     ) -> tuple[CapabilityName, ...]:
         if len(values) > 8 or len(set(values)) != len(values):
             raise ValueError("permission snapshot capabilities must be unique and bounded")
-        if any(value is not CapabilityName.UNCONFINED_HOST_PROCESS for value in values):
+        allowed = {
+            CapabilityName.UNCONFINED_HOST_PROCESS,
+            CapabilityName.COMPUTER_USE_HOST,
+        }
+        if any(value not in allowed for value in values):
             raise ValueError("capability is not available in Stage 4")
-        return values
+        return tuple(item for item in _CAPABILITY_ORDER if item in values)
 
     @field_validator("mcp_review_evidence")
     @classmethod
@@ -343,8 +428,16 @@ class PermissionSnapshot(LocalCapabilityModel):
 
     @model_validator(mode="after")
     def enforce_contract(self) -> PermissionSnapshot:
-        if self.schema_version != PERMISSION_SCHEMA_VERSION:
-            raise ValueError("unsupported permission evidence schema version")
+        _enforce_permission_schema(
+            schema_version=self.schema_version,
+            policy_version=self.policy_version,
+            capabilities=self.granted_capabilities,
+            computer_use_scope=self.computer_use_scope,
+            workspace_id=self.workspace_id,
+            task_run_id=self.task_run_id,
+            agent_run_id=self.agent_run_id,
+            require_capabilities=self.grant_id is not None,
+        )
         if self.grant_id is None:
             if self.grant_digest is not None or self.granted_capabilities:
                 raise ValueError("ungranted snapshots cannot contain grant evidence")
@@ -380,6 +473,19 @@ class PermissionSnapshot(LocalCapabilityModel):
             return None
         return self.capability_isolations[0].isolation
 
+    def isolation_for(self, capability: CapabilityName) -> IsolationLabel | None:
+        for item in self.capability_isolations:
+            if item.capability is capability:
+                return item.isolation
+        return None
+
+    def isolation_for_tool(self, tool_name: str) -> IsolationLabel | None:
+        if tool_name in SHELL_TOOL_NAMES:
+            return self.isolation_for(CapabilityName.UNCONFINED_HOST_PROCESS)
+        if tool_name in COMPUTER_TOOL_NAMES:
+            return self.isolation_for(CapabilityName.COMPUTER_USE_HOST)
+        return self.isolation_label
+
 
 class PermissionEvidenceError(ValueError):
     """Frozen permission evidence cannot prove the requested elevated effect."""
@@ -403,6 +509,12 @@ def capability_grant_digest(grant: CapabilityGrant) -> str:
         "created_at": grant.created_at.isoformat(),
         "expires_at": grant.expires_at.isoformat(),
     }
+    if grant.schema_version == COMPUTER_USE_PERMISSION_SCHEMA_VERSION:
+        payload["computer_use_scope"] = (
+            None
+            if grant.computer_use_scope is None
+            else grant.computer_use_scope.model_dump(mode="json")
+        )
     return sha256_digest(canonical_json_bytes(payload))
 
 
@@ -423,6 +535,13 @@ def assert_grant_snapshot_matches(
         raise PermissionEvidenceError("permission snapshot subjects are mismatched")
     if snapshot.grant_id != grant.grant_id:
         raise PermissionEvidenceError("permission snapshot grant is mismatched")
+    if snapshot.computer_use_scope != grant.computer_use_scope:
+        raise PermissionEvidenceError("permission snapshot computer-use scope is mismatched")
+    if (
+        snapshot.schema_version != grant.schema_version
+        or snapshot.policy_version != grant.policy_version
+    ):
+        raise PermissionEvidenceError("permission snapshot contract version is mismatched")
     if snapshot.grant_digest != capability_grant_digest(grant):
         raise PermissionEvidenceError("permission snapshot grant digest is mismatched")
     if snapshot.granted_capabilities != grant.capabilities:
@@ -436,5 +555,70 @@ def assert_grant_snapshot_matches(
     if not grant.is_active(now):
         raise PermissionEvidenceError("capability grant is expired or revoked")
     if CapabilityName.UNCONFINED_HOST_PROCESS in grant.capabilities:
-        if snapshot.isolation_label is not IsolationLabel.UNCONFINED_HOST:
+        if (
+            snapshot.isolation_for(CapabilityName.UNCONFINED_HOST_PROCESS)
+            is not IsolationLabel.UNCONFINED_HOST
+        ):
             raise PermissionEvidenceError("elevated capability lacks the unconfined_host label")
+    if CapabilityName.COMPUTER_USE_HOST in grant.capabilities:
+        if (
+            snapshot.isolation_for(CapabilityName.COMPUTER_USE_HOST)
+            is not IsolationLabel.COMPUTER_USE_HOST
+        ):
+            raise PermissionEvidenceError(
+                "computer-use capability lacks the computer_use_host label"
+            )
+
+
+def encode_capability_payload(
+    *,
+    schema_version: int,
+    capabilities: tuple[CapabilityName, ...],
+    computer_use_scope: ComputerUseScope | None,
+) -> str:
+    """Encode capabilities into the existing JSON column.
+
+    Schema 9 stays a JSON list so stored bytes do not change. Schema 10 stores
+    an object in that same column.
+    """
+
+    names = [value.value for value in capabilities]
+    if schema_version == PERMISSION_SCHEMA_VERSION:
+        if computer_use_scope is not None or CapabilityName.COMPUTER_USE_HOST.value in names:
+            raise ValueError("schema v9 cannot encode computer-use scope")
+        return canonical_json_bytes(names).decode("utf-8")
+    if schema_version == COMPUTER_USE_PERMISSION_SCHEMA_VERSION:
+        if computer_use_scope is None:
+            raise ValueError("computer-use evidence requires a scope")
+        return canonical_json_bytes(
+            {
+                "capabilities": names,
+                "computer_use_scope": computer_use_scope.model_dump(mode="json"),
+            }
+        ).decode("utf-8")
+    raise ValueError("unsupported permission evidence schema version")
+
+
+def decode_capability_payload(
+    raw: object,
+    *,
+    schema_version: int,
+) -> tuple[tuple[CapabilityName, ...], ComputerUseScope | None]:
+    parsed = json.loads(raw) if isinstance(raw, str) else raw
+    if schema_version == PERMISSION_SCHEMA_VERSION:
+        if not isinstance(parsed, list):
+            raise ValueError("grant capabilities are not a list")
+        if any(str(item) == CapabilityName.COMPUTER_USE_HOST.value for item in parsed):
+            raise ValueError("schema v9 cannot encode computer_use_host")
+        return tuple(CapabilityName(str(item)) for item in parsed), None
+    if schema_version == COMPUTER_USE_PERMISSION_SCHEMA_VERSION:
+        if not isinstance(parsed, Mapping) or set(parsed) != {"capabilities", "computer_use_scope"}:
+            raise ValueError("computer-use capabilities must be an object")
+        names = parsed["capabilities"]
+        scope_raw = parsed["computer_use_scope"]
+        if not isinstance(names, list) or not isinstance(scope_raw, Mapping):
+            raise ValueError("computer-use scope is missing")
+        return tuple(CapabilityName(str(item)) for item in names), ComputerUseScope.model_validate(
+            scope_raw
+        )
+    raise ValueError("unsupported permission evidence schema version")

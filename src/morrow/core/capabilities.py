@@ -133,6 +133,8 @@ class OperationKind(StrEnum):
     GIT_READ = "git_read"
     DESTRUCTIVE = "destructive"
     EXTERNAL_EFFECT = "external_effect"
+    COMPUTER_OBSERVE = "computer_observe"
+    COMPUTER_ACTION = "computer_action"
 
 
 class RiskFlag(StrEnum):

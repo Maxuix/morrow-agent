@@ -815,6 +815,7 @@ class OperationalDoctor:
                 if (
                     grant is None
                     or snapshot.grant_digest != capability_grant_digest(grant)
+                    or snapshot.computer_use_scope != grant.computer_use_scope
                     or snapshot.task_run_id != grant.task_run_id
                     or snapshot.agent_run_id != grant.agent_run_id
                 ):

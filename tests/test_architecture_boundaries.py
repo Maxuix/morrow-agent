@@ -403,3 +403,18 @@ def test_stage5_only_promotion_may_depend_on_configuration_mutation():
         if "morrow.application.configuration" not in imports:
             continue
         assert path.stem in {"promotion", "promotion_service"}, path.relative_to(SOURCE_ROOT)
+
+
+def test_computer_use_does_not_import_the_native_driver():
+    for path in sorted(SOURCE_ROOT.rglob("*.py")):
+        imported = _imports(path)
+        assert "cua_driver" not in imported
+        assert not any(name.startswith("cua_driver.") for name in imported), path
+    core = (SOURCE_ROOT / "core" / "computer_use.py").read_text(encoding="utf-8")
+    assert "cua_driver" not in core
+    assert "cua-driver" not in core
+    adapter = (SOURCE_ROOT / "adapters" / "computer_use" / "__init__.py").read_text(
+        encoding="utf-8"
+    )
+    assert adapter.count("cua_driver") == 1
+    assert 'find_spec("cua_driver")' in adapter

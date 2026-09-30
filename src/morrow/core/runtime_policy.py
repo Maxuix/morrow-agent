@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -117,12 +118,30 @@ class ReviewPolicyOverrides(_RuntimePolicyModel):
         return value
 
 
+class ComputerUseMode(StrEnum):
+    SEMANTIC = "semantic"
+    HYBRID = "hybrid"
+
+
+class ComputerUseSettings(_RuntimePolicyModel):
+    """User budget for desktop observe/act. Disabled settings do not create a grant."""
+
+    enabled: bool = False
+    mode: ComputerUseMode = ComputerUseMode.SEMANTIC
+    max_operations: int = Field(default=100, ge=1, le=100)
+    max_run_seconds: int = Field(default=600, ge=1, le=600)
+    max_call_seconds: int = Field(default=15, ge=1, le=60)
+    max_observation_bytes: int = Field(default=64 * 1024 * 1024, ge=1, le=64 * 1024 * 1024)
+    image_long_edge_px: int = Field(default=1920, ge=1, le=1920)
+
+
 class RuntimePolicyOverrides(_RuntimePolicyModel):
     """Optional section in the user-owned global ``config.yaml``."""
 
     agent_run: AgentRunPolicyOverrides | None = None
     long_horizon: LongHorizonPolicyOverrides | None = None
     reviews: ReviewPolicyOverrides | None = None
+    computer_use: ComputerUseSettings | None = None
 
 
 def finite_number(value: float, *, label: str) -> float:
@@ -145,6 +164,8 @@ __all__ = [
     "AGENT_MAX_TOOL_TIMEOUT_SECONDS",
     "AGENT_MAX_VALIDATION_ERRORS",
     "COMMAND_DURATION_MAX_MS",
+    "ComputerUseMode",
+    "ComputerUseSettings",
     "FOREGROUND_COMMAND_DEFAULT_SECONDS",
     "FOREGROUND_COMMAND_MAX_SECONDS",
     "FOREGROUND_COMMAND_MIN_SECONDS",

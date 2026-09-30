@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from morrow.adapters.state.transaction import SqliteJournalBackend
+from morrow.core.computer_use import COMPUTER_TOOL_NAMES, SHELL_TOOL_NAMES
 from morrow.core.domain import (
     ArtifactReference,
     DurableAgentRun,
@@ -29,6 +30,7 @@ from morrow.core.execution import (
 )
 from morrow.core.permissions import (
     CapabilityGrant,
+    CapabilityName,
     IsolationLabel,
     PermissionEvidenceError,
     PermissionSnapshot,
@@ -540,18 +542,19 @@ class SqliteToolJournal:
                     StorageErrorCode.UNAVAILABLE,
                     "operational execution permission snapshot is mismatched",
                 )
-            elevated_intent = (
-                execution.tool_name in {"run_command", "bash"}
+            elevated_shell = (
+                execution.tool_name in SHELL_TOOL_NAMES
                 and execution.intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
                 and execution.intent.requires_approval
             )
+            computer_tool = execution.tool_name in COMPUTER_TOOL_NAMES
             if snapshot.grant_id is None:
                 if execution.grant_id is not None or execution.isolation is not None:
                     raise StorageError(
                         StorageErrorCode.UNAVAILABLE,
                         "ordinary execution cannot carry elevated permission evidence",
                     )
-            elif elevated_intent:
+            elif elevated_shell:
                 if execution.grant_id != snapshot.grant_id:
                     raise StorageError(
                         StorageErrorCode.UNAVAILABLE,
@@ -561,6 +564,37 @@ class SqliteToolJournal:
                     raise StorageError(
                         StorageErrorCode.UNAVAILABLE,
                         "elevated execution requires the unconfined_host label",
+                    )
+                grant = self.get_capability_grant(workspace_id, snapshot.grant_id)
+                if (
+                    grant is None
+                    or CapabilityName.UNCONFINED_HOST_PROCESS not in grant.capabilities
+                ):
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "computer-use grant does not authorize a host shell",
+                    )
+            elif computer_tool:
+                if execution.grant_id != snapshot.grant_id:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "operational execution grant does not match the snapshot",
+                    )
+                if execution.isolation is not IsolationLabel.COMPUTER_USE_HOST:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "computer-use execution requires the computer_use_host label",
+                    )
+                grant = self.get_capability_grant(workspace_id, snapshot.grant_id)
+                if (
+                    grant is None
+                    or CapabilityName.COMPUTER_USE_HOST not in grant.capabilities
+                    or snapshot.isolation_for(CapabilityName.COMPUTER_USE_HOST)
+                    is not IsolationLabel.COMPUTER_USE_HOST
+                ):
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "host shell grant does not authorize computer use",
                     )
             elif execution.grant_id is not None or execution.isolation is not None:
                 raise StorageError(

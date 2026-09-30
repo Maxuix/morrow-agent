@@ -26,6 +26,8 @@ from morrow.core.permissions import (
     IsolationLabel,
     PermissionSnapshot,
     capability_grant_digest,
+    decode_capability_payload,
+    encode_capability_payload,
 )
 from morrow.core.store import StorageError, StorageErrorCode
 
@@ -260,8 +262,10 @@ class SqliteRunPermissionJournal:
                     grant.workspace_id,
                     grant.task_run_id,
                     grant.agent_run_id,
-                    canonical_json_bytes([value.value for value in grant.capabilities]).decode(
-                        "utf-8"
+                    encode_capability_payload(
+                        schema_version=grant.schema_version,
+                        capabilities=grant.capabilities,
+                        computer_use_scope=grant.computer_use_scope,
                     ),
                     grant.granted_by.value,
                     grant.command_id,
@@ -347,6 +351,7 @@ class SqliteRunPermissionJournal:
                 "schema_version",
                 "created_at",
                 "expires_at",
+                "computer_use_scope",
             )
             if any(getattr(existing, field) != getattr(grant, field) for field in immutable_fields):
                 raise StorageError(
@@ -496,6 +501,9 @@ class SqliteRunPermissionJournal:
                 or grant.task_run_id != permission_snapshot.task_run_id
                 or grant.agent_run_id != permission_snapshot.agent_run_id
                 or grant.capabilities != permission_snapshot.granted_capabilities
+                or grant.computer_use_scope != permission_snapshot.computer_use_scope
+                or grant.schema_version != permission_snapshot.schema_version
+                or grant.policy_version != permission_snapshot.policy_version
                 or not grant.is_active(permission_snapshot.created_at)
                 or permission_snapshot.grant_digest != capability_grant_digest(grant)
             ):
@@ -539,9 +547,11 @@ class SqliteRunPermissionJournal:
                 ).decode("utf-8"),
                 permission_snapshot.grant_id,
                 permission_snapshot.grant_digest,
-                canonical_json_bytes(
-                    [item.value for item in permission_snapshot.granted_capabilities]
-                ).decode("utf-8"),
+                encode_capability_payload(
+                    schema_version=permission_snapshot.schema_version,
+                    capabilities=permission_snapshot.granted_capabilities,
+                    computer_use_scope=permission_snapshot.computer_use_scope,
+                ),
                 canonical_json_bytes(
                     [
                         item.model_dump(mode="json")
@@ -611,21 +621,23 @@ def _agent_from_row(row: tuple[object, ...]) -> DurableAgentRun:
 
 def _grant_from_row(row: tuple[object, ...]) -> CapabilityGrant:
     try:
-        capabilities_raw = json.loads(str(row[4]))
-        if not isinstance(capabilities_raw, list):
-            raise ValueError("grant capabilities are not a list")
+        schema_version = int(row[10])
+        capabilities, computer_use_scope = decode_capability_payload(
+            str(row[4]), schema_version=schema_version
+        )
         return CapabilityGrant(
             grant_id=str(row[0]),
             workspace_id=str(row[1]),
             task_run_id=str(row[2]),
             agent_run_id=str(row[3]),
-            capabilities=tuple(CapabilityName(str(value)) for value in capabilities_raw),
+            capabilities=capabilities,
             granted_by=GrantSource(str(row[5])),
             command_id=str(row[6]),
             reason=str(row[7]),
             preview_digest=str(row[8]),
             policy_version=str(row[9]),
-            schema_version=int(row[10]),
+            schema_version=schema_version,
+            computer_use_scope=computer_use_scope,
             created_at=_from_unix(row[11]),
             expires_at=_from_unix(row[12]),
             revoked_at=_from_unix(row[13]) if row[13] is not None else None,
@@ -640,20 +652,18 @@ def _grant_from_row(row: tuple[object, ...]) -> CapabilityGrant:
 
 def _permission_snapshot_from_row(row: tuple[object, ...]) -> PermissionSnapshot:
     try:
+        schema_version = int(row[15])
         source_revisions = json.loads(str(row[16]))
-        granted_capabilities = json.loads(str(row[19]))
+        granted_capabilities, computer_use_scope = decode_capability_payload(
+            str(row[19]), schema_version=schema_version
+        )
         capability_isolations = json.loads(str(row[20]))
         mcp_review_evidence = json.loads(str(row[21]))
         if row[10] not in (0, 1):
             raise ValueError("permission snapshot read-only flag is invalid")
         if not all(
             isinstance(value, list)
-            for value in (
-                source_revisions,
-                granted_capabilities,
-                capability_isolations,
-                mcp_review_evidence,
-            )
+            for value in (source_revisions, capability_isolations, mcp_review_evidence)
         ):
             raise ValueError("permission snapshot JSON columns are not lists")
         return PermissionSnapshot(
@@ -672,15 +682,14 @@ def _permission_snapshot_from_row(row: tuple[object, ...]) -> PermissionSnapshot
             run_policy_digest=str(row[12]),
             permission_profile_digest=str(row[13]),
             policy_version=str(row[14]),
-            schema_version=int(row[15]),
+            schema_version=schema_version,
             source_revisions=tuple(
                 SourceRevisionRef.model_validate(item) for item in source_revisions
             ),
             grant_id=str(row[17]) if row[17] is not None else None,
             grant_digest=str(row[18]) if row[18] is not None else None,
-            granted_capabilities=tuple(
-                CapabilityName(str(value)) for value in granted_capabilities
-            ),
+            granted_capabilities=granted_capabilities,
+            computer_use_scope=computer_use_scope,
             capability_isolations=tuple(
                 CapabilityIsolation(
                     capability=CapabilityName(str(item["capability"])),

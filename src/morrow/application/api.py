@@ -35,6 +35,7 @@ from morrow.core.application import (
     QueryPage,
 )
 from morrow.core.artifacts import ArtifactMetadata
+from morrow.core.computer_use import ComputerUseScope
 from morrow.core.domain import (
     WORKSPACE_ID_PREFIX,
     DurableSession,
@@ -970,6 +971,8 @@ class OperationalApplicationService:
         expires_at: datetime | None = None,
         grant_id: str | None = None,
         command_id: str | None = None,
+        computer_use_enabled: bool = False,
+        computer_use_scope: ComputerUseScope | None = None,
     ) -> ApplicationCommandResult[CapabilityGrant]:
         return self._permission_commands.create_grant(
             task_run_id=task_run_id,
@@ -980,6 +983,8 @@ class OperationalApplicationService:
             expires_at=expires_at,
             grant_id=grant_id,
             command_id=command_id,
+            computer_use_enabled=computer_use_enabled,
+            computer_use_scope=computer_use_scope,
         )
 
     def revoke_grant(

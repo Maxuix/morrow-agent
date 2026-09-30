@@ -36,6 +36,7 @@ from morrow.core.runtime_policy import (
     REVIEW_MAX_TIMEOUT_SECONDS,
     REVIEW_RETRY_BACKOFF_COUNT,
     RUNTIME_POLICY_SCHEMA_VERSION,
+    ComputerUseSettings,
     RuntimePolicyOverrides,
     finite_number,
 )
@@ -306,6 +307,16 @@ def parse_runtime_policy(
     except Exception as exc:
         raise PolicyLoadError("packaged runtime policy is invalid") from exc
     return resolve_runtime_policy(defaults, overrides)
+
+
+def resolve_computer_use_settings(
+    overrides: RuntimePolicyOverrides | None,
+) -> ComputerUseSettings:
+    """Return the desktop budget. A missing section stays disabled and creates no grant."""
+
+    if overrides is None or overrides.computer_use is None:
+        return ComputerUseSettings()
+    return overrides.computer_use
 
 
 def load_runtime_policy(
