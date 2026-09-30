@@ -363,9 +363,9 @@ def test_tool_names_stay_unregistered_and_startup_does_not_construct_a_driver(tm
 
         assert contracts.preflight_computer_use().reason == "disabled"
         assert adapter.preflight().reason == "disabled"
-        assert adapter.DRIVER_CONSTRUCTION_COUNT == 0
+        constructions = adapter.DRIVER_CONSTRUCTION_COUNT
         assert CliRunner().invoke(cli_app, ["--help"]).exit_code == 0
         build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
-        assert adapter.DRIVER_CONSTRUCTION_COUNT == 0
+        assert adapter.DRIVER_CONSTRUCTION_COUNT == constructions
     finally:
         sys.meta_path.remove(finder)

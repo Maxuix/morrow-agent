@@ -333,7 +333,17 @@ def images_allowed(settings: ComputerUseSettings, scope: ComputerUseScope) -> bo
 
 class ComputerUsePreflight(ComputerUseModel):
     status: Literal["unavailable"]
-    reason: Literal["disabled", "sdk_missing", "driver_not_activated"]
+    reason: Literal[
+        "disabled",
+        "sdk_missing",
+        "driver_not_activated",
+        "unsupported_os",
+        "native_version_mismatch",
+        "abi_mismatch",
+        "no_interactive_session",
+        "tcc_missing",
+        "native_unverified",
+    ]
 
 
 def preflight_computer_use(
@@ -343,8 +353,9 @@ def preflight_computer_use(
 ) -> ComputerUsePreflight:
     """Report availability without importing or constructing a driver.
 
-    This subplan never returns available. ``spec_present`` is supplied by the
-    adapter so this module does not name the native package.
+    This check never returns available. ``spec_present`` is supplied by the
+    adapter so this module does not name the native package. OS, TCC, and
+    version results stay unavailable until a later native gate.
     """
 
     resolved = settings or ComputerUseSettings()

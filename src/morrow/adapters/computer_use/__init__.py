@@ -7,10 +7,20 @@ from __future__ import annotations
 
 import importlib.util
 
+from morrow.adapters.computer_use.diagnostics import diagnose_host
+from morrow.adapters.computer_use.sdk_loader import construct_driver
 from morrow.core.computer_use import ComputerUsePreflight, preflight_computer_use
 from morrow.core.runtime_policy import ComputerUseSettings
 
 DRIVER_CONSTRUCTION_COUNT = 0
+
+__all__ = [
+    "DRIVER_CONSTRUCTION_COUNT",
+    "construct_driver",
+    "diagnose_host",
+    "preflight",
+    "sdk_spec_present",
+]
 
 
 def sdk_spec_present() -> bool:
