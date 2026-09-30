@@ -145,6 +145,7 @@ class AgentRunPreparationService:
         credential_resolver: Callable[[str, CredentialRef | None], str | None],
         frozen_credential_resolver: Callable[[str, CredentialRef | None], str | None] | None = None,
         estimate_request_chars,
+        estimate_request_bytes=None,
         make_estimate_request_tokens=None,
         tool_factory: Callable[[RunPolicy], ToolExecutor | None],
         injected: PreparedAgentRunRuntime | None = None,
@@ -163,6 +164,7 @@ class AgentRunPreparationService:
         self.credential_resolver = credential_resolver
         self.frozen_credential_resolver = frozen_credential_resolver or credential_resolver
         self.estimate_request_chars = estimate_request_chars
+        self.estimate_request_bytes = estimate_request_bytes
         self.make_estimate_request_tokens = make_estimate_request_tokens
         self.tool_factory = tool_factory
         self.injected = injected
@@ -238,6 +240,7 @@ class AgentRunPreparationService:
         context_builder = ContextBuilder(
             run_policy=run_policy,
             estimate_request_chars=self.estimate_request_chars,
+            estimate_request_bytes=self.estimate_request_bytes,
             estimate_request_tokens=self._estimate_request_tokens(model),
             attachment_resolver=self.attachment_resolver,
             input_types=exact.input_types,
@@ -333,6 +336,7 @@ class AgentRunPreparationService:
         context_builder = ContextBuilder(
             run_policy=snapshot.run_policy,
             estimate_request_chars=self.estimate_request_chars,
+            estimate_request_bytes=self.estimate_request_bytes,
             estimate_request_tokens=self._estimate_request_tokens(frozen.model),
             attachment_resolver=self.attachment_resolver,
             input_types=frozen.capabilities.input_types,

@@ -17,6 +17,7 @@ from morrow.adapters.mcp.stdio_client import McpStdioClient
 from morrow.adapters.models.learning_reviewer import ModelLearningReviewer
 from morrow.adapters.models.openai_compatible import (
     discover_openai_compatible_models,
+    estimate_request_bytes,
     estimate_request_chars,
     make_openai_compatible,
     make_request_token_estimator,
@@ -833,6 +834,7 @@ def build_session_application(
         input_types=exact_capabilities.input_types,
         run_policy=run_policy,
         estimate_request_chars=estimate_request_chars,
+        estimate_request_bytes=estimate_request_bytes,
         estimate_request_tokens=make_request_token_estimator(model),
         prompt_assembler=prompt_assembler,
     )
@@ -1171,6 +1173,7 @@ def build_session_application(
             credential_resolver=app.provider_service.credential_resolver,
             frozen_credential_resolver=app.provider_service.resolve_frozen_credential,
             estimate_request_chars=estimate_request_chars,
+            estimate_request_bytes=estimate_request_bytes,
             make_estimate_request_tokens=make_request_token_estimator,
             tool_factory=make_tools,
             permission_configurator=configure_run_permission,

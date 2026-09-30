@@ -170,15 +170,21 @@ class ContextBuilder:
         run_policy: RunPolicy,
         estimate_request_chars: EstimateRequestChars,
         estimate_request_tokens: EstimateRequestTokens | None = None,
+        estimate_request_bytes: EstimateRequestChars | None = None,
         prompt_assembler=None,
         attachment_resolver=None,
         tool_visual_hydrator=None,
         input_types=("text", "image"),
         payload_char_limit: int | None = None,
+        payload_byte_limit: int | None = None,
     ) -> None:
         self.run_policy = run_policy
         self.request_char_limit = run_policy.effective_request_chars
         self.payload_char_limit = payload_char_limit or AGENT_MAX_REQUEST_CHARS
+        # Preserve the existing character contract; one UTF-8 codepoint uses at
+        # most four bytes. The byte ceiling also covers shared image payloads.
+        self.payload_byte_limit = payload_byte_limit or self.payload_char_limit * 4
+        self.estimate_request_bytes = estimate_request_bytes
         self.estimate_request_chars = estimate_request_chars
         self.estimate_request_tokens = estimate_request_tokens or self._pi_estimate_tokens
         self.prompt_assembler = prompt_assembler
@@ -339,7 +345,13 @@ class ContextBuilder:
         )
 
     def _payload_exceeds(self, messages: tuple[Message, ...] | list[Message], tools) -> bool:
-        return self._estimate(messages, tools) > self.payload_char_limit
+        estimated = self._estimate(messages, tools)
+        byte_count = (
+            self.estimate_request_bytes(tuple(messages), tuple(tools))
+            if self.estimate_request_bytes is not None
+            else estimated * 4
+        )
+        return estimated > self.payload_char_limit or byte_count > self.payload_byte_limit
 
     def _model_budget_exceeds(self, messages: tuple[Message, ...] | list[Message], tools) -> bool:
         packed = tuple(messages)
@@ -1010,7 +1022,7 @@ class ContextBuilder:
     ) -> int:
         self._validate_tool_pairing(tuple(messages))
         estimated = self._estimate(messages, tools)
-        if estimated > self.payload_char_limit:
+        if self._payload_exceeds(messages, tools):
             raise ContextBudgetError("模型请求超过传输体积限制", kind="payload")
         if (
             self.run_policy.context_window_tokens is None
