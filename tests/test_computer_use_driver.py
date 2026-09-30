@@ -559,3 +559,16 @@ async def test_actions_use_typed_results_and_drop_tool_text():
     assert rejected.value.code == "rejected_action"
     assert not any(name == "scroll" for name, _payload in native.calls)
     assert native.traps == 0
+
+
+def test_interactive_probe_uses_console_owner_instead_of_spoofable_environment(monkeypatch):
+    from morrow.adapters.computer_use import sdk_loader
+
+    monkeypatch.setattr(sdk_loader.sys, "platform", "darwin")
+    monkeypatch.setattr(sdk_loader.os, "getuid", lambda: 501)
+    monkeypatch.delenv("SECURITYSESSIONID", raising=False)
+    monkeypatch.setattr(sdk_loader.os, "stat", lambda path: SimpleNamespace(st_uid=501))
+    assert sdk_loader.current_interactive_session()
+    monkeypatch.setenv("SECURITYSESSIONID", "spoofed")
+    monkeypatch.setattr(sdk_loader.os, "stat", lambda path: SimpleNamespace(st_uid=502))
+    assert not sdk_loader.current_interactive_session()

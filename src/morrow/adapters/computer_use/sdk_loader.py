@@ -118,7 +118,11 @@ def current_os_version(system: str) -> tuple[int, int, int] | None:
 def current_interactive_session() -> bool:
     if sys.platform != "darwin":
         return False
-    return bool(os.environ.get("SECURITYSESSIONID"))
+    try:
+        uid = os.getuid()
+        return uid != 0 and os.stat("/dev/console").st_uid == uid
+    except OSError:
+        return False
 
 
 def _spec_present() -> bool:
