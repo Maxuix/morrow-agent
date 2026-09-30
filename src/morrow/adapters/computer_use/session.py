@@ -355,11 +355,16 @@ class TypedComputerSession:
     ) -> ObservedWindow:
         elements, omitted, truncated = _elements(state, self._registry, window_identity)
         degraded = bool(getattr(state, "degraded", False))
-        if getattr(state, "elements_complete", None) is not True or omitted > 0:
+        if omitted > 0:
             truncated = True
         if truncated and omitted < 1:
             omitted = 1
-        complete = not degraded and not truncated and omitted == 0
+        complete = (
+            getattr(state, "elements_complete", None) is True
+            and not degraded
+            and not truncated
+            and omitted == 0
+        )
         capture, image_error = (None, None)
         if request.include_image:
             capture, image_error = _capture(state)

@@ -626,3 +626,46 @@ async def test_unresolved_native_window_preserves_unknown_geometry_rejection():
                 include_image=True,
             )
         )
+
+
+@pytest.mark.parametrize("degraded", [False, True])
+async def test_unknown_tree_completeness_does_not_invent_truncation(degraded):
+    class IncompleteWindow(_Native):
+        async def get_window_state(self, payload):
+            result = await super().get_window_state(payload)
+            result.elements_complete = False
+            result.degraded = degraded
+            result.truncated = False
+            result.total_element_count = len(result.elements)
+            result.returned_element_count = len(result.elements)
+            return result
+
+    ids = FixedIdSource()
+    session = TypedComputerSession(
+        _sdk(), IncompleteWindow(), TrustedDesktopRegistry(ids), ids, FixedClock(NOW)
+    )
+    run = await session.open_run_session(
+        OpenRunSessionRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY, agent_run_id="arun_1", scope=_scope()
+        )
+    )
+    found = await session.discover(
+        DiscoverRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+            scope=_scope(),
+            run_session_id=run.run_session_id,
+        )
+    )
+    observed = await session.observe(
+        ObserveWindowRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+            scope=_scope(),
+            target=found.targets[0],
+            delivery=ComputerUseDelivery.FOREGROUND,
+            include_image=True,
+        )
+    )
+    assert observed.observation.complete is False
+    assert observed.observation.truncated is False
+    assert observed.observation.omitted_count == 0
+    assert len(observed.observation.elements) == 2

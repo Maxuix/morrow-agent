@@ -44,6 +44,35 @@ from morrow.runtime.ids import RandomIdSource
 FIXTURE_BUNDLE_ID = "com.morrow.ComputerUseFixture"
 
 
+class _DiagnosedSession:
+    """Inspect bounded typed metadata without persisting SDK content or errors."""
+
+    def __init__(self, native, evidence: dict) -> None:
+        self._native = native
+        self._evidence = evidence
+
+    def __getattr__(self, name):
+        return getattr(self._native, name)
+
+    async def get_window_state(self, request):
+        state = await self._native.get_window_state(request)
+        reason = getattr(state, "degraded_reason", None) or ""
+        reason_code = next(
+            (code for code in ("ax_window_unresolved", "ax_tree_empty") if reason.startswith(code)),
+            "degraded" if state.degraded else None,
+        )
+        self._evidence["window_read"] = {
+            "ax_element_count": len(state.elements or ()),
+            "ax_complete": state.elements_complete,
+            "truncated": state.truncated,
+            "degraded": state.degraded,
+            "reason": reason_code,
+            "image_count": len(state.images),
+            "frame_valid": state.screenshot_frame_valid,
+        }
+        return state
+
+
 async def inspect_fixture() -> dict:
     settings = ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID)
     probe = collect_host_probe()
@@ -65,7 +94,9 @@ async def inspect_fixture() -> dict:
         sdk,
         RandomIdSource(),
         SystemStoreClock(),
-        session_factory=lambda driver, name: construct_run_session(sdk, driver, name),
+        session_factory=lambda driver, name: _DiagnosedSession(
+            construct_run_session(sdk, driver, name), result
+        ),
     )
     scope = ComputerUseScope(
         generation=1,
@@ -112,6 +143,8 @@ async def inspect_fixture() -> dict:
         )
         if observed.capture is None:
             raise ComputerUseContractError(observed.image_error or "image_missing")
+        if not observed.observation.elements:
+            raise ComputerUseContractError("fixture_ax_missing")
         phase = "decode_image"
         from PIL import Image
 
