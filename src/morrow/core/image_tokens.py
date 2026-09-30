@@ -12,7 +12,7 @@ import math
 from typing import Literal
 
 from morrow.core.attachments import MAX_PIXELS
-from morrow.core.models import Message, ModelRef, ProviderInputPart, UserMessage
+from morrow.core.models import Message, ModelRef, ProviderInputPart, ToolMessage, UserMessage
 
 ImageTokenAlgorithmName = Literal[
     "claude_vision",
@@ -146,7 +146,7 @@ def messages_without_image_payloads(messages: tuple[Message, ...]) -> tuple[Mess
 
     result: list[Message] = []
     for message in messages:
-        if not isinstance(message, UserMessage) or not message.input_parts:
+        if not isinstance(message, (UserMessage, ToolMessage)) or not message.input_parts:
             result.append(message)
             continue
         parts = tuple(
@@ -159,7 +159,7 @@ def messages_without_image_payloads(messages: tuple[Message, ...]) -> tuple[Mess
 
 def iter_image_parts(messages: tuple[Message, ...]):
     for message in messages:
-        if not isinstance(message, UserMessage):
+        if not isinstance(message, (UserMessage, ToolMessage)):
             continue
         for part in message.input_parts:
             if part.type == "image":

@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
+from morrow.core.artifacts import ArtifactError
 from morrow.core.compaction import (
     CompactionEntry,
     CompactionSummary,
@@ -37,6 +38,7 @@ from morrow.core.models import (
 )
 from morrow.core.preferences import merge_preference_entries
 from morrow.core.runtime_policy import AGENT_MAX_REQUEST_CHARS
+from morrow.core.store import StorageError
 from morrow.runtime.conversation import ConversationSnapshot, MessageRecord
 from morrow.runtime.policy import RunPolicy
 from morrow.runtime.session import Session
@@ -170,6 +172,7 @@ class ContextBuilder:
         estimate_request_tokens: EstimateRequestTokens | None = None,
         prompt_assembler=None,
         attachment_resolver=None,
+        tool_visual_hydrator=None,
         input_types=("text", "image"),
         payload_char_limit: int | None = None,
     ) -> None:
@@ -180,6 +183,7 @@ class ContextBuilder:
         self.estimate_request_tokens = estimate_request_tokens or self._pi_estimate_tokens
         self.prompt_assembler = prompt_assembler
         self.attachment_resolver = attachment_resolver
+        self.tool_visual_hydrator = tool_visual_hydrator
         self.input_types = input_types
 
     def _hydrate(self, messages):
@@ -196,6 +200,15 @@ class ContextBuilder:
                         "当前模型无法读取历史中的图像附件，请选择支持图像的模型或新建对话"
                     )
             result.append(message)
+        if self.tool_visual_hydrator is not None:
+            try:
+                return self.tool_visual_hydrator(tuple(result))
+            except (ValueError, ArtifactError, StorageError):
+                raise ContextBudgetError(
+                    "Current tool observation image is unavailable; observe again",
+                    kind="input",
+                    cause_code="tool_image_unavailable",
+                ) from None
         return tuple(result)
 
     def _system_messages(
@@ -427,6 +440,8 @@ class ContextBuilder:
     ) -> ContextRequest:
         checkpoint = checkpoint or session.context_checkpoint
         snapshot = session.log.snapshot()
+        if self.tool_visual_hydrator is not None:
+            self.tool_visual_hydrator.bind_history(snapshot.messages())
         if checkpoint is not None:
             try:
                 snapshot = project_snapshot_from_checkpoint(snapshot, checkpoint)
@@ -744,6 +759,8 @@ class ContextBuilder:
                 cause_code="invalid_instructions",
             ) from exc
         snapshot = session.log.snapshot()
+        if self.tool_visual_hydrator is not None:
+            self.tool_visual_hydrator.bind_history(snapshot.messages())
         boundary = session.compaction_boundary_sequence
         units = self._projection_units(session, floor=boundary)
         if len(units) < 2:

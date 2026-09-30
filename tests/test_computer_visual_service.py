@@ -416,3 +416,109 @@ def test_known_sensitive_element_requires_exact_mask_and_persists_actual_black_p
     with Image.open(io.BytesIO(data)) as decoded:
         assert decoded.getpixel((0, 0)) == (0, 0, 0)
         assert decoded.getpixel((2, 2)) == (255, 0, 0)
+
+
+def test_hydration_uses_latest_two_run_images_and_preserves_original_messages(environment):
+    import base64
+
+    from morrow.application.computer_visuals import ToolVisualHydrator
+    from morrow.core.image_tokens import iter_image_parts, messages_without_image_payloads
+    from morrow.core.models import ToolMessage
+
+    service, _, _, _, _, _ = environment
+    reference = publish(environment)
+    complete(environment, reference)
+    original = tuple(
+        ToolMessage(tool_call_id=f"call{i}", content="{}", visual_refs=(reference,))
+        for i in range(3)
+    )
+    hydrator = ToolVisualHydrator(
+        service,
+        session_id="ses_1",
+        agent_run_id="arun_1",
+        settings=ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID),
+        input_types=("text", "image"),
+        tool_protocol="openai_function",
+    )
+    projected = hydrator(original)
+    hydrator.bind_history(original)
+    assert not hydrator(original[:1])[0].input_parts
+    assert not projected[0].input_parts
+    assert "omitted" in projected[0].content
+    assert len(tuple(iter_image_parts(projected))) == 2
+    for message in projected[1:]:
+        assert sha256_digest(base64.b64decode(message.input_parts[0].data)) == reference.sha256
+        assert not message.model_dump().get("input_parts")
+        assert message.input_parts[0].data not in repr(message)
+    assert all(message.content == "{}" and not message.input_parts for message in original)
+    assert all(
+        part.data == "" for part in iter_image_parts(messages_without_image_payloads(projected))
+    )
+    prior = original[0].model_copy(
+        update={"visual_refs": (reference.model_copy(update={"agent_run_id": "arun_prior"}),)}
+    )
+    assert not hydrator((prior,))[0].input_parts
+
+
+@pytest.mark.parametrize(
+    "inputs,protocol", [(("text",), "openai_function"), (("text", "image"), "none")]
+)
+def test_hybrid_requires_exact_model_image_and_function_tools(environment, inputs, protocol):
+    from morrow.application.computer_visuals import ToolVisualHydrator
+
+    service, _, _, _, _, _ = environment
+    with pytest.raises(ComputerUseContractError, match="model_image_tools_required"):
+        ToolVisualHydrator(
+            service,
+            session_id="ses_1",
+            agent_run_id="arun_1",
+            settings=ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID),
+            input_types=inputs,
+            tool_protocol=protocol,
+        )
+    ToolVisualHydrator(
+        service,
+        session_id="ses_1",
+        agent_run_id="arun_1",
+        settings=ComputerUseSettings(enabled=True, mode=ComputerUseMode.SEMANTIC),
+        input_types=inputs,
+        tool_protocol=protocol,
+    )
+
+
+def test_context_hydrates_actual_tool_image_and_normalizes_missing_latest_image(environment):
+    from morrow.application.computer_visuals import ToolVisualHydrator
+    from morrow.application.context import ContextBudgetError
+    from morrow.core.image_tokens import iter_image_parts
+    from morrow.core.models import AssistantMessage, FunctionToolCall, UserMessage
+    from morrow.runtime.session import Session
+    from morrow.testing import make_context_builder
+
+    service, _, _, _, _, _ = environment
+    reference = publish(environment)
+    complete(environment, reference)
+    session = Session(session_id="ses_1")
+    session.log.begin_turn(UserMessage(content="Inspect this controlled fixture"))
+    session.log.append_assistant(
+        AssistantMessage(
+            tool_calls=(FunctionToolCall(id="call1", name="computer_observe", arguments="{}"),)
+        )
+    )
+    session.log.append_tool_result("call1", "{}", visual_refs=(reference,))
+    original = session.log.snapshot()
+    builder = make_context_builder()
+    builder.tool_visual_hydrator = ToolVisualHydrator(
+        service,
+        session_id="ses_1",
+        agent_run_id="arun_1",
+        settings=ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID),
+        input_types=("text", "image"),
+        tool_protocol="openai_function",
+    )
+    pack = builder.build(session)
+    assert len(tuple(iter_image_parts(pack.messages))) == 1
+    assert session.log.snapshot() == original
+    service.artifacts.filesystem.final_path(reference.artifact_id).unlink()
+    with pytest.raises(ContextBudgetError) as failed:
+        builder.build(session)
+    assert failed.value.cause_code == "tool_image_unavailable"

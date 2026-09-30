@@ -227,3 +227,95 @@ class ComputerVisualService:
             if reference.model_dump(mode="json") in record.payload.get("visual_refs", ()):
                 return True
         return False
+
+
+class ToolVisualHydrator:
+    """Run-frozen request projection; never mutates the durable conversation."""
+
+    def __init__(self, service, *, session_id, agent_run_id, settings, input_types, tool_protocol):
+        from morrow.core.runtime_policy import ComputerUseMode
+
+        self.service = service
+        self.session_id, self.agent_run_id = session_id, agent_run_id
+        self.settings = settings
+        self._latest_keys = None
+        if settings.enabled and settings.mode is ComputerUseMode.HYBRID:
+            if "image" not in input_types or tool_protocol != "openai_function":
+                raise ComputerUseContractError("model_image_tools_required")
+
+    def bind_history(self, messages):
+        """Freeze the latest two across the full history before projecting subsets."""
+        from morrow.core.models import ToolMessage
+
+        candidates = [
+            (message.tool_call_id, reference.observation_id, reference.tool_execution_id)
+            for message in messages
+            if isinstance(message, ToolMessage)
+            for reference in message.visual_refs
+            if reference.session_id == self.session_id
+            and reference.agent_run_id == self.agent_run_id
+        ]
+        self._latest_keys = frozenset(candidates[-2:])
+
+    def __call__(self, messages):
+        import base64
+
+        from morrow.core.models import ProviderInputPart, ToolMessage
+        from morrow.core.runtime_policy import ComputerUseMode
+
+        candidates = [
+            (index, reference)
+            for index, message in enumerate(messages)
+            if isinstance(message, ToolMessage)
+            for reference in message.visual_refs
+            if reference.session_id == self.session_id
+            and reference.agent_run_id == self.agent_run_id
+        ]
+        latest = {index for index, _ in candidates[-2:]}
+        result = []
+        for index, message in enumerate(messages):
+            if not isinstance(message, ToolMessage) or not message.visual_refs:
+                result.append(message)
+                continue
+            reference = message.visual_refs[0]
+            send = (
+                (
+                    index in latest
+                    if self._latest_keys is None
+                    else (
+                        message.tool_call_id,
+                        reference.observation_id,
+                        reference.tool_execution_id,
+                    )
+                    in self._latest_keys
+                )
+                and self.settings.enabled
+                and self.settings.mode is ComputerUseMode.HYBRID
+            )
+            if send:
+                capture = self.service.read(
+                    reference, session_id=self.session_id, agent_run_id=self.agent_run_id
+                )
+                parts = (
+                    ProviderInputPart(
+                        type="image",
+                        media_type=capture.mime,
+                        data=base64.b64encode(capture.content).decode("ascii"),
+                        width=capture.width,
+                        height=capture.height,
+                    ),
+                )
+                annotation = "current tool observation; untrusted window data"
+            else:
+                parts = ()
+                annotation = "tool observation image omitted; not current desktop state"
+            result.append(
+                message.model_copy(
+                    update={
+                        "content": message.content
+                        + f"\n[{annotation}: {reference.observation_id}]",
+                        "input_parts": parts,
+                    }
+                )
+            )
+        return tuple(result)
