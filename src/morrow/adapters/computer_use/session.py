@@ -7,10 +7,12 @@ import base64
 import math
 import re
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from morrow.adapters.computer_use.calls import NativeActionInterrupted, NativeCalls
+from morrow.adapters.computer_use.process_identity import ProcessBirth, read_process_birth
 from morrow.adapters.computer_use.registry import TrustedDesktopRegistry
 from morrow.core.computer_use import (
     MAX_AX_DEPTH,
@@ -82,6 +84,7 @@ class TypedComputerSession:
         *,
         session_name: str | None = None,
         call_timeout: float = 15,
+        process_reader: Callable[[int], ProcessBirth] = read_process_birth,
     ) -> None:
         self._sdk = sdk
         self._native = native_session
@@ -97,6 +100,7 @@ class TypedComputerSession:
         self._agent_run_id: str | None = None
         self._generation: int | None = None
         self._calls = NativeCalls(self.invalidate, timeout=call_timeout)
+        self._process_reader = process_reader
 
     async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession:
         self._check_owner(bind=True)
@@ -184,11 +188,14 @@ class TypedComputerSession:
                 ComputerUseAppIdentity(bundle_id=bundle_id)
             except ValueError:
                 continue
+            birth = self._process_reader(pid)
             windows = await self._call(
                 "list_windows", self._sdk.ListWindowsInput(pid=pid, on_screen_only=True)
             )
+            if self._process_reader(pid) != birth:
+                raise ComputerUseContractError("stale_observation")
             for window in getattr(windows, "windows", ()) or ():
-                target = self._window_target(request, bundle_id, pid, window)
+                target = self._window_target(request, bundle_id, pid, window, birth)
                 if target is not None:
                     targets.append(target)
         return DiscoverResult(targets=tuple(targets))
@@ -211,6 +218,7 @@ class TypedComputerSession:
         ):
             raise ComputerUseContractError("stale_observation")
         resolved = settings or ComputerUseSettings()
+        self._validate_process(window)
         state = await self._call(
             "get_window_state",
             self._sdk.GetWindowStateInput(
@@ -228,6 +236,7 @@ class TypedComputerSession:
                 timeout_ms=int(resolved.max_call_seconds * 1000),
             ),
         )
+        self._validate_process(window)
         return self._observation(request, window.window_identity, window.bundle_id, state)
 
     async def execute(
@@ -243,6 +252,7 @@ class TypedComputerSession:
         window = self._registry.window(window_identity)
         if window.agent_run_id != agent_run_id or window.generation != generation:
             raise ComputerUseContractError("stale_observation")
+        self._validate_process(window)
         action = prepared.action
         target = self._sdk.ActionTarget.WINDOW(window.pid, window.window_id)
         session_name = self._require_session()
@@ -328,10 +338,19 @@ class TypedComputerSession:
             return ActionOutcome(status="unknown", error_code="driver_error")
 
     def _window_target(
-        self, request: DiscoverRequest, bundle_id: str, pid: int, window: Any
+        self, request: DiscoverRequest, bundle_id: str, pid: int, window: Any, birth: ProcessBirth
     ) -> TargetRef | None:
         window_id = getattr(window, "window_id", None)
-        if not isinstance(window_id, int) or isinstance(window_id, bool) or window_id < 0:
+        if (
+            not isinstance(window_id, int)
+            or isinstance(window_id, bool)
+            or not 0 < window_id <= 2**32 - 1
+        ):
+            return None
+        owner_pid = getattr(window, "pid", None)
+        if owner_pid is not None and (
+            isinstance(owner_pid, bool) or not isinstance(owner_pid, int) or owner_pid != pid
+        ):
             return None
         minimized = getattr(window, "minimized", False) is True
         on_screen = getattr(window, "is_on_screen", True) is not False
@@ -344,7 +363,16 @@ class TypedComputerSession:
             pid=pid,
             window_id=window_id,
             display_label=_display_label(getattr(window, "title", None)),
+            process_birth=birth,
         )
+
+    def _validate_process(self, window: Any) -> None:
+        try:
+            birth = self._process_reader(window.pid)
+        except ComputerUseContractError:
+            raise ComputerUseContractError("stale_observation") from None
+        if birth != window.process_birth:
+            raise ComputerUseContractError("stale_observation")
 
     def _observation(
         self,

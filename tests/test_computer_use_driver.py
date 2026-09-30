@@ -13,6 +13,7 @@ import pytest
 
 from morrow.adapters.computer_use import diagnose_host, preflight
 from morrow.adapters.computer_use.diagnostics import HostProbe
+from morrow.adapters.computer_use.process_identity import ProcessBirth
 from morrow.adapters.computer_use.registry import TrustedDesktopRegistry
 from morrow.adapters.computer_use.sdk_loader import collect_host_probe, construct_driver
 from morrow.adapters.computer_use.session import TypedComputerSession
@@ -38,6 +39,11 @@ from morrow.testing import FixedClock, FixedIdSource
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 SOURCE = "src/morrow/adapters/computer_use"
+
+
+def _process_birth(pid):
+    assert pid == 4242
+    return ProcessBirth(1, 0)
 
 
 def _scope(**overrides) -> ComputerUseScope:
@@ -373,7 +379,9 @@ class _Native:
 async def test_typed_session_hides_native_identity_and_keeps_the_real_frame():
     native = _Native()
     registry = TrustedDesktopRegistry(FixedIdSource())
-    session = TypedComputerSession(_sdk(), native, registry, FixedIdSource(), FixedClock(NOW))
+    session = TypedComputerSession(
+        _sdk(), native, registry, FixedIdSource(), FixedClock(NOW), process_reader=_process_birth
+    )
     opened = await session.open_run_session(
         OpenRunSessionRequest(
             authority=TRUSTED_COMPUTER_USE_AUTHORITY,
@@ -449,7 +457,9 @@ async def test_actions_use_typed_results_and_drop_tool_text():
     native = _Native()
     ids = FixedIdSource()
     registry = TrustedDesktopRegistry(ids)
-    session = TypedComputerSession(_sdk(), native, registry, ids, FixedClock(NOW))
+    session = TypedComputerSession(
+        _sdk(), native, registry, ids, FixedClock(NOW), process_reader=_process_birth
+    )
     opened = await session.open_run_session(
         OpenRunSessionRequest(
             authority=TRUSTED_COMPUTER_USE_AUTHORITY,
@@ -602,7 +612,12 @@ async def test_unresolved_native_window_preserves_unknown_geometry_rejection():
 
     ids = FixedIdSource()
     session = TypedComputerSession(
-        _sdk(), UnresolvedWindow(), TrustedDesktopRegistry(ids), ids, FixedClock(NOW)
+        _sdk(),
+        UnresolvedWindow(),
+        TrustedDesktopRegistry(ids),
+        ids,
+        FixedClock(NOW),
+        process_reader=_process_birth,
     )
     run = await session.open_run_session(
         OpenRunSessionRequest(
@@ -642,7 +657,12 @@ async def test_unknown_tree_completeness_does_not_invent_truncation(degraded):
 
     ids = FixedIdSource()
     session = TypedComputerSession(
-        _sdk(), IncompleteWindow(), TrustedDesktopRegistry(ids), ids, FixedClock(NOW)
+        _sdk(),
+        IncompleteWindow(),
+        TrustedDesktopRegistry(ids),
+        ids,
+        FixedClock(NOW),
+        process_reader=_process_birth,
     )
     run = await session.open_run_session(
         OpenRunSessionRequest(

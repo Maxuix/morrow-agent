@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from morrow.adapters.computer_use.process_identity import ProcessBirth
 from morrow.core.computer_use import (
     ComputerUseAppIdentity,
     ComputerUseContractError,
@@ -23,6 +24,7 @@ class _ProcessRecord:
     process_identity: str
     pid: int
     bundle_id: str
+    birth: ProcessBirth
 
     def __repr__(self) -> str:
         return f"_ProcessRecord(process_identity={self.process_identity!r})"
@@ -38,6 +40,7 @@ class _WindowRecord:
     bundle_id: str
     agent_run_id: str
     generation: int
+    process_birth: ProcessBirth
 
     def __repr__(self) -> str:
         return f"_WindowRecord(window_identity={self.window_identity!r})"
@@ -59,8 +62,8 @@ class TrustedDesktopRegistry:
 
     def __init__(self, id_source: IdSource) -> None:
         self._ids = id_source
-        self._processes: dict[tuple[str, int, str, int], _ProcessRecord] = {}
-        self._windows: dict[tuple[str, int, str, int, int], _WindowRecord] = {}
+        self._processes: dict[tuple[str, int, str, int, ProcessBirth], _ProcessRecord] = {}
+        self._windows: dict[tuple[str, int, str, int, int, ProcessBirth], _WindowRecord] = {}
         self._windows_by_identity: dict[str, _WindowRecord] = {}
         self._elements: dict[str, _ElementRecord] = {}
         self._snapshots: dict[str, str] = {}
@@ -88,9 +91,10 @@ class TrustedDesktopRegistry:
         pid: int,
         window_id: int,
         display_label: str | None,
+        process_birth: ProcessBirth,
     ) -> TargetRef:
-        process = self._process(agent_run_id, generation, bundle_id, pid)
-        key = (agent_run_id, generation, bundle_id, pid, window_id)
+        process = self._process(agent_run_id, generation, bundle_id, pid, process_birth)
+        key = (agent_run_id, generation, bundle_id, pid, window_id, process_birth)
         existing = self._windows.get(key)
         if existing is None:
             existing = _WindowRecord(
@@ -102,6 +106,7 @@ class TrustedDesktopRegistry:
                 bundle_id=bundle_id,
                 agent_run_id=agent_run_id,
                 generation=generation,
+                process_birth=process_birth,
             )
             self._windows[key] = existing
             self._windows_by_identity[existing.window_identity] = existing
@@ -148,15 +153,16 @@ class TrustedDesktopRegistry:
         return found
 
     def _process(
-        self, agent_run_id: str, generation: int, bundle_id: str, pid: int
+        self, agent_run_id: str, generation: int, bundle_id: str, pid: int, birth: ProcessBirth
     ) -> _ProcessRecord:
-        key = (agent_run_id, generation, bundle_id, pid)
+        key = (agent_run_id, generation, bundle_id, pid, birth)
         found = self._processes.get(key)
         if found is None:
             found = _ProcessRecord(
                 process_identity=self._ids.new_id(COMPUTER_PROCESS_ID_PREFIX),
                 pid=pid,
                 bundle_id=bundle_id,
+                birth=birth,
             )
             self._processes[key] = found
         return found

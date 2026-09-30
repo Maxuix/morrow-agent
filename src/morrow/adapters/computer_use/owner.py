@@ -9,6 +9,7 @@ from typing import Any
 
 from morrow.adapters.computer_use.calls import NativeCalls
 from morrow.adapters.computer_use.lease import DesktopLease, FileDesktopLease
+from morrow.adapters.computer_use.process_identity import ProcessBirth, read_process_birth
 from morrow.adapters.computer_use.registry import TrustedDesktopRegistry
 from morrow.adapters.computer_use.sdk_loader import construct_driver
 from morrow.adapters.computer_use.session import TypedComputerSession
@@ -37,6 +38,7 @@ class ComputerDriverOwner:
         driver_factory: Callable[[Any], Any] = construct_driver,
         lease: DesktopLease | None = None,
         call_timeout: float = 15,
+        process_reader: Callable[[int], ProcessBirth] = read_process_birth,
     ) -> None:
         self._loop = asyncio.get_running_loop()
         self._thread = threading.get_ident()
@@ -46,6 +48,7 @@ class ComputerDriverOwner:
         self._lease = lease if lease is not None else FileDesktopLease()
         self._leased = False
         self._call_timeout = call_timeout
+        self._process_reader = process_reader
         self._session: TypedComputerSession | None = None
         self._run: RunSession | None = None
         self._generations: dict[str, int] = {}
@@ -110,6 +113,7 @@ class ComputerDriverOwner:
                 self._clock,
                 session_name=name,
                 call_timeout=self._call_timeout,
+                process_reader=self._process_reader,
             )
             self._run = await self._session.open_run_session(request)
             self._generations[request.agent_run_id] = request.scope.generation

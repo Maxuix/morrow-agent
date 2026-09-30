@@ -17,7 +17,7 @@ from morrow.core.computer_use import (
     OpenRunSessionRequest,
 )
 from morrow.testing import FixedClock, FixedIdSource
-from test_computer_use_driver import NOW, _Native, _scope, _sdk
+from test_computer_use_driver import NOW, _Native, _process_birth, _scope, _sdk
 
 
 def _open(generation=1):
@@ -85,6 +85,7 @@ def _owner(lease=None):
         session_factory=session_factory,
         driver_factory=driver_factory,
         lease=lease or _Lease(),
+        process_reader=_process_birth,
     )
     return owner, calls, sessions
 
