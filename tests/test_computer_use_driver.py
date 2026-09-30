@@ -141,12 +141,13 @@ def test_construct_driver_uses_the_same_process_runtime():
     created: list[object] = []
 
     class Options:
-        def __init__(self, *, claude_code_compatibility: bool) -> None:
+        def __init__(self, *, claude_code_compatibility: bool, authorization: object) -> None:
             self.claude_code_compatibility = claude_code_compatibility
+            self.authorization = authorization
 
     class Driver:
         @classmethod
-        def create(cls, options: object) -> object:
+        def create_configured(cls, options: object) -> object:
             created.append(options)
             return {"runtime": True}
 
@@ -155,10 +156,22 @@ def test_construct_driver_uses_the_same_process_runtime():
             raise AssertionError(options)
 
     before = adapter.DRIVER_CONSTRUCTION_COUNT
-    runtime = construct_driver(SimpleNamespace(DriverOptions=Options, CuaDriver=Driver))
+    runtime = construct_driver(
+        SimpleNamespace(
+            ConfiguredDriverOptions=Options,
+            RuntimeAuthorizationOptions=lambda **values: SimpleNamespace(**values),
+            SessionPermissionMode=SimpleNamespace(STANDARD="standard"),
+            CuaDriver=Driver,
+        )
+    )
     assert runtime == {"runtime": True}
     assert adapter.DRIVER_CONSTRUCTION_COUNT == before + 1
     assert created[0].claude_code_compatibility is False
+    assert created[0].authorization.allowed_modes == ["standard"]
+    assert created[0].authorization.compatibility_mode == "standard"
+    assert created[0].authorization.unrestricted_acknowledged is False
+    assert created[0].authorization.max_session_ttl_seconds == 600
+    assert created[0].authorization.max_idle_ttl_seconds == 600
 
 
 def test_adapter_source_has_no_generic_tool_call():
@@ -572,3 +585,44 @@ def test_interactive_probe_uses_console_owner_instead_of_spoofable_environment(m
     monkeypatch.setenv("SECURITYSESSIONID", "spoofed")
     monkeypatch.setattr(sdk_loader.os, "stat", lambda path: SimpleNamespace(st_uid=502))
     assert not sdk_loader.current_interactive_session()
+
+
+async def test_unresolved_native_window_preserves_unknown_geometry_rejection():
+    class UnresolvedWindow(_Native):
+        async def get_window_state(self, payload):
+            return SimpleNamespace(
+                elements=[],
+                images=[],
+                degraded=True,
+                elements_complete=False,
+                window_bounds=None,
+                screenshot_width=None,
+                screenshot_height=None,
+            )
+
+    ids = FixedIdSource()
+    session = TypedComputerSession(
+        _sdk(), UnresolvedWindow(), TrustedDesktopRegistry(ids), ids, FixedClock(NOW)
+    )
+    run = await session.open_run_session(
+        OpenRunSessionRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY, agent_run_id="arun_1", scope=_scope()
+        )
+    )
+    found = await session.discover(
+        DiscoverRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+            scope=_scope(),
+            run_session_id=run.run_session_id,
+        )
+    )
+    with pytest.raises(ComputerUseContractError, match="unknown_scale"):
+        await session.observe(
+            ObserveWindowRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=_scope(),
+                target=found.targets[0],
+                delivery=ComputerUseDelivery.FOREGROUND,
+                include_image=True,
+            )
+        )

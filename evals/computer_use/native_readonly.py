@@ -38,14 +38,14 @@ from morrow.core.computer_use import (
     ObserveWindowRequest,
     OpenRunSessionRequest,
 )
-from morrow.core.runtime_policy import ComputerUseSettings
+from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
 from morrow.runtime.ids import RandomIdSource
 
 FIXTURE_BUNDLE_ID = "com.morrow.ComputerUseFixture"
 
 
 async def inspect_fixture() -> dict:
-    settings = ComputerUseSettings(enabled=True, mode="hybrid")
+    settings = ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID)
     probe = collect_host_probe()
     diagnostic = diagnose_host(settings, probe, images_required=True)
     result = {
@@ -78,6 +78,7 @@ async def inspect_fixture() -> dict:
         delivery=ComputerUseDelivery.BACKGROUND,
         image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
     )
+    phase = "open_session"
     try:
         run = await owner.open_run_session(
             OpenRunSessionRequest(
@@ -87,6 +88,7 @@ async def inspect_fixture() -> dict:
             )
         )
         session = owner.session_for(run)
+        phase = "discover"
         found = await session.discover(
             DiscoverRequest(
                 authority=TRUSTED_COMPUTER_USE_AUTHORITY,
@@ -97,6 +99,7 @@ async def inspect_fixture() -> dict:
         )
         if len(found.targets) != 1:
             raise ComputerUseContractError("fixture_window_required")
+        phase = "observe"
         observed = await session.observe(
             ObserveWindowRequest(
                 authority=TRUSTED_COMPUTER_USE_AUTHORITY,
@@ -109,6 +112,7 @@ async def inspect_fixture() -> dict:
         )
         if observed.capture is None:
             raise ComputerUseContractError(observed.image_error or "image_missing")
+        phase = "decode_image"
         from PIL import Image
 
         with Image.open(
@@ -132,6 +136,7 @@ async def inspect_fixture() -> dict:
                 },
             }
         )
+        phase = "close_session"
         await owner.close_run_session(
             CloseRunSessionRequest(
                 authority=TRUSTED_COMPUTER_USE_AUTHORITY,
@@ -139,9 +144,14 @@ async def inspect_fixture() -> dict:
             )
         )
     except ComputerUseContractError as exc:
-        result.update(status="failed", reason=exc.code)
-    except Exception:
-        result.update(status="failed", reason="driver_error")
+        result.update(status="failed", reason=exc.code, phase=phase)
+    except Exception as exc:
+        result.update(
+            status="failed",
+            reason="driver_error",
+            phase=phase,
+            exception_type=type(exc).__name__,
+        )
     finally:
         try:
             await owner.shutdown()
@@ -159,8 +169,13 @@ def main() -> None:
         parser.error("explicit desktop opt-in required")
     try:
         result = asyncio.run(inspect_fixture())
-    except Exception:
-        result = {"status": "failed", "reason": "driver_error"}
+    except Exception as exc:
+        result = {
+            "status": "failed",
+            "reason": "driver_error",
+            "phase": "preflight_or_driver_construction",
+            "exception_type": type(exc).__name__,
+        }
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     if result["status"] != "passed":
         raise SystemExit(1)

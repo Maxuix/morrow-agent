@@ -389,6 +389,8 @@ class TypedComputerSession:
                 truncated=truncated,
                 omitted_count=omitted,
             )
+        except ComputerUseContractError:
+            raise
         except ValueError:
             raise ComputerUseContractError("rejected_action") from None
         return ObservedWindow(observation=observation, capture=capture, image_error=image_error)

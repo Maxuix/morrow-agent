@@ -27,8 +27,20 @@ def construct_driver(sdk: Any | None = None) -> Any:
 
     package.DRIVER_CONSTRUCTION_COUNT += 1
     module = load_sdk() if sdk is None else sdk
-    options = module.DriverOptions(claude_code_compatibility=False)
-    return module.CuaDriver.create(options)
+    mode = module.SessionPermissionMode.STANDARD
+    authorization = module.RuntimeAuthorizationOptions(
+        allowed_modes=[mode],
+        compatibility_mode=mode,
+        compatibility_capability_manifest_path=None,
+        compatibility_bounded_manifest_path=None,
+        unrestricted_acknowledged=False,
+        max_session_ttl_seconds=600,
+        max_idle_ttl_seconds=600,
+    )
+    options = module.ConfiguredDriverOptions(
+        claude_code_compatibility=False, authorization=authorization
+    )
+    return module.CuaDriver.create_configured(options)
 
 
 def collect_host_probe(
