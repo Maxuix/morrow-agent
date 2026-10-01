@@ -9,11 +9,13 @@ from morrow.application.agent_definitions.errors import (
     DefinitionFailure,
 )
 from morrow.application.agent_definitions.publication import resolve_definition_tools
+from morrow.application.computer_requests import LocalComputerUseRequest
 from morrow.application.prompt import DirectCodingPromptAssembler
 from morrow.core.agent_definitions import AgentDefinitionVersion
 from morrow.core.agent_presets import LoadedPresetPreference
 from morrow.core.agent_runs import AgentDefinitionRef, SettingSource
 from morrow.core.capabilities import OperationIntent, OperationKind, PolicyVerdict
+from morrow.core.computer_use import COMPUTER_TOOL_NAMES, ComputerUseContractError
 from morrow.core.domain import TaskRunPurpose, TaskRunStatus, session_can_start_work
 from morrow.core.models import GenerationOptions, ModelRef, ToolEffect
 from morrow.core.workflows.contracts import MECHANISM_TOOL_NAMES
@@ -103,7 +105,7 @@ class AgentFactory:
             self.session.durable_runtime.bind_prompt_assembler(assembler)
         return assembler
 
-    def _tools(self, version, *, preflight_skills=False):
+    def _tools(self, version, *, preflight_skills=False, allow_computer_use=False):
         try:
             validation = resolve_definition_tools(version.source, self.publication.catalog)
         except ValueError:
@@ -176,7 +178,8 @@ class AgentFactory:
                             effect=contract.intent_effect,
                             requires_host=bool(contract.requires_host),
                             requires_sandbox=bool(contract.requires_sandbox),
-                        )
+                        ),
+                        allow_computer_use=allow_computer_use and name in COMPUTER_TOOL_NAMES,
                     )
                     safe = decision.verdict is not PolicyVerdict.DENY
                 if not safe:
@@ -260,6 +263,7 @@ class AgentFactory:
         generation=None,
         settings_sources=None,
         allow_history: bool = False,
+        computer_request=None,
     ):
         """Prepare one new AgentRun for this factory's caller-owned leaf.
 
@@ -275,6 +279,12 @@ class AgentFactory:
         """
 
         self._scope(fresh=True, allow_history=allow_history)
+        if computer_request is not None and (
+            not isinstance(computer_request, LocalComputerUseRequest)
+            or computer_request.session is not self.session
+            or self.parallel_read_candidate
+        ):
+            raise ComputerUseContractError("execution_not_authorized")
         if require_enabled:
             version = self.publication.admit(self.version_id)
         else:
@@ -295,7 +305,10 @@ class AgentFactory:
             agent_run_id=agent_run_id,
             model=model,
             prompt_assembler=self._assembler(version),
-            tool_transform=self._tools(version, preflight_skills=True),
+            tool_transform=self._tools(
+                version, preflight_skills=True, allow_computer_use=computer_request is not None
+            ),
+            computer_request=computer_request,
             generation=generation,
             settings_sources=settings_sources,
         )

@@ -95,6 +95,44 @@ class ComputerUseRunFactory:
         self.root_digest = workspace_root_digest(Path(workspace_root))
         self.grant_creator = None
         self._requests = {}
+        self._workflow_selections = {}
+
+    def select_workflow_leaf(self, selection, *, node_run_id, authority):
+        """Stage one explicit local selection for one existing, unadmitted leaf."""
+        from morrow.core.workflows.runs import WorkflowStatus
+
+        reject_untrusted_computer_use_authority(authority)
+        if not self.settings.enabled or not isinstance(selection, ComputerUseSelection):
+            raise ComputerUseContractError("execution_not_authorized")
+        selection = ComputerUseSelection.model_validate(selection.model_dump(), strict=True)
+        node = self.journal.workflows.get_node(self.workspace_id, node_run_id)
+        run = (
+            None
+            if node is None
+            else self.journal.workflows.get_run(self.workspace_id, node.workflow_run_id)
+        )
+        if (
+            node is None
+            or run is None
+            or run.status.terminal
+            or not (
+                node.status is WorkflowStatus.QUEUED
+                or (run.status is WorkflowStatus.PAUSED and node.status is WorkflowStatus.RUNNING)
+            )
+        ):
+            raise ComputerUseContractError("execution_not_authorized")
+        self._workflow_selections[node_run_id] = selection
+
+    def prepare_workflow_leaf(self, session, context):
+        """Consume no root grant or disk state; issue a fresh leaf-local request."""
+        selection = self._workflow_selections.pop(context.node_run_id, None)
+        if selection is None:
+            return None
+        from morrow.core.computer_use import TRUSTED_COMPUTER_USE_AUTHORITY
+
+        if session.session_id != context.leaf_session_id:
+            raise ComputerUseContractError("execution_not_authorized")
+        return self.select(selection, session, authority=TRUSTED_COMPUTER_USE_AUTHORITY)
 
     def select(self, selection, session, *, authority):
         reject_untrusted_computer_use_authority(authority)

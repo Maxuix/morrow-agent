@@ -154,6 +154,7 @@ class WorkflowScheduler:
         preference_loader=None,
         agent_preference_loader=None,
         initialize_context=None,
+        computer_request_factory=None,
         retry_sleep=None,
         faults=None,
         mutation=None,
@@ -176,6 +177,7 @@ class WorkflowScheduler:
         self.preference_loader = preference_loader
         self.agent_preference_loader = agent_preference_loader
         self.initialize_context = initialize_context
+        self.computer_request_factory = computer_request_factory
         self.retry_sleep = retry_sleep
         self.faults = faults
         self.mutation = mutation
@@ -840,6 +842,11 @@ class WorkflowScheduler:
                         require_enabled=False,
                         generation=generation,
                         settings_sources=sources,
+                        computer_request=(
+                            self.computer_request_factory(session, hooks.context)
+                            if self.computer_request_factory is not None
+                            else None
+                        ),
                     )
                     prepared = self._compose_leaf_runtime(prepared, hooks)
                     prepared_to_close = prepared
@@ -987,6 +994,11 @@ class WorkflowScheduler:
                         require_enabled=False,
                         generation=generation,
                         settings_sources=sources,
+                        computer_request=(
+                            self.computer_request_factory(session, hooks.context)
+                            if self.computer_request_factory is not None
+                            else None
+                        ),
                         # A continuation turn deliberately carries the leaf's
                         # durable history (original goal, committed results);
                         # the fresh-log rule only guards first admissions.

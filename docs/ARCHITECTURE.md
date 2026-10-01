@@ -79,6 +79,10 @@ PreparedAgentRunRuntime.activate 委托既有 Application API 创建 run-bound g
 AgentLoop 在本地激活与待处理 Host 授权后、首次 Provider 请求前冻结 PermissionSnapshot。
 handler 只重验已有执行/审批/授权证据，不创建 grant。关闭先停止入场，再等待资源释放。
 桌面恢复需要新的本地选择、新 AgentRun/grant 与更高代次；磁盘旧 grant 不足以重新绑定设备。
+Workflow 的选择由可信本地入口绑定实际 NodeRun，只在新叶子 admission 时消费一次；
+AgentFactory 校验请求属于该叶子 Session，并拒绝并行只读候选携带桌面请求。
+配置启用后目录可声明桌面工具，但默认 executor 和未选择叶子没有桌面工具或设备授权。
+根运行 grant 不继承；叶子继续也需要重新选择，crash rehydrate 不自动重新绑定。
 
 ## 文档与验证约定
 

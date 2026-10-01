@@ -1288,6 +1288,10 @@ def build_session_application(
             if tool_executor is not None
             else ()
         )
+        if computer_factory is not None and computer_factory.settings.enabled:
+            from morrow.core.computer_use import COMPUTER_TOOL_NAMES
+
+            tool_names = (*tool_names, *sorted(COMPUTER_TOOL_NAMES))
         read_tools = {"read", "read_artifact", "ls", "find", "grep"}
         workflow_catalog = DefinitionCatalog(
             models=tuple(
@@ -1353,6 +1357,9 @@ def build_session_application(
             preference_loader=load_run_preferences,
             agent_preference_loader=load_agent_preference,
             initialize_context=initialize_leaf_context,
+            computer_request_factory=(
+                computer_factory.prepare_workflow_leaf if computer_factory is not None else None
+            ),
             mutation=mutation,
             change_capture=ChangeArtifactCapture(operational.artifacts, mutation),
         )
