@@ -31,7 +31,6 @@ from morrow.core.computer_use import (
     ObserveWindowRequest,
     OpenRunSessionRequest,
     PreparedComputerAction,
-    ScrollAction,
     TypeTextAction,
     map_image_point,
 )
@@ -181,15 +180,19 @@ def test_construct_driver_uses_the_same_process_runtime():
     assert created[0].authorization.max_idle_ttl_seconds == 600
 
 
-def test_adapter_source_has_no_generic_tool_call():
+def test_sdk_protocol_bridge_has_only_four_fixed_action_calls():
     root = __import__("pathlib").Path(SOURCE)
+    fixed_names = []
     for path in root.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute) and node.attr == "call_tool":
-                raise AssertionError(path.name)
-            if isinstance(node, ast.Name) and node.id == "call_tool":
-                raise AssertionError(path.name)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if node.func.attr != "call_tool":
+                    continue
+                assert path.name == "action_inputs.py"
+                assert isinstance(node.args[0], ast.Constant)
+                fixed_names.append(node.args[0].value)
+    assert sorted(fixed_names) == ["hotkey", "press_key", "scroll", "type_text"]
 
 
 def test_importing_the_adapter_does_not_load_the_native_module():
@@ -456,7 +459,7 @@ async def test_typed_session_hides_native_identity_and_keeps_the_real_frame():
     assert native.traps == 0
 
 
-async def test_actions_use_typed_results_and_drop_tool_text():
+async def test_click_results_preserve_delivery_and_reject_unsafe_text_target():
     native = _Native()
     ids = FixedIdSource()
     registry = TrustedDesktopRegistry(ids)
@@ -502,78 +505,29 @@ async def test_actions_use_typed_results_and_drop_tool_text():
     payload = next(item for name, item in native.calls if name == "click")
     assert payload.position.element_token == "tok-hidden"
     assert payload.delivery_mode.name == "FOREGROUND"
-    assert click.status == "completed"
+    assert click.status == "unknown"
+    assert click.error_code == "unexpected_delivery"
     assert click.delivery is ComputerUseDelivery.BACKGROUND
     assert "verified" not in click.model_dump_json()
 
-    typed = await session.execute(
-        PreparedComputerAction(
-            action=TypeTextAction(type="type_text", text="hello", element_ref=button.element_ref),
-            window_point=None,
-        ),
-        window_identity=target.window_identity,
-        delivery=ComputerUseDelivery.FOREGROUND,
-        agent_run_id="arun_1",
-        generation=1,
-    )
-    assert typed.status == "completed"
-    assert "password" not in typed.model_dump_json()
-
-    class ActionInterrupted(Exception):
-        def __init__(self) -> None:
-            self.completion = _Enum("UNKNOWN")
-            self.reason = "password field focused"
-
-    async def interrupted(payload: object) -> object:
-        native.calls.append(("click", payload))
-        raise ActionInterrupted()
-
-    native.click = interrupted
-    stopped = await session.execute(
-        PreparedComputerAction(
-            action=ClickAction(type="click", element_ref=button.element_ref),
-            window_point=None,
-        ),
-        window_identity=target.window_identity,
-        delivery=ComputerUseDelivery.FOREGROUND,
-        agent_run_id="arun_1",
-        generation=1,
-    )
-    assert stopped.status == "unknown"
-    assert stopped.error_code == "action_interrupted"
-    assert "password" not in stopped.model_dump_json()
-
-    async def refused(payload: object) -> object:
-        native.calls.append(("click", payload))
-        return SimpleNamespace(
-            effect=_Enum("REFUSED"),
-            delivery=None,
-            error=SimpleNamespace(code="Not Allowed"),
+    async def fresh():
+        return await session.observe(
+            ObserveWindowRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=_scope(),
+                target=target,
+                delivery=ComputerUseDelivery.FOREGROUND,
+                include_image=False,
+            )
         )
 
-    native.click = refused
-    denial = await session.execute(
-        PreparedComputerAction(
-            action=ClickAction(type="click", element_ref=button.element_ref),
-            window_point=None,
-        ),
-        window_identity=target.window_identity,
-        delivery=ComputerUseDelivery.FOREGROUND,
-        agent_run_id="arun_1",
-        generation=1,
-    )
-    assert denial.status == "not_started"
-    assert denial.error_code == "refused"
-
-    secure = next(item for item in observed.observation.elements if item.sensitive)
-    with pytest.raises(ComputerUseContractError) as rejected:
+    observed = await fresh()
+    button = observed.observation.elements[0]
+    with pytest.raises(ComputerUseContractError, match="not_editable"):
         await session.execute(
             PreparedComputerAction(
-                action=ScrollAction(
-                    type="scroll",
-                    direction="down",
-                    amount=10,
-                    element_ref=secure.element_ref,
+                action=TypeTextAction(
+                    type="type_text", text="hello", element_ref=button.element_ref
                 ),
                 window_point=None,
             ),
@@ -582,8 +536,50 @@ async def test_actions_use_typed_results_and_drop_tool_text():
             agent_run_id="arun_1",
             generation=1,
         )
-    assert rejected.value.code == "rejected_action"
-    assert not any(name == "scroll" for name, _payload in native.calls)
+
+    class ActionInterrupted(Exception):
+        def __init__(self):
+            self.completion = _Enum("UNKNOWN")
+            self.reason = "password field focused"
+
+    async def interrupted(payload):
+        native.calls.append(("click", payload))
+        raise ActionInterrupted()
+
+    native.click = interrupted
+    stopped = await session.execute(
+        PreparedComputerAction(
+            action=ClickAction(type="click", element_ref=button.element_ref), window_point=None
+        ),
+        window_identity=target.window_identity,
+        delivery=ComputerUseDelivery.FOREGROUND,
+        agent_run_id="arun_1",
+        generation=1,
+    )
+    assert stopped.status == "unknown" and stopped.error_code == "action_interrupted"
+    assert "password" not in stopped.model_dump_json()
+
+    async def refused(payload):
+        native.calls.append(("click", payload))
+        return SimpleNamespace(
+            effect=_Enum("REFUSED"), delivery=None, error=SimpleNamespace(code="Not Allowed")
+        )
+
+    native.click = refused
+    observed = await fresh()
+    denial = await session.execute(
+        PreparedComputerAction(
+            action=ClickAction(
+                type="click", element_ref=observed.observation.elements[0].element_ref
+            ),
+            window_point=None,
+        ),
+        window_identity=target.window_identity,
+        delivery=ComputerUseDelivery.FOREGROUND,
+        agent_run_id="arun_1",
+        generation=1,
+    )
+    assert denial.status == "not_started" and denial.error_code == "refused"
     assert native.traps == 0
 
 

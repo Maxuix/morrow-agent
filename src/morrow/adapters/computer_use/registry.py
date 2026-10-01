@@ -64,6 +64,8 @@ class _ElementRecord:
     token: str | None
     window_identity: str
     center: tuple[float, float] | None
+    role: str
+    sensitive: bool
 
     def __repr__(self) -> str:
         return f"_ElementRecord(element_ref={self.element_ref!r})"
@@ -143,6 +145,8 @@ class TrustedDesktopRegistry:
         window_identity: str,
         token: str | None,
         center: tuple[float, float] | None,
+        role: str,
+        sensitive: bool,
     ) -> str:
         element_ref = self._ids.new_id(COMPUTER_ELEMENT_ID_PREFIX)
         self._elements[element_ref] = _ElementRecord(
@@ -150,8 +154,15 @@ class TrustedDesktopRegistry:
             token=token,
             window_identity=window_identity,
             center=center,
+            role=role,
+            sensitive=sensitive,
         )
         return element_ref
+
+    def retire_all_observations(self) -> None:
+        self._elements.clear()
+        self._snapshots.clear()
+        self._snapshot_windows.clear()
 
     def retire_window_observations(self, window_identity: str) -> None:
         """A new read invalidates the old token set even when that read fails."""

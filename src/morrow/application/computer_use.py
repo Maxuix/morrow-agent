@@ -8,9 +8,12 @@ from collections.abc import Callable
 
 from morrow.application.computer_authorization import authorize_computer_execution
 from morrow.core.computer_use import (
+    COMPUTER_ACTION_TOOL,
     COMPUTER_OBSERVE_TOOL,
     TRUSTED_COMPUTER_USE_AUTHORITY,
+    ActionOutcome,
     CloseRunSessionRequest,
+    ComputerUseAction,
     ComputerUseContractError,
     ComputerUseLifecyclePort,
     ComputerUsePreflight,
@@ -22,6 +25,7 @@ from morrow.core.computer_use import (
     ObservedWindow,
     OpenRunSessionRequest,
     RunSession,
+    outcome_for_rejection,
     reject_untrusted_computer_use_authority,
 )
 from morrow.core.models import ToolVisualRef
@@ -122,8 +126,11 @@ class ComputerUseObservationService:
         self._run: ComputerUseRunService | None = None
         self._opening = False
         self._closed = False
+        self._action_executions: set[str] = set()
 
-    def _authority(self, execution_id: str, *, include_image: bool):
+    def _authority(
+        self, execution_id: str, *, include_image: bool, tool_name: str = COMPUTER_OBSERVE_TOOL
+    ):
         try:
             if self._closed:
                 raise ComputerUseContractError("driver_not_activated")
@@ -132,7 +139,7 @@ class ComputerUseObservationService:
                 workspace_id=self._scope.workspace_id,
                 execution_id=execution_id,
                 scope=self._scope,
-                tool_name=COMPUTER_OBSERVE_TOOL,
+                tool_name=tool_name,
                 include_image=include_image,
                 now=self._clock.now(),
             )
@@ -246,7 +253,26 @@ class ComputerUseObservationService:
             reference.model_dump(include=set(ObservationImageRef.model_fields))
         )
         observation = read.observation.model_copy(update={"image": image})
+        assert self._run is not None
+        self._run.accept_published_observation(observation)
         return observation, (reference,)
+
+    async def execute_one(
+        self, execution_id: str, observation_id: str, action: ComputerUseAction
+    ) -> ActionOutcome:
+        def authority():
+            self._authority(execution_id, include_image=False, tool_name=COMPUTER_ACTION_TOOL)
+
+        try:
+            authority()
+            if execution_id in self._action_executions:
+                raise ComputerUseContractError("execution_already_used")
+            self._action_executions.add(execution_id)
+            if self._run is None:
+                raise ComputerUseContractError("stale_observation")
+            return await self._run.execute_one(observation_id, action, authority=authority)
+        except ComputerUseContractError as exc:
+            return outcome_for_rejection(str(exc))
 
     async def close(self) -> None:
         self._closed = True

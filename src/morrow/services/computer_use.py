@@ -7,19 +7,25 @@ from collections.abc import Callable
 
 from morrow.core.computer_use import (
     MAX_DISCOVERED_TARGETS,
+    MAX_OBSERVATION_AGE_SECONDS,
     TRUSTED_COMPUTER_USE_AUTHORITY,
+    ActionOutcome,
+    ComputerUseAction,
     ComputerUseContractError,
     ComputerUseOperation,
     ComputerUseScope,
     ComputerUseSessionPort,
     DiscoverRequest,
     DiscoverResult,
+    ExecuteRequest,
     Observation,
     ObservedWindow,
     ObserveWindowRequest,
     RunSession,
     TargetRef,
     images_allowed,
+    outcome_for_rejection,
+    prepare_execute_request,
 )
 from morrow.core.ports import Clock
 from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
@@ -196,6 +202,82 @@ class ComputerUseRunService:
                 raise ComputerUseContractError("images_not_allowed")
             self._observations[target_ref] = observation
             return read
+        except asyncio.CancelledError:
+            self.stop()
+            raise
+        finally:
+            self._busy = False
+
+    def accept_published_observation(self, observation: Observation) -> None:
+        """Attach only the safely published image to the current transient read."""
+        current = self._observations.get(observation.target_ref)
+        if current is None or observation.model_copy(update={"image": None}) != current:
+            raise ComputerUseContractError("stale_observation")
+        self._observations[observation.target_ref] = observation
+
+    async def execute_one(
+        self,
+        observation_id: str,
+        action: ComputerUseAction,
+        *,
+        authority: Callable[[], None],
+    ) -> ActionOutcome:
+        """Consume exactly one current observation; never refresh and replay an action."""
+        try:
+            self._admit(authority)
+            observation = next(
+                (
+                    item
+                    for item in self._observations.values()
+                    if item.observation_id == observation_id
+                ),
+                None,
+            )
+            if observation is None:
+                raise ComputerUseContractError("stale_observation")
+            age = (self.clock.now() - observation.captured_at).total_seconds()
+            if not 0 <= age < MAX_OBSERVATION_AGE_SECONDS:
+                self._observations.pop(observation.target_ref, None)
+                raise ComputerUseContractError("stale_observation")
+            target = self._targets[observation.target_ref]
+            request = ExecuteRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=self.scope,
+                target=target,
+                observation=observation,
+                action=action,
+                delivery=self.scope.delivery,
+            )
+            prepare_execute_request(request, settings=self.settings)
+            if getattr(action, "x", None) is not None and observation.image is None:
+                raise ComputerUseContractError("image_not_published")
+        except ComputerUseContractError as exc:
+            return outcome_for_rejection(str(exc))
+        self._begin()
+        # Consumption precedes native preflight/await, including refusal and cancellation.
+        self._observations.pop(observation.target_ref, None)
+        try:
+            outcome = await self.session.execute_one(
+                request, settings=self.settings, authority=authority
+            )
+            if outcome.delivery is not None and outcome.delivery is not self.scope.delivery:
+                outcome = outcome.model_copy(
+                    update={
+                        "status": "unknown",
+                        "error_code": "unexpected_delivery",
+                    }
+                )
+            try:
+                self._finish(authority)
+            except ComputerUseContractError as exc:
+                # Revocation/deadline after dispatch stops admission; effects survive.
+                if outcome.error_code is None:
+                    outcome = outcome.model_copy(update={"error_code": str(exc)})
+            return outcome.model_copy(update={"before_observation_id": observation_id})
+        except ComputerUseContractError as exc:
+            return outcome_for_rejection(str(exc)).model_copy(
+                update={"before_observation_id": observation_id}
+            )
         except asyncio.CancelledError:
             self.stop()
             raise

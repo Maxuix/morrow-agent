@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -48,10 +48,11 @@ MAX_IMAGE_PIXELS = 16_000_000
 MAX_IMAGE_LONG_EDGE_PX = 1920
 MAX_AX_ELEMENTS = 200
 MAX_AX_DEPTH = 8
+MAX_OBSERVATION_AGE_SECONDS = 30
 MAX_AX_TEXT_BYTES = 32 * 1024
 MAX_TEXT_CHARS = 4096
 MAX_HOTKEY_KEYS = 4
-MAX_SCROLL_UNITS = 2000
+MAX_SCROLL_UNITS = 50
 MAX_APPS = 8
 MAX_DISCOVERED_TARGETS = 100
 
@@ -817,8 +818,14 @@ class ScrollAction(ComputerUseModel):
 
 class PressKeyAction(ComputerUseModel):
     type: Literal["press_key"]
+    element_ref: str | None = None
     key: str
     postcondition: Postcondition | None = None
+
+    @field_validator("element_ref")
+    @classmethod
+    def valid_element(cls, value: str | None) -> str | None:
+        return None if value is None else validate_prefixed_id(value, COMPUTER_ELEMENT_ID_PREFIX)
 
     @field_validator("key")
     @classmethod
@@ -830,8 +837,14 @@ class PressKeyAction(ComputerUseModel):
 
 class HotkeyAction(ComputerUseModel):
     type: Literal["hotkey"]
+    element_ref: str | None = None
     keys: tuple[str, ...]
     postcondition: Postcondition | None = None
+
+    @field_validator("element_ref")
+    @classmethod
+    def valid_element(cls, value: str | None) -> str | None:
+        return None if value is None else validate_prefixed_id(value, COMPUTER_ELEMENT_ID_PREFIX)
 
     @field_validator("keys", mode="before")
     @classmethod
@@ -841,13 +854,13 @@ class HotkeyAction(ComputerUseModel):
     @field_validator("keys")
     @classmethod
     def canonical_keys(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if not 1 <= len(value) <= MAX_HOTKEY_KEYS or len(set(value)) != len(value):
+        if not 2 <= len(value) <= MAX_HOTKEY_KEYS or len(set(value)) != len(value):
             raise ValueError("rejected_action")
         if any(item not in _KEYS for item in value):
             raise ValueError("rejected_action")
         modifiers = tuple(item for item in _MODIFIERS if item in value)
         rest = tuple(sorted(item for item in value if item not in _MODIFIERS))
-        if not rest:
+        if len(rest) != 1:
             raise ValueError("rejected_action")
         return modifiers + rest
 
@@ -968,8 +981,20 @@ def prepare_execute_request(
     action = request.action
     element_ref = getattr(action, "element_ref", None)
     element = _matching_element(observation, element_ref)
-    if isinstance(action, TypeTextAction) and element is not None and element.sensitive:
-        raise ComputerUseContractError("sensitive_target")
+    if isinstance(action, (TypeTextAction, PressKeyAction, HotkeyAction)):
+        if element is None:
+            raise ComputerUseContractError("element_required")
+        if element.sensitive:
+            raise ComputerUseContractError("sensitive_target")
+        if isinstance(action, TypeTextAction) and element.role not in {
+            "axtextfield",
+            "axtextarea",
+            "axcombobox",
+            "axsearchfield",
+        }:
+            raise ComputerUseContractError("not_editable")
+    if isinstance(action, ScrollAction) and element is None and action.x is None:
+        raise ComputerUseContractError("element_required")
     point = None
     x = getattr(action, "x", None)
     y = getattr(action, "y", None)
@@ -1229,6 +1254,14 @@ class ComputerUseSessionPort(Protocol):
     async def observe(
         self, request: ObserveWindowRequest, *, settings: ComputerUseSettings
     ) -> ObservedWindow: ...
+
+    async def execute_one(
+        self,
+        request: ExecuteRequest,
+        *,
+        settings: ComputerUseSettings,
+        authority: Callable[[], None],
+    ) -> ActionOutcome: ...
 
     def invalidate(self) -> None: ...
 

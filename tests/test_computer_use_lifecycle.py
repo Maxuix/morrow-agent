@@ -454,7 +454,7 @@ def test_pinned_session_factory_uses_immutable_named_standard_surface():
 
 
 async def test_timeout_reports_unknown_and_does_not_cancel_native_action_or_unlock():
-    from morrow.core.computer_use import PreparedComputerAction, PressKeyAction
+    from morrow.core.computer_use import ClickAction, ObserveWindowRequest, PreparedComputerAction
 
     lease = _Lease()
     owner, _, natives = _owner(lease)
@@ -467,6 +467,15 @@ async def test_timeout_reports_unknown_and_does_not_cancel_native_action_or_unlo
             run_session_id=run.run_session_id,
         )
     )
+    observed = await session.observe(
+        ObserveWindowRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+            scope=_scope(),
+            target=targets.targets[0],
+            delivery=_scope().delivery,
+            include_image=False,
+        )
+    )
     entered, release = asyncio.Event(), asyncio.Event()
     finished = []
 
@@ -477,16 +486,26 @@ async def test_timeout_reports_unknown_and_does_not_cancel_native_action_or_unlo
         return SimpleNamespace()
 
     async def expire(shielded, timeout):
-        await entered.wait()
-        shielded.cancel()
-        raise TimeoutError
+        marker = asyncio.create_task(entered.wait())
+        try:
+            done, _ = await asyncio.wait({shielded, marker}, return_when=asyncio.FIRST_COMPLETED)
+            if shielded in done:
+                return await shielded
+            shielded.cancel()
+            raise TimeoutError
+        finally:
+            marker.cancel()
+            await asyncio.gather(marker, return_exceptions=True)
 
-    natives[0].press_key = waiting
+    natives[0].click = waiting
     original_waiter = session._calls._waiter
     session._calls._waiter = expire
     outcome = await session.execute(
         PreparedComputerAction(
-            action=PressKeyAction(type="press_key", key="enter"), window_point=None
+            action=ClickAction(
+                type="click", element_ref=observed.observation.elements[0].element_ref
+            ),
+            window_point=None,
         ),
         window_identity=targets.targets[0].window_identity,
         delivery=_scope().delivery,

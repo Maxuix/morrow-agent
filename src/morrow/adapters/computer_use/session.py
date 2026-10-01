@@ -10,6 +10,15 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
+from morrow.adapters.computer_use.action_inputs import (
+    ElementSafetySubject,
+    NativeHotkeyInput,
+    NativeKeyInput,
+    NativeScrollInput,
+    NativeTextInput,
+    invoke_fixed_action,
+    native_key,
+)
 from morrow.adapters.computer_use.calls import NativeActionInterrupted, NativeCalls
 from morrow.adapters.computer_use.process_identity import ProcessBirth, read_process_birth
 from morrow.adapters.computer_use.registry import TrustedDesktopRegistry, WindowGeometry
@@ -21,6 +30,7 @@ from morrow.core.computer_use import (
     MAX_IMAGE_BYTES,
     MAX_IMAGE_LONG_EDGE_PX,
     MAX_IMAGE_PIXELS,
+    MAX_OBSERVATION_AGE_SECONDS,
     ActionOutcome,
     AxElement,
     CloseRunSessionRequest,
@@ -32,6 +42,7 @@ from morrow.core.computer_use import (
     CoordinateFrame,
     DiscoverRequest,
     DiscoverResult,
+    ExecuteRequest,
     Observation,
     ObservedWindow,
     ObserveWindowRequest,
@@ -41,6 +52,7 @@ from morrow.core.computer_use import (
     SensitiveCaptureRegion,
     TargetRef,
     TransientCapture,
+    prepare_execute_request,
     reject_untrusted_computer_use_authority,
 )
 from morrow.core.domain import (
@@ -54,6 +66,8 @@ from morrow.core.ports import Clock, IdSource
 from morrow.core.runtime_policy import ComputerUseSettings
 
 _CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_EDITABLE_ROLES = frozenset({"axtextfield", "axtextarea", "axcombobox", "axsearchfield"})
+
 _MIME = {
     "image/png": "image/png",
     "image/jpeg": "image/jpeg",
@@ -76,6 +90,7 @@ class TypedComputerSession:
         session_name: str | None = None,
         call_timeout: float = 15,
         process_reader: Callable[[int], ProcessBirth] = read_process_birth,
+        element_safety_probe: Callable[[ElementSafetySubject], bool | None] | None = None,
     ) -> None:
         self._sdk = sdk
         self._native = native_session
@@ -91,8 +106,10 @@ class TypedComputerSession:
         self._agent_run_id: str | None = None
         self._generation: int | None = None
         self._scope: ComputerUseScope | None = None
+        self._observations: dict[str, Observation] = {}
         self._calls = NativeCalls(self.invalidate, timeout=call_timeout)
         self._process_reader = process_reader
+        self._element_safety_probe = element_safety_probe
 
     async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession:
         self._check_owner(bind=True)
@@ -168,6 +185,8 @@ class TypedComputerSession:
             raise ComputerUseContractError("app_not_granted")
         if request.bundle_id is not None:
             granted = {request.bundle_id}
+        self._observations.clear()
+        self._registry.retire_all_observations()
         listed = await self._call("list_apps", self._sdk.ListAppsInput())
         targets: list[TargetRef] = []
         for app in getattr(listed, "apps", ()) or ():
@@ -214,6 +233,7 @@ class TypedComputerSession:
             or window.target_ref != request.target.target_ref
         ):
             raise ComputerUseContractError("stale_observation")
+        self._observations.pop(window.window_identity, None)
         self._registry.retire_window_observations(window.window_identity)
         resolved = settings or ComputerUseSettings()
         geometry = await self._validate_live_target(window)
@@ -240,6 +260,158 @@ class TypedComputerSession:
             request, window.window_identity, window.bundle_id, state, geometry=geometry
         )
 
+    async def execute_one(
+        self,
+        request: ExecuteRequest,
+        *,
+        settings: ComputerUseSettings,
+        authority: Callable[[], None],
+    ) -> ActionOutcome:
+        authority()
+        reject_untrusted_computer_use_authority(request.authority)
+        self._require_scope(request.scope)
+        prepared = prepare_execute_request(request, settings=settings)
+        window = self._registry.window(request.target.window_identity)
+        current = self._observations.get(window.window_identity)
+        if current is None or request.observation.model_copy(update={"image": None}) != current:
+            raise ComputerUseContractError("stale_observation")
+        age = (self._clock.now() - current.captured_at).total_seconds()
+        if not 0 <= age < MAX_OBSERVATION_AGE_SECONDS:
+            raise ComputerUseContractError("stale_observation")
+        if getattr(prepared.action, "x", None) is not None and request.observation.image is None:
+            raise ComputerUseContractError("image_not_published")
+        # Retire before any await, including preflight failures. SDK tokens remain
+        # available only to this admitted request until the call settles.
+        self._observations.pop(window.window_identity)
+        try:
+            if await self._validate_live_target(window) != window.geometry:
+                raise ComputerUseContractError("stale_observation")
+            authority()
+            self._require_scope(request.scope)
+            self._validate_process(window)
+            action = prepared.action
+            element_ref = getattr(action, "element_ref", None)
+            element = self._registry.element(element_ref) if element_ref else None
+            if element is not None and (
+                element.window_identity != window.window_identity or not element.token
+            ):
+                raise ComputerUseContractError("unknown_element")
+            if action.type in {"type_text", "press_key", "hotkey"}:
+                if element is None:
+                    raise ComputerUseContractError("element_required")
+                if element.sensitive:
+                    raise ComputerUseContractError("sensitive_target")
+                subject = ElementSafetySubject(
+                    window.pid, window.window_id, element.token, element.role, element.center
+                )
+                if not _proven_non_sensitive(self._element_safety_probe, subject):
+                    raise ComputerUseContractError("element_safety_unconfirmed")
+                if action.type == "type_text" and element.role not in {
+                    "axtextfield",
+                    "axtextarea",
+                    "axcombobox",
+                    "axsearchfield",
+                }:
+                    raise ComputerUseContractError("not_editable")
+            if action.type == "click":
+                payload = self._sdk.ClickInput(
+                    target=self._sdk.ActionTarget.WINDOW(window.pid, window.window_id),
+                    position=self._click_position(action, prepared.window_point),
+                    delivery_mode=_input_delivery(self._sdk, request.delivery),
+                    session=self._require_session(),
+                    button=_click_button(self._sdk, action.button),
+                    count=action.count,
+                )
+
+                async def dispatch():
+                    return await self._require("click")(payload)
+
+                normalize = outcome_from_action
+            else:
+                common = dict(
+                    pid=window.pid,
+                    window_id=window.window_id,
+                    session=self._require_session(),
+                    delivery_mode=request.delivery.value,
+                )
+                try:
+                    if action.type == "type_text":
+                        payload = NativeTextInput(
+                            **common, element_token=element.token, text=action.text
+                        )
+                    elif action.type == "press_key":
+                        payload = NativeKeyInput(
+                            **common, element_token=element.token, key=native_key(action.key)
+                        )
+                    elif action.type == "hotkey":
+                        payload = NativeHotkeyInput(
+                            **common,
+                            element_token=element.token,
+                            keys=tuple(native_key(k) for k in action.keys),
+                        )
+                    elif action.type == "scroll":
+                        point = prepared.window_point
+                        payload = NativeScrollInput(
+                            **common,
+                            direction=action.direction,
+                            amount=action.amount,
+                            element_token=element.token if element else None,
+                            x=point[0] if point else None,
+                            y=point[1] if point else None,
+                        )
+                    else:
+                        raise ComputerUseContractError("rejected_action")
+                except ValueError:
+                    raise ComputerUseContractError("rejected_action") from None
+
+                async def dispatch():
+                    return await invoke_fixed_action(self._native, payload)
+
+                normalize = outcome_from_tool
+
+            async def admitted_call():
+                # Run inside the retained native task, immediately before SDK entry.
+                authority()
+                self._require_scope(request.scope)
+                self._validate_process(window)
+                if action.type in {"type_text", "press_key", "hotkey"}:
+                    subject = ElementSafetySubject(
+                        window.pid, window.window_id, element.token, element.role, element.center
+                    )
+                    if not _proven_non_sensitive(self._element_safety_probe, subject):
+                        raise ComputerUseContractError("element_safety_unconfirmed")
+                age = (self._clock.now() - current.captured_at).total_seconds()
+                if not 0 <= age < MAX_OBSERVATION_AGE_SECONDS:
+                    raise ComputerUseContractError("stale_observation")
+                return await dispatch()
+
+            try:
+                result = await self._calls.run(admitted_call)
+                outcome = normalize(result)
+            except NativeActionInterrupted as exc:
+                outcome = ActionOutcome(
+                    status={"NOT_STARTED": "not_started", "COMPLETED": "completed"}.get(
+                        exc.completion, "unknown"
+                    ),
+                    error_code="action_interrupted",
+                )
+            except ComputerUseContractError as exc:
+                # Once admitted, an opaque SDK failure cannot prove no side effect.
+                if str(exc) in {"driver_timeout", "driver_error"}:
+                    outcome = ActionOutcome(status="unknown", error_code=str(exc))
+                else:
+                    raise
+            if outcome.delivery is not None and outcome.delivery is not request.delivery:
+                outcome = outcome.model_copy(
+                    update={
+                        "status": "unknown",
+                        "error_code": "unexpected_delivery",
+                    }
+                )
+            return outcome.model_copy(update={"before_observation_id": current.observation_id})
+        finally:
+            self._registry.retire_window_observations(window.window_identity)
+
     async def execute(
         self,
         prepared: PreparedComputerAction,
@@ -249,94 +421,33 @@ class TypedComputerSession:
         agent_run_id: str,
         generation: int,
     ) -> ActionOutcome:
+        """Compatibility delegate; production uses the authorized execute_one port."""
         self._require_subject(agent_run_id, generation)
         window = self._registry.window(window_identity)
-        if window.agent_run_id != agent_run_id or window.generation != generation:
-            raise ComputerUseContractError("stale_observation")
         self._validate_process(window)
-        action = prepared.action
-        target = self._sdk.ActionTarget.WINDOW(window.pid, window.window_id)
-        session_name = self._require_session()
-        try:
-            if action.type == "click":
-                result = await self._call(
-                    "click",
-                    self._sdk.ClickInput(
-                        target=target,
-                        position=self._click_position(action, prepared.window_point),
-                        delivery_mode=_input_delivery(self._sdk, delivery),
-                        session=session_name,
-                        button=_click_button(self._sdk, action.button),
-                        count=action.count,
-                    ),
-                )
-                return outcome_from_action(result)
-            if action.type == "type_text":
-                result = await self._call(
-                    "type_text",
-                    self._sdk.TypeTextInput(
-                        text=action.text,
-                        target=target,
-                        scope=None,
-                        session=session_name,
-                    ),
-                )
-                return outcome_from_tool(result)
-            if action.type == "scroll":
-                point = self._scroll_point(action, prepared.window_point)
-                result = await self._call(
-                    "scroll",
-                    self._sdk.ScrollInput(
-                        x=point[0],
-                        y=point[1],
-                        direction=getattr(self._sdk.ScrollDirection, action.direction.upper()),
-                        target=target,
-                        scope=None,
-                        session=session_name,
-                        by=None,
-                        amount=action.amount,
-                    ),
-                )
-                return outcome_from_tool(result)
-            if action.type == "press_key":
-                result = await self._call(
-                    "press_key",
-                    self._sdk.PressKeyInput(
-                        key=action.key,
-                        target=target,
-                        scope=None,
-                        session=session_name,
-                        modifiers=None,
-                    ),
-                )
-                return outcome_from_tool(result)
-            if action.type == "hotkey":
-                result = await self._call(
-                    "hotkey",
-                    self._sdk.HotkeyInput(
-                        keys=list(action.keys),
-                        target=target,
-                        scope=None,
-                        session=session_name,
-                    ),
-                )
-                return outcome_from_tool(result)
-            raise ComputerUseContractError("rejected_action")
-        except NativeActionInterrupted as exc:
-            return ActionOutcome(
-                status={"NOT_STARTED": "not_started", "COMPLETED": "completed"}.get(
-                    exc.completion, "unknown"
-                ),
-                error_code="action_interrupted",
-            )
-        except ComputerUseContractError as exc:
-            if str(exc) == "driver_timeout":
-                return ActionOutcome(status="unknown", error_code="driver_timeout")
-            raise
-        except Exception as exc:
-            if type(exc).__name__ == "ActionInterrupted":
-                return _interrupted_outcome(exc)
-            return ActionOutcome(status="unknown", error_code="driver_error")
+        current = self._observations.get(window_identity)
+        if current is None or self._scope is None:
+            raise ComputerUseContractError("stale_observation")
+        target = TargetRef(
+            target_ref=window.target_ref,
+            agent_run_id=agent_run_id,
+            generation=generation,
+            app=ComputerUseAppIdentity(bundle_id=window.bundle_id),
+            process_identity=window.process_identity,
+            window_identity=window_identity,
+        )
+        return await self.execute_one(
+            ExecuteRequest(
+                authority="local_interface_command",
+                scope=self._scope,
+                target=target,
+                observation=current,
+                action=prepared.action,
+                delivery=delivery,
+            ),
+            settings=ComputerUseSettings(enabled=True),
+            authority=lambda: None,
+        )
 
     def _window_target(
         self, request: DiscoverRequest, bundle_id: str, pid: int, window: Any, birth: ProcessBirth
@@ -415,7 +526,9 @@ class TypedComputerSession:
         *,
         geometry: WindowGeometry,
     ) -> ObservedWindow:
-        elements, omitted, truncated = _elements(state, self._registry, window_identity)
+        elements, omitted, truncated = _elements(
+            state, self._registry, window_identity, safety_probe=self._element_safety_probe
+        )
         degraded = bool(getattr(state, "degraded", False))
         degraded_reason = None
         if degraded:
@@ -483,6 +596,8 @@ class TypedComputerSession:
                 regions = _sensitive_regions(state, elements, geometry, capture)
             except ComputerUseContractError:
                 image_error = "image_safety_unconfirmed"
+        self._registry.window(window_identity).geometry = geometry
+        self._observations[window_identity] = observation
         return ObservedWindow(
             observation=observation,
             capture=capture,
@@ -500,17 +615,6 @@ class TypedComputerSession:
             raise ComputerUseContractError("unknown_scale")
         return self._sdk.ClickPosition.COORDINATES(window_point[0], window_point[1])
 
-    def _scroll_point(
-        self, action: Any, window_point: tuple[float, float] | None
-    ) -> tuple[float, float]:
-        if window_point is not None:
-            return window_point
-        if action.element_ref is not None:
-            center = self._registry.element(action.element_ref).center
-            if center is not None:
-                return center
-        raise ComputerUseContractError("rejected_action")
-
     @property
     def pending(self) -> bool:
         return self._calls.pending
@@ -522,6 +626,7 @@ class TypedComputerSession:
     def invalidate(self) -> None:
         self._closed = True
         self._registry.clear()
+        self._observations.clear()
         self._calls.stop()
 
     async def settle(self) -> None:
@@ -608,7 +713,11 @@ def _interrupted_outcome(exc: BaseException) -> ActionOutcome:
 
 
 def _elements(
-    state: Any, registry: TrustedDesktopRegistry, window_identity: str
+    state: Any,
+    registry: TrustedDesktopRegistry,
+    window_identity: str,
+    *,
+    safety_probe: Callable[[ElementSafetySubject], bool | None] | None = None,
 ) -> tuple[list[AxElement], int, bool]:
     raw_elements = getattr(state, "elements", None) or ()
     total = getattr(state, "total_element_count", None)
@@ -636,6 +745,17 @@ def _elements(
             continue
         role = _role(getattr(raw, "role", ""))
         label, sensitive = _element_label(raw, role)
+        if role in _EDITABLE_ROLES:
+            window = registry.window(window_identity)
+            subject = ElementSafetySubject(
+                window.pid,
+                window.window_id,
+                getattr(raw, "element_token", None),
+                role,
+                _center(getattr(raw, "frame", None)),
+            )
+            if not _proven_non_sensitive(safety_probe, subject):
+                label, sensitive = None, True
         addition = len(role.encode()) + len((label or "").encode())
         if text_bytes + addition > MAX_AX_TEXT_BYTES:
             omitted += 1
@@ -647,6 +767,8 @@ def _elements(
             window_identity=window_identity,
             token=token if isinstance(token, str) and token else None,
             center=_center(getattr(raw, "frame", None)),
+            role=role,
+            sensitive=sensitive,
         )
         kept.append(
             AxElement(
@@ -778,6 +900,16 @@ def _role(value: object) -> str:
     if not token or not token[0].isalpha():
         token = f"ax_{token}" if token else "ax_element"
     return token[:64]
+
+
+def _proven_non_sensitive(probe, subject: ElementSafetySubject) -> bool:
+    if probe is None:
+        return False
+    try:
+        return probe(subject) is True
+    except Exception:
+        # Neither probe failures nor native subrole strings escape to the model.
+        return False
 
 
 def _element_label(raw: Any, role: str) -> tuple[str | None, bool]:
