@@ -9,10 +9,11 @@ into this seam in later subplans.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from morrow.adapters.registry import AdapterRegistry
+from morrow.application.computer_runs import PreparedComputerUseRun
 from morrow.application.context import ContextBuilder
 from morrow.application.mcp.runtime import PreparedMcpRun, register_mcp_tools
 from morrow.core.agent_runs import (
@@ -56,15 +57,21 @@ class PreparedAgentRunRuntime:
     run_policy: RunPolicy
     mcp_run: PreparedMcpRun | None = None
     agent_run_id: str | None = None
+    computer_run: PreparedComputerUseRun | None = None
 
     def close(self) -> None:
-        """Synchronous no-op cleanup hook; async consumers call :meth:`aclose`."""
-        return None
+        """Stop desktop admission immediately; async consumers drain with :meth:`aclose`."""
+        if self.computer_run is not None:
+            self.computer_run.close()
 
     async def aclose(self) -> None:
-        """Close lazy MCP resources without changing the ordinary loop shape."""
-        if self.mcp_run is not None:
-            await self.mcp_run.pool.close()
+        """Close run resources through the ordinary loop's existing cleanup seam."""
+        try:
+            if self.mcp_run is not None:
+                await self.mcp_run.pool.close()
+        finally:
+            if self.computer_run is not None:
+                await self.computer_run.aclose()
 
 
 def tool_schema_digest(tools: tuple[ToolDefinition, ...]) -> str:
@@ -156,6 +163,7 @@ class AgentRunPreparationService:
         prompt_assembler=None,
         long_horizon_settings: LongHorizonPolicySettings | None = None,
         permission_configurator=None,
+        computer_factory: Callable[[str, RunPolicy], PreparedComputerUseRun | None] | None = None,
     ) -> None:
         self.global_store = global_store
         self.attachment_resolver = attachment_resolver
@@ -174,6 +182,7 @@ class AgentRunPreparationService:
         self.prompt_assembler = prompt_assembler
         self.long_horizon_settings = long_horizon_settings
         self.permission_configurator = permission_configurator
+        self.computer_factory = computer_factory
 
     def prepare_new(
         self,
@@ -200,7 +209,23 @@ class AgentRunPreparationService:
                 and prompt_assembler is None
                 and tool_transform is None
             ):
-                return self.injected
+                computer_run = self._computer_run(agent_run_id, self.injected.run_policy)
+                if computer_run is None:
+                    return self.injected
+                executor = computer_run.extend(self.injected.tool_executor)
+                spec = self.injected.spec.model_copy(
+                    update={
+                        "tool_schema_digest": tool_schema_digest(executor.definitions),
+                        "tool_count": len(executor.definitions),
+                    }
+                )
+                return replace(
+                    self.injected,
+                    spec=spec,
+                    tool_executor=executor,
+                    agent_run_id=agent_run_id,
+                    computer_run=computer_run,
+                )
             raise ValueError("尚未配置 active_model")
         model = model or config.active_model
         prompt_assembler = prompt_assembler or self.prompt_assembler
@@ -260,6 +285,9 @@ class AgentRunPreparationService:
             except Exception as exc:
                 raise AgentRunPreparationError("MCP preparation failed") from exc
             tool_executor = self._merge_mcp_tools(tool_executor, mcp_run, agent_run_id=agent_run_id)
+        computer_run = self._computer_run(agent_run_id, run_policy)
+        if computer_run is not None:
+            tool_executor = computer_run.extend(tool_executor)
         if tool_transform is not None:
             tool_executor = tool_transform(tool_executor)
         tools = tool_executor.definitions if tool_executor is not None else ()
@@ -285,6 +313,7 @@ class AgentRunPreparationService:
             run_policy=run_policy,
             mcp_run=mcp_run,
             agent_run_id=agent_run_id,
+            computer_run=computer_run,
         )
 
     def rehydrate(
@@ -360,6 +389,9 @@ class AgentRunPreparationService:
             if mcp_run is None or mcp_run.snapshot_ids != snapshot.mcp_run_snapshot_ids:
                 raise AgentRunPreparationError("AgentRun MCP snapshot evidence is inconsistent")
             tool_executor = self._merge_mcp_tools(tool_executor, mcp_run, agent_run_id=agent_run_id)
+        computer_run = self._computer_run(agent_run_id, snapshot.run_policy)
+        if computer_run is not None:
+            tool_executor = computer_run.extend(tool_executor)
         if tool_transform is not None:
             tool_executor = tool_transform(tool_executor)
         tools = tool_executor.definitions if tool_executor is not None else ()
@@ -396,7 +428,16 @@ class AgentRunPreparationService:
             run_policy=snapshot.run_policy,
             mcp_run=mcp_run,
             agent_run_id=agent_run_id,
+            computer_run=computer_run,
         )
+
+    def _computer_run(self, agent_run_id, policy):
+        if self.computer_factory is None or agent_run_id is None:
+            return None
+        try:
+            return self.computer_factory(agent_run_id, policy)
+        except Exception as exc:
+            raise AgentRunPreparationError("Computer-use frozen authority is unavailable") from exc
 
     def _estimate_request_tokens(self, model: ModelRef):
         if self.make_estimate_request_tokens is None:

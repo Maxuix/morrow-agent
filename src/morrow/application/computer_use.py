@@ -440,10 +440,14 @@ class ComputerUseObservationService:
                 verification_error=verification_error,
             ), ()
 
-    async def close(self) -> None:
+    def stop_admission(self) -> None:
         self._closed = True
         if self._run is not None:
             self._run.stop()
+
+    async def close(self) -> None:
+        self.stop_admission()
+        if self._run is not None:
             await self._lifecycle.close_run_session(
                 CloseRunSessionRequest(
                     authority=TRUSTED_COMPUTER_USE_AUTHORITY,

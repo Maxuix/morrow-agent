@@ -33,6 +33,7 @@ from morrow.core.permissions import (
     CapabilityName,
     IsolationLabel,
     capability_grant_digest,
+    workspace_root_digest,
 )
 from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
 from morrow.testing import FixedClock, FixedIdSource
@@ -50,6 +51,7 @@ def environment(tmp_path):
     journal.put_capability_grant("ws_a", grant)
     snapshot = _snapshot(
         workspace_id="ws_a",
+        workspace_root_digest=workspace_root_digest(tmp_path),
         source_revisions=journal.get_agent_run("ws_a", "arun_1").snapshot.source_revisions,
         permission_profile_digest=journal.get_agent_run(
             "ws_a", "arun_1"
