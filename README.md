@@ -225,7 +225,17 @@ uv run morrow computer configure --disable --expected-revision <revision>
 
 In an interactive `full-access-manual` session, use `/computer` (or `/computer select`)
 to read local window candidates and choose numbered windows, delivery, action permission,
-and image sharing. `/computer status` shows the pending scope; `/computer clear` removes it.
+and image sharing. `/computer status` shows the pending scope, local native-call state, and
+unknown desktop effects from the current run; `/computer clear` removes the pending selection.
+Stopping or revoking denies subsequent actions. Already dispatched effects cannot be undone;
+while native calls are still settling, the desktop lease remains held. Refresh the GUI grant
+view or use `/computer status` to read the latest state. Unknown actions must not be retried
+automatically.
+
+Headless execution never prompts for approval. If an action needs confirmation, it is not
+dispatched: the durable tool reply reports `needs_approval`, and `morrow run` emits a
+`run.completed` record with `stop_reason: "needs_approval"` and exits with code 2. Reissue the
+request in an interactive session with an explicit new window selection and action approval.
 The selection expires after about 30 seconds and applies to one new ordinary chat run.
 It creates no grant until that run is prepared. A pending `/grant` for Host commands and a
 desktop selection are mutually exclusive. Expired selections must be cleared or selected again.

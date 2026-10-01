@@ -36,6 +36,7 @@ _NOT_RUN_ERROR_CODES = frozenset(
         ToolErrorCode.PERMISSION_DENIED,
         ToolErrorCode.APPROVAL_REJECTED,
         ToolErrorCode.APPROVAL_UNAVAILABLE,
+        ToolErrorCode.NEEDS_APPROVAL,
         ToolErrorCode.APPROVAL_PREVIEW_FAILED,
         ToolErrorCode.CANCELLED,
     }
@@ -632,8 +633,14 @@ class ToolCycleExecutor:
                 return execution, None
             denied = self.tool_executor.error_outcome(
                 call,
-                ToolErrorCode.APPROVAL_REJECTED,
-                "工具操作未获批准",
+                ToolErrorCode.NEEDS_APPROVAL
+                if decision is None
+                else ToolErrorCode.APPROVAL_REJECTED,
+                (
+                    "工具需要审批，但当前没有可用的审批通道；请在交互式会话中重新发起并确认"
+                    if decision is None
+                    else "工具操作未获批准"
+                ),
                 result_limit=result_limit,
             )
             return execution, denied

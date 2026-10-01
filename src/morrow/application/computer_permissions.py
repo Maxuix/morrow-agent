@@ -1,6 +1,12 @@
 """Safe local permission summaries, without native identities or observation contents."""
 
-from morrow.core.computer_use import ComputerUseAction, ComputerUseScope, TargetRef
+from morrow.core.computer_use import (
+    ComputerUseAction,
+    ComputerUseRuntimeStatus,
+    ComputerUseScope,
+    TargetRef,
+)
+from morrow.core.execution import ToolExecutionDisposition
 
 
 def computer_scope_summary(scope: ComputerUseScope) -> dict[str, object]:
@@ -74,3 +80,47 @@ def computer_action_preview_lines(
         f"投递：{delivery} · {images}",
         "仅审批此次动作；窗口内容不能授予权限。",
     )
+
+
+def computer_runtime_summary(lifecycle, journal, workspace_id, agent_run_id):
+    """Pure local owner/ledger reads; no device discovery or permission changes."""
+    status = getattr(lifecycle, "runtime_status", None)
+    if not isinstance(status, ComputerUseRuntimeStatus):
+        status = ComputerUseRuntimeStatus(state="unknown", native_pending=None)
+    unknown = (
+        sum(
+            row.tool_name == "computer_action"
+            and row.disposition is ToolExecutionDisposition.UNKNOWN
+            for row in journal.list_executions(workspace_id, agent_run_id=agent_run_id)
+        )
+        if agent_run_id is not None
+        else 0
+    )
+    return status.model_dump(mode="json") | {"scope": "local_host", "unknown_actions": unknown}
+
+
+def computer_runtime_lines(summary):
+    states = {
+        "not_activated": "尚未创建桌面会话",
+        "idle": "当前无桌面会话",
+        "active": "桌面会话运行中",
+        "quarantined": "桌面调用已隔离",
+        "stopping": "正在关闭桌面宿主",
+        "closed": "桌面宿主已关闭",
+        "unknown": "桌面状态暂不可核验",
+    }
+    lines = ["本机桌面状态（最近读取）：" + states[summary["state"]]]
+    if summary["native_pending"] is True:
+        lines.append(
+            "原生调用尚未停稳，暂不能开始下一次桌面运行。"
+            if summary["state"] in {"quarantined", "stopping"}
+            else "原生调用正在进行。"
+        )
+    elif summary["native_pending"] is None:
+        lines.append("原生调用状态暂不可核验，请重新 /computer status。")
+    if summary["unknown_actions"]:
+        lines.append(
+            f"有 {summary['unknown_actions']} 次桌面动作效果未知，请检查目标窗口；不要自动重试。"
+        )
+    lines.append("停止或撤销会拒绝后续动作；已经投递的效果无法撤回。")
+    return tuple(lines)

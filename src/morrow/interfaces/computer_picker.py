@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from morrow.application.computer_permissions import computer_runtime_lines, computer_runtime_summary
 from morrow.application.computer_selection import LocalWindowSelectionRequest
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
@@ -78,6 +79,14 @@ class TerminalComputerPicker:
             terminal.console.print("已清除下次运行的窗口选择。")
             return
         if arguments == ("status",):
+            summary = computer_runtime_summary(
+                self.products.computer_use,
+                self.products.api.journal,
+                self.products.api.workspace_id,
+                self.products.persistence.current_agent_run_id,
+            )
+            for line in computer_runtime_lines(summary):
+                terminal.console.print(line, markup=False)
             terminal.console.print(
                 self._summary() if self.pending else "下次运行尚未选择窗口。", markup=False
             )

@@ -91,6 +91,7 @@ class ToolErrorCode(StrEnum):
     BUDGET_EXHAUSTED = "budget_exhausted"
     APPROVAL_REJECTED = "approval_rejected"
     APPROVAL_UNAVAILABLE = "approval_unavailable"
+    NEEDS_APPROVAL = "needs_approval"
     APPROVAL_PREVIEW_FAILED = "approval_preview_failed"
     PERMISSION_DENIED = "permission_denied"
     UNSUPPORTED_CAPABILITY = "unsupported_capability"

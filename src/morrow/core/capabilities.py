@@ -445,7 +445,7 @@ class ToolRunContext:
         else:
             self._failed_tool_calls += 1
         code = getattr(error_code, "value", error_code)
-        if code in {"approval_rejected", "approval_unavailable"}:
+        if code in {"approval_rejected", "approval_unavailable", "needs_approval"}:
             self._approval_requests += 1
             if code == "approval_rejected":
                 self._approval_rejections += 1

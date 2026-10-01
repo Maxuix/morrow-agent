@@ -47,7 +47,6 @@ from morrow.core.models import (
     GenerationOptions,
     ModelErrorCode,
     ModelProviderError,
-    ToolApprovalDecision,
     provider_error_message,
 )
 from morrow.core.permissions import (
@@ -205,8 +204,12 @@ def root(
 class HeadlessApprovalPort:
     """Fail-closed approval adapter for the non-interactive one-shot command."""
 
-    async def request(self, _request) -> ToolApprovalDecision:
-        return ToolApprovalDecision(approved=False)
+    def __init__(self) -> None:
+        self.needs_approval = False
+
+    async def request(self, _request) -> None:
+        self.needs_approval = True
+        return None
 
 
 def _headless_dump(value):
@@ -370,6 +373,7 @@ def _headless_terminal_record(
     cancelled: bool = False,
     started_turn_id: str | None = None,
     started_session_id: str | None = None,
+    needs_approval: bool = False,
 ) -> bool:
     # A stream that never started a turn must not inherit the previous run.
     if terminal_event is None and started_turn_id is None:
@@ -446,9 +450,12 @@ def _headless_terminal_record(
             stop_reason = "post_turn_cancelled"
         elif stream_failed:
             stop_reason = "post_turn_error"
+    if needs_approval and not stream_failed and not cancelled:
+        stop_reason = "needs_approval"
     dispatch_degraded = bool(getattr(dispatch, "degraded", False))
     successful = (
-        not stream_failed
+        not needs_approval
+        and not stream_failed
         and not cancelled
         and not observation_failed
         and not dispatch_degraded
@@ -551,10 +558,11 @@ def run_headless(
             raise typer.Exit(code=2)
         identity = resolution.identity
         with WorkspaceWriterLock(application.data_root, identity.workspace_id):
+            approval_port = HeadlessApprovalPort()
             session_app = build_session_application(
                 app=application,
                 identity=identity,
-                approval_port=HeadlessApprovalPort(),
+                approval_port=approval_port,
                 permission_profile=PermissionProfile.from_preset(permission_mode),
                 resume_session_id=resume_session_id,
                 headless=True,
@@ -601,6 +609,7 @@ def run_headless(
                     cancelled=streamed.cancelled,
                     started_turn_id=streamed.started_turn_id,
                     started_session_id=streamed.started_session_id,
+                    needs_approval=approval_port.needs_approval,
                 )
             except Exception as exc:
                 if diagnostics is not None:

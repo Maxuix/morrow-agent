@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
 from typer.testing import CliRunner
 
 from morrow.application.orchestrator import DispatchResult
@@ -16,15 +17,21 @@ from morrow.services.workspace import DataRoot
 from morrow.testing import ScriptedModelProvider
 
 
-def test_run_emits_only_versioned_jsonl_and_terminal_safe_record(monkeypatch, tmp_path):
+@pytest.mark.parametrize("needs_approval", [False, True])
+def test_run_emits_only_versioned_jsonl_and_terminal_safe_record(
+    monkeypatch, tmp_path, needs_approval
+):
     workspace = tmp_path / "project"
     workspace.mkdir()
     state_root = tmp_path / "state"
     emitted = []
+    approval = {}
 
     class FakeOrchestrator:
         async def stream(self, prompt):
             emitted.append(prompt)
+            if needs_approval:
+                assert await approval["port"].request(object()) is None
             yield AgentEvent(
                 type="turn.started",
                 event_id="evt_1",
@@ -90,6 +97,7 @@ def test_run_emits_only_versioned_jsonl_and_terminal_safe_record(monkeypatch, tm
     def build_session(**kwargs):
         assert kwargs["approval_port"].__class__.__name__ == "HeadlessApprovalPort"
         assert kwargs["headless"] is True
+        approval["port"] = kwargs["approval_port"]
         return fake_session_app
 
     monkeypatch.setattr(cli_module, "build_session_application", build_session)
@@ -109,12 +117,13 @@ def test_run_emits_only_versioned_jsonl_and_terminal_safe_record(monkeypatch, tm
         ],
     )
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == (2 if needs_approval else 0), result.output
     assert emitted == ["say hello"]
     assert fake_session_app.orchestrator.run_timeout_seconds == 120
     records = [json.loads(line) for line in result.output.splitlines()]
     assert [record["kind"] for record in records] == ["agent_event", "agent_event", "run.completed"]
     assert all(record["schema_version"] == 1 for record in records)
+    assert records[-1]["stop_reason"] == ("needs_approval" if needs_approval else "stop")
     assert records[-1]["agent_run_id"] == "arun_1"
     assert records[-1]["metrics"]["usage"]["availability"] == "unavailable"
     assert records[-1]["fingerprint"] == {

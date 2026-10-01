@@ -393,3 +393,79 @@ async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_pa
                 assert factory.visuals.read(ref, session_id=products.session.session_id).width == 8
     finally:
         products.persistence.store_session.close()
+
+
+@pytest.mark.parametrize("approval_mode", ["absent", "headless"])
+async def test_desktop_action_without_interactive_approval_is_not_dispatched(
+    tmp_path, approval_mode
+):
+    from morrow.interfaces.cli import HeadlessApprovalPort
+
+    app = _app(tmp_path)
+    app.registry.register(
+        "fake-adapter",
+        lambda config, credential: ImageProvider(),
+        capabilities=ProviderCapabilities(
+            tool_protocol="openai_function", input_types=("text", "image")
+        ),
+    )
+    _configure_active(app)
+    config = app.global_store.load()
+    app.global_store.update(
+        lambda value: value.model_copy(
+            update={
+                "runtime_policy": RuntimePolicyOverrides(
+                    computer_use=ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID)
+                )
+            }
+        ),
+        expected_revision=config.revision,
+    )
+    project = tmp_path / "project"
+    project.mkdir()
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    lifecycle = Lifecycle("completed")
+    port = HeadlessApprovalPort() if approval_mode == "headless" else None
+    products = build_session_application(
+        app,
+        identity,
+        computer_use_lifecycle=lifecycle,
+        approval_port=port,
+        permission_profile=PermissionProfile.from_preset(PermissionPreset.FULL_ACCESS_MANUAL),
+    )
+    try:
+        preparation = products.orchestrator.preparation
+        factory = preparation.computer_factory
+        selected = factory.select(
+            ComputerUseSelection(
+                apps=(ComputerUseAppIdentity(bundle_id="com.example.Controlled"),),
+                image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
+            ),
+            products.session,
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+        )
+        prepared = preparation.prepare_new(agent_run_id="arun_headless", computer_request=selected)
+        prepared.provider.responses[-1] = "The action needs interactive approval."
+        await _dispatch_prepared(products.orchestrator, "Click the controlled button", prepared)
+        assert lifecycle.device.actions == []
+        assert len(lifecycle.device.reads) == 1
+        assert lifecycle.calls == ["open", "close"]
+        replies = [
+            message for message in products.session.log.messages_view() if message.role == "tool"
+        ]
+        assert json.loads(replies[-1].content)["error"]["code"] == "needs_approval"
+        assert replies[-1].visual_refs == ()
+        rows = factory.journal.list_session_executions(
+            factory.workspace_id, products.session.session_id
+        )
+        action = next(row for row in rows if row.tool_name == "computer_action")
+        assert action.state is ToolExecutionState.CLOSED
+        assert action.disposition is ToolExecutionDisposition.DENIED
+        approval = factory.journal.get_approval_for_execution(
+            factory.workspace_id, action.tool_execution_id
+        )
+        assert approval.consumed_at is None
+        if port is not None:
+            assert port.needs_approval
+    finally:
+        products.persistence.store_session.close()

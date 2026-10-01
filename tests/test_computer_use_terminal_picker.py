@@ -134,6 +134,8 @@ async def test_terminal_selects_once_then_uses_existing_loop(tmp_path, mode):
             ]
             assert desktop_tools == ["computer_observe"]
             assert "仅观察" in rendered and "不分享图像" in rendered
+            assert "本机桌面状态（最近读取）：当前无桌面会话" in rendered
+            assert "已经投递的效果无法撤回" in rendered
             if mode == "host_conflict":
                 assert "清除桌面选择" in rendered
                 assert products.session.pending_full_access_grant is False
