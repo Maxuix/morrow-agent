@@ -89,12 +89,16 @@ export function ChatPermissionControl({
   focusSignal = 0,
   hostAllowed = false,
   onHostAllowedChange,
+  computerSelection, onComputerSelectionChange, computerDisabled,
 }: {
   settings: ChatSettingsState
   client?: ApiClient
   workspace?: string
   session?: string
   focusSignal?: number
+  computerSelection?: import('../api/settings').ComputerWindowSelection | null
+  onComputerSelectionChange?: (value: import('../api/settings').ComputerWindowSelection | null) => void
+  computerDisabled?: boolean
   hostAllowed?: boolean
   onHostAllowedChange?: (allowed: boolean) => void
 }) {
@@ -172,7 +176,9 @@ export function ChatPermissionControl({
           onChange={event => onHostAllowedChange?.(event.target.checked)}/> 允许本次运行使用 Host</label>
         <p className="menu-note">最长 15 分钟；Host 可访问用户文件、网络和凭据，每条命令仍需单独审批。</p>
       </div>}
-      {client && workspace && session && <ComputerUseControl client={client} workspace={workspace} session={session} modelKey={JSON.stringify(settings.model)}/>}
+      {client && workspace && session && <ComputerUseControl client={client} workspace={workspace} session={session} modelKey={JSON.stringify(settings.model)}
+        permission={settings.permission} disabled={computerDisabled || settings.busy}
+        selection={computerSelection} onSelectionChange={onComputerSelectionChange}/>}
       {canLoad && <div className="permission-live-state">
         <div className="permission-section-heading">当前运行授权</div>
         {activeGrants.length === 0 && <p className="menu-note">暂无活动 Host 授权。</p>}

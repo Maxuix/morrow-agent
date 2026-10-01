@@ -1,5 +1,5 @@
 import { attachmentPath, type AttachmentWire, type FileSearch } from './attachments'
-import type { ChatSettings, ChatSettingsView, ProviderSettingsView, ComputerUseSettings, ComputerUseSettingsView } from './settings'
+import type { ChatSettings, ChatSettingsView, ProviderSettingsView, ComputerUseSettings, ComputerUseSettingsView, ComputerWindowCandidates, ComputerWindowSelection, ComputerWindowSelectionRequest } from './settings'
 export interface SessionMetadata {title:string;pinned:boolean;revision:number}
 export interface WorkspaceEntry {workspace_id:string;path:string;display_name:string;available:boolean;last_used_at:string|null;git_root:string|null}
 export interface WorkspaceList {items:WorkspaceEntry[];revision:number}
@@ -259,6 +259,12 @@ export class ApiClient {
   }
   saveComputerUseSettings(workspace: string, session: string, settings: ComputerUseSettings, revision: number): Promise<ComputerUseSettingsView> {
     return this.post(chatPath(workspace, session) + '/computer-use/settings', {settings, expected_revision: revision})
+  }
+  computerWindowCandidates(workspace: string, session: string): Promise<ComputerWindowCandidates> {
+    return this.post(chatPath(workspace, session) + '/computer-use/candidates', {})
+  }
+  selectComputerWindows(workspace: string, session: string, selection: ComputerWindowSelectionRequest): Promise<ComputerWindowSelection> {
+    return this.post(chatPath(workspace, session) + '/computer-use/selection', selection)
   }
   providerSettings(): Promise<ProviderSettingsView> { return this.get('/v1/providers') }
   providerControl(action: string, body: Record<string, unknown>, provider?: string): Promise<ProviderSettingsView> {

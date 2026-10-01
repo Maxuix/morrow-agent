@@ -48,3 +48,28 @@ export interface ComputerUseSettingsView {
   configuration_scope: 'global'
   applies_to: 'future_runs'
 }
+
+export interface ComputerWindowCandidate {
+  candidate_id: string
+  app: {bundle_id: string}
+  display_label: string | null
+}
+export interface ComputerWindowCandidates {
+  candidates: ComputerWindowCandidate[]
+  expires_at: string
+}
+export interface ComputerWindowSelectionRequest {
+  candidate_ids: string[]
+  allow_action: boolean
+  share_images: boolean
+  delivery: 'foreground' | 'background'
+}
+export interface ComputerWindowSelection {
+  selection_id: string
+  expires_at: string
+  windows: ComputerWindowCandidate[]
+  operations: ('observe' | 'action')[]
+  delivery: 'foreground' | 'background'
+  image_share: 'none' | 'controlled_window'
+  applies_to: 'one_future_run'
+}

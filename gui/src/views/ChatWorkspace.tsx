@@ -5,7 +5,7 @@ import { AttachmentDraftStorage, useAttachments } from '../state/attachments'
 import { AppErrorBoundary } from '../components/ErrorBoundary'
 import { PublishedWorkflowPicker, type WorkflowChoice } from './ChatWorkflowInput'
 import { AttachmentComposer } from './AttachmentComposer'
-import type { ChatSettings } from '../api/settings'
+import type { ChatSettings, ComputerWindowSelection } from '../api/settings'
 import { ChatModelControl, ChatPermissionControl, useChatSettings } from './ChatSettingsBar'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ApiError, type ApiClient } from '../api/client'
@@ -254,7 +254,8 @@ function SessionChat({client, store, capabilities, sessionId, drafts, planStore,
   const [imageSupported,setImageSupported] = useState(false)
   const [permission, setPermission] = useState<ChatSettings['permission']>(null)
   const [hostAllowed, setHostAllowed] = useState(false)
-  useEffect(() => setHostAllowed(false), [permission])
+  const [computerSelection, setComputerSelection] = useState<ComputerWindowSelection | null>(null)
+  useEffect(() => {setHostAllowed(false); setComputerSelection(null)}, [permission, sessionId])
   const workspace = capabilities.workspace_id
   // Inspector scope 跟随当前 workspace + session；切换时保存原 scope、加载新
   // scope，回到原会话恢复标签顺序/当前标签/目标。
@@ -367,6 +368,8 @@ function SessionChat({client, store, capabilities, sessionId, drafts, planStore,
   // Chat settings load once here; the composer renders the permission entry
   // on the toolbar left and the model · effort entry on the toolbar right.
   const settings = useChatSettings({client, workspace, session: sessionId, active: !!active, snapshot: state.snapshot?.settings, onImages: setImageSupported, onPermission: setPermission})
+  const computerModelKey = JSON.stringify(settings.model)
+  useEffect(() => setComputerSelection(null), [computerModelKey, workspace])
   // Unified execution projection: one source for header, composer, controls
   // and input capability, covering chat, planning and Workflow runs alike.
   const execution = state.snapshot?.execution ?? null
@@ -470,9 +473,9 @@ function SessionChat({client, store, capabilities, sessionId, drafts, planStore,
       try {receipt = await client.chatReceipt(workspace,sessionId,input.client_message_id)} catch(e) {if (!(e instanceof ApiError) || e.status!==404) throw e}
       if (!receipt) receipt=await client.chatSend(workspace,sessionId,input)
       if (!alive.current) return
-      outbox.write(workspace,sessionId,null); attachments.consume(input.attachments); setFailed(null); setHostAllowed(false); if (textRef.current===input.text) onText('')
+      outbox.write(workspace,sessionId,null); attachments.consume(input.attachments); setFailed(null); setHostAllowed(false); setComputerSelection(null); if (textRef.current===input.text) onText('')
       follow.current=true; await chat.refresh()
-    } catch(e) {if(alive.current){setRejected(e instanceof ApiError && [400,403,413,415].includes(e.status));setError(e instanceof ApiError ? e.message : '接纳状态未知；可按原编号核对并重试。')}}
+    } catch(e) {if(alive.current){setRejected(e instanceof ApiError && ([400,403,413,415].includes(e.status) || (e.status === 409 && !!input.computer_selection_id)));setError(e instanceof ApiError ? e.message : '接纳状态未知；可按原编号核对并重试。')}}
     finally {if(alive.current)setPending(false)}
   }
   useEffect(() => {
@@ -489,6 +492,7 @@ function SessionChat({client, store, capabilities, sessionId, drafts, planStore,
   }, [client,workspace,sessionId,chat,outbox])
   /** One planning submission path for both the switch send and /workflow <目标>. */
   const planningSubmit = async (objective: string) => {
+    if (computerSelection) {setError('请先清除窗口选择再提交 Workflow。'); return}
     if (!objective.trim()) { setError('请先描述任务目标，再生成工作流计划。'); return }
     // Shared unsaved-edit guard: an explicit chat start must respect the same
     // state as the panel button ("看到什么，就批准执行什么"). The server still
@@ -540,6 +544,16 @@ function SessionChat({client, store, capabilities, sessionId, drafts, planStore,
     if (outcome.kind === 'handled' && planStore.getState().error === null && textRef.current === objective) onText('')
   }
   const send = (intent: InteractionInput['intent']) => {
+    if (computerSelection) {
+      if (Date.parse(computerSelection.expires_at) <= Date.now()) {
+        setError('窗口选择已过期，请重新读取或清除选择。'); return
+      }
+      if (permission !== 'full-access-manual' || (intent !== 'send' && intent !== 'follow_up') || workflow || workflowOn ||
+          (intent === 'send' && ((queue?.paused && isPureContinueCommand(text)) || pausedSendRoute(execution, text, queue?.paused, isPureContinueCommand) !== null ||
+            runningControlRoute(execution, text, isExplicitPauseCommand) === 'control'))) {
+        setError('窗口选择仅用于新普通对话运行；请先清除选择再发送控制指令或 Workflow。'); return
+      }
+    }
     // P09.2 (D07): while an execution is paused, the paused task owns the
     // continuation — pure continue on a paused chat queue takes the durable
     // queue continuation, and text on a paused planning/workflow execution is
@@ -567,7 +581,7 @@ function SessionChat({client, store, capabilities, sessionId, drafts, planStore,
       if (textRef.current === text) onText('')
       return
     }
-    if (intent !== 'send') { if (failed) {setError('先核对上一条待发送消息，避免重复提交。'); return} void submit({client_message_id:commandId('chat'),text,intent,...(attachments.references.length?{attachments:attachments.references}:{}),...(hostAllowed&&permission==='full-access-manual'?{allow_unconfined_host:true}:{}),...(active?{target_agent_run_id:active}:{})}); return }
+    if (intent !== 'send') { if (failed) {setError('先核对上一条待发送消息，避免重复提交。'); return} void submit({client_message_id:commandId('chat'),text,intent,...(attachments.references.length?{attachments:attachments.references}:{}),...(hostAllowed&&permission==='full-access-manual'?{allow_unconfined_host:true}:{}),...(computerSelection?{computer_selection_id:computerSelection.selection_id}:{}),...(active?{target_agent_run_id:active}:{})}); return }
     if (workflowEnabled && workflowOn) { void planningSubmit(text); return }
     if (workflow) {
       if (attachments.entries.length) { setError('指定 Workflow 接收文本任务；请先移除附件或使用普通对话发送附件。'); return }
@@ -575,7 +589,7 @@ function SessionChat({client, store, capabilities, sessionId, drafts, planStore,
       void submit({client_message_id:commandId('workflow_chat'),text,intent:'explicit_workflow',workflow}); return
     }
     if (failed) { setError('先核对上一条待发送消息，避免重复提交。'); return }
-    void submit({client_message_id:commandId('chat'),text,intent,...(attachments.references.length?{attachments:attachments.references}:{}),...(hostAllowed&&permission==='full-access-manual'?{allow_unconfined_host:true}:{})})
+    void submit({client_message_id:commandId('chat'),text,intent,...(attachments.references.length?{attachments:attachments.references}:{}),...(hostAllowed&&permission==='full-access-manual'?{allow_unconfined_host:true}:{}),...(computerSelection?{computer_selection_id:computerSelection.selection_id}:{})})
   }
   const action = async (fn: () => Promise<unknown>) => {setError(null);try {await fn();if(alive.current)await chat.refresh()} catch(e){if(alive.current)setError(e instanceof ApiError ? e.message : '操作失败，请刷新后重试')}}
   const taskAction = async (operation: Extract<ChatOperation, { kind: 'accept-task' | 'cancel-task' | 'abandon-task' | 'resume-task' }>) => {
@@ -768,6 +782,13 @@ function SessionChat({client, store, capabilities, sessionId, drafts, planStore,
   // On-demand chips: the chosen workflow mode stays visible inside the
   // composer; closing one restores the ordinary conversation.
   const tags = <>
+    {computerSelection && <span className="composer-chip-wrap">
+      <button className="composer-chip" onClick={() => setPermissionFocus(value => value + 1)}>
+        桌面：{computerSelection.windows.map(item => item.display_label ?? item.app.bundle_id).join('、')}
+      </button>
+      <button className="composer-chip-close" aria-label="清除窗口选择" disabled={pending || !!failed}
+        onClick={() => setComputerSelection(null)}>×</button>
+    </span>}
     {workflowEnabled && workflowOn && <span className="composer-chip-wrap">
       <button className="composer-chip" title="已开启工作流编排；点击打开右侧计划面板" onClick={() => openInspector('workflow')}>工作流编排</button>
       <button className="composer-chip-close" aria-label="关闭工作流编排，恢复普通对话" disabled={inputLocked} onClick={() => {setWorkflowOn(false); setWorkflow(null)}}>×</button>
@@ -1036,7 +1057,9 @@ function SessionChat({client, store, capabilities, sessionId, drafts, planStore,
           placeholder={planPhase === 'ready' ? '修改计划…' : '描述任务，或输入 / 查看命令'}
           plusItems={plusItems} tags={tags}
           permissionControl={<ChatPermissionControl settings={settings} client={client} workspace={workspace} session={sessionId}
-            focusSignal={permissionFocus} hostAllowed={hostAllowed} onHostAllowedChange={setHostAllowed}/>}
+            focusSignal={permissionFocus} hostAllowed={hostAllowed} onHostAllowedChange={allowed => {setHostAllowed(allowed); if (allowed) setComputerSelection(null)}}
+            computerSelection={computerSelection} computerDisabled={pending || !!failed}
+            onComputerSelectionChange={value => {setComputerSelection(value); if (value) setHostAllowed(false)}}/>}
           modelControl={<ChatModelControl settings={settings} onOpenSettings={onSettings}/>}
           text={text} onText={onText} onSend={send} active={!!active} running={busy} stopping={stopping} pending={inputLocked}
           primaryControl={composerPrimaryControl}

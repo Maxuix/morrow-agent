@@ -54,6 +54,7 @@ export interface TimelineItem {
 }
 export interface TimelinePage { items: TimelineItem[]; next_cursor: string | null; has_more: boolean; bytes: number }
 export interface InteractionInput {
+  computer_selection_id?: string
   client_message_id: string; text: string; intent: 'send' | 'steer' | 'follow_up' | 'explicit_workflow'
   workflow?: {workflow_definition_id:string;workflow_revision_id:string}
   attachments?: AttachmentRef[]

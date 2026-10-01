@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '../api/client'
-import type { ComputerUseSettings, ComputerUseSettingsView } from '../api/settings'
+import type { ComputerUseSettings, ComputerUseSettingsView, ComputerWindowSelection } from '../api/settings'
+
+import { ComputerWindowPicker } from './ComputerWindowPicker'
 
 const hostReasons: Record<string, string> = {
   disabled: '已关闭', sdk_missing: '未安装桌面组件', native_unverified: '原生验收未通过',
@@ -13,8 +15,10 @@ const modelReasons: Record<string, string> = {
 }
 
 /** Configuration never grants device access; a run needs its own local selection. */
-export function ComputerUseControl({client, workspace, session, modelKey}: {
+export function ComputerUseControl({client, workspace, session, modelKey, permission, disabled, selection, onSelectionChange}: {
   client: ApiClient; workspace: string; session: string; modelKey?: string
+  permission?: string | null; disabled?: boolean; selection?: ComputerWindowSelection | null
+  onSelectionChange?: (selection: ComputerWindowSelection | null) => void
 }) {
   const [view, setView] = useState<ComputerUseSettingsView | null>(null)
   const [busy, setBusy] = useState(false)
@@ -70,6 +74,9 @@ export function ComputerUseControl({client, workspace, session, modelKey}: {
       {view.model_error && <p className="menu-note">{modelReasons[view.model_error]}</p>}
       <p className="menu-note">更改对后续运行生效。启用后仍需完整访问（逐次确认）及本次运行的独立桌面授权；现有运行请使用停止或撤销。</p>
     </>}
+    {view && onSelectionChange && <ComputerWindowPicker client={client} workspace={workspace} session={session}
+      view={view} permission={permission} modelKey={modelKey} disabled={disabled || busy}
+      selection={selection ?? null} onChange={onSelectionChange}/>}
     {error && <p role="alert" className="menu-error">{error}</p>}
   </div>
 }
