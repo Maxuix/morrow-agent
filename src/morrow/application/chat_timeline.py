@@ -73,9 +73,15 @@ class TimelineService:
         self.manager.require_session(session_id)
         if not isinstance(limit, int) or not 1 <= limit <= MAX_TOOL_FACTS:
             raise ApplicationError(ApplicationErrorCode.INVALID, "Invalid activity limit")
-        facts = self.repository.tool_execution_facts(self.workspace_id, session_id, limit=limit)
+        facts = self.repository.tool_execution_facts(
+            self.workspace_id,
+            session_id,
+            limit=limit,
+            visible_scope=self.index.visible_cutoffs(session_id),
+        )
         items = []
         for fact in facts:
+            source_session_id = fact.get("source_session_id", session_id)
             state = self._activity_state(fact["state"], fact["disposition"])
             started = self._iso(fact["created_at_unix"])
             ended = self._iso(fact["closed_at_unix"]) if state in TERMINAL_ACTIVITY_STATES else None
@@ -101,7 +107,7 @@ class TimelineService:
                     self.journal,
                     self.workspace_id,
                     fact["tool_execution_id"],
-                    session_id,
+                    source_session_id,
                     session_id,
                 )
                 if fact["tool_name"] in COMPUTER_TOOL_NAMES
@@ -123,7 +129,7 @@ class TimelineService:
                     "identity": {
                         "workspace_id": self.workspace_id,
                         "root_session_id": session_id,
-                        "source_session_id": session_id,
+                        "source_session_id": source_session_id,
                         "agent_run_id": fact["agent_run_id"],
                         "turn_id": fact["turn_id"],
                         "tool_execution_id": fact["tool_execution_id"],

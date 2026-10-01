@@ -170,7 +170,7 @@ class ChatTimelineJournal:
             )
         return value
 
-    def tool_execution_facts(self, workspace_id, session_id, *, limit=128):
+    def tool_execution_facts(self, workspace_id, session_id, *, limit=128, visible_scope=None):
         """Read-only durable tool facts for activity recovery (P2.4).
 
         Returns bounded per-execution identity and lifecycle facts; never
@@ -178,14 +178,41 @@ class ChatTimelineJournal:
         only to project its value-free failure diagnostics (error code and
         the stable validation reason/field path) onto the recovery view.
         """
-        rows = self.backend.read_all(
-            "SELECT tool_execution_id, call_id, tool_name, state, disposition, ordinal, "
-            "agent_run_id, turn_id, approval_id, created_at_unix, closed_at_unix, "
-            "error_code, result_envelope_json "
-            "FROM tool_executions WHERE workspace_id=? AND session_id=? "
-            "ORDER BY created_at_unix ASC, ordinal ASC, tool_execution_id ASC LIMIT ?",
-            (workspace_id, session_id, int(limit)),
+        columns = (
+            "e.tool_execution_id, e.call_id, e.tool_name, e.state, e.disposition, e.ordinal, "
+            "e.agent_run_id, e.turn_id, e.approval_id, e.created_at_unix, e.closed_at_unix, "
+            "e.error_code, e.result_envelope_json"
         )
+        order = " ORDER BY e.created_at_unix ASC, e.ordinal ASC, e.tool_execution_id ASC LIMIT ?"
+        if visible_scope is None:
+            rows = self.backend.read_all(
+                "SELECT "
+                + columns
+                + " FROM tool_executions e WHERE e.workspace_id=? AND e.session_id=?"
+                + order,
+                (workspace_id, session_id, int(limit)),
+            )
+        else:
+            # JSON parameters keep even long leaf histories bounded to one SQL read.
+            # Ancestors require a real source assistant record at/before the immutable cut.
+            leaves = sorted(visible_scope.run_leaf_sessions - visible_scope.cutoffs.keys())
+            rows = self.backend.read_all(
+                "WITH visible AS (SELECT key AS session_id,value AS cutoff FROM json_each(?) "
+                "UNION ALL SELECT value AS session_id,NULL AS cutoff FROM json_each(?)) "
+                "SELECT " + columns + ",e.session_id FROM tool_executions e "
+                "JOIN visible v ON v.session_id=e.session_id "
+                "LEFT JOIN conversation_records c ON c.record_id=e.assistant_record_id "
+                "WHERE e.workspace_id=? AND (e.session_id=? OR e.tool_name IN ('computer_observe','computer_action')) "
+                "AND (v.cutoff IS NULL OR (c.session_id=e.session_id AND c.conversation_position<=v.cutoff))"
+                + order,
+                (
+                    json.dumps(dict(visible_scope.cutoffs)),
+                    json.dumps(leaves),
+                    workspace_id,
+                    session_id,
+                    int(limit),
+                ),
+            )
         facts = []
         for row in rows:
             fact = dict(
@@ -205,10 +232,12 @@ class ChatTimelineJournal:
                         "error_code",
                         "result_envelope_json",
                     ),
-                    row,
+                    row[:13],
                     strict=True,
                 )
             )
+            if visible_scope is not None:
+                fact["source_session_id"] = row[13]
             fact["validation"] = _validation_diagnostics(fact.pop("result_envelope_json"))
             facts.append(fact)
         return facts

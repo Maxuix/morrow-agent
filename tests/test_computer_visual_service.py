@@ -1,15 +1,17 @@
 """Controlled capture publication and source checks against an actual store."""
 
 import io
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
 
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.application.artifacts import ArtifactService
+from morrow.application.chat_timeline import TimelineService
 from morrow.application.computer_visuals import ComputerVisualService
 from morrow.core.artifacts import ArtifactKind
-from morrow.core.capabilities import AccessScope
+from morrow.core.capabilities import AccessScope, ComputerToolEvidence
 from morrow.core.computer_use import (
     ComputerUseContractError,
     ComputerUseImageShare,
@@ -24,6 +26,7 @@ from morrow.core.domain import (
     sha256_digest,
 )
 from morrow.core.execution import (
+    DurableToolFacts,
     HandlerResultEnvelope,
     ToolExecutionDisposition,
     ToolExecutionState,
@@ -161,6 +164,11 @@ def complete(environment, reference, *, write_history=True):
         )
 
 
+def recovered_activities(journal, session_id):
+    manager = SimpleNamespace(require_session=lambda sid: journal.get_session("ws_a", sid))
+    return TimelineService(manager, journal, "ws_a").tool_activities(session_id)["items"]
+
+
 def test_actual_bytes_readable_only_after_completion_for_exact_run_or_visible_history(environment):
     service, journal, _, _, _, _ = environment
     reference = publish(environment)
@@ -278,6 +286,11 @@ def test_fork_preview_enforces_source_record_cut_and_provider_does_not_inherit_r
                 "state": ToolExecutionState.HANDLER_COMPLETED,
                 "handler_completed_at": NOW,
                 "row_version": 2,
+                "facts": DurableToolFacts(
+                    computer=ComputerToolEvidence(
+                        operation="observe", target_label="Controlled Notes"
+                    )
+                ),
                 "disposition": ToolExecutionDisposition.SUCCEEDED,
                 "artifact_refs": (
                     ArtifactReference(
@@ -293,20 +306,33 @@ def test_fork_preview_enforces_source_record_cut_and_provider_does_not_inherit_r
         "ws_a",
         (
             DurableConversationRecord(
-                record_id="rec_visual",
+                record_id="rec_assistant",
                 session_id="ses_1",
                 conversation_position=2,
+                kind="message",
+                payload={"role": "assistant", "content": ""},
+            ),
+            DurableConversationRecord(
+                record_id="rec_visual",
+                session_id="ses_1",
+                conversation_position=3,
                 kind="message",
                 payload={"role": "tool", "visual_refs": [reference.model_dump(mode="json")]},
             ),
             DurableConversationRecord(
                 record_id="rec_after",
                 session_id="ses_1",
-                conversation_position=3,
+                conversation_position=4,
                 kind="terminal",
                 payload={"finish_reason": "stop"},
             ),
         ),
+    )
+    journal.transact(
+        lambda _: journal._backend.executor().execute(
+            "UPDATE tool_executions SET assistant_record_id=? WHERE tool_execution_id=?",
+            ("rec_assistant", "tex_1"),
+        )
     )
     journal.create_session(
         DurableSession(
@@ -314,8 +340,8 @@ def test_fork_preview_enforces_source_record_cut_and_provider_does_not_inherit_r
             workspace_id="ws_a",
             parent_session_id="ses_1",
             parent_cut_record_id="rec_after",
-            parent_cut_position=3,
-            conversation_position=3,
+            parent_cut_position=4,
+            conversation_position=4,
             fork_reason="continue",
         )
     )
@@ -327,6 +353,26 @@ def test_fork_preview_enforces_source_record_cut_and_provider_does_not_inherit_r
         service.read_preview(reference.artifact_id, session_id="ses_before")
     with pytest.raises(ComputerUseContractError, match="image_source_not_authorized"):
         service.read(reference, session_id="ses_after", agent_run_id="arun_1")
+
+    assert recovered_activities(journal, "ses_before") == []
+    inherited = recovered_activities(journal, "ses_after")
+    assert len(inherited) == 1
+    assert inherited[0]["payload"]["computer"]["target_label"] == "Controlled Notes"
+    assert inherited[0]["payload"]["computer"]["operation"] == "observe"
+    assert inherited[0]["identity"]["source_session_id"] == "ses_1"
+    assert inherited[0]["identity"]["root_session_id"] == "ses_after"
+    assert inherited[0]["preview_ref"] == (
+        f"/v1/workspaces/ws_a/sessions/ses_after/artifacts/{reference.artifact_id}/content"
+    )
+    # An ancestor execution without its bound record cannot prove fork visibility.
+    journal.transact(
+        lambda _: journal._backend.executor().execute(
+            "UPDATE tool_executions SET assistant_record_id=NULL WHERE tool_execution_id=?",
+            ("tex_1",),
+        )
+    )
+    assert recovered_activities(journal, "ses_after") == []
+    assert len(recovered_activities(journal, "ses_1")) == 1
 
 
 def test_preview_root_requires_durable_workflow_leaf_chain(environment):
@@ -343,6 +389,8 @@ def test_preview_root_requires_durable_workflow_leaf_chain(environment):
         service.read(reference, session_id="ses_root")
     with pytest.raises(ComputerUseContractError, match="image_source_not_authorized"):
         service.read_preview(reference.artifact_id, session_id="ses_root")
+
+    assert recovered_activities(journal, "ses_root") == []
 
     # Match the actual root → run → node → leaf visibility query, using the
     # smallest rows needed by this read-only contract, as timeline tests do.
@@ -372,6 +420,15 @@ def test_preview_root_requires_durable_workflow_leaf_chain(environment):
         )
 
     journal.transact(link)
+    inherited = recovered_activities(journal, "ses_root")
+    assert len(inherited) == 1
+    assert inherited[0]["identity"]["source_session_id"] == "ses_1"
+    assert inherited[0]["identity"]["root_session_id"] == "ses_root"
+    assert inherited[0]["preview_ref"] == (
+        f"/v1/workspaces/ws_a/sessions/ses_root/artifacts/{reference.artifact_id}/content"
+    )
+    journal.create_session(DurableSession(session_id="ses_unrelated", workspace_id="ws_a"))
+    assert recovered_activities(journal, "ses_unrelated") == []
     assert service.read(reference, session_id="ses_root").width == 8
     assert service.read_preview(reference.artifact_id, session_id="ses_root")[1].width == 8
     with pytest.raises(ComputerUseContractError, match="image_source_not_authorized"):

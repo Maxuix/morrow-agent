@@ -8,6 +8,7 @@ arguments or output content.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 from morrow.adapters.state.chat_timeline_journal import ChatTimelineJournal
 from morrow.application.chat_timeline import TimelineService
@@ -120,6 +121,7 @@ def test_recovery_projects_validation_diagnostics_from_the_stored_envelope():
             "page": staticmethod(lambda *a, **k: []),
         },
     )()
+    service._index = SimpleNamespace(visible_cutoffs=lambda _: None)
     recovered = service.tool_activities("ses_1")
 
     assert recovered["truncated"] is False
