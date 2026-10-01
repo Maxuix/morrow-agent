@@ -168,12 +168,17 @@ def test_actual_bytes_readable_only_after_completion_for_exact_run_or_visible_hi
     assert metadata.kind is ArtifactKind.COMPUTER_OBSERVATION
     with pytest.raises(ComputerUseContractError, match="image_source_not_authorized"):
         service.read(reference, session_id="ses_1", agent_run_id="arun_1")
+    with pytest.raises(ComputerUseContractError, match="image_source_not_authorized"):
+        service.read_preview(reference.artifact_id, session_id="ses_1")
     complete(environment, reference)
     assert (
         sha256_digest(service.read(reference, session_id="ses_1", agent_run_id="arun_1").content)
         == reference.sha256
     )
     assert service.read(reference, session_id="ses_1").width == 8
+    resolved, preview = service.read_preview(reference.artifact_id, session_id="ses_1")
+    assert resolved == reference
+    assert preview.content == service.read(reference, session_id="ses_1").content
     for changes in [
         {"workspace_id": "ws_other"},
         {"tool_execution_id": "tex_other"},
@@ -186,6 +191,8 @@ def test_actual_bytes_readable_only_after_completion_for_exact_run_or_visible_hi
     journal.create_session(DurableSession(session_id="ses_other", workspace_id="ws_a"))
     with pytest.raises(ComputerUseContractError, match="image_source_not_authorized"):
         service.read(reference, session_id="ses_other")
+    with pytest.raises(ComputerUseContractError, match="image_source_not_authorized"):
+        service.read_preview(reference.artifact_id, session_id="ses_other")
 
 
 def test_publication_refuses_revoked_grant_and_unconfirmed_sensitive_regions(environment):
@@ -315,6 +322,9 @@ def test_fork_preview_enforces_source_record_cut_and_provider_does_not_inherit_r
     with pytest.raises(ComputerUseContractError, match="image_source_not_authorized"):
         service.read(reference, session_id="ses_before")
     assert service.read(reference, session_id="ses_after").width == 8
+    assert service.read_preview(reference.artifact_id, session_id="ses_after")[1].width == 8
+    with pytest.raises(ComputerUseContractError, match="image_source_not_authorized"):
+        service.read_preview(reference.artifact_id, session_id="ses_before")
     with pytest.raises(ComputerUseContractError, match="image_source_not_authorized"):
         service.read(reference, session_id="ses_after", agent_run_id="arun_1")
 
@@ -331,6 +341,8 @@ def test_preview_root_requires_durable_workflow_leaf_chain(environment):
     )
     with pytest.raises(ComputerUseContractError, match="image_source_not_authorized"):
         service.read(reference, session_id="ses_root")
+    with pytest.raises(ComputerUseContractError, match="image_source_not_authorized"):
+        service.read_preview(reference.artifact_id, session_id="ses_root")
 
     # Match the actual root → run → node → leaf visibility query, using the
     # smallest rows needed by this read-only contract, as timeline tests do.
@@ -361,6 +373,7 @@ def test_preview_root_requires_durable_workflow_leaf_chain(environment):
 
     journal.transact(link)
     assert service.read(reference, session_id="ses_root").width == 8
+    assert service.read_preview(reference.artifact_id, session_id="ses_root")[1].width == 8
     with pytest.raises(ComputerUseContractError, match="image_source_not_authorized"):
         service.read(reference, session_id="ses_root", agent_run_id="arun_1")
 

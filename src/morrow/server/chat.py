@@ -296,12 +296,43 @@ def chat_routes(host, _parse_body):
             manager.require_session(sid)
             artifact_id = request.path_params["artifact_id"]
             artifact = manager.api.artifacts.get(artifact_id)
+            from morrow.core.artifacts import ArtifactError, ArtifactKind
+
+            if artifact is not None and artifact.kind is ArtifactKind.COMPUTER_OBSERVATION:
+                from morrow.application.computer_visuals import ComputerVisualService
+                from morrow.core.computer_use import ComputerUseContractError
+
+                visuals = ComputerVisualService(
+                    manager.api.artifacts, manager.api.journal, clock=manager.api.journal.now
+                )
+                try:
+                    reference, capture = visuals.read_preview(artifact_id, session_id=sid)
+                except ComputerUseContractError:
+                    raise ApplicationError(
+                        ApplicationErrorCode.NOT_FOUND,
+                        "Observation is outside the visible trajectory",
+                    ) from None
+                except ArtifactError:
+                    raise ApplicationError(
+                        ApplicationErrorCode.UNAVAILABLE, "Observation image is unavailable"
+                    ) from None
+                if request.query_params.get("raw") == "1":
+                    return Response(
+                        capture.content,
+                        media_type=reference.mime,
+                        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+                    )
+                return {
+                    "kind": "computer_observation",
+                    "mime": reference.mime,
+                    "width": reference.width,
+                    "height": reference.height,
+                    "byte_size": reference.byte_size,
+                }
             if artifact is None or artifact.session_id != sid:
                 raise ApplicationError(
                     ApplicationErrorCode.NOT_FOUND, "Artifact is outside this Session"
                 )
-            from morrow.core.artifacts import ArtifactError
-
             try:
                 content = (
                     await manager.api.artifacts.read_async(artifact_id, max_bytes=65536)

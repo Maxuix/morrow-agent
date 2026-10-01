@@ -236,6 +236,31 @@ class ComputerVisualService:
             observation_id=observation.observation_id,
         )
 
+    def read_preview(
+        self, artifact_id: str, *, session_id: str
+    ) -> tuple[ToolVisualRef, TransientCapture]:
+        """Resolve a published observation through its durable execution, never a file path."""
+        metadata = self.artifacts.get(artifact_id)
+        if metadata is None or metadata.kind is not ArtifactKind.COMPUTER_OBSERVATION:
+            raise ComputerUseContractError("image_source_not_authorized")
+        sources = tuple(
+            item.reference_id
+            for item in metadata.provenance_refs
+            if item.kind is ArtifactProvenanceKind.TOOL_EXECUTION
+        )
+        if len(sources) != 1:
+            raise ComputerUseContractError("image_source_not_authorized")
+        execution = self.journal.get_execution(self.workspace_id, sources[0])
+        if execution is None or execution.result_envelope is None:
+            raise ComputerUseContractError("image_source_not_authorized")
+        references = tuple(
+            ref for ref in execution.result_envelope.visual_refs if ref.artifact_id == artifact_id
+        )
+        if len(references) != 1:
+            raise ComputerUseContractError("image_source_not_authorized")
+        reference = references[0]
+        return reference, self.read(reference, session_id=session_id)
+
     def read(
         self,
         reference: ToolVisualRef,
