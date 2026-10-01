@@ -107,6 +107,9 @@ Preferences、审批或 grant；子会话可创建自己的新任务。共享 Ar
 普通工作要求 Session active 且 health OK。恢复先检查回执，随后在事务内重新验证报告仍 OPEN
 及当前健康状态；旧 report 不能清除后来的隔离状态。Host/sandbox 缺少可信 handler completion
 时保留 outcome_unknown，禁止自动重放；中断 ToolMessage 仍由原恢复/log 边界追加。
+用户 acknowledge/abort 关闭恢复事项时保留执行 UNKNOWN；后续 discovery 使用已提交的恢复决策
+区分已处理事项，不能靠改写未知效果为成功/中断来清除报告。handler_completed 与结果图像引用
+一起持久化，随后 tool reply 与 execution closed 原子提交；两处之间崩溃由原回复/恢复语法对账。
 
 [OperationalDoctor](../../src/morrow/application/doctor.py) 使用诊断连接检查 Schema、SQLite/FK、
 对话语法、领域引用和 Artifact，输出安全摘要而不自动修复历史。

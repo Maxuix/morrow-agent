@@ -10,6 +10,7 @@ from morrow.core.capabilities import ProcessIsolation
 from morrow.core.execution import (
     EffectClass,
     MissingCompletionPolicy,
+    RecoveryClassification,
     ToolExecutionDisposition,
     ToolExecutionState,
     ToolRecoveryDeclaration,
@@ -203,11 +204,27 @@ class RecoveryService:
         existing = self.journal.get_open_report(self.workspace_id, session_id)
         if existing is not None:
             return existing
+        candidates = self.journal.list_session_executions(self.workspace_id, session_id)
+        acknowledged = set()
+        if any(
+            item.state is ToolExecutionState.CLOSED
+            and item.disposition is ToolExecutionDisposition.UNKNOWN
+            for item in candidates
+        ):
+            acknowledged = {
+                item.tool_execution_id
+                for prior in self.journal.list_recovery_reports(self.workspace_id, session_id)
+                for item in prior.items
+                if item.resolution in {RecoveryResolution.ACKNOWLEDGE, RecoveryResolution.ABORT}
+            }
         executions = [
             item
-            for item in self.journal.list_session_executions(self.workspace_id, session_id)
+            for item in candidates
             if item.state is not ToolExecutionState.CLOSED
-            or item.disposition is ToolExecutionDisposition.UNKNOWN
+            or (
+                item.disposition is ToolExecutionDisposition.UNKNOWN
+                and item.tool_execution_id not in acknowledged
+            )
         ]
         if not executions:
             return None
@@ -348,7 +365,13 @@ class RecoveryService:
                     execution = txn.get_execution(self.workspace_id, item.tool_execution_id)
                     if execution is None or execution.state is ToolExecutionState.CLOSED:
                         continue
-                    _persist_closed_execution(txn, self.workspace_id, execution, disposition)
+                    effect_disposition = (
+                        ToolExecutionDisposition.UNKNOWN
+                        if item.classification is RecoveryClassification.OUTCOME_UNKNOWN
+                        or execution.disposition is ToolExecutionDisposition.UNKNOWN
+                        else disposition
+                    )
+                    _persist_closed_execution(txn, self.workspace_id, execution, effect_disposition)
             if planned is not None:
                 if writer is None:
                     raise RecoveryDecisionError("recovery conversation writer is missing")
