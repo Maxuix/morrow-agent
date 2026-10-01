@@ -161,21 +161,23 @@ class ComputerUseRunFactory:
             raise ComputerUseContractError("execution_not_authorized")
         return self.select(selection, session, authority=TRUSTED_COMPUTER_USE_AUTHORITY)
 
-    def select(self, selection, session, *, authority):
+    def select(self, selection, session, *, authority, permission_profile=None):
         if self._settings_loader is not None:
-            return self._snapshot().select(selection, session, authority=authority)
+            return self._snapshot().select(
+                selection, session, authority=authority, permission_profile=permission_profile
+            )
         reject_untrusted_computer_use_authority(authority)
         if not isinstance(selection, ComputerUseSelection):
             raise ComputerUseContractError("execution_not_authorized")
         selection = ComputerUseSelection.model_validate(selection.model_dump(), strict=True)
-        self._assert_local_session(session)
+        self._assert_local_session(session, permission_profile=permission_profile)
         token = object()
         request = LocalComputerUseRequest(selection, session, token)
         self._requests[token] = request
         return request
 
-    def _assert_local_session(self, session):
-        profile = session.permission_profile
+    def _assert_local_session(self, session, *, permission_profile=None):
+        profile = permission_profile or session.permission_profile
         capability = session.workspace_capability
         if (
             not self.settings.enabled

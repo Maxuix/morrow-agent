@@ -3,9 +3,13 @@
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import Field, field_serializer, field_validator, model_validator
+from pydantic import Field, field_serializer, field_validator, model_serializer, model_validator
 
-from morrow.core.domain import CLIENT_MESSAGE_ID_PATTERN
+from morrow.core.domain import (
+    CLIENT_MESSAGE_ID_PATTERN,
+    COMPUTER_SELECTION_ID_PREFIX,
+    validate_prefixed_id,
+)
 from morrow.core.models import AttachmentRef, ChatSettings, ProtocolModel
 from morrow.core.orchestration import GraphPlanningRequest
 
@@ -33,6 +37,7 @@ class InteractionRequest(ProtocolModel):
     attachments: tuple[AttachmentRef, ...] = Field(default=(), max_length=8)
     settings: ChatSettings = Field(default_factory=ChatSettings)
     allow_unconfined_host: bool = Field(default=False, strict=True)
+    computer_selection_id: str | None = Field(default=None, max_length=128)
 
     @field_serializer("settings")
     def settings_wire(self, value):
@@ -48,6 +53,20 @@ class InteractionRequest(ProtocolModel):
             raise ValueError("Invalid client message ID")
         return value
 
+    @field_validator("computer_selection_id")
+    @classmethod
+    def valid_computer_selection(cls, value):
+        return (
+            validate_prefixed_id(value, COMPUTER_SELECTION_ID_PREFIX) if value is not None else None
+        )
+
+    @model_serializer(mode="wrap")
+    def request_wire(self, handler):
+        payload = handler(self)
+        if self.computer_selection_id is None:
+            payload.pop("computer_selection_id", None)
+        return payload
+
     @model_validator(mode="after")
     def supported_intent(self):
         if not self.text.strip() and not self.attachments:
@@ -60,4 +79,9 @@ class InteractionRequest(ProtocolModel):
             raise ValueError("Workflow requires a task objective")
         if (self.intent in {"send", "explicit_workflow"}) != (self.target_agent_run_id is None):
             raise ValueError("Control input requires an explicit run target; send forbids it")
+        if self.computer_selection_id is not None:
+            if self.intent not in {"send", "follow_up"}:
+                raise ValueError("Desktop selection requires a new ordinary chat run")
+            if self.allow_unconfined_host:
+                raise ValueError("Desktop and Host shell authorizations require separate runs")
         return self

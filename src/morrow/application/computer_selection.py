@@ -1,7 +1,7 @@
 """Local window picker state; no grant, native identity, or model history is stored here."""
 
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from pydantic import Field, ValidationError, field_validator
@@ -43,6 +43,7 @@ class _PendingSelection:
     selection_id: str
     selection: ComputerUseSelection
     expires_at: datetime
+    claimed_key: str | None = None
 
 
 class ComputerUseSelectionService:
@@ -166,10 +167,43 @@ class ComputerUseSelectionService:
             "applies_to": "one_future_run",
         }
 
-    def consume(self, session_id, selection_id):
+    def claim(self, session_id, selection_id, key, *, permission, model):
+        settings = self._settings(permission)
+        pending = self._selections.get(session_id)
+        if (
+            pending is None
+            or pending.selection_id != selection_id
+            or self.clock.now() >= pending.expires_at
+        ):
+            raise ApplicationError(ApplicationErrorCode.STALE, "本地窗口选择需要重新绑定")
+        if pending.claimed_key not in {None, key}:
+            raise ApplicationError(ApplicationErrorCode.CONFLICT, "窗口选择已绑定另一条输入")
+        view = self.settings_service.view(model)
+        if not view["model_capabilities"]["function_tools"]:
+            raise ApplicationError(ApplicationErrorCode.UNAVAILABLE, "当前模型不支持所需工具协议")
+        if pending.selection.image_share is ComputerUseImageShare.CONTROLLED_WINDOW and (
+            settings.mode is not ComputerUseMode.HYBRID or not view["model_capabilities"]["images"]
+        ):
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID, "窗口图像分享需要混合模式与图像模型"
+            )
+        self._selections[session_id] = replace(pending, claimed_key=key)
+
+    def release_claim(self, session_id, selection_id, key):
+        pending = self._selections.get(session_id)
+        if (
+            pending is not None
+            and pending.selection_id == selection_id
+            and pending.claimed_key == key
+        ):
+            self._selections[session_id] = replace(pending, claimed_key=None)
+
+    def consume(self, session_id, selection_id, *, key=None):
         pending = self._selections.get(session_id)
         if pending is None or pending.selection_id != selection_id:
             raise ApplicationError(ApplicationErrorCode.STALE, "本地窗口选择需要重新绑定")
+        if pending.claimed_key is not None and pending.claimed_key != key:
+            raise ApplicationError(ApplicationErrorCode.CONFLICT, "窗口选择已绑定另一条输入")
         self._selections.pop(session_id)
         if self.clock.now() >= pending.expires_at:
             raise ApplicationError(ApplicationErrorCode.STALE, "本地窗口选择已过期，请重新选择")

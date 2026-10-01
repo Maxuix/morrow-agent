@@ -273,7 +273,22 @@ class InteractionService:
                     client_message_id=request.client_message_id,
                 )
 
-        self.journal.transact(admit)
+        if request.computer_selection_id is not None:
+            self.manager.computer_selection.claim(
+                session_id,
+                request.computer_selection_id,
+                request.client_message_id,
+                permission=binding["settings"]["permission"],
+                model=ModelRef.model_validate(binding["model"]),
+            )
+        try:
+            self.journal.transact(admit)
+        except BaseException:
+            if request.computer_selection_id is not None:
+                self.manager.computer_selection.release_claim(
+                    session_id, request.computer_selection_id, request.client_message_id
+                )
+            raise
         result = self.receipt(session_id, request.client_message_id)
         # A durable chat pause cycle ends here: new accepted input continues the
         # session (D07), so the pause fact is settled as resumed exactly once.
@@ -357,6 +372,25 @@ class InteractionService:
                     products.session.pending_full_access_grant = bool(
                         self._get(session_id, key)["request"].get("allow_unconfined_host", False)
                     )
+                    selection_id = self._get(session_id, key)["request"].get(
+                        "computer_selection_id"
+                    )
+                    if selection_id is not None:
+                        from morrow.core.capabilities import PermissionPreset, PermissionProfile
+                        from morrow.core.computer_use import TRUSTED_COMPUTER_USE_AUTHORITY
+
+                        selection = self.manager.computer_selection.consume(
+                            session_id, selection_id, key=key
+                        )
+                        factory = products.orchestrator.preparation.computer_factory
+                        options["computer_request"] = factory.select(
+                            selection,
+                            products.session,
+                            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                            permission_profile=PermissionProfile.from_preset(
+                                PermissionPreset(options["permission_preset"])
+                            ),
+                        )
                     return options
 
                 orchestrator.prepare_options = prepare

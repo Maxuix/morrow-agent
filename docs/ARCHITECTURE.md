@@ -104,7 +104,13 @@ ComputerUseSelectionService 管理最多八个会话的本地候选与一次性�
 owner 解析候选生成 v2，不接受客户端自造原生身份或授权。Core API 的显式 POST candidates
 通过异步只读准备读取 SDK，再在命令总线上重新检查 Session/权限/配置并保存临时目录；
 POST selection 检查同会话目录、精确模型/图像能力及操作/投递范围，只创建短期选择，
-不创建 grant、SDK run Session 或历史消息。选择标识的聊天提交与 CLI/GUI 控件尚待接线。
+不创建 grant、SDK run Session 或历史消息。普通聊天输入可携带 computer_selection_id：submit 在事务前绑定到 client_message_id，
+事务失败释放 claim；重复相同输入沿原 receipt 回放。新 run prepare 时按同 Session/key 消费
+一次选择，交给原 ComputerUseRunFactory，并在配置器应用输入冻结权限后重新验证实际
+Session；首次 Provider 请求前由原 activate/grant/snapshot 链路授权。排队过期或重启后
+临时选择丢失即拒绝准备，不从 interaction JSON 恢复 native 身份或授权。未使用该字段的
+普通输入序列化保持原样。选择不能用于 steer 或根 Workflow，shell Host 与 desktop 仍需
+各自显式运行选择；CLI/GUI 控件与 Workflow 叶子宿主选择尚待接线。
 
 ## 文档与验证约定
 
