@@ -160,8 +160,10 @@ class ImageProvider(ScriptedModelProvider):
             ]
         )
         self.image_pixels = []
+        self.before_response = lambda: None
 
     async def stream(self, model, messages, tools=(), generation=None):
+        self.before_response()
         pixels = []
         for part in iter_image_parts(messages):
             with Image.open(io.BytesIO(base64.b64decode(part.data))) as image:
@@ -172,7 +174,9 @@ class ImageProvider(ScriptedModelProvider):
             yield event
 
 
-@pytest.mark.parametrize("status", ["completed", "unknown", "revoked", "stale", "image_failed"])
+@pytest.mark.parametrize(
+    "status", ["completed", "unknown", "revoked", "revoked_before_intent", "stale", "image_failed"]
+)
 async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_path, status):
     app = _app(tmp_path)
     app.registry.register(
@@ -224,7 +228,8 @@ async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_pa
             prepared.provider.responses[-1] = (
                 "The action returned, but I could not verify its screen."
             )
-        if status == "revoked":
+        if status in {"revoked", "revoked_before_intent"}:
+            prepared.provider.responses[-1] = "The desktop permission was revoked; I did not click."
 
             def revoke():
                 snapshot = factory.journal.get_permission_snapshot_for_run(
@@ -234,7 +239,15 @@ async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_pa
                     snapshot.grant_id, reason="local stop before action", expected_row_version=1
                 )
 
-            approval.before_decision = revoke
+            if status == "revoked":
+                approval.before_decision = revoke
+            else:
+
+                def revoke_before_intent():
+                    if len(prepared.provider.image_pixels) == 2:
+                        revoke()
+
+                prepared.provider.before_response = revoke_before_intent
         if status == "stale":
             prepared.provider.responses.insert(
                 3,
@@ -252,15 +265,21 @@ async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_pa
         )
         assert events[-1].payload["finish_reason"] == "stop"
         expected_images = [[], [], [(255, 0, 0)], [(255, 0, 0), (0, 0, 255)]]
-        if status in {"revoked", "image_failed"}:
+        if status in {"revoked", "revoked_before_intent", "image_failed"}:
             expected_images[-1] = [(255, 0, 0)]
         if status == "stale":
             expected_images.append(expected_images[-1])
         assert prepared.provider.image_pixels == expected_images
         assert lifecycle.calls == ["open", "close"]
-        assert len(lifecycle.device.actions) == int(status != "revoked")
-        assert len(lifecycle.device.reads) == (1 if status == "revoked" else 2)
-        assert len(approval.requests) == (2 if status == "stale" else 1)
+        assert len(lifecycle.device.actions) == int(
+            status not in {"revoked", "revoked_before_intent"}
+        )
+        assert len(lifecycle.device.reads) == (
+            1 if status in {"revoked", "revoked_before_intent"} else 2
+        )
+        assert len(approval.requests) == (
+            0 if status == "revoked_before_intent" else 2 if status == "stale" else 1
+        )
         executions = factory.journal.list_session_executions(
             factory.workspace_id, products.session.session_id
         )
@@ -281,7 +300,7 @@ async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_pa
                 for row in executions
                 if row.tool_name == "computer_action" and row.result_envelope.visual_refs
             )
-            if status not in {"revoked", "image_failed"}
+            if status not in {"revoked", "revoked_before_intent", "image_failed"}
             else next(row for row in executions if row.tool_name == "computer_action")
         )
         assert action.state is ToolExecutionState.CLOSED
@@ -289,15 +308,17 @@ async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_pa
             ToolExecutionDisposition.UNKNOWN
             if status == "unknown"
             else ToolExecutionDisposition.DENIED
-            if status == "revoked"
+            if status in {"revoked", "revoked_before_intent"}
             else ToolExecutionDisposition.SUCCEEDED
         )
         consumed = factory.journal.get_approval_for_execution(
             factory.workspace_id, action.tool_execution_id
         )
-        if status != "revoked":
+        if status not in {"revoked", "revoked_before_intent"}:
             assert consumed.consumed_at is not None
-        if status == "revoked":
+        if status == "revoked_before_intent":
+            assert consumed is None
+        if status in {"revoked", "revoked_before_intent"}:
             assert action.result_envelope is None
         else:
             assert len(action.result_envelope.visual_refs) == int(status != "image_failed")
@@ -312,7 +333,9 @@ async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_pa
         replies = [message for message in messages if message.role == "tool"]
         assert len(replies) == (4 if status == "stale" else 3)
         assert len(replies[1].visual_refs) == 1
-        assert len(replies[2].visual_refs) == int(status not in {"revoked", "image_failed"})
+        assert len(replies[2].visual_refs) == int(
+            status not in {"revoked", "revoked_before_intent", "image_failed"}
+        )
         if status == "image_failed":
             payload = json.loads(replies[2].content)["result"]
             assert payload["outcome"]["status"] == "completed"

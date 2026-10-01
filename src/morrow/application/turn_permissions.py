@@ -354,6 +354,12 @@ class RunPermissionCoordinator:
     def active_tool_grant_evidence(
         self, snapshot: PermissionSnapshot, tool_name: str, *, now: datetime
     ) -> tuple[str | None, IsolationLabel | None]:
+        """Bind frozen desktop evidence even after revocation; this does not authorize entry.
+
+        The durable intent still needs its original scope and isolation so a revoked
+        call can be recorded and denied. Policy and handler gates reload liveness.
+        """
+
         if tool_name in SHELL_TOOL_NAMES:
             return self.active_grant_evidence(snapshot, now=now)
         if tool_name not in COMPUTER_TOOL_NAMES or snapshot.grant_id is None:
@@ -361,8 +367,8 @@ class RunPermissionCoordinator:
         grant = self.journal.get_capability_grant(self.workspace_id, snapshot.grant_id)
         if (
             grant is None
-            or not grant.is_active(now)
             or CapabilityName.COMPUTER_USE_HOST not in grant.capabilities
+            or CapabilityName.COMPUTER_USE_HOST not in snapshot.granted_capabilities
             or snapshot.isolation_for(CapabilityName.COMPUTER_USE_HOST)
             is not IsolationLabel.COMPUTER_USE_HOST
         ):
