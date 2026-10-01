@@ -27,3 +27,24 @@ export interface ChatPermissionsView {
   next_grant_cursor: string | null
   session_scopes: {items: {scope: string; revision: number; approval_id: string}[]; next_cursor: string | null}
 }
+
+export interface ComputerUseSettings {
+  enabled: boolean
+  mode: 'semantic' | 'hybrid'
+  max_operations: number
+  max_run_seconds: number
+  max_call_seconds: number
+  max_observation_bytes: number
+  image_long_edge_px: number
+}
+export interface ComputerUseSettingsView {
+  revision: number
+  settings: ComputerUseSettings
+  host: {status: 'unavailable'; reason: string}
+  model: ModelRefWire | null
+  model_capabilities: {function_tools: boolean; images: boolean}
+  model_error: 'model_unavailable' | 'function_tools_required' | 'images_not_supported' | null
+  required_permission: 'full-access-manual'
+  configuration_scope: 'global'
+  applies_to: 'future_runs'
+}

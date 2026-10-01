@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from morrow.application.computer_requests import ComputerUseSelection
+from morrow.application.computer_settings import ComputerUseSettingsService
 from morrow.application.workflows.start import StartWorkflowCommand
 from morrow.bootstrap import build_session_application
 from morrow.core.agent_definitions import AgentDefinitionSource, ToolRequirement
@@ -41,7 +42,7 @@ class BlockingApproval(Approval):
         await asyncio.Event().wait()
 
 
-@pytest.mark.parametrize("selected", [True, False, "root_only", "cancelled"])
+@pytest.mark.parametrize("selected", [True, False, "root_only", "cancelled", "enabled_later"])
 async def test_workflow_desktop_requires_its_own_local_selection(tmp_path, selected):
     app = _app(tmp_path)
     providers = []
@@ -64,7 +65,9 @@ async def test_workflow_desktop_requires_its_own_local_selection(tmp_path, selec
         lambda value: value.model_copy(
             update={
                 "runtime_policy": RuntimePolicyOverrides(
-                    computer_use=ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID)
+                    computer_use=ComputerUseSettings(
+                        enabled=selected != "enabled_later", mode=ComputerUseMode.HYBRID
+                    )
                 )
             }
         ),
@@ -86,6 +89,17 @@ async def test_workflow_desktop_requires_its_own_local_selection(tmp_path, selec
     journal, ws = factory.journal, factory.workspace_id
     try:
         management = products.workflow_management
+        if selected == "enabled_later":
+            assert not factory.settings.enabled
+            ordinary = products.orchestrator.preparation.prepare_new(agent_run_id="arun_disabled")
+            assert "computer_observe" not in {
+                tool.function.name for tool in ordinary.tool_executor.definitions
+            }
+            await ordinary.aclose()
+            ComputerUseSettingsService(app, preflight=lambda settings: None).put(
+                ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID),
+                expected_revision=app.global_store.load().revision,
+            )
         version = management.agent_publication.publish(
             AgentDefinitionSource(
                 definition_id="desktop",
@@ -174,7 +188,7 @@ async def test_workflow_desktop_requires_its_own_local_selection(tmp_path, selec
             factory.select_workflow_leaf(
                 selection, node_run_id="nrun_missing", authority=TRUSTED_COMPUTER_USE_AUTHORITY
             )
-        if selected is True or selected == "cancelled":
+        if selected is True or selected in {"cancelled", "enabled_later"}:
             factory.select_workflow_leaf(
                 selection, node_run_id=node.node_run_id, authority=TRUSTED_COMPUTER_USE_AUTHORITY
             )
@@ -202,10 +216,12 @@ async def test_workflow_desktop_requires_its_own_local_selection(tmp_path, selec
             return
         result = await runtime.scheduler.run(started.run.workflow_run_id)
         assert result.status is (
-            WorkflowStatus.COMPLETED if selected is True else WorkflowStatus.FAILED
+            WorkflowStatus.COMPLETED
+            if selected is True or selected == "enabled_later"
+            else WorkflowStatus.FAILED
         )
         node = journal.workflows.get_node(ws, node.node_run_id)
-        if selected is not True:
+        if selected is not True and selected != "enabled_later":
             assert lifecycle.calls == initial_calls
             assert journal.list_capability_grants(ws) == initial_grants
             assert len(approval.requests) == initial_approvals

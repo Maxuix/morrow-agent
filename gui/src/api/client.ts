@@ -1,5 +1,5 @@
 import { attachmentPath, type AttachmentWire, type FileSearch } from './attachments'
-import type { ChatSettings, ChatSettingsView, ProviderSettingsView } from './settings'
+import type { ChatSettings, ChatSettingsView, ProviderSettingsView, ComputerUseSettings, ComputerUseSettingsView } from './settings'
 export interface SessionMetadata {title:string;pinned:boolean;revision:number}
 export interface WorkspaceEntry {workspace_id:string;path:string;display_name:string;available:boolean;last_used_at:string|null;git_root:string|null}
 export interface WorkspaceList {items:WorkspaceEntry[];revision:number}
@@ -253,6 +253,12 @@ export class ApiClient {
   }
   saveChatSettings(workspace: string, session: string, scope: 'session' | 'workspace' | 'global', settings: ChatSettings, revision: number): Promise<ChatSettingsView> {
     return this.post(chatPath(workspace, session) + '/settings', {scope, settings, expected_revision: revision})
+  }
+  computerUseSettings(workspace: string, session: string): Promise<ComputerUseSettingsView> {
+    return this.get(chatPath(workspace, session) + '/computer-use/settings')
+  }
+  saveComputerUseSettings(workspace: string, session: string, settings: ComputerUseSettings, revision: number): Promise<ComputerUseSettingsView> {
+    return this.post(chatPath(workspace, session) + '/computer-use/settings', {settings, expected_revision: revision})
   }
   providerSettings(): Promise<ProviderSettingsView> { return this.get('/v1/providers') }
   providerControl(action: string, body: Record<string, unknown>, provider?: string): Promise<ProviderSettingsView> {

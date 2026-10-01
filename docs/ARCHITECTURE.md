@@ -81,7 +81,8 @@ handler 只重验已有执行/审批/授权证据，不创建 grant。关闭先�
 桌面恢复需要新的本地选择、新 AgentRun/grant 与更高代次；磁盘旧 grant 不足以重新绑定设备。
 Workflow 的选择由可信本地入口绑定实际 NodeRun，只在新叶子 admission 时消费一次；
 AgentFactory 校验请求属于该叶子 Session，并拒绝并行只读候选携带桌面请求。
-配置启用后目录可声明桌面工具，但默认 executor 和未选择叶子没有桌面工具或设备授权。
+定义目录始终声明已知桌面工具合同，避免缓存受启动开关影响；实际 prepare 检查当前配置与
+本地选择。默认 executor 和未选择叶子没有桌面工具或设备授权。
 根运行 grant 不继承；叶子继续也需要重新选择，crash rehydrate 不自动重新绑定。
 桌面配置在每次 prepare 时从当前全局配置复制到该运行；已有 Prepared runtime 不随配置
 改变。内部 OpenRunSessionRequest 携带这份冻结设置，lifecycle 用其诊断，owner 为新 Session

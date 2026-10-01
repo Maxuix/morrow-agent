@@ -1291,7 +1291,9 @@ def build_session_application(
             if tool_executor is not None
             else ()
         )
-        if computer_factory is not None and computer_factory.settings.enabled:
+        # Definitions declare known contracts; configuration and grants gate the
+        # actual per-run executor. A cached catalog must not depend on startup enablement.
+        if computer_factory is not None:
             from morrow.core.computer_use import COMPUTER_TOOL_NAMES
 
             tool_names = (*tool_names, *sorted(COMPUTER_TOOL_NAMES))

@@ -3,6 +3,7 @@ import type { ApiClient } from '../api/client'
 import type { ChatPermissionsView, ChatSettings, ChatSettingsView, ProviderSettingsView } from '../api/settings'
 import type { ModelRefWire } from '../api/types'
 import { approvalScopeLabel, notifyPermissionChanged } from '../state/approvalDecision'
+import { ComputerUseControl } from './ComputerUseControl'
 import { commandId } from './lib/editor'
 import { useDismissablePopover } from './lib/popover'
 
@@ -171,6 +172,7 @@ export function ChatPermissionControl({
           onChange={event => onHostAllowedChange?.(event.target.checked)}/> 允许本次运行使用 Host</label>
         <p className="menu-note">最长 15 分钟；Host 可访问用户文件、网络和凭据，每条命令仍需单独审批。</p>
       </div>}
+      {client && workspace && session && <ComputerUseControl client={client} workspace={workspace} session={session} modelKey={JSON.stringify(settings.model)}/>}
       {canLoad && <div className="permission-live-state">
         <div className="permission-section-heading">当前运行授权</div>
         {activeGrants.length === 0 && <p className="menu-note">暂无活动 Host 授权。</p>}
