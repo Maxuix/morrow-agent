@@ -43,3 +43,37 @@ approval waits. Lock files remain empty and are never unlinked. Cancellation or
 timeout stops admission and quarantines the Session while native work settles;
 it does not cancel or repeat a native action. A Host with unsettled desktop
 shutdown retains its owner loop rather than forcing it to stop.
+
+## Offline installed-package gate
+
+Build the GUI, sdist and wheel first. Use separate disposable environments so
+the no-extra check really has no SDK, then replace the editable project with
+the wheel. The commands below use the current package version from pyproject.
+
+```sh
+uv run python scripts/build_release.py
+package_gate_root=$(mktemp -d -t morrow-package-gate)
+UV_PROJECT_ENVIRONMENT="$package_gate_root/no-extra" uv sync --locked --no-default-groups --python 3.12
+UV_PROJECT_ENVIRONMENT="$package_gate_root/extra" uv sync --locked --no-default-groups --python 3.12 --extra computer-use
+uv pip install --python "$package_gate_root/no-extra/bin/python" --no-deps --reinstall dist/morrow_agent-0.1.0-py3-none-any.whl
+uv pip install --python "$package_gate_root/extra/bin/python" --no-deps --reinstall dist/morrow_agent-0.1.0-py3-none-any.whl
+"$package_gate_root/no-extra/bin/python" -I evals/computer_use/package_smoke.py \
+  --expect-sdk absent --require-wheel --gui-source src/morrow/gui_static \
+  --wheel dist/morrow_agent-0.1.0-py3-none-any.whl --sdist dist/morrow_agent-0.1.0.tar.gz
+"$package_gate_root/extra/bin/python" -I evals/computer_use/package_smoke.py \
+  --expect-sdk present --require-wheel --gui-source src/morrow/gui_static \
+  --wheel dist/morrow_agent-0.1.0-py3-none-any.whl --sdist dist/morrow_agent-0.1.0.tar.gz
+"$package_gate_root/no-extra/bin/morrow" --help
+"$package_gate_root/extra/bin/morrow" --help
+uv pip check --python "$package_gate_root/no-extra/bin/python"
+uv pip check --python "$package_gate_root/extra/bin/python"
+```
+
+The verifier compares every installed/archived GUI file with the current build,
+checks SDK absence or its pinned version, and runs the production ordinary
+AgentLoop with a scripted Provider and an actual read of a disposable file.
+It rejects SDK imports and Internet socket connections during that task, checks
+the real completed turn and tool result, and confirms the desktop owner stayed
+inactive. Output contains only fixed check codes, versions, counts and hashes.
+This proves packaging and default-off behavior; it does not prove native device
+access or model quality. No desktop authorization is needed for this gate.
