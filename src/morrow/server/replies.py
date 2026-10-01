@@ -154,6 +154,7 @@ class ReplyStreams:
         state.hub.publish(state.sequence)
 
     def changed(self, sid):
+        self._reconcile_activities(sid, self.state(sid))
         self.emit(sid, "queue_changed", {})
 
     def stage(self, sid, payload):
@@ -249,6 +250,10 @@ class ReplyStreams:
                 item["identity"]["source_session_id"],
                 sid,
             )
+            if projection.get("turn_id") and projection.get("agent_run_id") == item["identity"].get(
+                "agent_run_id"
+            ):
+                item["identity"]["turn_id"] = projection.get("turn_id")
             if "computer" in projection:
                 item["payload"]["computer"] = projection["computer"]
             if "preview_ref" in projection:
@@ -524,6 +529,13 @@ class ReplyStreams:
                             execution.state.value, execution.disposition.value
                         )
                         ended = execution.closed_at.isoformat() if execution.closed_at else None
+                        item = {
+                            **item,
+                            "identity": {
+                                **identity,
+                                "turn_id": identity.get("turn_id") or execution.turn_id,
+                            },
+                        }
                         projection = computer_activity_projection(
                             self.journal, self.workspace_id, execution_id, execution.session_id, sid
                         )
@@ -558,15 +570,16 @@ class ReplyStreams:
             if target is None:
                 continue
             stamp = ended or utc_now().isoformat()
-            state.activities.upsert(
-                {
-                    **item,
-                    "state": target,
-                    "revision": item["revision"] + 1,
-                    "updated_at": stamp,
-                    "ended_at": stamp,
-                }
-            )
+            settled = {
+                **item,
+                "state": target,
+                "revision": item["revision"] + 1,
+                "updated_at": stamp,
+                "ended_at": stamp,
+            }
+            # Snapshot repair must notify existing subscribers too: otherwise
+            # its terminal entry would suppress the later settlement notification.
+            self._apply_activities(sid, state, [settled])
 
     def subscribe(self, sid, loop):
         state = self.state(sid)

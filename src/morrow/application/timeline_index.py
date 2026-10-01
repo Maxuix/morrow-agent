@@ -571,6 +571,19 @@ class TimelineIndexService:
         attachments: list[dict] = []
         if record_id is not None:
             source["record_id"] = record_id
+            # Reuse the conversation owner's attribution rather than guessing
+            # a turn from display order (including visible ancestor records).
+            if row["source_kind"] == trajectory.CONVERSATION_RECORD:
+                source.update(
+                    self.journal.chat_timeline.source(
+                        self.workspace_id,
+                        {
+                            "origin_session_id": row["source_session_id"],
+                            "position": row["source_position"],
+                            "record_id": record_id,
+                        },
+                    )
+                )
             # References are extracted independently of the 16 KiB body gate:
             # a long message must not lose its attachment entry (BUG-GUI-004).
             attachments = self._record_attachments(row["source_session_id"], record_id)

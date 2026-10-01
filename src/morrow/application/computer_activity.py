@@ -15,7 +15,9 @@ def computer_activity_projection(
     ):
         return {}
     evidence = execution.facts.computer if execution.facts is not None else None
-    projection = {"computer": evidence.model_dump(mode="json")} if evidence is not None else {}
+    projection = {"turn_id": execution.turn_id, "agent_run_id": execution.agent_run_id}
+    if evidence is not None:
+        projection["computer"] = evidence.model_dump(mode="json")
     envelope = execution.result_envelope
     if envelope is not None and envelope.visual_refs:
         reference = envelope.visual_refs[0]

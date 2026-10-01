@@ -20,7 +20,7 @@ from test_stage8_chat_submission import drain, new_session
 from test_stage8_core_api import ServerFixture
 
 
-@pytest.mark.parametrize("control", ["stop", "revoke"])
+@pytest.mark.parametrize("control", ["stop", "revoke", "stop_approval"])
 async def test_http_control_retains_native_lease_until_effect_settles(tmp_path, control):
     script = [
         tool("discover", "computer_observe", {"operation": "discover"}),
@@ -134,6 +134,60 @@ async def test_http_control_retains_native_lease_until_effect_settles(tmp_path, 
         assert approval["tool_name"] == "computer_action"
         assert not approval["session_scope_allowed"]
         assert "投递：前台" in "\n".join(approval["preview"])
+
+        def activity_cursor():
+            state = fx.host.context.chat.streams.state(sid)
+            entries = [entry.item for entry in state.activities.entries.values()]
+            desktop = [
+                item
+                for item in entries
+                if item["payload"].get("tool_name") in ("computer_observe", "computer_action")
+            ]
+            assert len(desktop) == 3
+            assert all(item["identity"].get("turn_id") for item in desktop)
+            assert len({item["identity"]["turn_id"] for item in desktop}) == 1
+            return state.activities.epoch, state.activities.sequence
+
+        epoch, sequence = await fx.on_core(activity_cursor)
+        if control == "stop_approval":
+            receipt = (await fx.client.get(path + "/interactions/desktop.control")).json()[
+                "receipt"
+            ]
+            queue = (await fx.client.get(path + "/queue")).json()
+            response = await fx.client.post(
+                path + "/control",
+                {
+                    "command_id": "cmd_stop_before_approval",
+                    "action": "stop",
+                    "target_agent_run_id": receipt["agent_run_id"],
+                    "expected_revision": queue["revision"],
+                },
+            )
+            assert response.status == 200, response.body
+            await drain(fx, sid)
+            frames = await fx.on_core(
+                lambda: fx.host.context.chat.streams.pull_activities(sid, epoch, sequence)
+            )
+            settled = [
+                frame["payload"]["item"]
+                for frame in frames
+                if frame["type"] == "activity_upsert"
+                and frame["payload"]["item"]["payload"].get("tool_name") == "computer_action"
+                and frame["payload"]["item"]["state"] == "cancelled"
+            ]
+            assert len(settled) == 1
+            assert settled[0]["identity"]["turn_id"] == receipt["turn_id"]
+            assert resources["effects"] == [] and not resources["lease"].held
+            assert "click" not in [name for name, _ in resources["driver"].calls]
+            pending = (await fx.client.get("/v1/approvals?pending=true")).json()
+            assert pending["approvals"] == []
+            timeline = (await fx.client.get(path + "/timeline")).json()["items"]
+            endings = [item for item in timeline if item["kind"] == "interruption"]
+            assert endings[-1]["source"]["turn_id"] == receipt["turn_id"]
+            assert endings[-1]["source"]["agent_run_id"] == receipt["agent_run_id"]
+            assert endings[-1]["content"]["finish_reason"] == "cancelled"
+            return
+
         assert (
             await fx.client.post(
                 "/v1/approvals/" + approval["approval_id"] + "/resolve",
@@ -210,6 +264,20 @@ async def test_http_control_retains_native_lease_until_effect_settles(tmp_path, 
         assert not action.result_envelope.visual_refs
         assert action.facts.computer.completion == "unknown"
         assert action.facts.computer.delivery is None
+        frames = await fx.on_core(
+            lambda: fx.host.context.chat.streams.pull_activities(sid, epoch, sequence)
+        )
+        terminal = [
+            frame["payload"]["item"]
+            for frame in frames
+            if frame["type"] == "activity_upsert"
+            and frame["payload"]["item"]["identity"].get("tool_execution_id")
+            == action.tool_execution_id
+            and frame["payload"]["item"]["state"] == "unknown"
+        ]
+        assert terminal
+        assert terminal[-1]["payload"]["computer"]["completion"] == "unknown"
+        assert terminal[-1]["identity"]["turn_id"] == action.turn_id
         snapshot = (await fx.client.get(path + "/snapshot?activity_schema=1")).json()
         activity = next(
             item

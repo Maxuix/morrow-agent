@@ -7,7 +7,7 @@ import {
   type ActivityRecovery,
   type ActivityState as WireActivityState,
 } from '../api/activity'
-import type { ActivitySnapshot } from '../api/chat'
+import type { ActivitySnapshot, TimelineItem } from '../api/chat'
 import type { ApiClient } from '../api/client'
 
 /** One scope (workspace:session), one activity socket, bounded memory (P2.5). */
@@ -243,6 +243,24 @@ export function runKeyOf(item: ActivityItem): string {
 }
 
 export interface ActivityRun { key: string; items: ActivityItem[] }
+
+/** Only durable turn-end records can override intermediate model responses. */
+export function chatRunOwnerStatus(run: ActivityRun, timeline: TimelineItem[]): string | null {
+  if (!run.key.startsWith('turn:')) return null
+  const turnId = run.key.slice(5)
+  const endings = timeline.filter(item =>
+    (item.kind === 'turn_status' || item.kind === 'interruption') &&
+    item.source.turn_id === turnId &&
+    run.items.some(activity => activity.identity.source_session_id === item.source.origin_session_id),
+  )
+  const last = endings.at(-1)
+  if (!last || !last.content || typeof last.content === 'string') return null
+  const finish = last.content.finish_reason
+  if (finish === 'cancelled' || finish === 'interrupted') return 'cancelled'
+  if (finish === 'error') return 'failed'
+  if (finish === 'stop') return 'completed'
+  return null
+}
 
 /** Insertion-ordered run partition; each run renders as one execution region. */
 export function groupByRun(items: ActivityItem[]): ActivityRun[] {

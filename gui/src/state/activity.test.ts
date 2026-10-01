@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApiClient } from '../api/client'
 import type { ActivityItem } from '../api/activity'
+import type { TimelineItem } from '../api/chat'
 import {
   ACTIVITY_METADATA_LIMIT,
 } from '../api/activity'
@@ -13,6 +14,7 @@ import {
   applyUpsert,
   buildParts,
   buildRunNodes,
+  chatRunOwnerStatus,
   durationMsText,
   durationText,
   FrozenClock,
@@ -176,6 +178,22 @@ it('recovers missing turn attribution without collapsing same-ordinal desktop ex
 })
 
 describe('run attribution', () => {
+  it('uses the actual turn ending despite successful intermediate tool-call responses', () => {
+    const run = groupByRun([model({state: 'succeeded', ended_at: at(4)}),
+      tool('computer_action', 'computer_action', {state: 'cancelled', ended_at: at(5)})])[0]
+    const ending: TimelineItem = {
+      item_id: 'end', kind: 'interruption', workspace_id: 'ws', session_id: 's',
+      order_key: [5, 0, 0, 'end'], revision: 1,
+      source: {turn_id: 't1', origin_session_id: 's'},
+      content: {finish_reason: 'cancelled'}, content_ref: null,
+    }
+    expect(runFacts(run.items).cancelled).toBe(false)
+    expect(settleRunFacts(run.items, chatRunOwnerStatus(run, [ending])).cancelled).toBe(true)
+    expect(chatRunOwnerStatus(run, [{...ending, source: {...ending.source, turn_id: 'other'}}])).toBeNull()
+    expect(chatRunOwnerStatus(run, [{...ending, source: {...ending.source, origin_session_id: 'other'}}])).toBeNull()
+    expect(chatRunOwnerStatus(run, [{...ending, content: {finish_reason: 'steered'}}])).toBeNull()
+    expect(chatRunOwnerStatus(run, [ending, {...ending, kind: 'turn_status', content: {finish_reason: 'stop'}}])).toBe('completed')
+  })
   it('keys runs by workflow run, then turn, else session', () => {
     expect(runKeyOf(item({identity: {workspace_id: 'ws', root_session_id: 's', source_session_id: 's', workflow_run_id: 'w1', node_run_id: 'n1'}}))).toBe('wf:w1')
     expect(runKeyOf(item({}))).toBe('turn:t1')

@@ -13,7 +13,7 @@ import { taskWorkflowAvailable, type ChatCapabilities, type InteractionInput, ty
 import type { ApprovalWire, SessionWire, TaskRunWire, WorkflowRunWire, RunViewWire } from '../api/types'
 import type { SyncStore } from '../state/sync'
 import { ChatStore, DraftStorage, OutboxStorage } from '../state/chat'
-import { ActivityStore, groupByRun, type ActivityRun, type ActivityState } from '../state/activity'
+import { ActivityStore, chatRunOwnerStatus, groupByRun, type ActivityRun, type ActivityState } from '../state/activity'
 import { planningGenerationOf, TaskPlanStore, type PlanningGenerationTransport } from '../state/taskPlan'
 import { ChatMessage, Markdown } from './ChatMessage'
 import { ActivityTimeline } from './ActivityTimeline'
@@ -378,6 +378,11 @@ function SessionChat({client, store, capabilities, sessionId, drafts, planStore,
     operation.status === 'failed' && operation.error_code === 'needs_recovery',
   ) === true
   const busy = executionBusy(execution)
+  useEffect(() => {
+    // A cancelled approval keeps its original evidence, but its closed execution
+    // is no longer actionable. Refresh the pending projection after owner settlement.
+    if (!busy) void store.refreshPendingApprovals().catch(() => {})
+  }, [busy, store, sessionId])
   const stopping = executionStopping(execution)
   const stopTarget = executionStopTarget(execution)
   const acceptsInput = executionAcceptsInput(execution)
@@ -887,7 +892,7 @@ function SessionChat({client, store, capabilities, sessionId, drafts, planStore,
   const regionStatus = activityEnabled ? activityState.status : state.connection === 'live' ? 'live' as const : 'reconnecting' as const
   const ownerStatusOf = (run: ActivityRun): string | null => run.key.startsWith('wf:')
     ? globalState.workflowRuns.get(run.key.slice(3))?.run.status ?? null
-    : null
+    : chatRunOwnerStatus(run, state.items)
   // P10.3: pausing / paused / needs-recovery execution freezes region clocks —
   // elapsed excludes the frozen span instead of running a ghost timer.
   const timingFrozen = executionTimingFrozen(execution)
