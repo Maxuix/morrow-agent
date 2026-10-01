@@ -772,7 +772,16 @@ def _elements(
         )
         kept.append(
             AxElement(
-                element_ref=element_ref, depth=depth, role=role, label=label, sensitive=sensitive
+                element_ref=element_ref,
+                depth=depth,
+                role=role,
+                label=label,
+                sensitive=sensitive,
+                enabled=(
+                    getattr(raw, "enabled", None)
+                    if type(getattr(raw, "enabled", None)) is bool and not sensitive
+                    else None
+                ),
             )
         )
     return kept, omitted, truncated

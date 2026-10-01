@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from morrow.application.computer_authorization import authorize_computer_execution
 from morrow.core.computer_use import (
@@ -33,6 +33,7 @@ from morrow.core.models import ToolVisualRef
 from morrow.core.ports import Clock
 from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
 from morrow.services.computer_use import ComputerUseRunService
+from morrow.services.computer_verification import evaluate_postcondition
 
 
 class ComputerUseLifecycle:
@@ -121,7 +122,10 @@ class ComputerUseObservationService:
         scope: ComputerUseScope,
         settings: ComputerUseSettings,
         clock: Clock,
+        *,
+        verification_wait: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ):
+        self._verification_wait = verification_wait
         self._lifecycle, self._journal = lifecycle, journal
         self._scope, self._settings, self._clock = scope, settings, clock
         self._run: ComputerUseRunService | None = None
@@ -283,6 +287,25 @@ class ComputerUseObservationService:
         *,
         visuals,
     ) -> tuple[ComputerActionResult, tuple[ToolVisualRef, ...]]:
+        try:
+            self._authority(execution_id, include_image=False, tool_name=COMPUTER_ACTION_TOOL)
+            if self._run is None:
+                raise ComputerUseContractError("stale_observation")
+            with self._run.observation_sequence():
+                return await self._execute_published(
+                    execution_id, observation_id, action, visuals=visuals
+                )
+        except ComputerUseContractError as exc:
+            return ComputerActionResult(outcome=outcome_for_rejection(exc.code)), ()
+
+    async def _execute_published(
+        self,
+        execution_id: str,
+        observation_id: str,
+        action: ComputerUseAction,
+        *,
+        visuals,
+    ) -> tuple[ComputerActionResult, tuple[ToolVisualRef, ...]]:
         """Dispatch once, then observe the same target without erasing effects."""
         target_ref = None
         try:
@@ -310,6 +333,42 @@ class ComputerUseObservationService:
             if read.observation.observation_id == observation_id:
                 self._run.stop()
                 raise ComputerUseContractError("stale_observation")
+            predicate = action.postcondition
+            verification = "not_checked"
+            if predicate is not None:
+                verification = evaluate_postcondition(read.observation, predicate)
+                started = self._clock.now()
+                seen = {observation_id, read.observation.observation_id}
+                for _ in range(9):
+                    if verification in {"passed", "not_checked"}:
+                        break
+                    elapsed = (self._clock.now() - started).total_seconds()
+                    if elapsed < 0 or elapsed >= 5:
+                        break
+                    authority()
+                    await self._verification_wait(min(0.5, 5 - elapsed))
+                    authority()
+                    remaining = 5 - (self._clock.now() - started).total_seconds()
+                    if not 0 < remaining <= 5:
+                        break
+                    async with asyncio.timeout(remaining):
+                        read = await self._run.observe(
+                            target_ref, authority=authority, include_image=include_image
+                        )
+                    if read.observation.observation_id in seen:
+                        self._run.stop()
+                        raise ComputerUseContractError("stale_observation")
+                    seen.add(read.observation.observation_id)
+                    verification = evaluate_postcondition(read.observation, predicate)
+            verification = "not_checked" if verification == "pending" else verification
+            outcome = outcome.model_copy(update={"postcondition": verification})
+        except TimeoutError:
+            self._run.stop()
+            return ComputerActionResult(
+                outcome=outcome,
+                observation_error="verification_timeout",
+                verification_error="verification_unavailable",
+            ), ()
         except ComputerUseContractError as exc:
             return ComputerActionResult(outcome=outcome, observation_error=exc.code), ()
         except asyncio.CancelledError:
@@ -319,6 +378,13 @@ class ComputerUseObservationService:
         except Exception:
             return ComputerActionResult(outcome=outcome, observation_error="observation_failed"), ()
         observation = read.observation
+        verification_error = (
+            "verification_failed"
+            if outcome.postcondition == "failed"
+            else "verification_unavailable"
+            if action.postcondition is not None and outcome.postcondition == "not_checked"
+            else None
+        )
         outcome = outcome.model_copy(update={"after_observation_id": observation.observation_id})
         try:
             references = ()
@@ -337,7 +403,9 @@ class ComputerUseObservationService:
                 observation = observation.model_copy(update={"image": image})
                 self._run.accept_published_observation(observation)
                 references = (reference,)
-            return ComputerActionResult(outcome=outcome, observation=observation), references
+            return ComputerActionResult(
+                outcome=outcome, observation=observation, verification_error=verification_error
+            ), references
         except ComputerUseContractError as exc:
             safe_observation = (
                 None
@@ -352,7 +420,10 @@ class ComputerUseObservationService:
                 else read.observation
             )
             return ComputerActionResult(
-                outcome=outcome, observation=safe_observation, observation_error=exc.code
+                outcome=outcome,
+                observation=safe_observation,
+                observation_error=exc.code,
+                verification_error=verification_error,
             ), ()
         except Exception:
             # Opaque publisher errors are independent of an already dispatched action.
@@ -360,6 +431,7 @@ class ComputerUseObservationService:
                 outcome=outcome,
                 observation=read.observation,
                 observation_error="image_publish_failed",
+                verification_error=verification_error,
             ), ()
 
     async def close(self) -> None:

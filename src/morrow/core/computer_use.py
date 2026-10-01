@@ -532,6 +532,10 @@ class AxElement(ComputerUseModel):
     role: str
     label: str | None = None
     sensitive: bool = False
+    enabled: bool | None = None
+    focused: bool | None = None
+    checked: bool | None = None
+    expanded: bool | None = None
 
     @field_validator("element_ref")
     @classmethod
@@ -558,7 +562,13 @@ class AxElement(ComputerUseModel):
 
     @model_validator(mode="after")
     def sensitive_has_no_label(self) -> AxElement:
-        if self.sensitive and self.label is not None:
+        if self.sensitive and (
+            self.label is not None
+            or any(
+                getattr(self, key) is not None
+                for key in ("enabled", "focused", "checked", "expanded")
+            )
+        ):
             raise ValueError("sensitive_label")
         return self
 
@@ -698,26 +708,53 @@ class ObservedWindow:
         )
 
 
-class ElementExistsPostcondition(ComputerUseModel):
-    type: Literal["element_exists"]
-    element_ref: str
+class PostconditionSelector(ComputerUseModel):
+    """Exact safe labels/roles in a fresh tree, never an old snapshot token."""
+
+    role: str | None = None
+    label: str | None = None
+
+    @field_validator("role")
+    @classmethod
+    def valid_role(cls, value):
+        return None if value is None else AxElement.valid_role(value)
+
+    @field_validator("label")
+    @classmethod
+    def valid_label(cls, value):
+        return AxElement.valid_label(value)
+
+    @model_validator(mode="after")
+    def bounded_selector(self):
+        if self.role is None and self.label is None:
+            raise ValueError("rejected_action")
+        return self
+
+
+class ElementPostconditionTarget(ComputerUseModel):
+    element_ref: str | None = None
+    selector: PostconditionSelector | None = None
 
     @field_validator("element_ref")
     @classmethod
-    def valid_element(cls, value: str) -> str:
-        return validate_prefixed_id(value, COMPUTER_ELEMENT_ID_PREFIX)
+    def valid_element(cls, value: str | None) -> str | None:
+        return None if value is None else validate_prefixed_id(value, COMPUTER_ELEMENT_ID_PREFIX)
+
+    @model_validator(mode="after")
+    def exact_target(self):
+        if (self.element_ref is None) == (self.selector is None):
+            raise ValueError("mixed_target")
+        return self
 
 
-class AttributeEqualsPostcondition(ComputerUseModel):
+class ElementExistsPostcondition(ElementPostconditionTarget):
+    type: Literal["element_exists"]
+
+
+class AttributeEqualsPostcondition(ElementPostconditionTarget):
     type: Literal["attribute_equals"]
-    element_ref: str
     attribute: Literal["enabled", "focused", "checked", "expanded"]
     value: Literal["true", "false"]
-
-    @field_validator("element_ref")
-    @classmethod
-    def valid_element(cls, value: str) -> str:
-        return validate_prefixed_id(value, COMPUTER_ELEMENT_ID_PREFIX)
 
 
 class TextAppearsPostcondition(ComputerUseModel):
@@ -913,6 +950,7 @@ class ComputerActionResult(ComputerUseModel):
     outcome: ActionOutcome
     observation: Observation | None = None
     observation_error: str | None = None
+    verification_error: Literal["verification_failed", "verification_unavailable"] | None = None
 
     @field_validator("observation_error")
     @classmethod
@@ -1028,7 +1066,7 @@ def prepare_execute_request(
             raise ComputerUseContractError("desktop_coordinates")
         point = map_image_point(observation.frame, x, y)
     postcondition = getattr(action, "postcondition", None)
-    if postcondition is not None and hasattr(postcondition, "element_ref"):
+    if postcondition is not None and getattr(postcondition, "element_ref", None) is not None:
         _matching_element(observation, postcondition.element_ref)
     return PreparedComputerAction(action=action, window_point=point)
 

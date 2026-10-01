@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from contextlib import contextmanager
 
 from morrow.core.computer_use import (
     MAX_DISCOVERED_TARGETS,
@@ -56,6 +57,7 @@ class ComputerUseRunService:
         self._started_at = clock.now()
         self._operations = 0
         self._busy = False
+        self._sequence_owner: asyncio.Task | None = None
         self._stopped = False
         self._targets: dict[str, TargetRef] = {}
         self._observations: dict[str, Observation] = {}
@@ -85,7 +87,9 @@ class ComputerUseRunService:
         authority()
         if self._stopped:
             raise ComputerUseContractError("driver_not_activated")
-        if self._busy:
+        if self._busy or (
+            self._sequence_owner is not None and self._sequence_owner is not asyncio.current_task()
+        ):
             raise ComputerUseContractError("desktop_busy")
         elapsed = (self.clock.now() - self._started_at).total_seconds()
         if elapsed < 0 or elapsed >= self.settings.max_run_seconds:
@@ -98,6 +102,18 @@ class ComputerUseRunService:
             raise ComputerUseContractError("operation_not_granted")
         if include_image and not images_allowed(self.settings, self.scope):
             raise ComputerUseContractError("images_not_allowed")
+
+    @contextmanager
+    def observation_sequence(self):
+        """Reserve admission across a single action and its bounded read polling."""
+        if self._busy or self._sequence_owner is not None:
+            raise ComputerUseContractError("desktop_busy")
+        owner = asyncio.current_task()
+        self._sequence_owner = owner
+        try:
+            yield
+        finally:
+            self._sequence_owner = None
 
     def _begin(self) -> None:
         self._operations += 1
