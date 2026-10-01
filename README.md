@@ -212,9 +212,7 @@ The lifecycle is **edit → validate → publish an immutable revision → expli
 - File delivery is explicit: nodes register paths, the service validates and snapshots their bytes, and results reference those snapshots. Mentioning a filename in prose does not create a deliverable.
 - Request caps and deadlines are optional user guardrails. Built-in defaults do not impose a total request count or overall duration limit; individual tool, context, and output limits still apply.
 
-## Permissions and execution boundaries
-
-### Desktop configuration (experimental)
+## Desktop configuration (experimental)
 
 Desktop execution is disabled by default and its native acceptance gates are still pending.
 Inspect shared global settings and the current global model with `uv run morrow computer status`.
@@ -230,6 +228,8 @@ for bounded operation, time, image-byte and image-size budgets. Changes apply to
 enabling configuration does not grant device access. The GUI's permission menu also exposes
 these settings and the current session model's limitations. Each desktop run still needs
 Full Access Manual and its own local target selection; existing runs require stop or revoke.
+
+## Permissions and execution boundaries
 
 Workspace-scoped file tools and operating-system process isolation are separate mechanisms.
 
