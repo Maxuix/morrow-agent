@@ -8,11 +8,12 @@ import pytest
 from morrow.application.agent_runs.preparation import tool_schema_digest
 from morrow.application.computer_runs import ComputerUseRunFactory
 from morrow.application.computer_tools import ComputerObserveArguments
+from morrow.core.agent_runs import ProviderCapabilities
 from morrow.core.computer_use import ComputerUseContractError
 from morrow.core.runtime_policy import ComputerUseSettings
 from morrow.runtime.tools import ToolExecutionError, ToolExecutor, ToolRegistry
 from morrow.testing import FixedClock, make_run_policy
-from test_agent_run_preparation import _app, _configure_active, _preparation
+from test_agent_run_preparation import _app, _configure_active, _preparation, _register_fake_adapter
 from test_computer_use_observer import _application
 from test_computer_use_observer import environment as _observer_environment
 from test_computer_use_permissions import NOW
@@ -105,8 +106,16 @@ async def test_preparation_freezes_schema_and_cleans_desktop_even_if_mcp_close_f
     environment, tmp_path
 ):
     app = _app(tmp_path / "config")
+    _register_fake_adapter(
+        app,
+        constructions=[],
+        capabilities=ProviderCapabilities(
+            tool_protocol="openai_function", input_types=("text", "image")
+        ),
+    )
     service = _preparation(
         app,
+        constructions=[],
         tool_factory=lambda policy: ToolExecutor(ToolRegistry().snapshot(), policy),
     )
     _configure_active(app)
@@ -156,8 +165,17 @@ def test_injected_runtime_keeps_provider_and_base_executor_when_binding_tools(
     environment, tmp_path
 ):
     app = _app(tmp_path / "config")
+    _register_fake_adapter(
+        app,
+        constructions=[],
+        capabilities=ProviderCapabilities(
+            tool_protocol="openai_function", input_types=("text", "image")
+        ),
+    )
     service = _preparation(
-        app, tool_factory=lambda policy: ToolExecutor(ToolRegistry().snapshot(), policy)
+        app,
+        constructions=[],
+        tool_factory=lambda policy: ToolExecutor(ToolRegistry().snapshot(), policy),
     )
     _configure_active(app)
     base = service.prepare_new()
@@ -172,10 +190,95 @@ def test_injected_runtime_keeps_provider_and_base_executor_when_binding_tools(
     prepared = service.prepare_new(agent_run_id="arun_1")
     assert prepared is not base
     assert prepared.provider is base.provider
-    assert prepared.context_builder is base.context_builder
+    assert prepared.context_builder is not base.context_builder
+    assert base.context_builder.tool_visual_hydrator is None
+    assert prepared.context_builder.tool_visual_hydrator.agent_run_id == "arun_1"
     assert prepared.run_policy is base.run_policy
     assert prepared.agent_run_id == "arun_1"
     assert prepared.spec.tool_count == 2
     assert not base.tool_executor.definitions
     assert lifecycle.calls == []
     assert service.prepare_new() is base
+
+
+def test_context_binding_refuses_unsupported_model_before_driver_entry(environment, tmp_path):
+    from morrow.core.runtime_policy import ComputerUseMode
+    from morrow.testing import make_context_builder
+
+    compose, lifecycle = factory(
+        environment,
+        tmp_path,
+        settings=ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID),
+    )
+    binding = compose("arun_1", make_run_policy())
+    context_builder = make_context_builder()
+    for capabilities, reason in [
+        (
+            SimpleNamespace(tool_protocol="none", input_types=("text", "image")),
+            "function_tools_required",
+        ),
+        (
+            SimpleNamespace(tool_protocol="openai_function", input_types=("text",)),
+            "model_image_tools_required",
+        ),
+    ]:
+        with pytest.raises(ComputerUseContractError, match=reason):
+            binding.bind_context(context_builder, capabilities)
+    copied = binding.bind_context(
+        context_builder,
+        SimpleNamespace(tool_protocol="openai_function", input_types=("text", "image")),
+    )
+    assert copied.tool_visual_hydrator.session_id == "ses_1"
+    assert copied.tool_visual_hydrator.agent_run_id == "arun_1"
+    assert context_builder.tool_visual_hydrator is None
+    assert lifecycle.calls == []
+
+
+def test_bootstrap_uses_supplied_shared_lifecycle_and_default_registry_is_unchanged(tmp_path):
+    from morrow.bootstrap import build_session_application
+    from morrow.core.models import ModelRef
+    from morrow.testing import ScriptedModelProvider
+
+    app = _app(tmp_path)
+    project = tmp_path / "project"
+    project.mkdir()
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    lifecycle = object()
+    products = build_session_application(
+        app,
+        identity,
+        provider=ScriptedModelProvider([["done"]]),
+        model=ModelRef(provider_id="fake-provider", model_id="m1"),
+        computer_use_lifecycle=lifecycle,
+    )
+    try:
+        assert products.computer_use is lifecycle
+        preparation = products.orchestrator.preparation
+        assert preparation.computer_factory.lifecycle is lifecycle
+        runtime = preparation.prepare_new(agent_run_id="arun_unbound")
+        assert runtime.computer_run is None
+        assert "computer_observe" not in {
+            tool.function.name for tool in runtime.tool_executor.definitions
+        }
+    finally:
+        products.persistence.store_session.close()
+
+
+def test_management_context_and_lazy_chat_share_one_lifecycle(tmp_path):
+    from morrow.server.composition import build_server_context
+
+    app = _app(tmp_path)
+    project = tmp_path / "project"
+    project.mkdir()
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    context = build_server_context(app, identity)
+    try:
+        _register_fake_adapter(app, constructions=[])
+        _configure_active(app)
+        # The management surface starts without a Provider. Its lazy execution
+        # product must reuse the lifecycle already owned by CoreHost shutdown.
+        products = context.products._load()
+        assert products.computer_use is context.computer_use
+        assert products.orchestrator.preparation.computer_factory.lifecycle is context.computer_use
+    finally:
+        context.close()

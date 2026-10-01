@@ -211,6 +211,7 @@ class SessionApplication:
     workflow_drafts: WorkflowDraftService | None = None
     graph_planner: object | None = None
     orchestration_policies: object | None = None
+    computer_use: object | None = None
 
 
 @dataclass(frozen=True)
@@ -668,6 +669,7 @@ def build_session_application(
     pause_control=None,
     persist_session: bool = True,
     headless: bool = False,
+    computer_use_lifecycle=None,
 ):
     inspection = app.workspace_state_service.inspect(identity.workspace_id)
     profile_result = inspection.profile
@@ -870,6 +872,23 @@ def build_session_application(
             journal=preference_journal,
         )
         journal = operational.journal
+        from morrow.application.computer_runs import ComputerUseRunFactory
+        from morrow.application.computer_visuals import ComputerVisualService
+        from morrow.runtime.policy import resolve_computer_use_settings
+
+        desktop_settings = resolve_computer_use_settings(config.runtime_policy if config else None)
+        desktop_lifecycle = computer_use_lifecycle or build_computer_use_lifecycle(
+            app, desktop_settings
+        )
+        computer_factory = ComputerUseRunFactory(
+            lifecycle=desktop_lifecycle,
+            journal=journal,
+            visuals=ComputerVisualService(operational.artifacts, journal, clock=journal.now),
+            settings=desktop_settings,
+            clock=SystemStoreClock(),
+            workspace_id=identity.workspace_id,
+            workspace_root=workspace_capability.root,
+        )
         from morrow.application.attachments import hydrate_attachment_message
 
         context_builder.attachment_resolver = lambda message: hydrate_attachment_message(
@@ -1183,6 +1202,7 @@ def build_session_application(
             mcp_rehydrate_factory=rehydrate_mcp,
             prompt_assembler=prompt_assembler,
             long_horizon_settings=app.runtime_policy.long_horizon,
+            computer_factory=computer_factory,
         )
 
         def release_tracked(**kwargs):
@@ -1463,6 +1483,7 @@ def build_session_application(
             workflow_drafts=workflow_drafts,
             graph_planner=graph_planner,
             orchestration_policies=orchestration_policies,
+            computer_use=desktop_lifecycle,
         )
     except BaseException:
         if store_session is None and handle is not None:
@@ -1477,9 +1498,14 @@ def build_computer_use_lifecycle(application, settings=None):
     from morrow.adapters.computer_use.sdk_loader import collect_host_probe
     from morrow.application.computer_use import ComputerUseLifecycle
     from morrow.core.computer_use import ComputerUsePreflight
-    from morrow.core.runtime_policy import ComputerUseSettings
 
-    resolved = settings or ComputerUseSettings()
+    if settings is None:
+        from morrow.runtime.policy import resolve_computer_use_settings
+
+        config = application.global_store.load().value
+        resolved = resolve_computer_use_settings(config.runtime_policy if config else None)
+    else:
+        resolved = settings
 
     def diagnostic():
         if not resolved.enabled:

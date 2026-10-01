@@ -222,6 +222,9 @@ class AgentRunPreparationService:
                 return replace(
                     self.injected,
                     spec=spec,
+                    context_builder=computer_run.bind_context(
+                        self.injected.context_builder, spec.provider_runtime.capabilities
+                    ),
                     tool_executor=executor,
                     agent_run_id=agent_run_id,
                     computer_run=computer_run,
@@ -288,6 +291,7 @@ class AgentRunPreparationService:
         computer_run = self._computer_run(agent_run_id, run_policy)
         if computer_run is not None:
             tool_executor = computer_run.extend(tool_executor)
+            context_builder = computer_run.bind_context(context_builder, exact)
         if tool_transform is not None:
             tool_executor = tool_transform(tool_executor)
         tools = tool_executor.definitions if tool_executor is not None else ()
@@ -392,6 +396,7 @@ class AgentRunPreparationService:
         computer_run = self._computer_run(agent_run_id, snapshot.run_policy)
         if computer_run is not None:
             tool_executor = computer_run.extend(tool_executor)
+            context_builder = computer_run.bind_context(context_builder, frozen.capabilities)
         if tool_transform is not None:
             tool_executor = tool_transform(tool_executor)
         tools = tool_executor.definitions if tool_executor is not None else ()

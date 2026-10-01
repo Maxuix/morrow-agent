@@ -82,7 +82,7 @@ def build_server_context(
     context = ServerContext(
         workspace_id=identity.workspace_id,
         application=application,
-        computer_use=build_computer_use_lifecycle(application),
+        computer_use=products.computer_use,
         journal=journal,
         api=products.api,
         management=products.workflow_management,
@@ -227,6 +227,7 @@ def _build_management_context(
                     store_session=handle,
                     journal=journal,
                     persist_session=False,
+                    computer_use_lifecycle=context.computer_use,
                 )
                 products.workflow_runtime.transitions.event_sink = emitter.emit
                 workflow_bridge = WorkflowStreamBridge(context.chat, journal, identity.workspace_id)
@@ -308,6 +309,7 @@ def _attach_chat(context, identity, permission_profile, handle, approval_port):
                 context.chat.streams, identity.workspace_id, session_id
             ),
             pause_control=context.chat.turn_pause_control,
+            computer_use_lifecycle=context.computer_use,
         )
         if context.workspaces is not None:
             products.api.maintenance_check = context.workspaces.require_maintenance_idle

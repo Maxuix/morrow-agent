@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from copy import copy
 from dataclasses import dataclass
 from pathlib import Path
 
 from morrow.application.computer_tools import make_computer_action_tool, make_computer_observe_tool
 from morrow.application.computer_use import ComputerUseObservationService
+from morrow.application.computer_visuals import ToolVisualHydrator
 from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.computer_use import ComputerUseContractError, ComputerUseOperation
 from morrow.core.permissions import (
@@ -21,6 +24,7 @@ from morrow.runtime.tools import RegisteredTool, ToolExecutor, ToolRegistry
 class PreparedComputerUseRun:
     observations: ComputerUseObservationService
     tools: tuple[RegisteredTool, ...]
+    visual_hydrator_factory: Callable | None = None
 
     def __repr__(self) -> str:
         return "PreparedComputerUseRun()"
@@ -30,6 +34,14 @@ class PreparedComputerUseRun:
 
     async def aclose(self) -> None:
         await self.observations.close()
+
+    def bind_context(self, context, capabilities):
+        if capabilities.tool_protocol != "openai_function":
+            raise ComputerUseContractError("function_tools_required")
+        context = copy(context)
+        if self.visual_hydrator_factory is not None:
+            context.tool_visual_hydrator = self.visual_hydrator_factory(capabilities)
+        return context
 
     def extend(self, executor: ToolExecutor | None) -> ToolExecutor:
         if executor is None:
@@ -122,4 +134,15 @@ class ComputerUseRunFactory:
         tools = (make_computer_observe_tool(observations, self.visuals),)
         if ComputerUseOperation.ACTION in scope.operations:
             tools += (make_computer_action_tool(observations, self.visuals),)
-        return PreparedComputerUseRun(observations, tools)
+
+        def hydrator(capabilities):
+            return ToolVisualHydrator(
+                self.visuals,
+                session_id=snapshot.session_id,
+                agent_run_id=agent_run_id,
+                settings=self.settings,
+                input_types=capabilities.input_types,
+                tool_protocol=capabilities.tool_protocol,
+            )
+
+        return PreparedComputerUseRun(observations, tools, hydrator)
