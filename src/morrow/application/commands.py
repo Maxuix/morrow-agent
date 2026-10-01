@@ -279,6 +279,8 @@ class CommandService(LearningCommandMixin):
                     f"当前会话：{current}",
                 ]
             )
+        if command == "/computer":
+            return CommandResult([], action="computer_use_picker", value=tuple(parts[1:]))
         if command == "/grant":
             return self._grant_command()
         if command == "/recovery":

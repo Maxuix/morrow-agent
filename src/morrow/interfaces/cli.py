@@ -34,6 +34,7 @@ from morrow.application.preferences.tool import (
 from morrow.application.preferences.writer import PreferenceWriter
 from morrow.bootstrap import (
     build_application,
+    build_computer_use_lifecycle,
     build_operational_api,
     build_operational_services,
     build_session_application,
@@ -688,6 +689,22 @@ def _run_workspace(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from None
     session_app.session.read_only = read_only_workspace
+    from morrow.adapters.state.operational import SystemStoreClock
+    from morrow.application.computer_selection import ComputerUseSelectionService
+    from morrow.application.computer_settings import ComputerUseSettingsService
+    from morrow.interfaces.computer_picker import TerminalComputerPicker
+
+    desktop_settings = ComputerUseSettingsService(
+        application,
+        preflight=lambda settings: build_computer_use_lifecycle(application, settings).preflight(),
+    )
+    computer_picker = TerminalComputerPicker(
+        application,
+        session_app,
+        ComputerUseSelectionService(
+            application, session_app.computer_use, desktop_settings, SystemStoreClock()
+        ),
+    )
     return asyncio.run(
         run_repl(
             session_app.orchestrator,
@@ -696,6 +713,7 @@ def _run_workspace(
             prompt_session=prompt_session,
             resume_current_turn=session_app.persistence.pending_resume,
             review_worker=session_app.review_worker,
+            computer_picker=computer_picker,
         )
     )
 

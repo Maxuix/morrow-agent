@@ -252,6 +252,7 @@ async def run_repl(
     prompt_session: PromptSession | None = None,
     resume_current_turn: bool = False,
     review_worker=None,
+    computer_picker=None,
 ) -> int:
     if review_worker is not None:
         await review_worker.start()
@@ -263,10 +264,15 @@ async def run_repl(
             prompt_session=prompt_session,
             resume_current_turn=resume_current_turn,
             review_worker=review_worker,
+            computer_picker=computer_picker,
         )
     finally:
-        if review_worker is not None:
-            await review_worker.stop()
+        try:
+            if review_worker is not None:
+                await review_worker.stop()
+        finally:
+            if computer_picker is not None:
+                await computer_picker.products.computer_use.shutdown()
 
 
 async def _run_repl_loop(
@@ -277,6 +283,7 @@ async def _run_repl_loop(
     prompt_session: PromptSession | None = None,
     resume_current_turn: bool = False,
     review_worker=None,
+    computer_picker=None,
 ) -> int:
     terminal = terminal or Terminal()
     prompt_session = prompt_session or PromptSession()
@@ -324,6 +331,14 @@ async def _run_repl_loop(
                     review_worker.wake()
                 except Exception:
                     pass
+            if result.action == "computer_use_picker":
+                if computer_picker is None:
+                    terminal.console.print("本地窗口选择不可用。请在普通交互会话使用 /computer。")
+                else:
+                    await computer_picker.handle(
+                        tuple(result.value or ()), terminal, prompt_session
+                    )
+                continue
             if result.action == "exit":
                 exit_code = await _exit(session, terminal, prompt_session)
                 if exit_code is not None:
@@ -394,6 +409,11 @@ async def _run_repl_loop(
                     else:
                         terminal.console.print("配置已保存。")
             if result.action == "arm_full_access_grant":
+                if computer_picker is not None and computer_picker.pending is not None:
+                    terminal.console.print(
+                        "请先用 /computer clear 清除桌面选择，再授予 Host 权限。"
+                    )
+                    continue
                 confirmation = await _confirm(
                     terminal,
                     prompt_session,

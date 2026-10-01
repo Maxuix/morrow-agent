@@ -223,6 +223,16 @@ uv run morrow computer configure --enable --mode hybrid --expected-revision <rev
 uv run morrow computer configure --disable --expected-revision <revision>
 ```
 
+In an interactive `full-access-manual` session, use `/computer` (or `/computer select`)
+to read local window candidates and choose numbered windows, delivery, action permission,
+and image sharing. `/computer status` shows the pending scope; `/computer clear` removes it.
+The selection expires after about 30 seconds and applies to one new ordinary chat run.
+It creates no grant until that run is prepared. A pending `/grant` for Host commands and a
+desktop selection are mutually exclusive. Expired selections must be cleared or selected again.
+The GUI offers the same choices under the composer's permission control. Candidate reads are
+explicit local actions; window selection IDs are not reusable across processes or restarts.
+Native desktop use remains unavailable until the recorded native acceptance gates pass.
+
 `--json` returns the same settings/status fields as the GUI. Run `computer configure --help`
 for bounded operation, time, image-byte and image-size budgets. Changes apply to future runs;
 enabling configuration does not grant device access. The GUI's permission menu also exposes
