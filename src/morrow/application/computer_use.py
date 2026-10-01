@@ -13,6 +13,7 @@ from morrow.core.computer_use import (
     TRUSTED_COMPUTER_USE_AUTHORITY,
     ActionOutcome,
     CloseRunSessionRequest,
+    ComputerActionResult,
     ComputerUseAction,
     ComputerUseContractError,
     ComputerUseLifecyclePort,
@@ -273,6 +274,93 @@ class ComputerUseObservationService:
             return await self._run.execute_one(observation_id, action, authority=authority)
         except ComputerUseContractError as exc:
             return outcome_for_rejection(str(exc))
+
+    async def execute_published(
+        self,
+        execution_id: str,
+        observation_id: str,
+        action: ComputerUseAction,
+        *,
+        visuals,
+    ) -> tuple[ComputerActionResult, tuple[ToolVisualRef, ...]]:
+        """Dispatch once, then observe the same target without erasing effects."""
+        target_ref = None
+        try:
+            if self._run is not None:
+                target_ref = self._run.target_for_observation(observation_id)
+        except ComputerUseContractError:
+            pass
+        outcome = await self.execute_one(execution_id, observation_id, action)
+        if outcome.status == "not_started":
+            return ComputerActionResult(outcome=outcome), ()
+        include_image = self._settings.mode is ComputerUseMode.HYBRID
+
+        def authority():
+            self._authority(
+                execution_id, include_image=include_image, tool_name=COMPUTER_ACTION_TOOL
+            )
+
+        try:
+            authority()
+            if self._run is None or target_ref is None:
+                raise ComputerUseContractError("stale_observation")
+            read = await self._run.observe(
+                target_ref, authority=authority, include_image=include_image
+            )
+            if read.observation.observation_id == observation_id:
+                self._run.stop()
+                raise ComputerUseContractError("stale_observation")
+        except ComputerUseContractError as exc:
+            return ComputerActionResult(outcome=outcome, observation_error=exc.code), ()
+        except asyncio.CancelledError:
+            if self._run is not None:
+                self._run.stop()
+            raise
+        except Exception:
+            return ComputerActionResult(outcome=outcome, observation_error="observation_failed"), ()
+        observation = read.observation
+        outcome = outcome.model_copy(update={"after_observation_id": observation.observation_id})
+        try:
+            references = ()
+            if read.capture is not None:
+                authority()
+                reference = visuals.publish_observed(
+                    read,
+                    tool_execution_id=execution_id,
+                    scope=self._scope,
+                    settings=self._settings,
+                )
+                authority()
+                image = ObservationImageRef.model_validate(
+                    reference.model_dump(include=set(ObservationImageRef.model_fields))
+                )
+                observation = observation.model_copy(update={"image": image})
+                self._run.accept_published_observation(observation)
+                references = (reference,)
+            return ComputerActionResult(outcome=outcome, observation=observation), references
+        except ComputerUseContractError as exc:
+            safe_observation = (
+                None
+                if exc.code
+                in {
+                    "grant_inactive",
+                    "execution_cancelled",
+                    "execution_not_authorized",
+                    "driver_not_activated",
+                    "run_budget",
+                }
+                else read.observation
+            )
+            return ComputerActionResult(
+                outcome=outcome, observation=safe_observation, observation_error=exc.code
+            ), ()
+        except Exception:
+            # Opaque publisher errors are independent of an already dispatched action.
+            return ComputerActionResult(
+                outcome=outcome,
+                observation=read.observation,
+                observation_error="image_publish_failed",
+            ), ()
 
     async def close(self) -> None:
         self._closed = True

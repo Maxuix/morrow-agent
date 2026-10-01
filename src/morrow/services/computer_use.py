@@ -208,6 +208,13 @@ class ComputerUseRunService:
         finally:
             self._busy = False
 
+    def target_for_observation(self, observation_id: str) -> str:
+        """Resolve a current opaque target before its observation is consumed."""
+        for observation in self._observations.values():
+            if observation.observation_id == observation_id:
+                return observation.target_ref
+        raise ComputerUseContractError("stale_observation")
+
     def accept_published_observation(self, observation: Observation) -> None:
         """Attach only the safely published image to the current transient read."""
         current = self._observations.get(observation.target_ref)

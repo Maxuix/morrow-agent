@@ -907,6 +907,29 @@ class ActionOutcome(ComputerUseModel):
         return value
 
 
+class ComputerActionResult(ComputerUseModel):
+    """Device completion and the independent fresh-observation result."""
+
+    outcome: ActionOutcome
+    observation: Observation | None = None
+    observation_error: str | None = None
+
+    @field_validator("observation_error")
+    @classmethod
+    def valid_error(cls, value: str | None) -> str | None:
+        return ActionOutcome.valid_code(value)
+
+    @model_validator(mode="after")
+    def paired_observation(self):
+        if self.observation is not None and (
+            self.outcome.status == "not_started"
+            or self.outcome.after_observation_id != self.observation.observation_id
+            or self.outcome.before_observation_id == self.observation.observation_id
+        ):
+            raise ValueError("stale_observation")
+        return self
+
+
 def outcome_for_rejection(code: str) -> ActionOutcome:
     if not _CODE.fullmatch(code):
         code = "rejected_action"
