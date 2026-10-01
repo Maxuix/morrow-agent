@@ -2052,6 +2052,11 @@ def grant_list(
                 f"expires={grant.expires_at.isoformat()}\t"
                 f"revoked={grant.revoked_at.isoformat() if grant.revoked_at else '-'}"
             )
+            if grant.computer_use_scope is not None:
+                from morrow.application.computer_permissions import computer_scope_lines
+
+                for line in computer_scope_lines(grant.computer_use_scope):
+                    typer.echo(line)
     except Exception as exc:
         _cli_error(exc)
         raise typer.Exit(code=2) from None
@@ -2062,6 +2067,9 @@ def grant_list(
 @grant_app.command("show")
 def grant_show(
     grant_id: str,
+    summary: bool = typer.Option(
+        False, "--summary", help="显示安全授权范围摘要，不输出内部窗口引用。"
+    ),
     workspace_id: str | None = typer.Option(None, "--workspace-id"),
     directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
@@ -2074,7 +2082,18 @@ def grant_show(
         value = api.get_grant(grant_id)
         if value is None:
             raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "CapabilityGrant is missing")
-        _emit_model(value)
+        if summary:
+            if value.computer_use_scope is not None:
+                from morrow.application.computer_permissions import computer_scope_lines
+
+                for line in computer_scope_lines(value.computer_use_scope):
+                    typer.echo(line)
+            else:
+                typer.echo("Host 进程授权：" + "、".join(item.value for item in value.capabilities))
+            typer.echo(f"到期：{value.expires_at.isoformat()}")
+            typer.echo("状态：" + ("活动" if value.is_active(api.clock()) else "已撤销或到期"))
+        else:
+            _emit_model(value)
     except Exception as exc:
         _cli_error(exc)
         raise typer.Exit(code=2) from None

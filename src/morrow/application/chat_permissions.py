@@ -1,5 +1,6 @@
 """Safe permission inspection and revocation through the existing Core owner."""
 
+from morrow.application.computer_permissions import computer_scope_summary
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 
 
@@ -36,6 +37,8 @@ def permissions_view(
                 else "expired",
             }
         )
+        if grant.computer_use_scope is not None:
+            grants[-1]["computer_use"] = computer_scope_summary(grant.computer_use_scope)
     snapshot = None
     if run:
         runtime = run.snapshot.provider_runtime

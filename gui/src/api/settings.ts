@@ -23,7 +23,7 @@ export interface ChatPermissionsView {
   run_ids: string[]; next_run_cursor: string | null
   snapshot: {agent_run_id: string; model: ModelRefWire; generation: {reasoning_effort?: string | null}; sources: Record<string, {scope: string; revision: number}>; permission_preset: string | null
     permission: {access_scope: string; approval_mode: string; process_isolation: string; workspace_read_only: boolean; grant_id: string | null} | null} | null
-  grants: {grant_id: string; row_version: number; capabilities: string[]; expires_at: string; status: 'active' | 'revoked' | 'expired'}[]
+  grants: {computer_use?: ComputerPermissionSummary; grant_id: string; row_version: number; capabilities: string[]; expires_at: string; status: 'active' | 'revoked' | 'expired'}[]
   next_grant_cursor: string | null
   session_scopes: {items: {scope: string; revision: number; approval_id: string}[]; next_cursor: string | null}
 }
@@ -72,4 +72,13 @@ export interface ComputerWindowSelection {
   delivery: 'foreground' | 'background'
   image_share: 'none' | 'controlled_window'
   applies_to: 'one_future_run'
+}
+
+export interface ComputerPermissionSummary {
+  apps: string[]
+  window_scope: 'selected_windows' | 'legacy_app_windows'
+  window_count: number | null
+  operations: ('observe' | 'action')[]
+  delivery: 'foreground' | 'background'
+  image_share: 'none' | 'controlled_window'
 }

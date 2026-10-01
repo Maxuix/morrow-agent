@@ -181,9 +181,15 @@ export function ChatPermissionControl({
         selection={computerSelection} onSelectionChange={onComputerSelectionChange}/>}
       {canLoad && <div className="permission-live-state">
         <div className="permission-section-heading">当前运行授权</div>
-        {activeGrants.length === 0 && <p className="menu-note">暂无活动 Host 授权。</p>}
+        {activeGrants.length === 0 && <p className="menu-note">暂无活动运行授权。</p>}
         {activeGrants.map(grant => <div className="permission-receipt" key={grant.grant_id}>
-          <span>{grant.capabilities.join('、')} · 到期 {new Date(grant.expires_at).toLocaleString()}</span>
+          <span>{grant.capabilities.map(capability => ({computer_use_host: '桌面窗口', unconfined_host_process: 'Shell Host'} as Record<string, string>)[capability] ?? capability).join('、')} · 到期 {new Date(grant.expires_at).toLocaleString()}</span>
+          {grant.computer_use && <p className="menu-note">
+            应用：{grant.computer_use.apps.join('、')} · {grant.computer_use.window_scope === 'selected_windows' ? `${grant.computer_use.window_count} 个选中窗口` : '旧应用范围（未记录固定窗口）'} ·
+            {grant.computer_use.operations.includes('action') ? '观察与操作' : '仅观察'} ·
+            {grant.computer_use.delivery === 'foreground' ? '前台投递' : '后台投递'} ·
+            {grant.computer_use.image_share === 'none' ? '不分享图像' : '分享受控窗口图像'}
+          </p>}
           <button type="button" className="exec-link" disabled={permissionBusy !== null}
             onClick={() => void revoke('grant', grant.grant_id, grant.row_version)}>撤销此授权</button>
         </div>)}

@@ -15,7 +15,8 @@ from test_stage8_core_api import ServerFixture
 
 
 @pytest.mark.parametrize(
-    "mode", ["complete", "queued_expiry", "queued_claim", "queued_restart", "rollback"]
+    "mode",
+    ["complete", "cli_revoke", "queued_expiry", "queued_claim", "queued_restart", "rollback"],
 )
 async def test_http_selection_is_bound_to_one_new_chat_run(tmp_path, mode):
     script = [
@@ -170,6 +171,64 @@ async def test_http_selection_is_bound_to_one_new_chat_run(tmp_path, mode):
             replay = await fx.client.post(path + "/interactions", body)
             assert replay.status == 202 and replay.json()["receipt"]["disposition"] == "replay"
             assert len(resources["sessions"]) == 1
+            if mode in {"complete", "cli_revoke"}:
+                from typer.testing import CliRunner
+
+                from morrow.interfaces.cli import app as cli_app
+
+                before = (await fx.client.get(path + "/permissions")).json()
+                grant_view = before["grants"][0]
+                summary = grant_view["computer_use"]
+                assert summary == {
+                    "apps": ["com.example.Notes"],
+                    "window_scope": "selected_windows",
+                    "window_count": 1,
+                    "operations": ["observe"],
+                    "delivery": "foreground",
+                    "image_share": "none",
+                }
+                assert "cwin_" not in json.dumps(summary) and "4242" not in json.dumps(summary)
+                common = ["--workspace-id", fx.workspace_id, "--state-root", str(fx.state_root)]
+                runner = CliRunner()
+                shown = runner.invoke(
+                    cli_app, ["grant", "show", grants[0].grant_id, "--summary", *common]
+                )
+                assert shown.exit_code == 0, shown.output
+                assert "1 个明确选中窗口" in shown.output and "仅观察" in shown.output
+                assert "cwin_" not in shown.output and "ctarget_" not in shown.output
+                _, other = await new_session(fx, "cmd_other_for_revoke")
+                revoke = {
+                    "kind": "grant",
+                    "subject_id": grants[0].grant_id,
+                    "expected_revision": grant_view["row_version"],
+                    "command_id": "cmd_revoke_desktop",
+                }
+                assert (await fx.client.post(other + "/permissions", revoke)).status == 404
+                if mode == "cli_revoke":
+                    revoked = runner.invoke(
+                        cli_app,
+                        [
+                            "grant",
+                            "revoke",
+                            grants[0].grant_id,
+                            "--expected-row-version",
+                            str(grant_view["row_version"]),
+                            "--command-id",
+                            "cmd_revoke_desktop",
+                            *common,
+                        ],
+                    )
+                    assert revoked.exit_code == 0, revoked.output
+                else:
+                    assert (await fx.client.post(path + "/permissions", revoke)).status == 200
+                    assert (await fx.client.post(path + "/permissions", revoke)).json()[
+                        "disposition"
+                    ] == "replay"
+                after = (await fx.client.get(path + "/permissions")).json()
+                assert after["grants"][0]["status"] == "revoked"
+                assert after["grants"][0]["computer_use"] == summary
+                assert after["snapshot"] == before["snapshot"]
+                assert len(resources["sessions"]) == 1 and len(requests) == 2
     finally:
         fx.close()
 
