@@ -87,18 +87,45 @@ class ComputerUseRunFactory:
     """Compose existing evidence or stage an explicit local selection for the grant API."""
 
     def __init__(
-        self, *, lifecycle, journal, visuals, settings, clock, workspace_id, workspace_root
+        self,
+        *,
+        lifecycle,
+        journal,
+        visuals,
+        settings,
+        clock,
+        workspace_id,
+        workspace_root,
+        settings_loader=None,
     ):
         self.lifecycle, self.journal, self.visuals = lifecycle, journal, visuals
         self.settings, self.clock = settings, clock
+        self._settings_loader = settings_loader
         self.workspace_id = workspace_id
         self.root_digest = workspace_root_digest(Path(workspace_root))
         self.grant_creator = None
         self._requests = {}
         self._workflow_selections = {}
 
+    def _snapshot(self):
+        if self._settings_loader is None:
+            return self
+        from morrow.core.runtime_policy import ComputerUseSettings
+
+        frozen = copy(self)
+        current = self._settings_loader()
+        frozen.settings = ComputerUseSettings.model_validate(current.model_dump(), strict=True)
+        frozen._settings_loader = None
+        # Request issuers and pending leaf selections remain owned by this factory;
+        # only run settings freeze. Existing Prepared runtimes retain their copy.
+        return frozen
+
     def select_workflow_leaf(self, selection, *, node_run_id, authority):
         """Stage one explicit local selection for one existing, unadmitted leaf."""
+        if self._settings_loader is not None:
+            return self._snapshot().select_workflow_leaf(
+                selection, node_run_id=node_run_id, authority=authority
+            )
         from morrow.core.workflows.runs import WorkflowStatus
 
         reject_untrusted_computer_use_authority(authority)
@@ -135,6 +162,8 @@ class ComputerUseRunFactory:
         return self.select(selection, session, authority=TRUSTED_COMPUTER_USE_AUTHORITY)
 
     def select(self, selection, session, *, authority):
+        if self._settings_loader is not None:
+            return self._snapshot().select(selection, session, authority=authority)
         reject_untrusted_computer_use_authority(authority)
         if not isinstance(selection, ComputerUseSelection):
             raise ComputerUseContractError("execution_not_authorized")
@@ -162,6 +191,8 @@ class ComputerUseRunFactory:
             raise ComputerUseContractError("execution_not_authorized")
 
     def prepare_selected(self, agent_run_id, _policy, request):
+        if self._settings_loader is not None:
+            return self._snapshot().prepare_selected(agent_run_id, _policy, request)
         if (
             not isinstance(request, LocalComputerUseRequest)
             or self._requests.get(request.issuer) is not request
@@ -243,6 +274,8 @@ class ComputerUseRunFactory:
         return None
 
     def __call__(self, agent_run_id: str, _policy) -> PreparedComputerUseRun | None:
+        if self._settings_loader is not None:
+            return self._snapshot()(agent_run_id, _policy)
         if not self.settings.enabled:
             return None
         snapshot = self.journal.get_permission_snapshot_for_run(self.workspace_id, agent_run_id)

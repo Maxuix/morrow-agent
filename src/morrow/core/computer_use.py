@@ -1075,6 +1075,7 @@ class OpenRunSessionRequest(ComputerUseModel):
     authority: str
     agent_run_id: str
     scope: ComputerUseScope
+    settings: ComputerUseSettings | None = None
 
     @field_validator("agent_run_id")
     @classmethod

@@ -23,6 +23,7 @@ from morrow.core.computer_use import (
 )
 from morrow.core.domain import COMPUTER_RUN_ID_PREFIX
 from morrow.core.ports import Clock, IdSource
+from morrow.core.runtime_policy import ComputerUseSettings
 
 
 class ComputerDriverOwner:
@@ -36,6 +37,7 @@ class ComputerDriverOwner:
         *,
         session_factory: Callable[[Any, str], Any],
         driver_factory: Callable[[Any], Any] = construct_driver,
+        configured_session_factory: Callable[[Any, str, ComputerUseSettings], Any] | None = None,
         lease: DesktopLease | None = None,
         call_timeout: float = 15,
         process_reader: Callable[[int], ProcessBirth] = read_process_birth,
@@ -44,6 +46,7 @@ class ComputerDriverOwner:
         self._thread = threading.get_ident()
         self._sdk, self._ids, self._clock = sdk, ids, clock
         self._session_factory = session_factory
+        self._configured_session_factory = configured_session_factory
         self._driver = driver_factory(sdk)
         self._lease = lease if lease is not None else FileDesktopLease()
         self._leased = False
@@ -104,7 +107,11 @@ class ComputerDriverOwner:
     async def _open(self, request: OpenRunSessionRequest) -> RunSession:
         try:
             name = self._ids.new_id(COMPUTER_RUN_ID_PREFIX)
-            native = self._session_factory(self._driver, name)
+            native = (
+                self._configured_session_factory(self._driver, name, request.settings)
+                if self._configured_session_factory is not None and request.settings is not None
+                else self._session_factory(self._driver, name)
+            )
             self._session = TypedComputerSession(
                 self._sdk,
                 native,
@@ -112,7 +119,11 @@ class ComputerDriverOwner:
                 self._ids,
                 self._clock,
                 session_name=name,
-                call_timeout=self._call_timeout,
+                call_timeout=(
+                    request.settings.max_call_seconds
+                    if request.settings is not None
+                    else self._call_timeout
+                ),
                 process_reader=self._process_reader,
             )
             self._run = await self._session.open_run_session(request)

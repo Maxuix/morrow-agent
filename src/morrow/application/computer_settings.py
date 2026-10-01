@@ -58,6 +58,7 @@ class ComputerUseSettingsService:
             "model_error": model_error,
             "required_permission": "full-access-manual",
             "configuration_scope": "global",
+            "applies_to": "future_runs",
         }
 
     def put(self, settings, *, expected_revision):

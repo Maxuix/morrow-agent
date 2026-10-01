@@ -885,6 +885,9 @@ def build_session_application(
             journal=journal,
             visuals=ComputerVisualService(operational.artifacts, journal, clock=journal.now),
             settings=desktop_settings,
+            settings_loader=lambda: resolve_computer_use_settings(
+                app.global_store.load().value.runtime_policy
+            ),
             clock=SystemStoreClock(),
             workspace_id=identity.workspace_id,
             workspace_root=workspace_capability.root,
@@ -1515,12 +1518,15 @@ def build_computer_use_lifecycle(application, settings=None):
     else:
         resolved = settings
 
-    def diagnostic():
-        if not resolved.enabled:
+    def diagnostic_for(current):
+        if not current.enabled:
             return ComputerUsePreflight(status="unavailable", reason="disabled")
         return diagnose_host(
-            resolved, collect_host_probe(), images_required=resolved.mode == "hybrid"
+            current, collect_host_probe(), images_required=current.mode == "hybrid"
         )
+
+    def diagnostic():
+        return diagnostic_for(resolved)
 
     def factory():
         from morrow.adapters.computer_use.owner import ComputerDriverOwner
@@ -1534,8 +1540,13 @@ def build_computer_use_lifecycle(application, settings=None):
             session_factory=lambda driver, name: construct_run_session(
                 sdk, driver, name, lifetime_seconds=resolved.max_run_seconds
             ),
+            configured_session_factory=lambda driver, name, current: construct_run_session(
+                sdk, driver, name, lifetime_seconds=current.max_run_seconds
+            ),
             call_timeout=resolved.max_call_seconds,
         )
 
     # Native read-only acceptance must be recorded before enabling this gate.
-    return ComputerUseLifecycle(factory, diagnostic, native_verified=False)
+    return ComputerUseLifecycle(
+        factory, diagnostic, native_verified=False, run_diagnostic=diagnostic_for
+    )

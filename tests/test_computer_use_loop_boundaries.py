@@ -14,6 +14,7 @@ from morrow.adapters.computer_use.process_identity import ProcessBirth
 from morrow.adapters.state.operational import SystemStoreClock
 from morrow.application.agent_runs.preparation import AgentRunPreparationError
 from morrow.application.computer_requests import ComputerUseSelection
+from morrow.application.computer_settings import ComputerUseSettingsService
 from morrow.application.computer_use import ComputerUseLifecycle
 from morrow.bootstrap import build_session_application
 from morrow.core.agent_runs import ProviderCapabilities
@@ -107,6 +108,8 @@ class ReferenceProvider(ScriptedModelProvider):
         "process_replaced",
         "hybrid",
         "hybrid_continue",
+        "hybrid_config",
+        "hybrid_startup",
     ],
 )
 async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary):
@@ -126,7 +129,7 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
             update={
                 "runtime_policy": RuntimePolicyOverrides(
                     computer_use=ComputerUseSettings(
-                        enabled=True,
+                        enabled=boundary != "hybrid_startup",
                         mode=ComputerUseMode.HYBRID
                         if boundary.startswith("hybrid")
                         else ComputerUseMode.SEMANTIC,
@@ -164,6 +167,7 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
 
         async def click(self, payload):
             self.calls.append(("click", payload))
+            call_timeouts.append(owner._session._calls._timeout)
             entered.set()
             if boundary.startswith("hybrid"):
                 finished.append("effect")
@@ -183,6 +187,15 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
             await super().close_run_session(request)
 
     native, lease = Native(), _Lease()
+    session_settings, diagnosed_settings, call_timeouts = [], [], []
+
+    def configured_session(driver, name, settings):
+        session_settings.append(settings)
+        return native
+
+    def diagnose(settings):
+        diagnosed_settings.append(settings)
+        return ComputerUsePreflight(status="unavailable", reason="native_unverified")
 
     async def shutdown():
         pass
@@ -192,6 +205,7 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
         FixedIdSource(),
         SystemStoreClock(),
         session_factory=lambda driver, name: native,
+        configured_session_factory=configured_session,
         driver_factory=lambda sdk: SimpleNamespace(shutdown=shutdown),
         lease=lease,
         process_reader=lambda pid: (
@@ -202,8 +216,12 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
     )
     lifecycle = ComputerUseLifecycle(
         lambda: owner,
-        lambda: ComputerUsePreflight(status="unavailable", reason="native_unverified"),
+        lambda: ComputerUsePreflight(
+            status="unavailable",
+            reason="disabled" if boundary == "hybrid_startup" else "native_unverified",
+        ),
         native_verified=True,
+        run_diagnostic=diagnose,
     )
     project = tmp_path / "project"
     project.mkdir()
@@ -217,6 +235,12 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
         approval_port=approval,
     )
     factory = products.orchestrator.preparation.computer_factory
+    if boundary == "hybrid_startup":
+        assert not factory.settings.enabled
+        ComputerUseSettingsService(app, preflight=lambda settings: None).put(
+            ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID),
+            expected_revision=app.global_store.load().revision,
+        )
     running = None
     try:
         request = factory.select(
@@ -235,6 +259,28 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
             agent_run_id="arun_cancel", computer_request=request
         )
         if boundary.startswith("hybrid"):
+            configuration = ComputerUseSettingsService(app, preflight=lambda settings: None)
+            if boundary == "hybrid_config":
+                configuration.put(
+                    ComputerUseSettings(enabled=False),
+                    expected_revision=app.global_store.load().revision,
+                )
+                with pytest.raises(ComputerUseContractError):
+                    factory.select(
+                        ComputerUseSelection(
+                            apps=(ComputerUseAppIdentity(bundle_id="com.example.Notes"),)
+                        ),
+                        products.session,
+                        authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                    )
+                ordinary = products.orchestrator.preparation.prepare_new(
+                    agent_run_id="arun_disabled"
+                )
+                assert ordinary.computer_run is None
+                assert "computer_observe" not in {
+                    tool.function.name for tool in ordinary.tool_executor.definitions
+                }
+                await ordinary.aclose()
             events = await _dispatch_prepared(products.orchestrator, "Click Save", prepared)
             assert events[-1].payload["finish_reason"] == "stop"
             assert finished == ["effect"] and not lease.held
@@ -270,7 +316,21 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
                     assert (capture.width, capture.height) == (20, 10)
             assert len([name for name, _ in native.calls if name == "click"]) == 1
             assert len([name for name, _ in native.calls if name == "get_window_state"]) == 2
-            if boundary == "hybrid_continue":
+            if boundary in {"hybrid_continue", "hybrid_config"}:
+                if boundary == "hybrid_config":
+                    assert session_settings[0].mode is ComputerUseMode.HYBRID
+                    assert session_settings[0].enabled
+                    assert session_settings[0].max_call_seconds == 15
+                    configuration.put(
+                        ComputerUseSettings(
+                            enabled=True,
+                            mode=ComputerUseMode.SEMANTIC,
+                            max_call_seconds=7,
+                            max_run_seconds=120,
+                            max_operations=7,
+                        ),
+                        expected_revision=app.global_store.load().revision,
+                    )
                 preparation = products.orchestrator.preparation
                 frozen = journal.get_agent_run(ws, "arun_cancel").snapshot
                 original = journal.get_permission_snapshot_for_run(ws, "arun_cancel")
@@ -303,12 +363,17 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
                     current.computer_use_scope.generation > original.computer_use_scope.generation
                 )
                 assert current.tool_schema_digest == original.tool_schema_digest
-                assert second.provider.image_pixels == [
-                    [],
-                    [],
-                    [(0, 0, 255)],
-                    [(0, 0, 255), (0, 0, 255)],
-                ]
+                assert second.provider.image_pixels == (
+                    [[], [], [], []]
+                    if boundary == "hybrid_config"
+                    else [[], [], [(0, 0, 255)], [(0, 0, 255), (0, 0, 255)]]
+                )
+                if boundary == "hybrid_config":
+                    assert session_settings[1].mode is ComputerUseMode.SEMANTIC
+                    assert session_settings[1].max_run_seconds == 120
+                    assert session_settings[1].max_operations == 7
+                    assert call_timeouts == [15, 7]
+                    assert diagnosed_settings == session_settings
                 second_rows = [
                     row
                     for row in journal.list_session_executions(ws, products.session.session_id)

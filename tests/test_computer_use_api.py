@@ -41,6 +41,7 @@ async def test_desktop_settings_occ_status_and_session_model_without_grant(tmp_p
         assert changed_config.providers == original_config.providers
         assert changed_config.active_model == original_config.active_model
         assert changed_config.chat_settings == original_config.chat_settings
+        assert saved["applies_to"] == "future_runs"
         assert saved["settings"]["mode"] == "hybrid"
         assert saved["settings"]["max_operations"] == 20
         assert saved["host"] == {"status": "unavailable", "reason": "native_unverified"}

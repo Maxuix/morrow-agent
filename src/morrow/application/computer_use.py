@@ -44,10 +44,12 @@ class ComputerUseLifecycle:
         diagnostic: Callable[[], ComputerUsePreflight],
         *,
         native_verified: bool = False,
+        run_diagnostic: Callable[[ComputerUseSettings], ComputerUsePreflight] | None = None,
     ) -> None:
         self._factory = owner_factory
         self._diagnostic = diagnostic
         self._native_verified = native_verified
+        self._run_diagnostic = run_diagnostic
         self._owner: ComputerUseLifecyclePort | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: int | None = None
@@ -75,7 +77,11 @@ class ComputerUseLifecycle:
             raise ComputerUseContractError("driver_not_activated")
         if request.agent_run_id != request.scope.agent_run_id:
             raise ComputerUseContractError("subject_mismatch")
-        diagnosis = self.preflight()
+        diagnosis = (
+            self._run_diagnostic(request.settings)
+            if request.settings is not None and self._run_diagnostic is not None
+            else self.preflight()
+        )
         if diagnosis.reason not in {"driver_not_activated", "native_unverified"}:
             raise ComputerUseContractError(diagnosis.reason)
         if not self._native_verified:
@@ -168,6 +174,7 @@ class ComputerUseObservationService:
                         authority=TRUSTED_COMPUTER_USE_AUTHORITY,
                         agent_run_id=self._scope.agent_run_id,
                         scope=self._scope,
+                        settings=self._settings,
                     )
                 )
                 try:
