@@ -53,6 +53,7 @@ MAX_TEXT_CHARS = 4096
 MAX_HOTKEY_KEYS = 4
 MAX_SCROLL_UNITS = 2000
 MAX_APPS = 8
+MAX_DISCOVERED_TARGETS = 100
 
 _BUNDLE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]{0,127}$")
 _ROLE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -575,6 +576,8 @@ class Observation(ComputerUseModel):
     frame: CoordinateFrame
     elements: tuple[AxElement, ...] = ()
     complete: bool = True
+    degraded: bool = False
+    degraded_reason: Literal["ax_window_unresolved", "ax_tree_empty", "unknown"] | None = None
     truncated: bool = False
     omitted_count: int = Field(default=0, ge=0)
     image: ObservationImageRef | None = None
@@ -637,7 +640,9 @@ class Observation(ComputerUseModel):
         text = "".join(f"{item.role}{item.label or ''}" for item in self.elements)
         if len(text.encode("utf-8")) > MAX_AX_TEXT_BYTES:
             raise ValueError("ax_bounds")
-        if self.complete and (self.truncated or self.omitted_count != 0):
+        if self.complete and (self.degraded or self.truncated or self.omitted_count != 0):
+            raise ValueError("ax_bounds")
+        if not self.degraded and self.degraded_reason is not None:
             raise ValueError("ax_bounds")
         if self.truncated and self.omitted_count < 1:
             raise ValueError("ax_bounds")
@@ -660,6 +665,21 @@ class TransientCapture:
         )
 
     __str__ = __repr__
+
+
+@dataclass(frozen=True, slots=True)
+class ObservedWindow:
+    """Transient read result; safe Observation is the only persistent projection."""
+
+    observation: Observation
+    capture: TransientCapture | None = None
+    image_error: str | None = None
+
+    def __repr__(self) -> str:
+        return (
+            f"ObservedWindow(observation_id={self.observation.observation_id!r}, "
+            f"capture={self.capture is not None}, image_error={self.image_error!r})"
+        )
 
 
 class ElementExistsPostcondition(ComputerUseModel):
@@ -1186,6 +1206,18 @@ def computer_use_intent(tool_name: str) -> ComputerUseIntentSpec:
     raise ComputerUseContractError("unknown_computer_use_tool")
 
 
+class ComputerUseSessionPort(Protocol):
+    """Run-bound asynchronous device surface, with no SDK objects or native ids."""
+
+    async def discover(self, request: DiscoverRequest) -> DiscoverResult: ...
+
+    async def observe(
+        self, request: ObserveWindowRequest, *, settings: ComputerUseSettings
+    ) -> ObservedWindow: ...
+
+    def invalidate(self) -> None: ...
+
+
 class ComputerUseLifecyclePort(Protocol):
     """Async lifecycle on the runtime owner; no native handle crosses this port."""
 
@@ -1197,5 +1229,7 @@ class ComputerUseLifecyclePort(Protocol):
     async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession: ...
 
     async def close_run_session(self, request: CloseRunSessionRequest) -> None: ...
+
+    def session_for(self, run: RunSession) -> ComputerUseSessionPort: ...
 
     async def shutdown(self) -> None: ...

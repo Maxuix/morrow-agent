@@ -33,6 +33,7 @@ from morrow.core.computer_use import (
     PreparedComputerAction,
     ScrollAction,
     TypeTextAction,
+    map_image_point,
 )
 from morrow.core.runtime_policy import ComputerUseSettings
 from morrow.testing import FixedClock, FixedIdSource
@@ -307,6 +308,7 @@ class _Native:
                     title="Notes password",
                     is_on_screen=True,
                     minimized=False,
+                    bounds=SimpleNamespace(x=0, y=0, width=40, height=20),
                 )
             ]
         )
@@ -436,8 +438,9 @@ async def test_typed_session_hides_native_identity_and_keeps_the_real_frame():
     assert observed.observation.complete is False
     assert observed.observation.truncated is True
     assert observed.observation.omitted_count >= 3
-    assert observed.observation.frame.scale_x == 2.0
-    assert observed.observation.frame.scale_y == 2.0
+    assert observed.observation.frame.scale_x == 1.0
+    assert map_image_point(observed.observation.frame, 10, 4) == (10.0, 4.0)
+    assert observed.observation.frame.scale_y == 1.0
     assert observed.observation.frame.crop_width == 20
     secure = next(item for item in observed.observation.elements if "secure" in item.role)
     assert secure.sensitive is True
@@ -597,7 +600,7 @@ def test_interactive_probe_uses_console_owner_instead_of_spoofable_environment(m
     assert not sdk_loader.current_interactive_session()
 
 
-async def test_unresolved_native_window_preserves_unknown_geometry_rejection():
+async def test_unresolved_native_window_does_not_invent_image_mapping():
     class UnresolvedWindow(_Native):
         async def get_window_state(self, payload):
             return SimpleNamespace(
@@ -631,16 +634,22 @@ async def test_unresolved_native_window_preserves_unknown_geometry_rejection():
             run_session_id=run.run_session_id,
         )
     )
-    with pytest.raises(ComputerUseContractError, match="unknown_scale"):
-        await session.observe(
-            ObserveWindowRequest(
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                scope=_scope(),
-                target=found.targets[0],
-                delivery=ComputerUseDelivery.FOREGROUND,
-                include_image=True,
-            )
+    read = await session.observe(
+        ObserveWindowRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+            scope=_scope(),
+            target=found.targets[0],
+            delivery=ComputerUseDelivery.FOREGROUND,
+            include_image=True,
         )
+    )
+    assert read.capture is None
+    assert read.image_error == "image_missing"
+    assert read.observation.degraded
+    assert read.observation.frame.width == 40
+    assert read.observation.frame.scale_x is None
+    with pytest.raises(ComputerUseContractError, match="unknown_scale"):
+        map_image_point(read.observation.frame, 0, 0)
 
 
 @pytest.mark.parametrize("degraded", [False, True])
@@ -685,7 +694,39 @@ async def test_unknown_tree_completeness_does_not_invent_truncation(degraded):
             include_image=True,
         )
     )
+    assert observed.observation.degraded is degraded
+    assert observed.observation.degraded_reason == ("unknown" if degraded else None)
     assert observed.observation.complete is False
     assert observed.observation.truncated is False
     assert observed.observation.omitted_count == 0
     assert len(observed.observation.elements) == 2
+
+
+@pytest.mark.parametrize("kind", ["multiple", "oversized"])
+async def test_capture_limits_are_checked_before_base64_decode(monkeypatch, kind):
+    from morrow.adapters.computer_use.session import _capture
+    from morrow.core.computer_use import MAX_IMAGE_BYTES
+
+    state = await _Native().get_window_state(None)
+    if kind == "multiple":
+        state.images.append(state.images[0])
+    else:
+        state.images[0].data_base64 = "A" * ((((MAX_IMAGE_BYTES + 2) // 3) * 4) + 4)
+    monkeypatch.setattr(base64, "b64decode", lambda *args, **kwargs: pytest.fail("decoder called"))
+    capture, reason = _capture(state)
+    assert capture is None
+    assert reason == "image_bounds"
+
+
+async def test_unverified_screenshot_frame_never_enables_coordinate_mapping():
+    from morrow.adapters.computer_use.registry import WindowGeometry
+    from morrow.adapters.computer_use.session import _capture, _frame
+
+    state = await _Native().get_window_state(None)
+    state.screenshot_frame_valid = False
+    capture, reason = _capture(state)
+    assert capture is None
+    assert reason == "unknown_scale"
+    frame = _frame(state, geometry=WindowGeometry(0, 0, 40, 20))
+    with pytest.raises(ComputerUseContractError, match="unknown_scale"):
+        map_image_point(frame, 10, 4)

@@ -182,3 +182,81 @@ async def test_discovery_rejects_wrong_owner_and_invalid_window_identity(pid, wi
     )
     assert found.targets == ()
     assert not any(name == "get_window_state" for name, _ in native.calls)
+
+
+@pytest.mark.parametrize("change", ["app", "closed", "owner", "geometry"])
+async def test_live_target_changes_refuse_before_window_state(change):
+    class ChangedWindow(_Native):
+        changed = False
+
+        async def list_apps(self, payload):
+            result = await super().list_apps(payload)
+            if self.changed and change == "app":
+                result.apps[0].bundle_id = "com.other.App"
+            return result
+
+        async def list_windows(self, payload):
+            result = await super().list_windows(payload)
+            if self.changed:
+                if change == "closed":
+                    result.windows = []
+                elif change == "owner":
+                    result.windows[0].pid = 7
+                elif change == "geometry":
+                    result.windows[0].bounds.width = float("nan")
+            return result
+
+    native = ChangedWindow()
+    session, _, target = await _opened(native, lambda pid: ProcessBirth(123, 0))
+    native.changed = True
+    with pytest.raises(ComputerUseContractError):
+        await session.observe(_observe(target))
+    assert not any(name == "get_window_state" for name, _ in native.calls)
+
+
+async def test_geometry_changed_while_observing_rejects_the_capture():
+    class MovingWindow(_Native):
+        moved = False
+
+        async def get_window_state(self, payload):
+            result = await super().get_window_state(payload)
+            self.moved = True
+            return result
+
+        async def list_windows(self, payload):
+            result = await super().list_windows(payload)
+            if self.moved:
+                result.windows[0].bounds.x += 1
+            return result
+
+    native = MovingWindow()
+    session, _, target = await _opened(native, lambda pid: ProcessBirth(123, 0))
+    with pytest.raises(ComputerUseContractError, match="stale_observation"):
+        await session.observe(_observe(target))
+    assert [name for name, _ in native.calls].count("get_window_state") == 1
+    assert not any(name == "click" for name, _ in native.calls)
+
+
+async def test_sdk_capture_bounds_must_match_live_geometry():
+    class WrongFrame(_Native):
+        async def get_window_state(self, payload):
+            result = await super().get_window_state(payload)
+            result.window_bounds.width += 1
+            return result
+
+    native = WrongFrame()
+    session, _, target = await _opened(native, lambda pid: ProcessBirth(123, 0))
+    with pytest.raises(ComputerUseContractError, match="stale_observation"):
+        await session.observe(_observe(target))
+
+
+async def test_changed_frozen_scope_does_not_reach_sdk():
+    native = _Native()
+    session, request, target = await _opened(native, lambda pid: ProcessBirth(123, 0))
+    before = len(native.calls)
+    changed = request.scope.model_copy(update={"workspace_id": "ws_other"})
+    with pytest.raises(ComputerUseContractError, match="subject_mismatch"):
+        await session.discover(request.model_copy(update={"scope": changed}))
+    with pytest.raises(ComputerUseContractError, match="subject_mismatch"):
+        await session.observe(_observe(target).model_copy(update={"scope": changed}))
+    assert len(native.calls) == before

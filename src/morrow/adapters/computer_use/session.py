@@ -8,16 +8,16 @@ import math
 import re
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
 from morrow.adapters.computer_use.calls import NativeActionInterrupted, NativeCalls
 from morrow.adapters.computer_use.process_identity import ProcessBirth, read_process_birth
-from morrow.adapters.computer_use.registry import TrustedDesktopRegistry
+from morrow.adapters.computer_use.registry import TrustedDesktopRegistry, WindowGeometry
 from morrow.core.computer_use import (
     MAX_AX_DEPTH,
     MAX_AX_ELEMENTS,
     MAX_AX_TEXT_BYTES,
+    MAX_DISCOVERED_TARGETS,
     MAX_IMAGE_BYTES,
     MAX_IMAGE_LONG_EDGE_PX,
     MAX_IMAGE_PIXELS,
@@ -27,10 +27,13 @@ from morrow.core.computer_use import (
     ComputerUseAppIdentity,
     ComputerUseContractError,
     ComputerUseDelivery,
+    ComputerUseOperation,
+    ComputerUseScope,
     CoordinateFrame,
     DiscoverRequest,
     DiscoverResult,
     Observation,
+    ObservedWindow,
     ObserveWindowRequest,
     OpenRunSessionRequest,
     PreparedComputerAction,
@@ -56,19 +59,6 @@ _MIME = {
     "image/jpg": "image/jpeg",
     "image/webp": "image/webp",
 }
-
-
-@dataclass(frozen=True, slots=True)
-class ObservedWindow:
-    observation: Observation
-    capture: TransientCapture | None = None
-    image_error: str | None = None
-
-    def __repr__(self) -> str:
-        return (
-            f"ObservedWindow(observation_id={self.observation.observation_id!r}, "
-            f"capture={self.capture is not None}, image_error={self.image_error!r})"
-        )
 
 
 class TypedComputerSession:
@@ -99,6 +89,7 @@ class TypedComputerSession:
         self._session_name: str | None = None
         self._agent_run_id: str | None = None
         self._generation: int | None = None
+        self._scope: ComputerUseScope | None = None
         self._calls = NativeCalls(self.invalidate, timeout=call_timeout)
         self._process_reader = process_reader
 
@@ -131,6 +122,7 @@ class TypedComputerSession:
         self._session_name = run_id
         self._agent_run_id = request.agent_run_id
         self._generation = request.scope.generation
+        self._scope = request.scope
         return RunSession(
             run_session_id=run_id,
             agent_run_id=request.agent_run_id,
@@ -165,7 +157,9 @@ class TypedComputerSession:
 
     async def discover(self, request: DiscoverRequest) -> DiscoverResult:
         reject_untrusted_computer_use_authority(request.authority)
-        self._require_subject(request.scope.agent_run_id, request.scope.generation)
+        self._require_scope(request.scope)
+        if ComputerUseOperation.OBSERVE not in request.scope.operations:
+            raise ComputerUseContractError("operation_not_granted")
         if request.run_session_id != self._require_session():
             raise ComputerUseContractError("subject_mismatch")
         granted = {item.bundle_id for item in request.scope.apps}
@@ -198,6 +192,8 @@ class TypedComputerSession:
                 target = self._window_target(request, bundle_id, pid, window, birth)
                 if target is not None:
                     targets.append(target)
+                    if len(targets) > MAX_DISCOVERED_TARGETS:
+                        raise ComputerUseContractError("target_budget")
         return DiscoverResult(targets=tuple(targets))
 
     async def observe(
@@ -207,7 +203,7 @@ class TypedComputerSession:
         settings: ComputerUseSettings | None = None,
     ) -> ObservedWindow:
         reject_untrusted_computer_use_authority(request.authority)
-        self._require_subject(request.scope.agent_run_id, request.scope.generation)
+        self._require_scope(request.scope)
         window = self._registry.window(request.target.window_identity)
         if (
             window.agent_run_id != request.target.agent_run_id
@@ -218,7 +214,7 @@ class TypedComputerSession:
         ):
             raise ComputerUseContractError("stale_observation")
         resolved = settings or ComputerUseSettings()
-        self._validate_process(window)
+        geometry = await self._validate_live_target(window)
         state = await self._call(
             "get_window_state",
             self._sdk.GetWindowStateInput(
@@ -236,8 +232,11 @@ class TypedComputerSession:
                 timeout_ms=int(resolved.max_call_seconds * 1000),
             ),
         )
-        self._validate_process(window)
-        return self._observation(request, window.window_identity, window.bundle_id, state)
+        if await self._validate_live_target(window) != geometry:
+            raise ComputerUseContractError("stale_observation")
+        return self._observation(
+            request, window.window_identity, window.bundle_id, state, geometry=geometry
+        )
 
     async def execute(
         self,
@@ -352,6 +351,10 @@ class TypedComputerSession:
             isinstance(owner_pid, bool) or not isinstance(owner_pid, int) or owner_pid != pid
         ):
             return None
+        try:
+            geometry = _window_geometry(window)
+        except ComputerUseContractError:
+            return None
         minimized = getattr(window, "minimized", False) is True
         on_screen = getattr(window, "is_on_screen", True) is not False
         if minimized or not on_screen:
@@ -364,6 +367,7 @@ class TypedComputerSession:
             window_id=window_id,
             display_label=_display_label(getattr(window, "title", None)),
             process_birth=birth,
+            geometry=geometry,
         )
 
     def _validate_process(self, window: Any) -> None:
@@ -374,15 +378,50 @@ class TypedComputerSession:
         if birth != window.process_birth:
             raise ComputerUseContractError("stale_observation")
 
+    async def _validate_live_target(self, window: Any) -> WindowGeometry:
+        self._validate_process(window)
+        apps = await self._call("list_apps", self._sdk.ListAppsInput())
+        if not any(
+            getattr(app, "pid", None) == window.pid
+            and getattr(app, "bundle_id", None) == window.bundle_id
+            and getattr(app, "running", True) is not False
+            for app in getattr(apps, "apps", ()) or ()
+        ):
+            raise ComputerUseContractError("stale_observation")
+        listed = await self._call(
+            "list_windows", self._sdk.ListWindowsInput(pid=window.pid, on_screen_only=True)
+        )
+        candidates = [
+            native
+            for native in getattr(listed, "windows", ()) or ()
+            if getattr(native, "window_id", None) == window.window_id
+            and getattr(native, "pid", None) in {None, window.pid}
+            and getattr(native, "is_on_screen", True) is not False
+            and getattr(native, "minimized", False) is not True
+        ]
+        self._validate_process(window)
+        if len(candidates) != 1:
+            raise ComputerUseContractError("stale_observation")
+        return _window_geometry(candidates[0])
+
     def _observation(
         self,
         request: ObserveWindowRequest,
         window_identity: str,
         bundle_id: str,
         state: Any,
+        *,
+        geometry: WindowGeometry,
     ) -> ObservedWindow:
         elements, omitted, truncated = _elements(state, self._registry, window_identity)
         degraded = bool(getattr(state, "degraded", False))
+        degraded_reason = None
+        if degraded:
+            reason = getattr(state, "degraded_reason", None)
+            prefix = reason.split(":", 1)[0] if isinstance(reason, str) else None
+            degraded_reason = (
+                prefix if prefix in {"ax_window_unresolved", "ax_tree_empty"} else "unknown"
+            )
         if omitted > 0:
             truncated = True
         if truncated and omitted < 1:
@@ -396,6 +435,10 @@ class TypedComputerSession:
         capture, image_error = (None, None)
         if request.include_image:
             capture, image_error = _capture(state)
+        if capture is not None:
+            reported = _bounds_geometry(getattr(state, "window_bounds", None))
+            if reported != geometry:
+                raise ComputerUseContractError("stale_observation")
         digest_source = (
             capture.content
             if capture is not None
@@ -416,9 +459,11 @@ class TypedComputerSession:
                 window_identity=window_identity,
                 capture_digest=sha256_digest(digest_source),
                 captured_at=self._clock.now(),
-                frame=_frame(state),
+                frame=_frame(state, geometry=geometry),
                 elements=tuple(elements),
                 complete=complete,
+                degraded=degraded,
+                degraded_reason=degraded_reason,
                 truncated=truncated,
                 omitted_count=omitted,
             )
@@ -494,6 +539,11 @@ class TypedComputerSession:
     def _require_subject(self, agent_run_id: str, generation: int) -> None:
         self._require_session()
         if self._agent_run_id != agent_run_id or self._generation != generation:
+            raise ComputerUseContractError("subject_mismatch")
+
+    def _require_scope(self, scope: ComputerUseScope) -> None:
+        self._require_subject(scope.agent_run_id, scope.generation)
+        if scope != self._scope:
             raise ComputerUseContractError("subject_mismatch")
 
 
@@ -589,20 +639,44 @@ def _elements(
     return kept, omitted, truncated
 
 
-def _frame(state: Any) -> CoordinateFrame:
+def _window_geometry(window: Any) -> WindowGeometry:
+    return _bounds_geometry(getattr(window, "bounds", None))
+
+
+def _bounds_geometry(bounds: Any) -> WindowGeometry:
+    values = tuple(getattr(bounds, name, None) for name in ("x", "y", "width", "height"))
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or abs(value) > 2**31 - 1
+        for value in values
+    ):
+        raise ComputerUseContractError("unknown_scale")
+    if values[2] <= 0 or values[3] <= 0:
+        raise ComputerUseContractError("unknown_scale")
+    return WindowGeometry(*values)
+
+
+def _frame(state: Any, *, geometry: WindowGeometry) -> CoordinateFrame:
     width = _positive_int(getattr(state, "screenshot_width", None))
     height = _positive_int(getattr(state, "screenshot_height", None))
     scale = _positive_float(getattr(state, "screenshot_scale", None))
     crop_width = None
     crop_height = None
     if width is None or height is None:
-        bounds = getattr(state, "window_bounds", None)
-        width = _positive_int(getattr(bounds, "width", None)) if bounds is not None else None
-        height = _positive_int(getattr(bounds, "height", None)) if bounds is not None else None
+        width = math.ceil(geometry.width)
+        height = math.ceil(geometry.height)
         scale = None
     elif getattr(state, "screenshot_frame_valid", None) is True and scale is not None:
+        # The pinned SDK accepts pixels of its delivered (possibly resized)
+        # window screenshot. Its session cache undoes resizing and the native
+        # backend applies backing scale. Do not divide by Retina scale here.
+        scale = 1.0
         crop_width = width
         crop_height = height
+    else:
+        scale = None
     if width is None or height is None:
         raise ComputerUseContractError("unknown_scale")
     try:
@@ -622,6 +696,8 @@ def _capture(state: Any) -> tuple[TransientCapture | None, str | None]:
     images = getattr(state, "images", ()) or ()
     if not images:
         return None, "image_missing"
+    if getattr(state, "screenshot_frame_valid", None) is not True:
+        return None, "unknown_scale"
     image = images[0]
     mime = _MIME.get(str(getattr(image, "mime_type", "")).casefold())
     if mime is None:
@@ -629,6 +705,8 @@ def _capture(state: Any) -> tuple[TransientCapture | None, str | None]:
     encoded = getattr(image, "data_base64", "")
     if not isinstance(encoded, str) or not encoded:
         return None, "image_decode"
+    if len(images) != 1 or len(encoded) > ((MAX_IMAGE_BYTES + 2) // 3) * 4:
+        return None, "image_bounds"
     try:
         content = base64.b64decode(encoded, validate=True)
     except Exception:

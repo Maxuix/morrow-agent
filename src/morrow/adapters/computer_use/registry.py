@@ -31,6 +31,17 @@ class _ProcessRecord:
 
 
 @dataclass(slots=True)
+class WindowGeometry:
+    x: float
+    y: float
+    width: float
+    height: float
+
+    def __repr__(self) -> str:
+        return "WindowGeometry()"
+
+
+@dataclass(slots=True)
 class _WindowRecord:
     target_ref: str
     process_identity: str
@@ -41,6 +52,7 @@ class _WindowRecord:
     agent_run_id: str
     generation: int
     process_birth: ProcessBirth
+    geometry: WindowGeometry
 
     def __repr__(self) -> str:
         return f"_WindowRecord(window_identity={self.window_identity!r})"
@@ -92,6 +104,7 @@ class TrustedDesktopRegistry:
         window_id: int,
         display_label: str | None,
         process_birth: ProcessBirth,
+        geometry: WindowGeometry,
     ) -> TargetRef:
         process = self._process(agent_run_id, generation, bundle_id, pid, process_birth)
         key = (agent_run_id, generation, bundle_id, pid, window_id, process_birth)
@@ -107,9 +120,11 @@ class TrustedDesktopRegistry:
                 agent_run_id=agent_run_id,
                 generation=generation,
                 process_birth=process_birth,
+                geometry=geometry,
             )
             self._windows[key] = existing
             self._windows_by_identity[existing.window_identity] = existing
+        existing.geometry = geometry
         return TargetRef(
             target_ref=existing.target_ref,
             agent_run_id=agent_run_id,
