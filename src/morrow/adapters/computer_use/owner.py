@@ -24,6 +24,7 @@ from morrow.core.computer_use import (
     CloseRunSessionRequest,
     ComputerUseAppIdentity,
     ComputerUseContractError,
+    ComputerUseRuntimeStatus,
     LocalComputerUseCandidates,
     OpenRunSessionRequest,
     RunSession,
@@ -79,6 +80,26 @@ class ComputerDriverOwner:
     @property
     def quarantined(self) -> bool:
         return self._quarantined or bool(self._session and self._session.quarantined)
+
+    @property
+    def runtime_status(self) -> ComputerUseRuntimeStatus:
+        pending = (
+            self._lifecycle.pending
+            or bool(self._candidate_calls and self._candidate_calls.pending)
+            or bool(self._session and self._session.pending)
+        )
+        state = (
+            "closed"
+            if self._closed
+            else "quarantined"
+            if self.quarantined
+            else "stopping"
+            if self._stopping
+            else "active"
+            if self._session is not None
+            else "idle"
+        )
+        return ComputerUseRuntimeStatus(state=state, native_pending=pending)
 
     @property
     def shutdown_pending(self) -> bool:

@@ -518,3 +518,29 @@ async def test_timeout_reports_unknown_and_does_not_cancel_native_action_or_unlo
     release.set()
     await owner.shutdown()
     assert finished == [1] and not lease.held
+
+
+async def test_runtime_status_reads_do_not_create_or_call_native_resources():
+    from morrow.application.computer_use import ComputerUseLifecycle
+
+    owner, calls, _ = _owner()
+    initial_calls = tuple(calls)
+    lifecycle = ComputerUseLifecycle(
+        lambda: owner,
+        lambda: pytest.fail("status must not run native diagnostics"),
+    )
+    assert lifecycle.runtime_status.state == "not_activated"
+    assert lifecycle.runtime_status.native_pending is False
+    assert owner.runtime_status.state == "idle"
+    assert tuple(calls) == initial_calls
+    assert [name for name, _, _ in calls] == ["create"]
+    run = await owner.open_run_session(_open())
+    before = len(calls)
+    assert owner.runtime_status.state == "active"
+    assert owner.runtime_status.native_pending is False
+    assert len(calls) == before
+    await owner.close_run_session(_close(run))
+    assert owner.runtime_status.state == "idle"
+    await owner.shutdown()
+    assert owner.runtime_status.state == "closed"
+    assert owner.runtime_status.native_pending is False

@@ -403,6 +403,15 @@ def images_allowed(settings: ComputerUseSettings, scope: ComputerUseScope) -> bo
     )
 
 
+class ComputerUseRuntimeStatus(ComputerUseModel):
+    """Local owner's operational state; this does not declare native availability."""
+
+    state: Literal[
+        "not_activated", "idle", "active", "quarantined", "stopping", "closed", "unknown"
+    ]
+    native_pending: bool | None
+
+
 class ComputerUsePreflight(ComputerUseModel):
     status: Literal["unavailable"]
     reason: Literal[
@@ -1410,6 +1419,9 @@ class ComputerUseSessionPort(Protocol):
 
 class ComputerUseLifecyclePort(Protocol):
     """Async lifecycle on the runtime owner; no native handle crosses this port."""
+
+    @property
+    def runtime_status(self) -> ComputerUseRuntimeStatus: ...
 
     @property
     def shutdown_pending(self) -> bool: ...

@@ -3,6 +3,7 @@ import type { ApiClient } from '../api/client'
 import type { ChatPermissionsView, ChatSettings, ChatSettingsView, ProviderSettingsView } from '../api/settings'
 import type { ModelRefWire } from '../api/types'
 import { approvalScopeLabel, notifyPermissionChanged } from '../state/approvalDecision'
+import { DesktopRuntimeNotice } from './DesktopRuntimeNotice'
 import { ComputerUseControl } from './ComputerUseControl'
 import { commandId } from './lib/editor'
 import { useDismissablePopover } from './lib/popover'
@@ -136,6 +137,9 @@ export function ChatPermissionControl({
     }
     return () => window.removeEventListener('morrow:permission-changed', reload)
   }, [canLoad, focusSignal, loadPermissions, menu])
+  useEffect(() => {
+    if (canLoad && menu.current?.open) void loadPermissions()
+  }, [settings.active, canLoad, loadPermissions, menu])
   const revoke = async (kind: 'grant' | 'session_scope', subjectId: string, revision: number) => {
     if (!client || !workspace || !session || permissionBusy !== null) return
     const key = `${kind}:${subjectId}`
@@ -181,6 +185,9 @@ export function ChatPermissionControl({
         selection={computerSelection} onSelectionChange={onComputerSelectionChange}/>}
       {canLoad && <div className="permission-live-state">
         <div className="permission-section-heading">当前运行授权</div>
+        {permissions?.desktop_runtime && <DesktopRuntimeNotice status={permissions.desktop_runtime}/>}
+        <button type="button" className="exec-link" disabled={permissionBusy !== null}
+          onClick={() => void loadPermissions()}>刷新授权状态</button>
         {activeGrants.length === 0 && <p className="menu-note">暂无活动运行授权。</p>}
         {activeGrants.map(grant => <div className="permission-receipt" key={grant.grant_id}>
           <span>{grant.capabilities.map(capability => ({computer_use_host: '桌面窗口', unconfined_host_process: 'Shell Host'} as Record<string, string>)[capability] ?? capability).join('、')} · 到期 {new Date(grant.expires_at).toLocaleString()}</span>

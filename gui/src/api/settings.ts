@@ -19,7 +19,14 @@ export interface ChatSettingsView {
   effective: ChatSettings
   sources: Record<'model' | 'generation' | 'permission', {scope: string; revision: number}>
 }
+export interface DesktopRuntimeStatus {
+  scope: 'local_host'
+  state: 'not_activated' | 'idle' | 'active' | 'quarantined' | 'stopping' | 'closed' | 'unknown'
+  native_pending: boolean | null
+  unknown_actions: number
+}
 export interface ChatPermissionsView {
+  desktop_runtime?: DesktopRuntimeStatus
   run_ids: string[]; next_run_cursor: string | null
   snapshot: {agent_run_id: string; model: ModelRefWire; generation: {reasoning_effort?: string | null}; sources: Record<string, {scope: string; revision: number}>; permission_preset: string | null
     permission: {access_scope: string; approval_mode: string; process_isolation: string; workspace_read_only: boolean; grant_id: string | null} | null} | null

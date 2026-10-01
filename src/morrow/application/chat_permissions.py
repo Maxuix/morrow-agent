@@ -2,6 +2,8 @@
 
 from morrow.application.computer_permissions import computer_scope_summary
 from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.computer_use import ComputerUseRuntimeStatus
+from morrow.core.execution import ToolExecutionDisposition
 
 
 def permissions_view(
@@ -70,7 +72,7 @@ def permissions_view(
             if permission
             else None,
         }
-    return {
+    result = {
         "run_ids": ids,
         "next_run_cursor": next_run,
         "snapshot": snapshot,
@@ -78,6 +80,20 @@ def permissions_view(
         "next_grant_cursor": next_grant,
         "session_scopes": journal.session_scopes.list(wid, session_id, cursor=scope_cursor),
     }
+    if any(grant.get("computer_use") is not None for grant in grants):
+        status = getattr(context.computer_use, "runtime_status", None)
+        if not isinstance(status, ComputerUseRuntimeStatus):
+            status = ComputerUseRuntimeStatus(state="unknown", native_pending=None)
+        unknown = sum(
+            row.tool_name == "computer_action"
+            and row.disposition is ToolExecutionDisposition.UNKNOWN
+            for row in journal.list_executions(wid, agent_run_id=run_id)
+        )
+        result["desktop_runtime"] = status.model_dump(mode="json") | {
+            "scope": "local_host",
+            "unknown_actions": unknown,
+        }
+    return result
 
 
 def revoke_permission(context, session_id, request):

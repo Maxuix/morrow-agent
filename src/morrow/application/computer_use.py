@@ -18,6 +18,7 @@ from morrow.core.computer_use import (
     ComputerUseContractError,
     ComputerUseLifecyclePort,
     ComputerUsePreflight,
+    ComputerUseRuntimeStatus,
     ComputerUseScope,
     ComputerUseSessionPort,
     DiscoverResult,
@@ -56,6 +57,19 @@ class ComputerUseLifecycle:
         self._thread: int | None = None
         self._stopping = False
         self._failed = False
+
+    @property
+    def runtime_status(self) -> ComputerUseRuntimeStatus:
+        if self._owner is None:
+            return ComputerUseRuntimeStatus(
+                state="closed" if self._stopping else "not_activated", native_pending=False
+            )
+        status = getattr(self._owner, "runtime_status", None)
+        return (
+            status
+            if isinstance(status, ComputerUseRuntimeStatus)
+            else ComputerUseRuntimeStatus(state="unknown", native_pending=None)
+        )
 
     @property
     def shutdown_pending(self) -> bool:

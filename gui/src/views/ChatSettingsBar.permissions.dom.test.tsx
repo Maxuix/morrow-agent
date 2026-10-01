@@ -116,4 +116,23 @@ describe('ChatPermissionControl authorization popover', () => {
     expect(client.revokeChatPermission.mock.calls[0][2]).toMatchObject({kind: 'grant', subject_id: 'desktop_private', expected_revision: 4})
   })
 
+  it('refreshes settling state without hiding unknown desktop effects', async () => {
+    const user = userEvent.setup()
+    const client = clientWithPermissions()
+    client.chatPermissions.mockResolvedValue({...permissions, desktop_runtime: {
+      scope: 'local_host', state: 'quarantined', native_pending: true, unknown_actions: 1,
+    }})
+    await act(async () => root.render(<ChatPermissionControl settings={baseState()} client={client} workspace="ws" session="session_1"/>))
+    await user.click(screen.getByTitle('会话权限预设与授权'))
+    await screen.findByText(/原生调用尚未停稳/)
+    client.chatPermissions.mockResolvedValue({...permissions, desktop_runtime: {
+      scope: 'local_host', state: 'idle', native_pending: false, unknown_actions: 1,
+    }})
+    await user.click(screen.getByRole('button', {name: '刷新授权状态'}))
+    await screen.findByText(/当前无桌面会话/)
+    expect(screen.queryByText(/原生调用尚未停稳/)).toBeNull()
+    expect(screen.getByRole('alert').textContent).toContain('效果未知')
+    expect(client.chatPermissions.mock.calls.every(call => call[0] === 'ws' && call[1] === 'session_1')).toBe(true)
+  })
+
 })
