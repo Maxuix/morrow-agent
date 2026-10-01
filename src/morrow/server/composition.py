@@ -351,6 +351,15 @@ def _attach_chat(context, identity, permission_profile, handle, approval_port):
             context.application, settings
         ).preflight(),
     )
+    from morrow.adapters.state.operational import SystemStoreClock
+    from morrow.application.computer_selection import ComputerUseSelectionService
+
+    context.chat.computer_selection = ComputerUseSelectionService(
+        context.application,
+        context.computer_use,
+        context.chat.computer_settings,
+        SystemStoreClock(),
+    )
     context.chat.settings = ChatSettingsService(
         context.application,
         context.journal,

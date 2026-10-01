@@ -100,6 +100,11 @@ shutdown 即失效；本地 DTO 只含应用、清洗标签与编号，不作为
 也验证窗口范围。刷新/过期/重用选择在 SDK Session 前拒绝，不扩展到同应用其他窗口。
 CLI/GUI 的明确窗口选择及新入口强制使用 v2 尚待接线；旧 v1 仅保持协议兼容，不能声明
 已经完成首版窗口授权流程。
+ComputerUseSelectionService 管理最多八个会话的本地候选与一次性选择标识，scope 始终由
+owner 解析候选生成 v2，不接受客户端自造原生身份或授权。Core API 的显式 POST candidates
+通过异步只读准备读取 SDK，再在命令总线上重新检查 Session/权限/配置并保存临时目录；
+POST selection 检查同会话目录、精确模型/图像能力及操作/投递范围，只创建短期选择，
+不创建 grant、SDK run Session 或历史消息。选择标识的聊天提交与 CLI/GUI 控件尚待接线。
 
 ## 文档与验证约定
 

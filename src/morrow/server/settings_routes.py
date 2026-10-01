@@ -6,6 +6,9 @@ from pydantic import Field
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from morrow.application.computer_selection import LocalWindowSelectionRequest
+from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.domain import session_can_start_work
 from morrow.core.models import ChatSettings, ProtocolModel
 from morrow.core.runtime_policy import ComputerUseSettings
 
@@ -19,6 +22,10 @@ class SettingsRequest(ProtocolModel):
 class ComputerSettingsRequest(ProtocolModel):
     expected_revision: int = Field(ge=0, strict=True)
     settings: ComputerUseSettings
+
+
+class LocalCandidatesRequest(ProtocolModel):
+    pass
 
 
 def settings_routes(host, parse):
@@ -68,7 +75,58 @@ def settings_routes(host, parse):
 
         return JSONResponse(await host.execute_command(apply))
 
+    def picker_context(request):
+        c = context(request)
+        sid = request.path_params["session_id"]
+        session = c.chat.require_session(sid)
+        if not session_can_start_work(session.lifecycle, session.health):
+            raise ApplicationError(
+                ApplicationErrorCode.NEEDS_RECOVERY, "Session必须活跃且健康才能选择桌面"
+            )
+        effective, _ = c.chat.settings.resolve(sid)
+        return c, effective
+
+    async def computer_candidates(request):
+        await parse(request, LocalCandidatesRequest)
+        sid = request.path_params["session_id"]
+
+        async def prepare():
+            c, effective = picker_context(request)
+            return await c.chat.computer_selection.prepare_catalog(permission=effective.permission)
+
+        prepared = await host.execute_preparation(prepare)
+
+        def accept():
+            c, effective = picker_context(request)
+            return c.chat.computer_selection.accept_catalog(
+                sid, prepared, permission=effective.permission
+            )
+
+        return JSONResponse(await host.execute_command(accept))
+
+    async def computer_selection(request):
+        body = await parse(request, LocalWindowSelectionRequest)
+        sid = request.path_params["session_id"]
+
+        def select():
+            c, effective = picker_context(request)
+            return c.chat.computer_selection.select(
+                sid, body, permission=effective.permission, model=effective.model
+            )
+
+        return JSONResponse(await host.execute_command(select))
+
     return [
+        Route(
+            "/v1/workspaces/{workspace_id}/sessions/{session_id}/computer-use/candidates",
+            computer_candidates,
+            methods=["POST"],
+        ),
+        Route(
+            "/v1/workspaces/{workspace_id}/sessions/{session_id}/computer-use/selection",
+            computer_selection,
+            methods=["POST"],
+        ),
         Route(
             "/v1/workspaces/{workspace_id}/sessions/{session_id}/computer-use/settings",
             computer_settings,
