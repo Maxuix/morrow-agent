@@ -937,6 +937,11 @@ def _declaration(
 
 PRODUCTION_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
     _declaration(
+        COMPUTER_ACTION_TOOL,
+        EffectClass.UNCONFINED_EXTERNAL_EFFECT,
+        MissingCompletionPolicy.OUTCOME_UNKNOWN,
+    ),
+    _declaration(
         "computer_observe", EffectClass.BOUNDED_EXTERNAL_READ, MissingCompletionPolicy.SAFE_TO_RETRY
     ),
     _declaration("ls", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),

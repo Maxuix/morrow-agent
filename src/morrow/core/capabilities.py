@@ -544,8 +544,15 @@ class ToolHandlerOutcome:
     mcp_result_artifact_refs: tuple[ArtifactReference, ...] = ()
     visual_refs: tuple[ToolVisualRef, ...] = ()
     artifact_content: bytes | None = field(default=None, repr=False, compare=False)
+    completion: Literal["not_started", "completed", "unknown"] | None = None
 
     def __post_init__(self) -> None:
+        if self.completion is not None and self.completion not in {
+            "not_started",
+            "completed",
+            "unknown",
+        }:
+            raise ValueError("ToolHandlerOutcome completion must be a bounded status")
         facts = tuple(self.facts)
         if any(
             not isinstance(fact, (ChangeToolFact, CommandToolFact, ValidationFact, GitToolFact))

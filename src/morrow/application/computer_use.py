@@ -32,6 +32,7 @@ from morrow.core.computer_use import (
 from morrow.core.models import ToolVisualRef
 from morrow.core.ports import Clock
 from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
+from morrow.runtime.durable_log import durable_call_id
 from morrow.services.computer_use import ComputerUseRunService
 from morrow.services.computer_verification import evaluate_postcondition
 
@@ -188,23 +189,28 @@ class ComputerUseObservationService:
         assert self._run is not None
         return self._run
 
-    def execution_for_context(self, context) -> str:
+    def execution_for_context(self, context, *, tool_name: str = COMPUTER_OBSERVE_TOOL) -> str:
         """Resolve the executing ledger row, never accept an execution ID from a model."""
         candidates = [
             execution
             for execution in self._journal.list_executions(
                 self._scope.workspace_id, agent_run_id=self._scope.agent_run_id
             )
-            if execution.call_id == context.call_id
-            and execution.tool_name == COMPUTER_OBSERVE_TOOL
+            if execution.call_id == durable_call_id(context.call_id)
+            and execution.tool_name == tool_name
             and execution.session_id == context.run.session_id
             and execution.task_run_id == self._scope.task_run_id
             and execution.intent.ordinal == context.ordinal
         ]
-        if context.tool_name != COMPUTER_OBSERVE_TOOL or len(candidates) != 1:
+        if (
+            tool_name not in {COMPUTER_OBSERVE_TOOL, COMPUTER_ACTION_TOOL}
+            or context.tool_name != tool_name
+            or context.run.run_id != self._scope.agent_run_id
+            or len(candidates) != 1
+        ):
             raise ComputerUseContractError("execution_not_authorized")
         execution_id = candidates[0].tool_execution_id
-        self._authority(execution_id, include_image=False)
+        self._authority(execution_id, include_image=False, tool_name=tool_name)
         return execution_id
 
     async def discover(self, execution_id: str, *, bundle_id: str | None = None) -> DiscoverResult:

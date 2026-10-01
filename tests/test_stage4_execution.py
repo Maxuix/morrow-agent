@@ -158,6 +158,7 @@ def test_effect_class_is_independent_of_tool_effect():
 def test_production_declarations_cover_only_the_current_inventory():
     assert PRODUCTION_TOOL_NAMES == {
         "computer_observe",
+        "computer_action",
         "update_configuration",
         "manage_preferences",
         "run_skill_script",

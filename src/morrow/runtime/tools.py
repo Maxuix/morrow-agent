@@ -251,6 +251,13 @@ _STATIC_TOOL_CONTRACTS: Mapping[str, ToolContractExpectation] = MappingProxyType
         "grep": _static_contract(OperationKind.WORKSPACE_READ),
         "read_artifact": _static_contract(OperationKind.INTERNAL_READ),
         "computer_observe": _static_contract(OperationKind.COMPUTER_OBSERVE, requires_host=True),
+        "computer_action": _static_contract(
+            OperationKind.COMPUTER_ACTION,
+            ToolEffect.PERSISTENT_WRITE,
+            requires_host=True,
+            policy_effect=ToolEffect.PERSISTENT_WRITE,
+            policy_approval=ToolApproval.REQUIRED,
+        ),
         "submit_node_result": _static_contract(OperationKind.INTERNAL_READ),
         "update_configuration": _static_contract(
             OperationKind.CONFIGURATION_WRITE,
@@ -969,6 +976,10 @@ class ToolExecutor:
                 if isinstance(handler_result, ToolHandlerOutcome)
                 else ToolHandlerOutcome(payload=handler_result)
             )
+            completion_disposition = {
+                "unknown": ToolExecutionDisposition.UNKNOWN,
+                "not_started": ToolExecutionDisposition.FAILED,
+            }.get(outcome.completion)
             if self._active_run_context is not None:
                 self._active_run_context.record(outcome.facts)
             semantic = isinstance(handler_result, ToolHandlerOutcome)
@@ -989,6 +1000,7 @@ class ToolExecutor:
                         mcp_result_artifact_refs=outcome.mcp_result_artifact_refs,
                         artifact_content=outcome.artifact_content,
                         visual_refs=outcome.visual_refs,
+                        disposition=completion_disposition,
                     )
                 return failed
             return ToolExecutionOutcome(
@@ -1002,6 +1014,7 @@ class ToolExecutor:
                 artifact_refs=outcome.artifact_refs,
                 mcp_result_artifact_refs=outcome.mcp_result_artifact_refs,
                 visual_refs=outcome.visual_refs,
+                disposition=completion_disposition,
                 artifact_content=outcome.artifact_content,
             )
         except asyncio.CancelledError:

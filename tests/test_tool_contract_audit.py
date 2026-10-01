@@ -629,3 +629,44 @@ async def test_error_code_matrix_keeps_policy_target_search_and_handler_failures
         "search_failed",
         "execution_failed",
     }
+
+
+def test_generated_discriminated_union_keeps_exact_branches_and_named_properties():
+    from typing import Annotated, Literal
+
+    class First(BaseModel):
+        model_config = ConfigDict(extra="forbid", strict=True)
+        type: Literal["first"]
+        value: str
+
+    class Second(BaseModel):
+        model_config = ConfigDict(extra="forbid", strict=True)
+        type: Literal["second"]
+        count: int
+
+    class Arguments(BaseModel):
+        model_config = ConfigDict(extra="forbid", strict=True)
+        discriminator: str
+        action: Annotated[First | Second, Field(discriminator="type")]
+
+    validator = PydanticArgumentsValidator(Arguments)
+    action_schema = validator.schema["properties"]["action"]
+    assert "oneOf" in action_schema and "discriminator" not in action_schema
+    assert "discriminator" in validator.schema["properties"]
+    result = validator.validate(
+        json.dumps(
+            {
+                "discriminator": "ordinary property",
+                "action": {"type": "second", "count": 2},
+            }
+        )
+    )
+    assert isinstance(result.action, Second) and result.action.count == 2
+    for action in (
+        {"type": "unknown", "count": 2},
+        {"type": "first", "count": 2},
+        {"type": "second", "count": "2"},
+        {"type": "first", "value": "valid", "extra": True},
+    ):
+        with pytest.raises(ToolArgumentsValidationError):
+            validator.validate(json.dumps({"discriminator": "ordinary property", "action": action}))

@@ -205,6 +205,10 @@ def _normalize_generated_schema(node: Any) -> Any:
     if not isinstance(node, dict):
         return node
     normalized = {key: _normalize_generated_schema(value) for key, value in node.items()}
+    if isinstance(normalized.get("oneOf"), list):
+        # Pydantic's discriminator is dispatch metadata, not a JSON Schema
+        # assertion. Keep oneOf/const branches and typed union validation.
+        normalized.pop("discriminator", None)
     node_type = normalized.get("type")
     if node_type == "string" or (isinstance(node_type, list) and "string" in node_type):
         current = normalized.get("maxLength")

@@ -18,6 +18,7 @@ from morrow.core.computer_use import (
 )
 from morrow.core.execution import EffectClass, ToolExecutionState
 from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
+from morrow.runtime.durable_log import durable_call_id
 from morrow.services.computer_use import ComputerUseRunService
 from morrow.testing import FixedClock
 from test_computer_use_permissions import NOW
@@ -35,7 +36,7 @@ def environment(tmp_path):
         _execution(
             intent=_intent(
                 tool_name="computer_observe",
-                call_id="observe_call",
+                call_id=durable_call_id("observe_call"),
                 ordinal=2,
                 effect_class=EffectClass.BOUNDED_EXTERNAL_READ,
                 requires_approval=False,

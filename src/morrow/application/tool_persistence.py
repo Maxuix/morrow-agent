@@ -309,8 +309,14 @@ class DurableToolExecutionCoordinator:
         disposition: ToolExecutionDisposition | None = None,
     ) -> DurableToolExecution:
         stamp = now or self.clock()
-        final_disposition = disposition or (
-            ToolExecutionDisposition.SUCCEEDED if result.ok else ToolExecutionDisposition.FAILED
+        final_disposition = (
+            ToolExecutionDisposition.UNKNOWN
+            if result.disposition is ToolExecutionDisposition.UNKNOWN
+            else disposition
+            or result.disposition
+            or (
+                ToolExecutionDisposition.SUCCEEDED if result.ok else ToolExecutionDisposition.FAILED
+            )
         )
         for ref in result.visual_refs:
             if (

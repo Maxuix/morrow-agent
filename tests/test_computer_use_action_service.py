@@ -7,6 +7,7 @@ import pytest
 
 from morrow.core.computer_use import ActionOutcome, ClickAction, CoordinateFrame
 from morrow.core.execution import ApprovalResolution, EffectClass, ToolExecutionState
+from morrow.runtime.durable_log import durable_call_id
 from test_computer_use_observer import _application, _service
 from test_computer_use_observer import environment as _observer_environment
 from test_computer_use_permissions import NOW
@@ -115,7 +116,7 @@ def action_ledger(environment, *, approved=True):
     _, journal, _, _, _, original = environment
     intent = _intent(
         tool_name="computer_action",
-        call_id="action_call",
+        call_id=durable_call_id("action_call"),
         ordinal=3,
         effect_class=EffectClass.UNCONFINED_EXTERNAL_EFFECT,
         requires_approval=True,

@@ -341,10 +341,10 @@ def test_targets_observations_and_actions_reject_before_the_device():
     assert port.calls == 0
 
 
-def test_default_startup_does_not_construct_driver_with_observe_contract_available(tmp_path):
+def test_default_startup_does_not_construct_driver_with_computer_contracts_available(tmp_path):
     assert OBSERVATION_TOOL_EXECUTION_PREFIX == TOOL_EXECUTION_ID_PREFIX
     assert "computer_observe" in PRODUCTION_TOOL_NAMES
-    assert "computer_action" not in PRODUCTION_TOOL_NAMES
+    assert "computer_action" in PRODUCTION_TOOL_NAMES
 
     class RejectCua(importlib.abc.MetaPathFinder):
         def find_spec(self, fullname, path, target=None):
