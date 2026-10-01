@@ -7,12 +7,18 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from morrow.core.models import ChatSettings, ProtocolModel
+from morrow.core.runtime_policy import ComputerUseSettings
 
 
 class SettingsRequest(ProtocolModel):
     scope: Literal["session", "workspace", "global"] = "session"
     expected_revision: int = Field(ge=0, strict=True)
     settings: ChatSettings
+
+
+class ComputerSettingsRequest(ProtocolModel):
+    expected_revision: int = Field(ge=0, strict=True)
+    settings: ComputerUseSettings
 
 
 def settings_routes(host, parse):
@@ -41,10 +47,36 @@ def settings_routes(host, parse):
 
         return JSONResponse(await host.execute_command(apply))
 
+    async def computer_settings(request):
+        sid = request.path_params["session_id"]
+
+        def view():
+            c = context(request)
+            c.chat.require_session(sid)
+            effective, _ = c.chat.settings.resolve(sid)
+            return c.chat.computer_settings.view(effective.model)
+
+        if request.method == "GET":
+            return JSONResponse(await host.execute_query(view))
+        body = await parse(request, ComputerSettingsRequest)
+
+        def apply():
+            c = context(request)
+            c.chat.require_session(sid)
+            c.chat.computer_settings.put(body.settings, expected_revision=body.expected_revision)
+            return view()
+
+        return JSONResponse(await host.execute_command(apply))
+
     return [
+        Route(
+            "/v1/workspaces/{workspace_id}/sessions/{session_id}/computer-use/settings",
+            computer_settings,
+            methods=["GET", "POST"],
+        ),
         Route(
             "/v1/workspaces/{workspace_id}/sessions/{session_id}/settings",
             settings,
             methods=["GET", "POST"],
-        )
+        ),
     ]

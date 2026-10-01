@@ -342,8 +342,15 @@ def _attach_chat(context, identity, permission_profile, handle, approval_port):
 
     context.chat.permission_profile = permission_profile or PermissionProfile()
     from morrow.application.chat_settings import ChatSettingsService
+    from morrow.application.computer_settings import ComputerUseSettingsService
     from morrow.core.capabilities import PermissionPreset
 
+    context.chat.computer_settings = ComputerUseSettingsService(
+        context.application,
+        preflight=lambda settings: build_computer_use_lifecycle(
+            context.application, settings
+        ).preflight(),
+    )
     context.chat.settings = ChatSettingsService(
         context.application,
         context.journal,
