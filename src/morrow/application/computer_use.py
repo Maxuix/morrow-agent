@@ -21,6 +21,7 @@ from morrow.core.computer_use import (
     ComputerUseScope,
     ComputerUseSessionPort,
     DiscoverResult,
+    LocalComputerUseCandidates,
     Observation,
     ObservationImageRef,
     ObservedWindow,
@@ -77,9 +78,13 @@ class ComputerUseLifecycle:
             raise ComputerUseContractError("driver_not_activated")
         if request.agent_run_id != request.scope.agent_run_id:
             raise ComputerUseContractError("subject_mismatch")
+        self._activate_owner(request.settings)
+        return await self._owner.open_run_session(request)
+
+    def _activate_owner(self, settings):
         diagnosis = (
-            self._run_diagnostic(request.settings)
-            if request.settings is not None and self._run_diagnostic is not None
+            self._run_diagnostic(settings)
+            if settings is not None and self._run_diagnostic is not None
             else self.preflight()
         )
         if diagnosis.reason not in {"driver_not_activated", "native_unverified"}:
@@ -92,7 +97,16 @@ class ComputerUseLifecycle:
             except Exception:
                 self._failed = True
                 raise ComputerUseContractError("driver_error") from None
-        return await self._owner.open_run_session(request)
+
+    async def discover_local_candidates(self, settings, *, authority) -> LocalComputerUseCandidates:
+        self._bind()
+        reject_untrusted_computer_use_authority(authority)
+        if self._stopping or self._failed:
+            raise ComputerUseContractError("driver_not_activated")
+        if not isinstance(settings, ComputerUseSettings) or not settings.enabled:
+            raise ComputerUseContractError("disabled")
+        self._activate_owner(settings)
+        return await self._owner.discover_local_candidates(settings, authority=authority)
 
     async def close_run_session(self, request: CloseRunSessionRequest) -> None:
         self._bind()

@@ -88,6 +88,12 @@ AgentFactory 校验请求属于该叶子 Session，并拒绝并行只读候选�
 改变。内部 OpenRunSessionRequest 携带这份冻结设置，lifecycle 用其诊断，owner 为新 Session
 应用调用期限与原生 TTL；共享 Driver、租约和 Session-owned ConversationLog 的所有权不变。
 启用开关不创建 grant；关闭配置只影响后续准备，停止/撤销由原权限和运行控制入口负责。
+本地候选读取是独立的显式生命周期入口，使用同一 owner/Driver 与桌面租约，仅读
+list_apps/list_windows，不创建 AgentRun 或 SDK run Session、不捕获 AX/截图。候选编号
+只指向 adapter 内存中保存的 bundle/PID/process birth/window 身份，30 秒到期、刷新或
+shutdown 即失效；本地 DTO 只含应用、清洗标签与编号，不作为模型 target 或授权证据。
+取消/超时沿 NativeCalls quarantine 保留租约，等读取停稳后才允许 shutdown 释放。
+原生验收门槛同样约束候选入口，生产仍 unavailable；候选到运行窗口范围的授权绑定待完成。
 
 ## 文档与验证约定
 

@@ -169,6 +169,35 @@ class ComputerUseAppIdentity(ComputerUseModel):
         return value
 
 
+class LocalComputerUseCandidate(ComputerUseModel):
+    """Local picker display only; native identities remain in the owner registry."""
+
+    candidate_id: str
+    app: ComputerUseAppIdentity
+    display_label: str | None = None
+
+    @field_validator("candidate_id")
+    @classmethod
+    def valid_candidate_id(cls, value: str) -> str:
+        from morrow.core.domain import COMPUTER_CANDIDATE_ID_PREFIX
+
+        return validate_prefixed_id(value, COMPUTER_CANDIDATE_ID_PREFIX)
+
+    @field_validator("display_label")
+    @classmethod
+    def valid_display_label(cls, value: str | None) -> str | None:
+        if value is not None:
+            if len(value) > 120 or not value.strip():
+                raise ValueError("invalid_display_label")
+            refuse_secret_material(value, label="computer use label")
+        return value
+
+
+class LocalComputerUseCandidates(ComputerUseModel):
+    candidates: tuple[LocalComputerUseCandidate, ...] = Field(max_length=MAX_DISCOVERED_TARGETS)
+    expires_at: datetime
+
+
 class ComputerUseScope(ComputerUseModel):
     """Frozen subject, generation, and allowed desktop range."""
 
@@ -1335,6 +1364,10 @@ class ComputerUseLifecyclePort(Protocol):
     def shutdown_pending(self) -> bool: ...
 
     def stop_admission(self) -> None: ...
+
+    async def discover_local_candidates(
+        self, settings: ComputerUseSettings, *, authority: str
+    ) -> LocalComputerUseCandidates: ...
 
     async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession: ...
 

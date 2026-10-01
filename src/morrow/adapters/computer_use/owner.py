@@ -8,15 +8,23 @@ from collections.abc import Callable
 from typing import Any
 
 from morrow.adapters.computer_use.calls import NativeCalls
+from morrow.adapters.computer_use.candidates import LocalCandidateRegistry, LocalWindowIdentity
 from morrow.adapters.computer_use.lease import DesktopLease, FileDesktopLease
 from morrow.adapters.computer_use.process_identity import ProcessBirth, read_process_birth
 from morrow.adapters.computer_use.registry import TrustedDesktopRegistry
 from morrow.adapters.computer_use.sdk_loader import construct_driver
-from morrow.adapters.computer_use.session import TypedComputerSession
+from morrow.adapters.computer_use.session import (
+    TypedComputerSession,
+    _display_label,
+    _window_geometry,
+)
 from morrow.core.computer_use import (
+    MAX_DISCOVERED_TARGETS,
     TRUSTED_COMPUTER_USE_AUTHORITY,
     CloseRunSessionRequest,
+    ComputerUseAppIdentity,
     ComputerUseContractError,
+    LocalComputerUseCandidates,
     OpenRunSessionRequest,
     RunSession,
     reject_untrusted_computer_use_authority,
@@ -59,6 +67,8 @@ class ComputerDriverOwner:
         self._stopping = False
         self._quarantined = False
         self._lifecycle = NativeCalls(self._quarantine, timeout=None)
+        self._candidates = LocalCandidateRegistry(ids, clock)
+        self._candidate_calls: NativeCalls | None = None
 
     def __repr__(self) -> str:
         return (
@@ -81,6 +91,7 @@ class ComputerDriverOwner:
 
     def _quarantine(self) -> None:
         self._quarantined = True
+        self._candidates.clear()
         if self._session is not None:
             self._session.invalidate()
 
@@ -90,6 +101,84 @@ class ComputerDriverOwner:
             raise ComputerUseContractError("driver_not_activated")
         if self._lifecycle.pending:
             raise ComputerUseContractError("desktop_busy")
+
+    async def discover_local_candidates(self, settings, *, authority) -> LocalComputerUseCandidates:
+        """Explicit local read, sharing the same Driver and desktop lease as runs."""
+        self._admit()
+        reject_untrusted_computer_use_authority(authority)
+        if not isinstance(settings, ComputerUseSettings) or not settings.enabled:
+            raise ComputerUseContractError("disabled")
+        if self._session is not None:
+            raise ComputerUseContractError("desktop_busy")
+        self._candidates.clear()
+        self._lease.acquire()
+        self._leased = True
+        self._candidate_calls = NativeCalls(self._quarantine, timeout=settings.max_call_seconds)
+        return await self._lifecycle.run(self._discover_local_candidates)
+
+    async def _discover_local_candidates(self):
+        calls = self._candidate_calls
+        assert calls is not None
+        try:
+            listed = await calls.run(lambda: self._driver.list_apps(self._sdk.ListAppsInput()))
+            apps = getattr(listed, "apps", ()) or ()
+            if len(apps) > MAX_DISCOVERED_TARGETS:
+                raise ComputerUseContractError("target_budget")
+            candidates, seen = [], set()
+            for app in apps:
+                bundle_id, pid = getattr(app, "bundle_id", None), getattr(app, "pid", None)
+                if (
+                    not isinstance(pid, int)
+                    or isinstance(pid, bool)
+                    or not 0 < pid <= 2**31 - 1
+                    or getattr(app, "running", True) is False
+                ):
+                    continue
+                try:
+                    ComputerUseAppIdentity(bundle_id=bundle_id)
+                    birth = self._process_reader(pid)
+                except (ValueError, ComputerUseContractError):
+                    continue
+                windows = await calls.run(
+                    lambda pid=pid: self._driver.list_windows(
+                        self._sdk.ListWindowsInput(pid=pid, on_screen_only=True)
+                    )
+                )
+                if self._process_reader(pid) != birth:
+                    raise ComputerUseContractError("stale_observation")
+                items = getattr(windows, "windows", ()) or ()
+                if len(items) > MAX_DISCOVERED_TARGETS:
+                    raise ComputerUseContractError("target_budget")
+                for window in items:
+                    window_id = getattr(window, "window_id", None)
+                    owner_pid = getattr(window, "pid", None)
+                    if (
+                        not isinstance(window_id, int)
+                        or isinstance(window_id, bool)
+                        or not 0 < window_id <= 2**32 - 1
+                        or owner_pid != pid
+                        or isinstance(owner_pid, bool)
+                        or getattr(window, "minimized", False) is True
+                        or getattr(window, "is_on_screen", True) is False
+                    ):
+                        continue
+                    try:
+                        _window_geometry(window)
+                    except ComputerUseContractError:
+                        continue
+                    identity = LocalWindowIdentity(bundle_id, pid, birth, window_id)
+                    if identity in seen:
+                        continue
+                    seen.add(identity)
+                    candidates.append((identity, _display_label(getattr(window, "title", None))))
+                    if len(candidates) > MAX_DISCOVERED_TARGETS:
+                        raise ComputerUseContractError("target_budget")
+            if self.quarantined or self._stopping or self._closed:
+                raise ComputerUseContractError("driver_not_activated")
+            return self._candidates.publish(candidates)
+        finally:
+            if not self.quarantined and not calls.pending:
+                self._release()
 
     async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession:
         self._admit()
@@ -164,6 +253,7 @@ class ComputerDriverOwner:
     def stop_admission(self) -> None:
         self._check_owner()
         self._stopping = True
+        self._candidates.clear()
         if self._session is not None:
             self._session.invalidate()
 
@@ -179,6 +269,8 @@ class ComputerDriverOwner:
         # Lifecycle operations remain live after cancellation. Wait, never replace.
         self.stop_admission()
         await self._lifecycle.settle()
+        if self._candidate_calls is not None:
+            await self._candidate_calls.settle()
         if self._closed:
             return
         await self._lifecycle.run(self._shutdown, cleanup=True)
