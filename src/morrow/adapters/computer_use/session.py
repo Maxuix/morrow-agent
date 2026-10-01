@@ -91,6 +91,7 @@ class TypedComputerSession:
         call_timeout: float = 15,
         process_reader: Callable[[int], ProcessBirth] = read_process_birth,
         element_safety_probe: Callable[[ElementSafetySubject], bool | None] | None = None,
+        window_bindings: dict | None = None,
     ) -> None:
         self._sdk = sdk
         self._native = native_session
@@ -110,6 +111,7 @@ class TypedComputerSession:
         self._calls = NativeCalls(self.invalidate, timeout=call_timeout)
         self._process_reader = process_reader
         self._element_safety_probe = element_safety_probe
+        self._window_bindings = dict(window_bindings or {})
 
     async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession:
         self._check_owner(bind=True)
@@ -472,7 +474,24 @@ class TypedComputerSession:
         on_screen = getattr(window, "is_on_screen", True) is not False
         if minimized or not on_screen:
             return None
+        selected_identity = None
+        if request.scope.schema_version == 2:
+            for selected in request.scope.windows:
+                native = self._window_bindings.get(selected.window_identity)
+                if (
+                    native is not None
+                    and selected.app.bundle_id == bundle_id
+                    and native.bundle_id == bundle_id
+                    and native.pid == pid
+                    and native.window_id == window_id
+                    and native.process_birth == birth
+                ):
+                    selected_identity = selected.window_identity
+                    break
+            if selected_identity is None:
+                return None
         return self._registry.remember_window(
+            window_identity=selected_identity,
             agent_run_id=request.scope.agent_run_id,
             generation=request.scope.generation,
             bundle_id=bundle_id,

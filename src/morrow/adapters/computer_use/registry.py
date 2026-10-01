@@ -109,6 +109,7 @@ class TrustedDesktopRegistry:
         display_label: str | None,
         process_birth: ProcessBirth,
         geometry: WindowGeometry,
+        window_identity: str | None = None,
     ) -> TargetRef:
         process = self._process(agent_run_id, generation, bundle_id, pid, process_birth)
         key = (agent_run_id, generation, bundle_id, pid, window_id, process_birth)
@@ -117,7 +118,7 @@ class TrustedDesktopRegistry:
             existing = _WindowRecord(
                 target_ref=self._ids.new_id(COMPUTER_TARGET_ID_PREFIX),
                 process_identity=process.process_identity,
-                window_identity=self._ids.new_id(COMPUTER_WINDOW_ID_PREFIX),
+                window_identity=window_identity or self._ids.new_id(COMPUTER_WINDOW_ID_PREFIX),
                 pid=pid,
                 window_id=window_id,
                 bundle_id=bundle_id,

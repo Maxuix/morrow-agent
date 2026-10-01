@@ -108,6 +108,13 @@ class ComputerUseLifecycle:
         self._activate_owner(settings)
         return await self._owner.discover_local_candidates(settings, authority=authority)
 
+    def select_local_candidates(self, candidate_ids, *, authority):
+        self._bind()
+        reject_untrusted_computer_use_authority(authority)
+        if self._stopping or self._failed or self._owner is None:
+            raise ComputerUseContractError("driver_not_activated")
+        return self._owner.select_local_candidates(candidate_ids, authority=authority)
+
     async def close_run_session(self, request: CloseRunSessionRequest) -> None:
         self._bind()
         reject_untrusted_computer_use_authority(request.authority)

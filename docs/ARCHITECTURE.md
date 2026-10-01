@@ -93,7 +93,13 @@ list_apps/list_windows，不创建 AgentRun 或 SDK run Session、不捕获 AX/�
 只指向 adapter 内存中保存的 bundle/PID/process birth/window 身份，30 秒到期、刷新或
 shutdown 即失效；本地 DTO 只含应用、清洗标签与编号，不作为模型 target 或授权证据。
 取消/超时沿 NativeCalls quarantine 保留租约，等读取停稳后才允许 shutdown 释放。
-原生验收门槛同样约束候选入口，生产仍 unavailable；候选到运行窗口范围的授权绑定待完成。
+原生验收门槛同样约束候选入口，生产仍 unavailable。本地候选选择产生 opaque cwin 身份，
+新 window scope v2 将应用与这些窗口身份冻结到既有 grant/snapshot JSON；旧 scope v1
+序列化不增加字段，保持原证据摘要。owner 开启 run 前消费尚未过期的选择并重验 process birth，
+将原生绑定复制给该 Session；discover 只注册选中窗口，Core observe/action 与服务返回目标
+也验证窗口范围。刷新/过期/重用选择在 SDK Session 前拒绝，不扩展到同应用其他窗口。
+CLI/GUI 的明确窗口选择及新入口强制使用 v2 尚待接线；旧 v1 仅保持协议兼容，不能声明
+已经完成首版窗口授权流程。
 
 ## 文档与验证约定
 

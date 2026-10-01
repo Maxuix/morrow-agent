@@ -14,7 +14,14 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Literal, Protocol
 
-from pydantic import Field, TypeAdapter, ValidationError, field_validator, model_validator
+from pydantic import (
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from morrow.core.capabilities import LocalCapabilityModel
 from morrow.core.domain import (
@@ -198,15 +205,28 @@ class LocalComputerUseCandidates(ComputerUseModel):
     expires_at: datetime
 
 
+class ComputerUseWindowIdentity(ComputerUseModel):
+    """Opaque selected window identity; native process facts stay in the adapter."""
+
+    app: ComputerUseAppIdentity
+    window_identity: str
+
+    @field_validator("window_identity")
+    @classmethod
+    def valid_window(cls, value: str) -> str:
+        return validate_prefixed_id(value, COMPUTER_WINDOW_ID_PREFIX)
+
+
 class ComputerUseScope(ComputerUseModel):
     """Frozen subject, generation, and allowed desktop range."""
 
-    schema_version: Literal[1] = COMPUTER_USE_SCOPE_SCHEMA_VERSION
+    schema_version: Literal[1, 2] = COMPUTER_USE_SCOPE_SCHEMA_VERSION
     generation: int = Field(ge=1)
     workspace_id: str
     task_run_id: str
     agent_run_id: str
     apps: tuple[ComputerUseAppIdentity, ...]
+    windows: tuple[ComputerUseWindowIdentity, ...] = ()
     window_boundary: ComputerUseWindowBoundary
     operations: tuple[ComputerUseOperation, ...]
     delivery: ComputerUseDelivery
@@ -227,7 +247,7 @@ class ComputerUseScope(ComputerUseModel):
     def valid_agent_run(cls, value: str) -> str:
         return validate_prefixed_id(value, AGENT_RUN_ID_PREFIX)
 
-    @field_validator("apps", "operations", mode="before")
+    @field_validator("apps", "operations", "windows", mode="before")
     @classmethod
     def tuples(cls, value: object) -> object:
         return _as_tuple(value)
@@ -284,12 +304,33 @@ class ComputerUseScope(ComputerUseModel):
             return ComputerUseImageShare(value)
         return value
 
+    @model_serializer(mode="wrap")
+    def serialize_scope(self, handler):
+        payload = handler(self)
+        if self.schema_version == 1:
+            # Preserve existing scope JSON and permission digests byte-for-byte.
+            payload.pop("windows", None)
+        return payload
+
     @model_validator(mode="after")
     def enforce_range(self) -> ComputerUseScope:
         if not 1 <= len(self.apps) <= MAX_APPS:
             raise ValueError("app_bounds")
         if len({item.bundle_id for item in self.apps}) != len(self.apps):
             raise ValueError("duplicate_app")
+        if self.schema_version == 1 and self.windows:
+            raise ValueError("legacy_window_scope")
+        if self.schema_version == 2:
+            if (
+                not 1 <= len(self.windows) <= MAX_DISCOVERED_TARGETS
+                or self.window_boundary is not ComputerUseWindowBoundary.WINDOW
+                or {item.app.bundle_id for item in self.windows}
+                != {item.bundle_id for item in self.apps}
+                or len({item.window_identity for item in self.windows}) != len(self.windows)
+            ):
+                raise ValueError("invalid_window_scope")
+            if tuple(sorted(self.windows, key=lambda item: item.window_identity)) != self.windows:
+                raise ValueError("noncanonical_window_scope")
         if not self.operations:
             raise ValueError("empty_operations")
         if (
@@ -1044,6 +1085,11 @@ def prepare_execute_request(
         raise ComputerUseContractError("subject_mismatch")
     if target.app.bundle_id not in {item.bundle_id for item in scope.apps}:
         raise ComputerUseContractError("app_not_granted")
+    if scope.schema_version == 2 and not any(
+        item.app == target.app and item.window_identity == target.window_identity
+        for item in scope.windows
+    ):
+        raise ComputerUseContractError("window_not_granted")
     if observation.bundle_id != target.app.bundle_id:
         raise ComputerUseContractError("app_not_granted")
     if (
@@ -1237,6 +1283,11 @@ def observe_window_if_admitted(
         raise ComputerUseContractError("stale_observation")
     if request.target.app.bundle_id not in {item.bundle_id for item in request.scope.apps}:
         raise ComputerUseContractError("app_not_granted")
+    if request.scope.schema_version == 2 and not any(
+        item.app == request.target.app and item.window_identity == request.target.window_identity
+        for item in request.scope.windows
+    ):
+        raise ComputerUseContractError("window_not_granted")
     if ComputerUseOperation.OBSERVE not in request.scope.operations:
         raise ComputerUseContractError("operation_not_granted")
     if request.delivery is not request.scope.delivery:
@@ -1368,6 +1419,10 @@ class ComputerUseLifecyclePort(Protocol):
     async def discover_local_candidates(
         self, settings: ComputerUseSettings, *, authority: str
     ) -> LocalComputerUseCandidates: ...
+
+    def select_local_candidates(
+        self, candidate_ids: tuple[str, ...], *, authority: str
+    ) -> tuple[ComputerUseWindowIdentity, ...]: ...
 
     async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession: ...
 

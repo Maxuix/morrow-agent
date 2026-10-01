@@ -7,13 +7,15 @@ from datetime import timedelta
 
 from morrow.adapters.computer_use.process_identity import ProcessBirth
 from morrow.core.computer_use import (
+    MAX_DISCOVERED_TARGETS,
     MAX_OBSERVATION_AGE_SECONDS,
     ComputerUseAppIdentity,
     ComputerUseContractError,
+    ComputerUseWindowIdentity,
     LocalComputerUseCandidate,
     LocalComputerUseCandidates,
 )
-from morrow.core.domain import COMPUTER_CANDIDATE_ID_PREFIX
+from morrow.core.domain import COMPUTER_CANDIDATE_ID_PREFIX, COMPUTER_WINDOW_ID_PREFIX
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -31,6 +33,7 @@ class LocalCandidateRegistry:
     def __init__(self, ids, clock):
         self._ids, self._clock = ids, clock
         self._windows = {}
+        self._selected = {}
         self._expires_at = None
 
     def __repr__(self):
@@ -38,6 +41,7 @@ class LocalCandidateRegistry:
 
     def clear(self):
         self._windows.clear()
+        self._selected.clear()
         self._expires_at = None
 
     def publish(self, windows):
@@ -64,3 +68,42 @@ class LocalCandidateRegistry:
         if identity is None:
             raise ComputerUseContractError("unknown_target")
         return identity
+
+    def select(self, candidate_ids):
+        if (
+            not isinstance(candidate_ids, tuple)
+            or not 1 <= len(candidate_ids) <= MAX_DISCOVERED_TARGETS
+            or any(not isinstance(item, str) for item in candidate_ids)
+            or len(set(candidate_ids)) != len(candidate_ids)
+        ):
+            raise ComputerUseContractError("rejected_action")
+        identities = [self.resolve(candidate_id) for candidate_id in candidate_ids]
+        if len(self._selected) + len(identities) > MAX_DISCOVERED_TARGETS:
+            raise ComputerUseContractError("target_budget")
+        selected = []
+        for identity in identities:
+            window_id = self._ids.new_id(COMPUTER_WINDOW_ID_PREFIX)
+            self._selected[window_id] = identity
+            selected.append(
+                ComputerUseWindowIdentity(
+                    app=ComputerUseAppIdentity(bundle_id=identity.bundle_id),
+                    window_identity=window_id,
+                )
+            )
+        return tuple(sorted(selected, key=lambda item: item.window_identity))
+
+    def take_bindings(self, windows, process_reader):
+        if self._expires_at is None or self._clock.now() >= self._expires_at:
+            self.clear()
+            raise ComputerUseContractError("stale_observation")
+        bindings = {}
+        for window in windows:
+            identity = self._selected.get(window.window_identity)
+            if identity is None or window.app.bundle_id != identity.bundle_id:
+                raise ComputerUseContractError("unknown_target")
+            if process_reader(identity.pid) != identity.process_birth:
+                raise ComputerUseContractError("stale_observation")
+            bindings[window.window_identity] = identity
+        for window_id in bindings:
+            self._selected.pop(window_id)
+        return bindings

@@ -160,6 +160,14 @@ class ComputerUseRunService:
                     or target.app.bundle_id not in allowed
                     or (bundle_id is not None and target.app.bundle_id != bundle_id)
                     or target.target_ref in targets
+                    or (
+                        self.scope.schema_version == 2
+                        and not any(
+                            item.app == target.app
+                            and item.window_identity == target.window_identity
+                            for item in self.scope.windows
+                        )
+                    )
                 ):
                     raise ComputerUseContractError("subject_mismatch")
                 targets[target.target_ref] = target

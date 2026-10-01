@@ -15,6 +15,7 @@ from morrow.core.computer_use import (
     ComputerUseOperation,
     ComputerUseScope,
     ComputerUseWindowBoundary,
+    ComputerUseWindowIdentity,
 )
 
 
@@ -23,6 +24,7 @@ class ComputerUseSelection(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
     apps: tuple[ComputerUseAppIdentity, ...] = Field(min_length=1, max_length=MAX_APPS)
+    windows: tuple[ComputerUseWindowIdentity, ...] = Field(default=(), max_length=100)
     operations: tuple[ComputerUseOperation, ...] = (
         ComputerUseOperation.OBSERVE,
         ComputerUseOperation.ACTION,
@@ -36,6 +38,14 @@ class ComputerUseSelection(BaseModel):
             len({app.bundle_id for app in self.apps}) != len(self.apps)
             or len(set(self.operations)) != len(self.operations)
             or ComputerUseOperation.OBSERVE not in self.operations
+            or (
+                self.windows
+                and (
+                    {item.app.bundle_id for item in self.windows}
+                    != {app.bundle_id for app in self.apps}
+                    or len({item.window_identity for item in self.windows}) != len(self.windows)
+                )
+            )
         ):
             raise ValueError("invalid_selection")
         return self
@@ -46,7 +56,9 @@ class ComputerUseSelection(BaseModel):
             task_run_id=task_run_id,
             agent_run_id=agent_run_id,
             generation=generation,
+            schema_version=2 if self.windows else 1,
             apps=self.apps,
+            windows=tuple(sorted(self.windows, key=lambda item: item.window_identity)),
             operations=self.operations,
             window_boundary=ComputerUseWindowBoundary.WINDOW,
             delivery=self.delivery,

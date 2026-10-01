@@ -39,6 +39,7 @@ from morrow.core.computer_use import (
     ComputerUseOperation,
     ComputerUseScope,
     ComputerUseWindowBoundary,
+    ComputerUseWindowIdentity,
 )
 from morrow.core.domain import (
     AgentRunSnapshot,
@@ -382,8 +383,22 @@ def test_create_grant_rejects_disabled_wrong_digest_and_a_second_grant(tmp_path)
         handle.close()
 
 
-def test_computer_grant_roundtrip_isolation_and_revocation(tmp_path):
+@pytest.mark.parametrize("scope_version", [1, 2])
+def test_computer_grant_roundtrip_isolation_and_revocation(tmp_path, scope_version):
     _store, handle, journal, api = _open(tmp_path)
+    scope = (
+        _scope()
+        if scope_version == 1
+        else _scope(
+            schema_version=2,
+            windows=(
+                ComputerUseWindowIdentity(
+                    app=ComputerUseAppIdentity(bundle_id="com.example.Notes"),
+                    window_identity="cwin_selected",
+                ),
+            ),
+        )
+    )
     try:
         created = api.create_grant(
             task_run_id="task_1",
@@ -393,12 +408,13 @@ def test_computer_grant_roundtrip_isolation_and_revocation(tmp_path):
             preview_digest=COMPUTER_USE_HOST_WARNING_DIGEST,
             command_id="cmd_computer",
             computer_use_enabled=True,
-            computer_use_scope=_scope(),
+            computer_use_scope=scope,
         )
         raw = handle.run_read(
             lambda executor: executor.execute("SELECT capabilities_json FROM capability_grants")
         )
         assert '"computer_use_host"' in raw[0][0]
+        assert ('"windows"' in raw[0][0]) is (scope_version == 2)
         session = Session(
             session_id="ses_1",
             permission_profile=PermissionProfile.from_preset(PermissionPreset.FULL_ACCESS_MANUAL),

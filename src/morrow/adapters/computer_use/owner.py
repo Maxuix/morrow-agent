@@ -180,6 +180,13 @@ class ComputerDriverOwner:
             if not self.quarantined and not calls.pending:
                 self._release()
 
+    def select_local_candidates(self, candidate_ids, *, authority):
+        self._admit()
+        reject_untrusted_computer_use_authority(authority)
+        if self._session is not None:
+            raise ComputerUseContractError("desktop_busy")
+        return self._candidates.select(candidate_ids)
+
     async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession:
         self._admit()
         reject_untrusted_computer_use_authority(request.authority)
@@ -191,9 +198,19 @@ class ComputerDriverOwner:
             raise ComputerUseContractError("stale_observation")
         self._lease.acquire()
         self._leased = True
-        return await self._lifecycle.run(lambda: self._open(request))
+        try:
+            bindings = (
+                self._candidates.take_bindings(request.scope.windows, self._process_reader)
+                if request.scope.schema_version == 2
+                else {}
+            )
+        except Exception:
+            # Local selection failure preceded SDK admission; retry can select afresh.
+            self._release()
+            raise
+        return await self._lifecycle.run(lambda: self._open(request, bindings))
 
-    async def _open(self, request: OpenRunSessionRequest) -> RunSession:
+    async def _open(self, request: OpenRunSessionRequest, bindings) -> RunSession:
         try:
             name = self._ids.new_id(COMPUTER_RUN_ID_PREFIX)
             native = (
@@ -214,6 +231,7 @@ class ComputerDriverOwner:
                     else self._call_timeout
                 ),
                 process_reader=self._process_reader,
+                window_bindings=bindings,
             )
             self._run = await self._session.open_run_session(request)
             self._generations[request.agent_run_id] = request.scope.generation
