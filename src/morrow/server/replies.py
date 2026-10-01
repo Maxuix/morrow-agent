@@ -6,7 +6,9 @@ from dataclasses import dataclass, field
 from uuid import uuid4
 
 from morrow.application.chat_timeline import MAX_TOOL_FACTS, reply_id
+from morrow.application.computer_activity import computer_activity_projection
 from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.computer_use import COMPUTER_TOOL_NAMES
 from morrow.core.models import utc_now
 
 from .activities import (
@@ -235,6 +237,22 @@ class ReplyStreams:
             validation_path=fact.get("validation_path"),
             tool_execution_id=fact.get("tool_execution_id"),
         )
+        if (
+            item is not None
+            and fact.get("tool_execution_id")
+            and fact.get("tool_name") in COMPUTER_TOOL_NAMES
+        ):
+            projection = computer_activity_projection(
+                self.journal,
+                self.workspace_id,
+                fact["tool_execution_id"],
+                item["identity"]["source_session_id"],
+                sid,
+            )
+            if "computer" in projection:
+                item["payload"]["computer"] = projection["computer"]
+            if "preview_ref" in projection:
+                item["preview_ref"] = projection["preview_ref"]
         # Identity first, content follows: clients migrate the prepared item
         # and its cached content before the stable-id upsert lands. The local
         # stream entries migrate the same way so no abandoned prepared row
@@ -491,7 +509,32 @@ class ReplyStreams:
             target = None
             ended = None
             try:
-                if isinstance(run_id, str) and run_id:
+                execution_id = identity.get("tool_execution_id")
+                if item.get("kind") == "tool" and isinstance(execution_id, str):
+                    execution = self.journal.get_execution(self.workspace_id, execution_id)
+                    if (
+                        execution is not None
+                        and execution.state.value == "closed"
+                        and (
+                            execution.session_id == identity.get("source_session_id")
+                            and execution.agent_run_id == identity.get("agent_run_id")
+                        )
+                    ):
+                        target = self.manager.timeline._activity_state(
+                            execution.state.value, execution.disposition.value
+                        )
+                        ended = execution.closed_at.isoformat() if execution.closed_at else None
+                        projection = computer_activity_projection(
+                            self.journal, self.workspace_id, execution_id, execution.session_id, sid
+                        )
+                        if "computer" in projection:
+                            item = {
+                                **item,
+                                "payload": {**item["payload"], "computer": projection["computer"]},
+                            }
+                        if "preview_ref" in projection:
+                            item = {**item, "preview_ref": projection["preview_ref"]}
+                elif isinstance(run_id, str) and run_id:
                     run = self.journal.workflows.get_run(self.workspace_id, run_id)
                     if run is not None and run.status.terminal:
                         target = self._RUN_TERMINAL_ACTIVITY.get(run.status.value, "failed")

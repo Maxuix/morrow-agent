@@ -145,6 +145,20 @@ export function ToolDetail({item, content, client}: {item: ActivityItem; content
       {failed && payload?.error_code && <><dt>错误码</dt><dd>{payload.error_code}</dd></>}
       {failed && payload?.validation_reason && <><dt>校验原因</dt><dd>{payload.validation_reason}</dd></>}
       {failed && payload?.validation_path && <><dt>字段位置</dt><dd>{payload.validation_path}</dd></>}
+      {payload?.computer && <>
+        <dt>桌面步骤</dt><dd>{{discover: '发现窗口', observe: '观察窗口', action: '操作窗口'}[payload.computer.operation]}</dd>
+        {payload.computer.target_label && <><dt>目标窗口</dt><dd>{payload.computer.target_label}</dd></>}
+        {payload.computer.bundle_id && <><dt>应用</dt><dd>{payload.computer.bundle_id}</dd></>}
+        {payload.computer.target_count !== null && <><dt>窗口数</dt><dd>{payload.computer.target_count}</dd></>}
+        {payload.computer.action && <><dt>动作类型</dt><dd>{{click: '点击', type_text: '输入文本（内容隐藏）', press_key: '按键', hotkey: '组合键', scroll: '滚动'}[payload.computer.action]}</dd></>}
+        {payload.computer.operation === 'action' && <>
+          <dt>实际投递</dt><dd>{payload.computer.delivery === 'foreground' ? '前台' : payload.computer.delivery === 'background' ? '后台' : '未记录实际投递方式'}</dd>
+          <dt>原生动作</dt><dd>{payload.computer.completion ? {not_started: '未投递', completed: '已返回', unknown: '效果未知'}[payload.computer.completion] : '未记录完成状态'}</dd>
+          <dt>后置验证</dt><dd>{payload.computer.postcondition ? {not_checked: '未验证', passed: '验证通过', failed: '验证失败'}[payload.computer.postcondition] : '未记录验证结果'}</dd>
+        </>}
+        {payload.computer.error_code && <><dt>桌面错误码</dt><dd>{payload.computer.error_code}</dd></>}
+        {payload.computer.observation_error && <><dt>后置观察</dt><dd>不可用（{payload.computer.observation_error}）；已投递动作不要自动重试。</dd></>}
+      </>}
       {item.safe_summary && <><dt>摘要</dt><dd>{item.safe_summary}</dd></>}
     </dl>
     {item.state === 'unknown' && payload?.tool_name === 'computer_action' && <p className="exec-note" role="alert">

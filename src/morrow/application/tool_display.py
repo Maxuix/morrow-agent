@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 
+from morrow.core.capabilities import ComputerToolFact
 from morrow.core.models import sanitize_text
 
 _TITLE_TARGET_MAX_CHARS = 160
@@ -68,6 +69,11 @@ def format_tool_display(
     facts: tuple = (),
 ) -> tuple[str, str | None]:
     """Return (safe_title, safe_summary) for one tool observation."""
+    computer = next((fact.evidence for fact in facts if isinstance(fact, ComputerToolFact)), None)
+    if computer is not None:
+        label = computer.target_label or computer.bundle_id
+        title = f"{tool_name} {label}" if label else tool_name
+        return title[:200], None
     target = _projected_target(arguments_json)
     paths = _fact_paths(facts)
     if not target and paths:

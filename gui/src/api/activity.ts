@@ -64,6 +64,19 @@ export interface ModelActivityPayload {
   attempt_ordinal?: number | null
   reasoning_capability?: ThinkingCapability | null
 }
+export interface ComputerActivityEvidence {
+  operation: 'discover' | 'observe' | 'action'
+  action: 'click' | 'type_text' | 'press_key' | 'hotkey' | 'scroll' | null
+  target_label: string | null
+  bundle_id: string | null
+  target_count: number | null
+  delivery: 'foreground' | 'background' | null
+  completion: 'not_started' | 'completed' | 'unknown' | null
+  postcondition: 'not_checked' | 'passed' | 'failed' | null
+  error_code: string | null
+  observation_error: string | null
+}
+
 export interface ToolActivityPayload {
   kind: 'tool'
   tool_name: string
@@ -72,6 +85,7 @@ export interface ToolActivityPayload {
   ordinal?: number | null
   total?: number | null
   exit_code?: number | null
+  computer?: ComputerActivityEvidence | null
   /** Value-free failure diagnostics; absent on success or records without one. */
   error_code?: string | null
   validation_reason?: string | null

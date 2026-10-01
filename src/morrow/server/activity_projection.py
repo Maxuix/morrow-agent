@@ -20,7 +20,7 @@ from morrow.core.activity import (
     prepared_tool_activity_id,
     stable_tool_activity_id,
 )
-from morrow.core.capabilities import CommandToolFact
+from morrow.core.capabilities import CommandToolFact, ComputerToolFact
 from morrow.core.models import utc_now
 
 _MODEL_STAGES = {
@@ -234,6 +234,11 @@ class SessionActivityProjector:
                 else previous_payload.get("exit_code")
             ),
         }
+        computer = next(
+            (fact.evidence for fact in facts if isinstance(fact, ComputerToolFact)), None
+        )
+        if computer is not None:
+            payload["computer"] = computer.model_dump(mode="json")
         # Terminal failure diagnostics are value-free, bounded and display-safe;
         # they ride the payload so refresh recovery can rebuild the same view.
         for key, value in (

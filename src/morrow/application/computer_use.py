@@ -231,6 +231,11 @@ class ComputerUseObservationService:
         assert self._run is not None
         return self._run
 
+    def display_target(self, observation_id, context):
+        """Safe label for the current published observation; never refreshes the device."""
+        self.execution_for_context(context, tool_name=context.tool_name)
+        return self._run.action_preview_target(observation_id) if self._run else None
+
     def action_preview(self, observation_id, action, context) -> tuple[str, ...]:
         """Local approval copy from this run's frozen scope and published target only."""
         run = self._journal.get_agent_run(self._scope.workspace_id, self._scope.agent_run_id)

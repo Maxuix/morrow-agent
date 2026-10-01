@@ -208,6 +208,22 @@ async def test_http_control_retains_native_lease_until_effect_settles(tmp_path, 
         assert action.state is ToolExecutionState.CLOSED
         assert action.disposition is ToolExecutionDisposition.UNKNOWN
         assert not action.result_envelope.visual_refs
+        assert action.facts.computer.completion == "unknown"
+        assert action.facts.computer.delivery is None
+        snapshot = (await fx.client.get(path + "/snapshot?activity_schema=1")).json()
+        activity = next(
+            item
+            for item in snapshot["activities"]
+            if item["payload"].get("tool_name") == "computer_action"
+        )
+        assert activity["state"] == "unknown"
+        assert activity["payload"]["computer"]["completion"] == "unknown"
+        assert activity["payload"]["computer"]["delivery"] is None
+        recovered = await fx.on_core(lambda: fx.host.context.chat.timeline.tool_activities(sid))
+        recovered_action = next(
+            item for item in recovered["items"] if item["payload"]["tool_name"] == "computer_action"
+        )
+        assert recovered_action["payload"]["computer"] == activity["payload"]["computer"]
         assert [name for name, _ in resources["driver"].calls].count("click") == 1
         assert [name for name, _ in resources["driver"].calls].count("end_session") == 1
         assert (await fx.client.get(path + "/interactions/desktop.control")).json()["receipt"][

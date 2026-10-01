@@ -303,6 +303,8 @@ async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_pa
             expected_images.append(expected_images[-1])
         assert prepared.provider.image_pixels == expected_images
         assert lifecycle.calls == ["open", "close"]
+        if status == "completed":
+            assert products.session.latest_metrics.approval_requests == 1
         assert len(lifecycle.device.actions) == int(
             status not in {"revoked", "revoked_before_intent"}
         )
@@ -343,6 +345,33 @@ async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_pa
             else next(row for row in executions if row.tool_name == "computer_action")
         )
         assert action.state is ToolExecutionState.CLOSED
+        if status not in {"revoked", "revoked_before_intent"}:
+            evidence = action.facts.computer
+            assert evidence.action == "click"
+            assert evidence.bundle_id == "com.example.Controlled"
+            assert evidence.delivery == "foreground"
+            assert evidence.completion == ("unknown" if status == "unknown" else "completed")
+            assert evidence.postcondition == "not_checked"
+            assert evidence.observation_error == (
+                "image_missing" if status == "image_failed" else None
+            )
+            from types import SimpleNamespace
+
+            from morrow.application.chat_timeline import TimelineService
+
+            timeline = TimelineService(
+                SimpleNamespace(require_session=products.api.get_session),
+                factory.journal,
+                factory.workspace_id,
+            )
+            items = timeline.tool_activities(products.session.session_id)["items"]
+            activity = next(
+                item
+                for item in items
+                if item["identity"]["tool_execution_id"] == action.tool_execution_id
+            )
+            assert activity["payload"]["computer"] == evidence.model_dump(mode="json")
+            assert bool(activity["preview_ref"]) == (status != "image_failed")
         assert action.disposition is (
             ToolExecutionDisposition.UNKNOWN
             if status == "unknown"

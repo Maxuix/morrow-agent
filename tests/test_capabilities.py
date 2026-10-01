@@ -174,3 +174,39 @@ def test_local_capabilities_do_not_appear_in_provider_tool_definition():
     assert "PermissionProfile" not in str(serialized)
     assert "PolicyDecision" not in str(serialized)
     assert "ToolFact" not in str(serialized)
+
+
+def test_desktop_fact_counts_its_approval_once_without_marking_later_reads_as_approvals():
+    from morrow.core.capabilities import (
+        ComputerToolEvidence,
+        ComputerToolFact,
+        PolicyVerdict,
+        ToolRunContext,
+    )
+
+    context = ToolRunContext(run_id="run1", session_id="session1")
+    fact = ComputerToolFact(
+        call_id="action1",
+        tool_name="computer_action",
+        ordinal=1,
+        approval_verdict=PolicyVerdict.REQUIRE_APPROVAL,
+        evidence=ComputerToolEvidence(operation="action", action="click", completion="completed"),
+    )
+    context.record((fact,))
+    context.note_tool_outcome(ok=True)
+    context.record((fact,))  # Multiple facts from one call still represent one approval.
+    context.note_tool_outcome(ok=True)
+    context.note_tool_outcome(ok=False, error_code="needs_approval")
+    metrics = context.metrics("stop")
+    assert metrics.approval_requests == 2
+    assert metrics.approval_rejections == 0
+
+
+@pytest.mark.parametrize("field", ["text", "element_ref", "pid", "window_id", "data_base64"])
+def test_desktop_display_evidence_rejects_input_content_and_native_identity(field):
+    from morrow.core.capabilities import ComputerToolEvidence
+
+    with pytest.raises(ValueError):
+        ComputerToolEvidence.model_validate({"operation": "action", field: "private-content"})
+    with pytest.raises(ValueError):
+        ComputerToolEvidence(operation="observe", completion="completed")

@@ -2,7 +2,8 @@
 
 These values deliberately live outside the Provider message models.  They describe
 what Morrow may do locally; they are never serialized into a ToolDefinition,
-conversation message, public event, or model request.
+conversation message or model request. Bounded computer evidence may be projected
+into the local Activity view; local fact headers remain private.
 """
 
 from __future__ import annotations
@@ -226,6 +227,47 @@ class ToolFactHeader(LocalCapabilityModel):
         return tuple(_clean_relative_path(value) for value in values)
 
 
+class ComputerToolEvidence(LocalCapabilityModel):
+    """Bounded desktop result facts; no text inputs, AX trees or native identities."""
+
+    operation: Literal["discover", "observe", "action"]
+    action: Literal["click", "type_text", "press_key", "hotkey", "scroll"] | None = None
+    target_label: str | None = Field(default=None, max_length=160)
+    bundle_id: str | None = Field(default=None, max_length=255)
+    target_count: int | None = Field(default=None, ge=0, le=100)
+    delivery: Literal["foreground", "background"] | None = None
+    completion: Literal["not_started", "completed", "unknown"] | None = None
+    postcondition: Literal["not_checked", "passed", "failed"] | None = None
+    error_code: str | None = Field(default=None, max_length=64)
+    observation_error: str | None = Field(default=None, max_length=64)
+
+    @field_validator("target_label")
+    @classmethod
+    def clean_display(cls, value: str | None) -> str | None:
+        return _clean_preview_line(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def separate_observation_and_action(self):
+        if self.operation != "action" and any(
+            value is not None
+            for value in (self.action, self.delivery, self.completion, self.postcondition)
+        ):
+            raise ValueError("observation facts cannot assert action effects")
+        if self.operation == "action" and self.target_count is not None:
+            raise ValueError("action facts cannot assert discovery counts")
+        return self
+
+    @field_validator("error_code", "observation_error")
+    @classmethod
+    def clean_reason(cls, value: str | None) -> str | None:
+        return _clean_code(value, field_name="desktop reason") if value is not None else None
+
+
+class ComputerToolFact(ToolFactHeader):
+    kind: Literal["computer"] = "computer"
+    evidence: ComputerToolEvidence
+
+
 class ChangeToolFact(ToolFactHeader):
     kind: Literal["change"] = "change"
     operation: str = Field(min_length=1, max_length=32)
@@ -338,7 +380,7 @@ class GitToolFact(ToolFactHeader):
 
 
 ToolFact = Annotated[
-    ChangeToolFact | CommandToolFact | ValidationFact | GitToolFact,
+    ChangeToolFact | CommandToolFact | ValidationFact | GitToolFact | ComputerToolFact,
     Field(discriminator="kind"),
 ]
 
@@ -422,7 +464,10 @@ class ToolRunContext:
 
     def record(self, facts: Iterable[ToolFact]) -> None:
         for fact in facts:
-            if not isinstance(fact, (ChangeToolFact, CommandToolFact, ValidationFact, GitToolFact)):
+            if not isinstance(
+                fact,
+                (ChangeToolFact, CommandToolFact, ValidationFact, GitToolFact, ComputerToolFact),
+            ):
                 raise TypeError("ToolRunContext accepts only validated ToolFact values")
             self._facts.append(fact)
 
@@ -449,8 +494,6 @@ class ToolRunContext:
             self._approval_requests += 1
             if code == "approval_rejected":
                 self._approval_rejections += 1
-        elif any(fact.approval_verdict is PolicyVerdict.REQUIRE_APPROVAL for fact in self._facts):
-            self._approval_requests += 1
         if code == "timeout":
             self._timeout_count += 1
         if code == "cancelled":
@@ -483,8 +526,12 @@ class ToolRunContext:
             if isinstance(fact, ChangeToolFact)
             for path in fact.relative_paths
         }
-        approval_facts = sum(
-            fact.approval_verdict is PolicyVerdict.REQUIRE_APPROVAL for fact in self._facts
+        approval_facts = len(
+            {
+                (fact.call_id, fact.tool_name)
+                for fact in self._facts
+                if fact.approval_verdict is PolicyVerdict.REQUIRE_APPROVAL
+            }
         )
         return RunMetricsSnapshot(
             run_id=self.run_id,
@@ -555,7 +602,10 @@ class ToolHandlerOutcome:
             raise ValueError("ToolHandlerOutcome completion must be a bounded status")
         facts = tuple(self.facts)
         if any(
-            not isinstance(fact, (ChangeToolFact, CommandToolFact, ValidationFact, GitToolFact))
+            not isinstance(
+                fact,
+                (ChangeToolFact, CommandToolFact, ValidationFact, GitToolFact, ComputerToolFact),
+            )
             for fact in facts
         ):
             raise TypeError("ToolHandlerOutcome facts must be validated ToolFact values")

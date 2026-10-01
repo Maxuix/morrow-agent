@@ -13,7 +13,12 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from morrow.core.capabilities import AccessScope, PolicyVerdict, ProcessIsolation
+from morrow.core.capabilities import (
+    AccessScope,
+    ComputerToolEvidence,
+    PolicyVerdict,
+    ProcessIsolation,
+)
 from morrow.core.computer_use import (
     COMPUTER_ACTION_TOOL,
     COMPUTER_OBSERVE_TOOL,
@@ -475,6 +480,7 @@ class DurableToolFacts(ProtocolModel):
     metadata gap when no command facts are present.
     """
 
+    computer: ComputerToolEvidence | None = None
     commands: tuple[DurableCommandFacts, ...] = ()
     files: tuple[FileMutationEvidence, ...] = ()
     config: ConfigMutationEvidence | None = None

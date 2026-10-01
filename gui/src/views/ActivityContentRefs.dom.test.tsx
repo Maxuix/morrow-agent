@@ -127,4 +127,28 @@ describe('activity content refs (3c)', () => {
     expect(fetchBlob).toHaveBeenCalledWith('/v1/workspaces/ws/sessions/s/artifacts/art_1/content?raw=1')
   })
 
+  it('separates native completion, actual delivery and failed postconditions from task completion', () => {
+    const desktop = toolItem({safe_title: 'computer_action Controlled notes', payload: {
+      kind: 'tool', tool_name: 'computer_action', tool_execution_id: 'tex_1', computer: {
+        operation: 'action', action: 'type_text', target_label: 'Controlled notes', bundle_id: 'com.example.Notes',
+        target_count: null, delivery: 'background', completion: 'completed', postcondition: 'failed',
+        error_code: 'verification_failed', observation_error: 'image_publish_failed',
+      },
+    }})
+    act(() => root.render(<ToolRow item={desktop} now={BASE} open={true} onToggle={() => {}}/>))
+    expect(screen.getByText('后台')).toBeDefined()
+    expect(screen.getByText('已返回')).toBeDefined()
+    expect(screen.getByText('验证失败')).toBeDefined()
+    expect(screen.getByText('输入文本（内容隐藏）')).toBeDefined()
+    expect(screen.getByText(/image_publish_failed/).textContent).toContain('不要自动重试')
+    expect(container.textContent).not.toContain('任务已完成')
+    if (desktop.payload.kind !== 'tool') throw new Error('expected tool fixture')
+    const payload = desktop.payload
+    act(() => root.render(<ToolRow item={{...desktop, state: 'unknown', payload: {
+      ...payload, computer: {...payload.computer!, completion: 'unknown', delivery: null, postcondition: 'not_checked'},
+    }}} now={BASE} open={true} onToggle={() => {}}/>))
+    expect(screen.getByText('未记录实际投递方式')).toBeDefined()
+    expect(screen.getByText('未验证')).toBeDefined()
+  })
+
 })

@@ -2,8 +2,10 @@
 
 from datetime import UTC, datetime
 
+from morrow.application.computer_activity import computer_activity_projection
 from morrow.core.activity import TERMINAL_ACTIVITY_STATES, stable_tool_activity_id
 from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.computer_use import COMPUTER_TOOL_NAMES
 
 MAX_TOOL_FACTS = 128
 
@@ -94,6 +96,22 @@ class TimelineService:
             stored_error_code = fact.get("error_code") or validation.get("error_code")
             if isinstance(stored_error_code, str) and stored_error_code:
                 payload["error_code"] = stored_error_code
+            computer = (
+                computer_activity_projection(
+                    self.journal,
+                    self.workspace_id,
+                    fact["tool_execution_id"],
+                    session_id,
+                    session_id,
+                )
+                if fact["tool_name"] in COMPUTER_TOOL_NAMES
+                else {}
+            )
+            if "computer" in computer:
+                payload["computer"] = computer["computer"]
+            evidence = computer.get("computer") or {}
+            target = evidence.get("target_label") or evidence.get("bundle_id")
+            title = f"{fact['tool_name']} {target}" if target else fact["tool_name"]
             items.append(
                 {
                     "schema_version": 1,
@@ -116,9 +134,9 @@ class TimelineService:
                     "updated_at": ended or started,
                     "ended_at": ended,
                     "last_activity_at": None,
-                    "safe_title": fact["tool_name"],
+                    "safe_title": title[:200],
                     "safe_summary": None,
-                    "preview_ref": None,
+                    "preview_ref": computer.get("preview_ref"),
                     "content_ref": None,
                     "truncated": False,
                     "availability": "unsaved",

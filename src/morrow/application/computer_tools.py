@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from morrow.application.computer_recovery import computer_refusal_message
 from morrow.core.capabilities import (
+    ComputerToolEvidence,
+    ComputerToolFact,
     OperationIntent,
     OperationKind,
     ToolCallContext,
@@ -53,13 +55,38 @@ class ComputerObserveArguments(BaseModel):
         return self
 
 
+def _computer_fact(context, **evidence):
+    return ComputerToolFact(
+        call_id=context.call_id,
+        tool_name=context.tool_name,
+        ordinal=context.ordinal,
+        approval_verdict=context.approval_verdict,
+        evidence=ComputerToolEvidence(**evidence),
+    )
+
+
+def _display_target(observations, observation_id, context):
+    resolver = getattr(observations, "display_target", None)
+    target = resolver(observation_id, context) if resolver is not None else None
+    return (
+        {"target_label": target.display_label, "bundle_id": target.app.bundle_id} if target else {}
+    )
+
+
 def make_computer_observe_tool(observations, visuals) -> RegisteredTool:
     async def handler(arguments: ComputerObserveArguments, context: ToolCallContext):
         try:
             execution_id = observations.execution_for_context(context)
             if arguments.operation == "discover":
                 result = await observations.discover(execution_id)
-                return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
+                return ToolHandlerOutcome(
+                    payload=result.model_dump(mode="json"),
+                    facts=(
+                        _computer_fact(
+                            context, operation="discover", target_count=len(result.targets)
+                        ),
+                    ),
+                )
             observation, references = await observations.observe_published(
                 execution_id,
                 arguments.target_ref,
@@ -69,6 +96,13 @@ def make_computer_observe_tool(observations, visuals) -> RegisteredTool:
             return ToolHandlerOutcome(
                 payload=observation.model_dump(mode="json"),
                 visual_refs=references,
+                facts=(
+                    _computer_fact(
+                        context,
+                        operation="observe",
+                        **_display_target(observations, observation.observation_id, context),
+                    ),
+                ),
             )
         except ComputerUseContractError as exc:
             # Contract errors contain bounded codes, never raw SDK diagnostics.
@@ -120,6 +154,7 @@ def make_computer_action_tool(observations, visuals) -> RegisteredTool:
             execution_id = observations.execution_for_context(
                 context, tool_name=COMPUTER_ACTION_TOOL
             )
+            target = _display_target(observations, arguments.observation_id, context)
             result, references = await observations.execute_published(
                 execution_id, arguments.observation_id, arguments.action, visuals=visuals
             )
@@ -127,6 +162,19 @@ def make_computer_action_tool(observations, visuals) -> RegisteredTool:
                 payload=result.model_dump(mode="json"),
                 visual_refs=references,
                 completion=result.outcome.status,
+                facts=(
+                    _computer_fact(
+                        context,
+                        operation="action",
+                        action=arguments.action.type,
+                        completion=result.outcome.status,
+                        delivery=result.outcome.delivery.value if result.outcome.delivery else None,
+                        postcondition=result.outcome.postcondition,
+                        error_code=result.outcome.error_code,
+                        observation_error=result.observation_error,
+                        **target,
+                    ),
+                ),
             )
         except ComputerUseContractError as exc:
             raise ToolExecutionError(

@@ -10,7 +10,13 @@ from morrow.application.artifacts import ArtifactService
 from morrow.application.prepared import prepare_cycle_executions
 from morrow.application.turn_permissions import RunPermissionCoordinator
 from morrow.core.artifacts import ArtifactError
-from morrow.core.capabilities import ChangeToolFact, CommandToolFact, ToolRunContext
+from morrow.core.capabilities import (
+    ChangeToolFact,
+    CommandToolFact,
+    ComputerToolEvidence,
+    ComputerToolFact,
+    ToolRunContext,
+)
 from morrow.core.domain import ArtifactReference
 from morrow.core.execution import (
     APPROVAL_ID_PREFIX,
@@ -377,9 +383,27 @@ class DurableToolExecutionCoordinator:
             and any(isinstance(fact, ChangeToolFact) for fact in result.facts)
             else ()
         )
+        computer = next(
+            (fact.evidence for fact in result.facts if isinstance(fact, ComputerToolFact)), None
+        )
+        if (
+            computer is None
+            and execution.tool_name == "computer_action"
+            and final_disposition is ToolExecutionDisposition.UNKNOWN
+        ):
+            arguments = execution.intent.redacted_arguments.get("action")
+            action = arguments.get("type") if isinstance(arguments, dict) else None
+            action = (
+                action
+                if action in {"click", "type_text", "press_key", "hotkey", "scroll"}
+                else None
+            )
+            computer = ComputerToolEvidence(
+                operation="action", action=action, completion="unknown", postcondition="not_checked"
+            )
         durable_facts = (
-            DurableToolFacts(commands=durable_commands, files=durable_files)
-            if durable_commands or durable_files
+            DurableToolFacts(commands=durable_commands, files=durable_files, computer=computer)
+            if durable_commands or durable_files or computer is not None
             else None
         )
         completed = transition_execution(

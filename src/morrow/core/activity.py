@@ -22,6 +22,7 @@ from typing import Annotated, Literal, Protocol
 
 from pydantic import Field, field_validator, model_validator
 
+from morrow.core.capabilities import ComputerToolEvidence
 from morrow.core.models import ProtocolModel, utc_now
 
 ACTIVITY_SCHEMA_VERSION = 1
@@ -112,6 +113,7 @@ class ToolActivityPayload(ProtocolModel):
     ordinal: int | None = Field(default=None, ge=1)
     total: int | None = Field(default=None, ge=1)
     exit_code: int | None = None
+    computer: ComputerToolEvidence | None = None
     # Value-free failure diagnostics (error code plus the stable reason and
     # field path of an argument-validation failure); never raw arguments.
     error_code: str | None = Field(default=None, max_length=64)
