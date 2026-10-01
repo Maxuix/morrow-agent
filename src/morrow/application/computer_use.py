@@ -17,11 +17,14 @@ from morrow.core.computer_use import (
     ComputerUseScope,
     ComputerUseSessionPort,
     DiscoverResult,
+    Observation,
+    ObservationImageRef,
     ObservedWindow,
     OpenRunSessionRequest,
     RunSession,
     reject_untrusted_computer_use_authority,
 )
+from morrow.core.models import ToolVisualRef
 from morrow.core.ports import Clock
 from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
 from morrow.services.computer_use import ComputerUseRunService
@@ -173,6 +176,25 @@ class ComputerUseObservationService:
         assert self._run is not None
         return self._run
 
+    def execution_for_context(self, context) -> str:
+        """Resolve the executing ledger row, never accept an execution ID from a model."""
+        candidates = [
+            execution
+            for execution in self._journal.list_executions(
+                self._scope.workspace_id, agent_run_id=self._scope.agent_run_id
+            )
+            if execution.call_id == context.call_id
+            and execution.tool_name == COMPUTER_OBSERVE_TOOL
+            and execution.session_id == context.run.session_id
+            and execution.task_run_id == self._scope.task_run_id
+            and execution.intent.ordinal == context.ordinal
+        ]
+        if context.tool_name != COMPUTER_OBSERVE_TOOL or len(candidates) != 1:
+            raise ComputerUseContractError("execution_not_authorized")
+        execution_id = candidates[0].tool_execution_id
+        self._authority(execution_id, include_image=False)
+        return execution_id
+
     async def discover(self, execution_id: str, *, bundle_id: str | None = None) -> DiscoverResult:
         def authority():
             self._authority(execution_id, include_image=False)
@@ -200,6 +222,31 @@ class ComputerUseObservationService:
         if self._run is None:
             raise ComputerUseContractError("unknown_target")
         return await self._run.observe(target_ref, authority=authority, include_image=include_image)
+
+    async def observe_published(
+        self,
+        execution_id: str,
+        target_ref: str,
+        *,
+        visuals,
+        include_image: bool | None = None,
+    ) -> tuple[Observation, tuple[ToolVisualRef, ...]]:
+        """Return safe durable DTOs; capture and mask coordinates stay transient."""
+        read = await self.observe(execution_id, target_ref, include_image=include_image)
+        if read.capture is None:
+            return read.observation, ()
+        self._authority(execution_id, include_image=True)
+        reference = visuals.publish_observed(
+            read,
+            tool_execution_id=execution_id,
+            scope=self._scope,
+            settings=self._settings,
+        )
+        image = ObservationImageRef.model_validate(
+            reference.model_dump(include=set(ObservationImageRef.model_fields))
+        )
+        observation = read.observation.model_copy(update={"image": image})
+        return observation, (reference,)
 
     async def close(self) -> None:
         self._closed = True

@@ -667,6 +667,20 @@ class TransientCapture:
     __str__ = __repr__
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class SensitiveCaptureRegion:
+    """Transient trusted mapping to delivered-image pixels, never model input."""
+
+    element_ref: str
+    left: int
+    top: int
+    right: int
+    bottom: int
+
+    def __repr__(self) -> str:
+        return "SensitiveCaptureRegion()"
+
+
 @dataclass(frozen=True, slots=True)
 class ObservedWindow:
     """Transient read result; safe Observation is the only persistent projection."""
@@ -674,6 +688,7 @@ class ObservedWindow:
     observation: Observation
     capture: TransientCapture | None = None
     image_error: str | None = None
+    sensitive_regions: tuple[SensitiveCaptureRegion, ...] = ()
 
     def __repr__(self) -> str:
         return (

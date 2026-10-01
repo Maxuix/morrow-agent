@@ -184,6 +184,8 @@ class ComputerUseRunService:
                 or observation.image is not None
             ):
                 raise ComputerUseContractError("subject_mismatch")
+            if include_image and read.image_error is not None:
+                raise ComputerUseContractError(read.image_error)
             if include_image and read.capture is None:
                 raise ComputerUseContractError(read.image_error or "image_missing")
             if read.capture is not None and (

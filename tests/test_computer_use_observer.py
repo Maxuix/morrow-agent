@@ -408,3 +408,107 @@ async def test_semantic_mode_refuses_unrequested_capture_from_port(environment):
     with pytest.raises(ComputerUseContractError, match="images_not_allowed"):
         await service.observe(device.target.target_ref, authority=authority)
     assert service._observations == {}
+
+
+async def test_application_publishes_real_pixels_and_only_safe_durable_references(environment):
+    import io
+
+    from PIL import Image
+
+    visuals = environment[0]
+    application, lifecycle = _application(environment)
+    found = await application.discover("tex_observe")
+    observation, references = await application.observe_published(
+        "tex_observe",
+        found.targets[0].target_ref,
+        visuals=visuals,
+    )
+    (reference,) = references
+    assert observation.image.artifact_id == reference.artifact_id
+    metadata = environment[1].get_artifact("ws_a", reference.artifact_id)
+    assert metadata is not None
+    stored = visuals.artifacts.read(reference.artifact_id, max_bytes=reference.byte_size).content
+    with Image.open(io.BytesIO(stored)) as image:
+        assert image.size == (8, 6)
+        assert image.getpixel((0, 0)) == (255, 0, 0)
+    assert "sensitive_regions" not in observation.model_dump_json()
+    assert lifecycle.calls == ["open", "session"]
+
+
+async def test_semantic_observation_does_not_publish_an_artifact(environment):
+    application, _ = _application(environment)
+    found = await application.discover("tex_observe")
+    observation, references = await application.observe_published(
+        "tex_observe",
+        found.targets[0].target_ref,
+        visuals=environment[0],
+        include_image=False,
+    )
+    assert observation.image is None
+    assert references == ()
+    assert environment[1].list_artifacts("ws_a", task_run_id="task_1") == ()
+
+
+async def test_application_masks_known_sensitive_pixels_before_persistence(environment):
+    import io
+
+    from PIL import Image
+
+    from morrow.core.artifacts import ArtifactSensitivity
+    from morrow.core.computer_use import AxElement, SensitiveCaptureRegion
+
+    application, lifecycle = _application(environment)
+    original = lifecycle.device.observation
+    lifecycle.device.observation = original.model_copy(
+        update={
+            "elements": (
+                AxElement(element_ref="celem_1", depth=1, role="axsecuretextfield", sensitive=True),
+            ),
+        }
+    )
+
+    async def sensitive_read(request, *, settings):
+        return ObservedWindow(
+            lifecycle.device.observation,
+            lifecycle.device.capture,
+            sensitive_regions=(SensitiveCaptureRegion("celem_1", 1, 1, 5, 4),),
+        )
+
+    lifecycle.device.observe = sensitive_read
+    found = await application.discover("tex_observe")
+    _, references = await application.observe_published(
+        "tex_observe",
+        found.targets[0].target_ref,
+        visuals=environment[0],
+    )
+    (reference,) = references
+    metadata = environment[1].get_artifact("ws_a", reference.artifact_id)
+    assert metadata.sensitivity is ArtifactSensitivity.REDACTED
+    content = (
+        environment[0].artifacts.read(reference.artifact_id, max_bytes=reference.byte_size).content
+    )
+    with Image.open(io.BytesIO(content)) as image:
+        assert image.getpixel((1, 1)) == (0, 0, 0)
+        assert image.getpixel((4, 3)) == (0, 0, 0)
+        assert image.getpixel((5, 3)) == (255, 0, 0)
+    assert "sensitive_regions" not in metadata.model_dump_json()
+
+
+@pytest.mark.parametrize("image_error", ["image_safety_unconfirmed", "image_decode"])
+async def test_unconfirmed_capture_does_not_create_artifact(environment, image_error):
+    application, lifecycle = _application(environment)
+
+    async def unsafe_read(request, *, settings):
+        return ObservedWindow(
+            lifecycle.device.observation, lifecycle.device.capture, image_error=image_error
+        )
+
+    lifecycle.device.observe = unsafe_read
+    found = await application.discover("tex_observe")
+    with pytest.raises(ComputerUseContractError, match=image_error):
+        await application.observe_published(
+            "tex_observe",
+            found.targets[0].target_ref,
+            visuals=environment[0],
+        )
+    assert environment[1].list_artifacts("ws_a", task_run_id="task_1") == ()

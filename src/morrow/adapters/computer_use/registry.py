@@ -79,6 +79,7 @@ class TrustedDesktopRegistry:
         self._windows_by_identity: dict[str, _WindowRecord] = {}
         self._elements: dict[str, _ElementRecord] = {}
         self._snapshots: dict[str, str] = {}
+        self._snapshot_windows: dict[str, str] = {}
 
     def __repr__(self) -> str:
         return (
@@ -93,6 +94,7 @@ class TrustedDesktopRegistry:
         self._windows_by_identity.clear()
         self._elements.clear()
         self._snapshots.clear()
+        self._snapshot_windows.clear()
 
     def remember_window(
         self,
@@ -151,9 +153,26 @@ class TrustedDesktopRegistry:
         )
         return element_ref
 
-    def remember_snapshot(self, observation_id: str, snapshot_id: str | None) -> None:
+    def retire_window_observations(self, window_identity: str) -> None:
+        """A new read invalidates the old token set even when that read fails."""
+        self._elements = {
+            ref: element
+            for ref, element in self._elements.items()
+            if element.window_identity != window_identity
+        }
+        retired = {
+            ref for ref, window in self._snapshot_windows.items() if window == window_identity
+        }
+        for ref in retired:
+            self._snapshot_windows.pop(ref)
+            self._snapshots.pop(ref, None)
+
+    def remember_snapshot(
+        self, observation_id: str, snapshot_id: str | None, *, window_identity: str
+    ) -> None:
         if snapshot_id:
             self._snapshots[observation_id] = snapshot_id
+            self._snapshot_windows[observation_id] = window_identity
 
     def window(self, window_identity: str) -> _WindowRecord:
         found = self._windows_by_identity.get(window_identity)

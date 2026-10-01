@@ -260,3 +260,25 @@ async def test_changed_frozen_scope_does_not_reach_sdk():
     with pytest.raises(ComputerUseContractError, match="subject_mismatch"):
         await session.observe(_observe(target).model_copy(update={"scope": changed}))
     assert len(native.calls) == before
+
+
+async def test_new_read_retires_previous_window_element_tokens_even_on_failure():
+    native = _Native()
+    session, _, target = await _opened(native, lambda pid: ProcessBirth(123, 0))
+    first = await session.observe(_observe(target))
+    old_ref = first.observation.elements[0].element_ref
+    assert session._registry.element(old_ref) is not None
+    second = await session.observe(_observe(target))
+    with pytest.raises(ComputerUseContractError, match="unknown_element"):
+        session._registry.element(old_ref)
+    new_ref = second.observation.elements[0].element_ref
+    assert new_ref != old_ref
+
+    async def broken(payload):
+        raise RuntimeError("raw native diagnostic must not escape")
+
+    native.get_window_state = broken
+    with pytest.raises(ComputerUseContractError, match="driver_error"):
+        await session.observe(_observe(target))
+    with pytest.raises(ComputerUseContractError, match="unknown_element"):
+        session._registry.element(new_ref)

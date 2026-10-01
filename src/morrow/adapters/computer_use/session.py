@@ -38,6 +38,7 @@ from morrow.core.computer_use import (
     OpenRunSessionRequest,
     PreparedComputerAction,
     RunSession,
+    SensitiveCaptureRegion,
     TargetRef,
     TransientCapture,
     reject_untrusted_computer_use_authority,
@@ -213,6 +214,7 @@ class TypedComputerSession:
             or window.target_ref != request.target.target_ref
         ):
             raise ComputerUseContractError("stale_observation")
+        self._registry.retire_window_observations(window.window_identity)
         resolved = settings or ComputerUseSettings()
         geometry = await self._validate_live_target(window)
         state = await self._call(
@@ -447,7 +449,9 @@ class TypedComputerSession:
         observation_id = self._ids.new_id(COMPUTER_OBSERVATION_ID_PREFIX)
         snapshot_id = getattr(state, "snapshot_id", None)
         if isinstance(snapshot_id, str):
-            self._registry.remember_snapshot(observation_id, snapshot_id)
+            self._registry.remember_snapshot(
+                observation_id, snapshot_id, window_identity=window_identity
+            )
         try:
             observation = Observation(
                 observation_id=observation_id,
@@ -471,7 +475,20 @@ class TypedComputerSession:
             raise
         except ValueError:
             raise ComputerUseContractError("rejected_action") from None
-        return ObservedWindow(observation=observation, capture=capture, image_error=image_error)
+        regions = ()
+        if capture is not None:
+            try:
+                if degraded or truncated or omitted:
+                    raise ComputerUseContractError("image_safety_unconfirmed")
+                regions = _sensitive_regions(state, elements, geometry, capture)
+            except ComputerUseContractError:
+                image_error = "image_safety_unconfirmed"
+        return ObservedWindow(
+            observation=observation,
+            capture=capture,
+            image_error=image_error,
+            sensitive_regions=regions,
+        )
 
     def _click_position(self, action: Any, window_point: tuple[float, float] | None) -> Any:
         if action.element_ref is not None:
@@ -764,19 +781,72 @@ def _role(value: object) -> str:
 
 
 def _element_label(raw: Any, role: str) -> tuple[str | None, bool]:
-    if "secure" in role:
+    if "secure" in role or "password" in role:
         return None, True
+    # Inspect transient values only for known secret material; never project them.
+    for name in ("value", "value_description", "label"):
+        value = getattr(raw, name, None)
+        if isinstance(value, str):
+            try:
+                refuse_secret_material(value, label="computer use element")
+            except ValueError:
+                return None, True
     label = getattr(raw, "label", None)
     if not isinstance(label, str):
         return None, False
     cleaned = " ".join(label.split())
     if not cleaned or len(cleaned) > 200:
         return None, False
-    try:
-        refuse_secret_material(cleaned, label="computer use element")
-    except ValueError:
-        return None, True
     return cleaned, False
+
+
+def _sensitive_regions(
+    state: Any,
+    elements: list[AxElement],
+    geometry: WindowGeometry,
+    capture: TransientCapture,
+) -> tuple[SensitiveCaptureRegion, ...]:
+    """Pinned AX frames are top-left screen points, unlike SDK action pixels.
+
+    Only a full, uncropped window image with matching live bounds is accepted.
+    Round outward so downscaling never leaves an edge of a secret visible.
+    """
+    raw = iter(getattr(state, "elements", None) or ())
+    regions = []
+    for element in elements:
+        native = next(raw, None)
+        if not element.sensitive:
+            continue
+        frame = getattr(native, "frame", None)
+        numbers = tuple(getattr(frame, name, None) for name in ("x", "y", "w", "h"))
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            for value in numbers
+        ):
+            raise ComputerUseContractError("image_safety_unconfirmed")
+        x, y, width, height = numbers
+        if (
+            width <= 0
+            or height <= 0
+            or x < geometry.x
+            or y < geometry.y
+            or x + width > geometry.x + geometry.width
+            or y + height > geometry.y + geometry.height
+        ):
+            raise ComputerUseContractError("image_safety_unconfirmed")
+        sx, sy = capture.width / geometry.width, capture.height / geometry.height
+        regions.append(
+            SensitiveCaptureRegion(
+                element_ref=element.element_ref,
+                left=math.floor((x - geometry.x) * sx),
+                top=math.floor((y - geometry.y) * sy),
+                right=math.ceil((x + width - geometry.x) * sx),
+                bottom=math.ceil((y + height - geometry.y) * sy),
+            )
+        )
+    return tuple(regions)
 
 
 def _display_label(value: object) -> str | None:

@@ -20,6 +20,7 @@ from morrow.core.computer_use import (
     ComputerUseScope,
     ComputerUseWindowBoundary,
     Observation,
+    ObservedWindow,
     TransientCapture,
     images_allowed,
 )
@@ -81,6 +82,42 @@ class ComputerVisualService:
         self.artifacts, self.journal, self.clock = artifacts, journal, clock
         self.workspace_id = artifacts.workspace_id
         self.visibility = TimelineIndexService(journal, self.workspace_id)
+
+    def publish_observed(
+        self,
+        read: ObservedWindow,
+        *,
+        tool_execution_id: str,
+        scope: ComputerUseScope,
+        settings: ComputerUseSettings,
+    ) -> ToolVisualRef:
+        """Only trusted adapter regions may flow from an observation to masks."""
+        if read.image_error is not None:
+            raise ComputerUseContractError(read.image_error)
+        if read.capture is None:
+            raise ComputerUseContractError("image_missing")
+        if (
+            read.observation.degraded
+            or read.observation.truncated
+            or read.observation.omitted_count
+        ):
+            raise ComputerUseContractError("image_safety_unconfirmed")
+        regions = read.sensitive_regions
+        if len({region.element_ref for region in regions}) != len(regions):
+            raise ComputerUseContractError("image_safety_unconfirmed")
+        return self.publish(
+            read.capture,
+            read.observation,
+            tool_execution_id=tool_execution_id,
+            scope=scope,
+            settings=settings,
+            masks={
+                region.element_ref: CaptureMask(
+                    region.left, region.top, region.right, region.bottom
+                )
+                for region in regions
+            },
+        )
 
     def publish(
         self,
