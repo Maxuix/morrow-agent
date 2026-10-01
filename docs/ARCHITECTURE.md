@@ -70,6 +70,16 @@ application 中的组合、跨域事务、配置生命周期、诊断和备份�
 7. **数据**：凭据只由 CredentialStore/显式环境变量提供，不进入 YAML、日志、事件、模型上下文或备份。
    公开投影不包含原始 SDK 对象和未处理 traceback。
 
+## 桌面运行的准备边界
+
+可选 computer-use 默认关闭，原生验收未通过时不激活 Driver。bootstrap 为运行准备器与
+CoreHost 关闭路径传递同一 lifecycle；每个已授权 AgentRun 的 facade 持有独立 Session 与观察引用。
+本地 ComputerUseSelection 先决定冻结工具集合，不能作为模型参数；durable AgentRun 创建后，
+PreparedAgentRunRuntime.activate 委托既有 Application API 创建 run-bound grant。
+AgentLoop 在本地激活与待处理 Host 授权后、首次 Provider 请求前冻结 PermissionSnapshot。
+handler 只重验已有执行/审批/授权证据，不创建 grant。关闭先停止入场，再等待资源释放。
+桌面恢复需要新的本地选择、新 AgentRun/grant 与更高代次；磁盘旧 grant 不足以重新绑定设备。
+
 ## 文档与验证约定
 
 [README](../README.md) 负责安装和常用入口；本目录下的四篇专题文档说明当前运行时、状态、接口和扩展边界。

@@ -75,6 +75,9 @@ Host 关闭不自动消费 follow-up。不能把这一队列与定向节点纠�
 | 执行暂停 | [ExecutionPauseService](../../src/morrow/application/execution_pause.py) | 保存安全点和控制代次；暂停、恢复和取消为不同事实 |
 | 可执行控制动作 | [TaskPlanAdmissionService](../../src/morrow/application/workflows/plan_admission.py) | `control_projection()` 提供 durable 状态和 allowed intents，UI 不猜测 |
 
+computer-use 的设备授权是例外：新的本地选择在新 AgentRun 创建后重新授予 grant，
+冻结新的 PermissionSnapshot 与更高 generation；旧授权、Session/token 不自动恢复。
+
 ## Workflow 定义、规划与接纳
 
 Agent desired source 与 Workflow desired source 由 YAML 持有；发布服务生成不可变版本，

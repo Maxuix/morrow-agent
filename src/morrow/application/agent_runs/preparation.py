@@ -59,6 +59,10 @@ class PreparedAgentRunRuntime:
     agent_run_id: str | None = None
     computer_run: PreparedComputerUseRun | None = None
 
+    def activate(self, session) -> None:
+        if self.computer_run is not None and self.computer_run.activate_local is not None:
+            self.computer_run.activate_local(session)
+
     def close(self) -> None:
         """Stop desktop admission immediately; async consumers drain with :meth:`aclose`."""
         if self.computer_run is not None:
@@ -194,6 +198,7 @@ class AgentRunPreparationService:
         generation: GenerationOptions | None = None,
         settings_sources=None,
         permission_preset=None,
+        computer_request=None,
     ) -> PreparedAgentRunRuntime:
         """Prepare the next new AgentRun from the current configuration.
 
@@ -209,7 +214,9 @@ class AgentRunPreparationService:
                 and prompt_assembler is None
                 and tool_transform is None
             ):
-                computer_run = self._computer_run(agent_run_id, self.injected.run_policy)
+                computer_run = self._computer_run(
+                    agent_run_id, self.injected.run_policy, request=computer_request
+                )
                 if computer_run is None:
                     return self.injected
                 executor = computer_run.extend(self.injected.tool_executor)
@@ -288,7 +295,7 @@ class AgentRunPreparationService:
             except Exception as exc:
                 raise AgentRunPreparationError("MCP preparation failed") from exc
             tool_executor = self._merge_mcp_tools(tool_executor, mcp_run, agent_run_id=agent_run_id)
-        computer_run = self._computer_run(agent_run_id, run_policy)
+        computer_run = self._computer_run(agent_run_id, run_policy, request=computer_request)
         if computer_run is not None:
             tool_executor = computer_run.extend(tool_executor)
             context_builder = computer_run.bind_context(context_builder, exact)
@@ -327,6 +334,7 @@ class AgentRunPreparationService:
         agent_run_id: str | None = None,
         prompt_assembler=None,
         tool_transform=None,
+        computer_request=None,
     ) -> PreparedAgentRunRuntime:
         """Rebuild a runtime from stored AgentRun evidence only.
 
@@ -393,7 +401,9 @@ class AgentRunPreparationService:
             if mcp_run is None or mcp_run.snapshot_ids != snapshot.mcp_run_snapshot_ids:
                 raise AgentRunPreparationError("AgentRun MCP snapshot evidence is inconsistent")
             tool_executor = self._merge_mcp_tools(tool_executor, mcp_run, agent_run_id=agent_run_id)
-        computer_run = self._computer_run(agent_run_id, snapshot.run_policy)
+        computer_run = self._computer_run(
+            agent_run_id, snapshot.run_policy, request=computer_request, recovering=True
+        )
         if computer_run is not None:
             tool_executor = computer_run.extend(tool_executor)
             context_builder = computer_run.bind_context(context_builder, frozen.capabilities)
@@ -436,10 +446,18 @@ class AgentRunPreparationService:
             computer_run=computer_run,
         )
 
-    def _computer_run(self, agent_run_id, policy):
+    def _computer_run(self, agent_run_id, policy, *, request=None, recovering=False):
         if self.computer_factory is None or agent_run_id is None:
+            if request is not None:
+                raise AgentRunPreparationError(
+                    "Computer-use selection requires a durable run subject"
+                )
             return None
         try:
+            if request is not None:
+                return self.computer_factory.prepare_selected(agent_run_id, policy, request)
+            if recovering and hasattr(self.computer_factory, "rehydrate"):
+                return self.computer_factory.rehydrate(agent_run_id, policy)
             return self.computer_factory(agent_run_id, policy)
         except Exception as exc:
             raise AgentRunPreparationError("Computer-use frozen authority is unavailable") from exc

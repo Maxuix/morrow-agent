@@ -1581,6 +1581,11 @@ class AgentLoop:
             tools = tool_executor.definitions if tool_executor else ()
             yield event("turn.started", {})
             permission_snapshot = None
+            activate_prepared = getattr(prepared, "activate", None)
+            if activate_prepared is not None:
+                activation = activate_prepared(session)
+                if inspect.isawaitable(activation):
+                    await activation
             await self._request_pending_grant(session)
 
             def freeze_permissions() -> None:
@@ -1597,6 +1602,9 @@ class AgentLoop:
                     ),
                 )
 
+            # Freeze the run's authority before the first model request. Local
+            # resource activation may create a grant only before this boundary.
+            freeze_permissions()
             while True:
                 state.internal_phase = "run_control"
                 if deadline is not None:

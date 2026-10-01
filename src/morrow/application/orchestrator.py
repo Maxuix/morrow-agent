@@ -234,8 +234,15 @@ class SessionOrchestrator:
                                 resume_snapshot = continuation_snapshot(self.session.session_id)
                             prepare_new = self.preparation.prepare_new
                             if resume_snapshot is not None:
+                                rehydrate_options = {}
+                                if options.get("computer_request") is not None:
+                                    rehydrate_options["computer_request"] = options[
+                                        "computer_request"
+                                    ]
                                 prepared = self.preparation.rehydrate(
-                                    resume_snapshot, agent_run_id=prepared_agent_run_id
+                                    resume_snapshot,
+                                    agent_run_id=prepared_agent_run_id,
+                                    **rehydrate_options,
                                 )
                             elif "agent_run_id" in inspect.signature(prepare_new).parameters:
                                 prepared = prepare_new(

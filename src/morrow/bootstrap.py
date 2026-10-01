@@ -1262,6 +1262,7 @@ def build_session_application(
             )
             return result.value
 
+        computer_factory.grant_creator = api.create_grant
         runtime.loop.grant_provider = create_foreground_grant
         commands = CommandService(
             session=session,

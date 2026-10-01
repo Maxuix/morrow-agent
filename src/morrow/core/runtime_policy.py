@@ -134,6 +134,11 @@ class ComputerUseSettings(_RuntimePolicyModel):
     max_observation_bytes: int = Field(default=64 * 1024 * 1024, ge=1, le=64 * 1024 * 1024)
     image_long_edge_px: int = Field(default=1920, ge=1, le=1920)
 
+    @field_validator("mode", mode="before")
+    @classmethod
+    def yaml_mode(cls, value):
+        return ComputerUseMode(value) if isinstance(value, str) else value
+
 
 class RuntimePolicyOverrides(_RuntimePolicyModel):
     """Optional section in the user-owned global ``config.yaml``."""
