@@ -217,6 +217,22 @@ class ComputerUseObservationService:
         assert self._run is not None
         return self._run
 
+    def action_preview(self, observation_id, action, context) -> tuple[str, ...]:
+        """Local approval copy from this run's frozen scope and published target only."""
+        run = self._journal.get_agent_run(self._scope.workspace_id, self._scope.agent_run_id)
+        if (
+            self._closed
+            or context.tool_name != COMPUTER_ACTION_TOOL
+            or context.run.run_id != self._scope.agent_run_id
+            or run is None
+            or context.run.session_id != run.session_id
+        ):
+            raise ComputerUseContractError("execution_not_authorized")
+        target = self._run.action_preview_target(observation_id) if self._run else None
+        from morrow.application.computer_permissions import computer_action_preview_lines
+
+        return computer_action_preview_lines(self._scope, target, action)
+
     def execution_for_context(self, context, *, tool_name: str = COMPUTER_OBSERVE_TOOL) -> str:
         """Resolve the executing ledger row, never accept an execution ID from a model."""
         candidates = [

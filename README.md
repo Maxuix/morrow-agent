@@ -231,6 +231,11 @@ It creates no grant until that run is prepared. A pending `/grant` for Host comm
 desktop selection are mutually exclusive. Expired selections must be cleared or selected again.
 The GUI offers the same choices under the composer's permission control. Candidate reads are
 explicit local actions; window selection IDs are not reusable across processes or restarts.
+Use `morrow grant list` or `morrow grant show <grant-id> --summary` to inspect a run's
+frozen desktop scope; `morrow grant revoke <grant-id> --expected-row-version <revision>`
+uses the same durable revoke service as the GUI. Desktop action approval shows the safe
+window label, action, targeting method and frozen delivery without displaying input text.
+Approval is per action; it cannot add Shell Host permissions or expand the selected windows.
 Native desktop use remains unavailable until the recorded native acceptance gates pass.
 
 `--json` returns the same settings/status fields as the GUI. Run `computer configure --help`

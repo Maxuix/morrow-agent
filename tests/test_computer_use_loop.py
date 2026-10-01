@@ -11,12 +11,19 @@ from PIL import Image
 from morrow.application.computer_requests import ComputerUseSelection
 from morrow.bootstrap import build_session_application
 from morrow.core.agent_runs import ProviderCapabilities
-from morrow.core.capabilities import PermissionPreset, PermissionProfile
+from morrow.core.capabilities import (
+    PermissionPreset,
+    PermissionProfile,
+    ToolCallContext,
+    ToolRunContext,
+)
 from morrow.core.computer_use import (
     TRUSTED_COMPUTER_USE_AUTHORITY,
     ActionOutcome,
     AxElement,
+    ClickAction,
     ComputerUseAppIdentity,
+    ComputerUseContractError,
     ComputerUseImageShare,
     CoordinateFrame,
     DiscoverResult,
@@ -228,6 +235,31 @@ async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_pa
             prepared.provider.responses[-1] = (
                 "The action returned, but I could not verify its screen."
             )
+        if status == "completed":
+
+            def reject_cross_context_preview():
+                calls = (len(lifecycle.device.actions), len(lifecycle.device.reads))
+                for run_id, session_id in [
+                    ("arun_other", products.session.session_id),
+                    ("arun_loop", "ses_other"),
+                ]:
+                    context = ToolCallContext(
+                        run=ToolRunContext(run_id=run_id, session_id=session_id),
+                        call_id="untrusted_preview",
+                        tool_name="computer_action",
+                        ordinal=3,
+                        total=3,
+                        result_limit=65536,
+                    )
+                    with pytest.raises(ComputerUseContractError, match="execution_not_authorized"):
+                        prepared.computer_run.observations.action_preview(
+                            "cobs_before",
+                            ClickAction(type="click", element_ref="celem_before"),
+                            context,
+                        )
+                assert calls == (len(lifecycle.device.actions), len(lifecycle.device.reads))
+
+            approval.before_decision = reject_cross_context_preview
         if status in {"revoked", "revoked_before_intent"}:
             prepared.provider.responses[-1] = "The desktop permission was revoked; I did not click."
 
@@ -280,6 +312,13 @@ async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_pa
         assert len(approval.requests) == (
             0 if status == "revoked_before_intent" else 2 if status == "stale" else 1
         )
+        if approval.requests:
+            preview = "\n".join(approval.requests[0].preview)
+            assert "动作：左键单击" in preview
+            assert "应用：com.example.Controlled" in preview
+            assert "投递：前台" in preview and "分享受控窗口图像" in preview
+            assert "独立桌面窗口授权" in preview
+            assert "cobs_" not in preview and "celem_" not in preview and "cproc_" not in preview
         executions = factory.journal.list_session_executions(
             factory.workspace_id, products.session.session_id
         )

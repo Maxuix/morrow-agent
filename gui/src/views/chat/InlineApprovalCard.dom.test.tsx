@@ -151,4 +151,22 @@ describe('InlineApprovalCard', () => {
     expect(screen.getByText('此请求已过期，工具不会执行。')).toBeDefined()
     expect(client.resolveApproval).not.toHaveBeenCalled()
   })
+  it('shows desktop action scope and visible safe target preview with only per-action decisions', async () => {
+    const source = approval({tool_name: 'computer_action', effect_class: 'unconfined_external_effect',
+      requested_scope: 'unconfined_external_effect:computer_action', risk_level: 'high', session_scope_allowed: false,
+      affected_objects: [], preview: ['能力：独立桌面窗口授权，不授予 Shell Host 权限',
+        '动作：左键单击', '目标窗口：受控笔记', '投递：后台 · 不分享图像']})
+    const client = {resolveApproval: vi.fn(), getApproval: vi.fn()} as unknown as ApiClient
+    await act(async () => root.render(<InlineApprovalCard approval={source} client={client} workspace="ws"/>))
+    expect(screen.getByRole('heading', {name: '操作桌面窗口'})).toBeDefined()
+    expect(screen.getByText(/本次桌面动作（逐次确认）/)).toBeDefined()
+    const preview = screen.getByText('查看安全预览').parentElement as HTMLDetailsElement
+    expect(preview.open).toBe(true)
+    expect(preview.textContent).toContain('目标窗口：受控笔记')
+    expect(preview.textContent).toContain('投递：后台')
+    expect(screen.getByRole('button', {name: '允许本次执行'})).toBeDefined()
+    expect(screen.queryByRole('button', {name: '本会话同范围免批'})).toBeNull()
+    expect(container.textContent).not.toContain(source.tool_execution_id)
+  })
+
 })

@@ -147,6 +147,9 @@ def make_computer_action_tool(observations, visuals) -> RegisteredTool:
         arguments_model=ComputerActionArguments,
         handler=handler,
         context_handler=handler,
+        context_approval_preview=lambda arguments, context: observations.action_preview(
+            arguments.observation_id, arguments.action, context
+        ),
         intent_resolver=intent,
         execution_policy=ToolExecutionPolicy(
             effect=ToolEffect.PERSISTENT_WRITE,

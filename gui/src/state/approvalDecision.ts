@@ -84,6 +84,7 @@ export function approvalScopeLabel(scope: string): string {
     workspace_write: '工作区写入',
     reconcileable_file_write: '可恢复的文件写入',
     external_side_effect: '外部副作用',
+    'unconfined_external_effect:computer_action': '本次桌面动作（逐次确认）',
   }
   return labels[clean] ?? clean
 }

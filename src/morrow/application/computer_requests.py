@@ -96,6 +96,9 @@ class PendingComputerObservationService:
             raise ComputerUseContractError("execution_not_authorized")
         return self._service
 
+    def action_preview(self, observation_id, action, context):
+        return self._require_service().action_preview(observation_id, action, context)
+
     def execution_for_context(self, context, **kwargs):
         return self._require_service().execution_for_context(context, **kwargs)
 

@@ -81,6 +81,8 @@ async def test_first_run_freezes_selected_tools_then_creates_real_grant(products
     assert factory.journal.list_capability_grants(factory.workspace_id) == ()
     with pytest.raises(ComputerUseContractError):
         await prepared.computer_run.observations.discover("tex_before_submit")
+    with pytest.raises(ComputerUseContractError):
+        prepared.computer_run.observations.action_preview("cobs_before_submit", None, None)
     original_stream = prepared.provider.stream
     seen_permission_at_model_entry = []
 

@@ -653,3 +653,20 @@ async def test_profile_reset_failure_is_reported_without_leaving_repl(monkeypatc
 
     assert code == 0
     assert any("Profile 重置失败：磁盘写入失败" in line for line in terminal.console.lines)
+
+
+async def test_terminal_desktop_approval_uses_independent_action_language():
+    terminal = ScriptedTerminal(["y"])
+    port = terminal_module.TerminalApprovalPort(terminal, object())
+    decision = await port.request(
+        ToolApprovalRequest(
+            call_id="desktop_call",
+            effect=ToolEffect.PERSISTENT_WRITE,
+            preview=("动作：左键单击", "目标窗口：受控笔记", "投递：后台 · 不分享图像"),
+            reason_codes=("computer_action_approval_required",),
+        )
+    )
+    assert decision.approved
+    assert terminal.prompts == ["确认执行这次桌面窗口动作？ [y/N] "]
+    assert "本次桌面动作（独立窗口授权）" in "\n".join(terminal.console.lines)
+    assert "未受操作系统隔离的 Host 命令" not in "\n".join(terminal.console.lines)

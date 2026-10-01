@@ -35,6 +35,7 @@ _STOP_HINTS = {
 
 _APPROVAL_REASON_LABELS = {
     "full_access_host_approval_required": "未隔离的 Full Access Host 进程",
+    "computer_action_approval_required": "本次桌面动作（独立窗口授权）",
     "host_process_approval_required": "非沙箱 Host 进程",
     "workspace_write_approval_required": "工作区写入",
     "configuration_approval_required": "配置写入",
@@ -215,8 +216,9 @@ class TerminalApprovalPort:
             if inspect.isawaitable(result):
                 await result
         lines = request.preview or ("未提供额外预览。",)
-        self.terminal.console.print("\n".join(lines))
+        self.terminal.console.print("\n".join(lines), markup=False)
         elevated = any(line.startswith("unconfined_host:") for line in lines)
+        desktop = "computer_action_approval_required" in request.reason_codes
         if elevated:
             self.terminal.console.print(UNCONFINED_HOST_APPROVAL_LANGUAGE)
         if request.reason_codes:
@@ -232,6 +234,8 @@ class TerminalApprovalPort:
             prompt = (
                 "确认执行这条未受操作系统隔离的 Host 命令？ [y/N] "
                 if elevated
+                else "确认执行这次桌面窗口动作？ [y/N] "
+                if desktop
                 else "确认执行？ [y/N] "
             )
             answer = await self.terminal.prompt(self.prompt_session, prompt)

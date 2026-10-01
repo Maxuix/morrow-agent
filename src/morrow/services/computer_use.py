@@ -239,6 +239,17 @@ class ComputerUseRunService:
                 return observation.target_ref
         raise ComputerUseContractError("stale_observation")
 
+    def action_preview_target(self, observation_id: str) -> TargetRef | None:
+        """Read only an already-published local target; never refresh or consume it."""
+        if self._stopped:
+            return None
+        for observation in self._observations.values():
+            if observation.observation_id == observation_id:
+                age = (self.clock.now() - observation.captured_at).total_seconds()
+                if 0 <= age < MAX_OBSERVATION_AGE_SECONDS:
+                    return self._targets.get(observation.target_ref)
+        return None
+
     def accept_published_observation(self, observation: Observation) -> None:
         """Attach only the safely published image to the current transient read."""
         current = self._observations.get(observation.target_ref)

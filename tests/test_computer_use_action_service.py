@@ -286,3 +286,21 @@ async def test_consumed_action_execution_cannot_be_reused_with_a_new_observation
     outcome = await app.execute_one("tex_action", fresh.observation.observation_id, action)
     assert outcome.status == "not_started" and outcome.error_code == "execution_already_used"
     assert len(lifecycle.device.actions) == 1
+
+
+async def test_action_preview_reads_published_target_without_native_read_or_consumption(
+    environment,
+):
+    service, device, clock, _, read = await ready(environment)
+    calls, operations = list(device.calls), service._operations
+    observation_id = read.observation.observation_id
+    assert service.action_preview_target(observation_id) == device.target
+    assert service.action_preview_target(observation_id) == device.target
+    assert service.target_for_observation(observation_id) == read.observation.target_ref
+    assert device.calls == calls and service._operations == operations
+    clock.value += timedelta(seconds=31)
+    assert service.action_preview_target(observation_id) is None
+    assert service.target_for_observation(observation_id) == read.observation.target_ref
+    assert device.calls == calls and service._operations == operations
+    service.stop()
+    assert service.action_preview_target(observation_id) is None

@@ -124,7 +124,7 @@ export function InlineApprovalCard({
           <header className="inline-approval-header">
             <div>
               <p className="inline-approval-kicker">需要确认 · {approvalText(approval)}</p>
-              <h3>{approvalEffectLabel(approval.effect_class)}</h3>
+              <h3>{approval.tool_name === 'computer_action' ? '操作桌面窗口' : approvalEffectLabel(approval.effect_class)}</h3>
             </div>
             <span className={`approval-risk-badge ${riskBadgeClass(approval.risk_level)}`}>
               {RISK_LEVEL_LABELS[approval.risk_level]}
@@ -135,7 +135,7 @@ export function InlineApprovalCard({
             <div><dt>影响对象</dt><dd>{approval.affected_objects.length > 0 ? approval.affected_objects.slice(0, AFFECTED_OBJECTS).join('、') : '服务端未提供具体对象'}</dd></div>
             <div><dt>有效期</dt><dd>{formatTimestamp(approval.expires_at)}</dd></div>
           </dl>
-          {approval.preview.length > 0 && <details className="inline-approval-preview">
+          {approval.preview.length > 0 && <details className="inline-approval-preview" open={approval.tool_name === 'computer_action'}>
             <summary>查看安全预览</summary>
             <pre>{approval.preview.slice(0, PREVIEW_LINES).join('\n')}</pre>
             {approval.preview.length > PREVIEW_LINES && <p>预览已按安全上限截断。</p>}
