@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 
 from morrow.application.artifacts import ArtifactService
@@ -453,6 +453,8 @@ class ToolConversationPersistence:
         permission_snapshot_id: str,
         grant_id: str | None,
         isolation_label: IsolationLabel | None,
+        grant_evidence_by_tool: Mapping[str, tuple[str | None, IsolationLabel | None]]
+        | None = None,
     ) -> tuple[DurableToolExecution, ...]:
         executions = prepare_cycle_executions(
             message,
@@ -469,6 +471,7 @@ class ToolConversationPersistence:
             permission_snapshot_id=permission_snapshot_id,
             grant_id=grant_id,
             isolation_label=isolation_label,
+            grant_evidence_by_tool=grant_evidence_by_tool,
         )
         self.faults.check(FaultPoint.CONVERSATION_BEFORE_COMMIT)
 

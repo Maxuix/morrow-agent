@@ -207,6 +207,9 @@ class SessionPersistence:
     ) -> bool:
         return self.permissions.has_active_unconfined_grant(execution, now=now)
 
+    def has_active_computer_grant(self, execution: DurableToolExecution, *, now: datetime) -> bool:
+        return self.permissions.has_active_computer_grant(execution, now=now)
+
     def freeze_permission_snapshot(
         self,
         session: Session,
@@ -453,6 +456,12 @@ class SessionPersistence:
             permission_snapshot_id=snapshot.permission_snapshot_id,
             grant_id=grant_id,
             isolation_label=isolation_label,
+            grant_evidence_by_tool={
+                call.name: self.permissions.active_tool_grant_evidence(
+                    snapshot, call.name, now=self._now()
+                )
+                for call in message.tool_calls
+            },
         )
 
     def execution_is_visible(self, tool_execution_id: str) -> bool:

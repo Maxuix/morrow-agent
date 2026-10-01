@@ -190,6 +190,10 @@ class DurableRunCoordinator(SessionCommitter, Protocol):
 
     def check_fault(self, point: FaultPoint) -> None: ...
 
+    def has_active_computer_grant(
+        self, execution: DurableToolExecution, *, now: datetime
+    ) -> bool: ...
+
     def has_active_unconfined_grant(
         self, execution: DurableToolExecution, *, now: datetime
     ) -> bool: ...

@@ -24,6 +24,7 @@ from morrow.core.mcp import McpReviewEvidence
 from morrow.core.permissions import (
     PERMISSION_POLICY_VERSION,
     PERMISSION_SCHEMA_VERSION,
+    SHELL_TOOL_NAMES,
     CapabilityGrant,
     CapabilityIsolation,
     CapabilityName,
@@ -336,3 +337,34 @@ class RunPermissionCoordinator:
         if label is not IsolationLabel.UNCONFINED_HOST:
             return None, None
         return grant.grant_id, label
+
+    def has_active_computer_grant(self, execution: DurableToolExecution, *, now: datetime) -> bool:
+        if (
+            execution.grant_id is None
+            or execution.isolation is not IsolationLabel.COMPUTER_USE_HOST
+        ):
+            return False
+        grant = self.journal.get_capability_grant(self.workspace_id, execution.grant_id)
+        return bool(
+            grant is not None
+            and grant.is_active(now)
+            and CapabilityName.COMPUTER_USE_HOST in grant.capabilities
+        )
+
+    def active_tool_grant_evidence(
+        self, snapshot: PermissionSnapshot, tool_name: str, *, now: datetime
+    ) -> tuple[str | None, IsolationLabel | None]:
+        if tool_name in SHELL_TOOL_NAMES:
+            return self.active_grant_evidence(snapshot, now=now)
+        if tool_name not in COMPUTER_TOOL_NAMES or snapshot.grant_id is None:
+            return None, None
+        grant = self.journal.get_capability_grant(self.workspace_id, snapshot.grant_id)
+        if (
+            grant is None
+            or not grant.is_active(now)
+            or CapabilityName.COMPUTER_USE_HOST not in grant.capabilities
+            or snapshot.isolation_for(CapabilityName.COMPUTER_USE_HOST)
+            is not IsolationLabel.COMPUTER_USE_HOST
+        ):
+            return None, None
+        return grant.grant_id, IsolationLabel.COMPUTER_USE_HOST

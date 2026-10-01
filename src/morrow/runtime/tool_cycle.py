@@ -20,7 +20,7 @@ from morrow.core.execution import (
 )
 from morrow.core.faults import FaultPoint
 from morrow.core.models import FunctionToolCall, ToolApprovalRequest, ToolEffect
-from morrow.core.permissions import PermissionEvidenceError
+from morrow.core.permissions import IsolationLabel, PermissionEvidenceError
 from morrow.runtime.policy import RunPolicy
 from morrow.runtime.session import DurableRunCoordinator, Session
 from morrow.runtime.tool_output import tool_output_scope
@@ -253,6 +253,13 @@ class ToolCycleExecutor:
                     and durable is not None
                     and self._has_active_unconfined_grant(session, durable)
                 )
+                allow_computer_use = (
+                    durable is not None
+                    and durable.isolation is IsolationLabel.COMPUTER_USE_HOST
+                    and self._coordinator(session).has_active_computer_grant(
+                        durable, now=self.wall_now(session)
+                    )
+                )
                 execution = self.tool_executor.execute_with_context(
                     call,
                     result_limit=result_limit,
@@ -261,6 +268,7 @@ class ToolCycleExecutor:
                     total=total,
                     skip_approval=skip_approval,
                     allow_unconfined_host=allow_unconfined_host,
+                    **({"allow_computer_use": True} if allow_computer_use else {}),
                 )
                 output_listener = (
                     self.output_listener_factory(call)

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import inspect
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from pydantic import ValidationError
 
 from morrow.core.capabilities import PolicyVerdict, ProcessIsolation, ToolCallContext
+from morrow.core.computer_use import COMPUTER_TOOL_NAMES
 from morrow.core.domain import canonical_json_bytes, sha256_digest
 from morrow.core.execution import (
     ConfigMutationEvidence,
@@ -193,6 +195,7 @@ def prepare_cycle_executions(
     permission_snapshot_id: str | None = None,
     grant_id: str | None = None,
     isolation_label: IsolationLabel | None = None,
+    grant_evidence_by_tool: Mapping[str, tuple[str | None, IsolationLabel | None]] | None = None,
 ) -> tuple[DurableToolExecution, ...]:
     permission_digest = sha256_digest(
         canonical_json_bytes(session.permission_profile.model_dump(mode="json"))
@@ -200,6 +203,11 @@ def prepare_cycle_executions(
     executions: list[DurableToolExecution] = []
     total = len(message.tool_calls)
     for ordinal, call in enumerate(message.tool_calls, start=1):
+        call_grant_id, call_isolation = (
+            grant_evidence_by_tool.get(call.name, (None, None))
+            if grant_evidence_by_tool is not None
+            else (grant_id, isolation_label)
+        )
         try:
             intent = _prepare_one(
                 call,
@@ -211,17 +219,23 @@ def prepare_cycle_executions(
                 permission_digest=permission_digest,
                 mutation=mutation,
                 isolation=isolation,
-                grant_id=grant_id,
+                grant_id=call_grant_id,
             )
         except (TypeError, ValueError, ValidationError) as exc:
             raise PreparedIntentError(
                 "tool intent cannot be represented by the durable contract"
             ) from exc
-        elevated = (
-            grant_id is not None
-            and call.name in {"run_command", "bash"}
-            and intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
-            and intent.requires_approval
+        elevated = call_grant_id is not None and (
+            (
+                call.name in {"run_command", "bash"}
+                and call_isolation is IsolationLabel.UNCONFINED_HOST
+                and intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
+                and intent.requires_approval
+            )
+            or (
+                call.name in COMPUTER_TOOL_NAMES
+                and call_isolation is IsolationLabel.COMPUTER_USE_HOST
+            )
         )
         state = (
             ToolExecutionState.AWAITING_APPROVAL
@@ -242,8 +256,8 @@ def prepare_cycle_executions(
                 intent=intent,
                 state=state,
                 permission_snapshot_id=permission_snapshot_id,
-                grant_id=grant_id if elevated else None,
-                isolation=isolation_label if elevated else None,
+                grant_id=call_grant_id if elevated else None,
+                isolation=call_isolation if elevated else None,
             )
         )
     return tuple(executions)
@@ -312,6 +326,8 @@ def _prepare_one(
                         allow_unconfined_host=(
                             grant_id is not None and call.name in {"run_command", "bash"}
                         ),
+                        allow_computer_use=grant_id is not None
+                        and call.name in COMPUTER_TOOL_NAMES,
                     )
                     policy_verdict = decision.verdict
                     policy_reason_codes = tuple(str(reason) for reason in decision.reason_codes)

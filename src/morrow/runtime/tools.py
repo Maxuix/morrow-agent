@@ -762,6 +762,7 @@ class ToolExecutor:
         context: ToolCallContext,
         *,
         allow_unconfined_host: bool,
+        allow_computer_use: bool = False,
     ) -> PolicyDecision:
         """Resolve an ordinary or narrowly specialized policy decision."""
 
@@ -777,7 +778,11 @@ class ToolExecutor:
             return decision
         if self.capability_policy is None:
             raise ToolExecutionError(ToolErrorCode.PREFLIGHT_FAILED, "能力策略不可用")
-        return self.capability_policy.evaluate(intent, allow_unconfined_host=allow_unconfined_host)
+        return self.capability_policy.evaluate(
+            intent,
+            allow_unconfined_host=allow_unconfined_host,
+            allow_computer_use=allow_computer_use,
+        )
 
     def error_outcome(
         self,
@@ -801,6 +806,7 @@ class ToolExecutor:
         result_limit: int | None = None,
         skip_approval: bool = False,
         allow_unconfined_host: bool = False,
+        allow_computer_use: bool = False,
     ) -> ToolExecutionOutcome:
         limit = result_limit or self.run_policy.effective_result_limit
         registered = self.tool_set.tools.get(call.name)
@@ -860,6 +866,7 @@ class ToolExecutor:
                     intent,
                     call_context,
                     allow_unconfined_host=allow_unconfined_host,
+                    allow_computer_use=allow_computer_use,
                 )
             except asyncio.CancelledError:
                 raise
@@ -1092,6 +1099,7 @@ class ToolExecutor:
         total: int,
         skip_approval: bool = False,
         allow_unconfined_host: bool = False,
+        allow_computer_use: bool = False,
     ) -> ToolExecutionOutcome:
         previous = (self._active_run_context, self._active_ordinal, self._active_total)
         self._active_run_context = run_context
@@ -1101,6 +1109,8 @@ class ToolExecutor:
             extra = {"skip_approval": True} if skip_approval else {}
             if allow_unconfined_host:
                 extra["allow_unconfined_host"] = True
+            if allow_computer_use:
+                extra["allow_computer_use"] = True
             return await self.execute(call, result_limit=result_limit, **extra)
         finally:
             registered = self.tool_set.tools.get(call.name)
