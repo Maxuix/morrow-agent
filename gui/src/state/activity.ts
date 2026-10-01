@@ -331,6 +331,8 @@ interface ToolVerb { icon: ToolIcon; phrases: Record<'done' | 'running' | 'faile
 
 /** `{t}` is the projected target; the second phrase is the no-target form. */
 const TOOL_VERBS: Record<string, ToolVerb> = {
+  computer_observe: {icon: 'tool', phrases: {done: ['已观察窗口 {t}', '已观察窗口'], running: ['正在观察窗口 {t}', '正在观察窗口'], failed: ['观察窗口 {t} 失败', '观察窗口失败']}},
+  computer_action: {icon: 'tool', phrases: {done: ['桌面动作已返回结果 {t}', '桌面动作已返回结果'], running: ['正在执行桌面动作 {t}', '正在执行桌面动作'], failed: ['桌面动作 {t} 失败', '桌面动作失败']}},
   read: {icon: 'file', phrases: {done: ['已读取 {t}', '已读取文件'], running: ['正在读取 {t}', '正在读取文件'], failed: ['读取 {t} 失败', '读取文件失败']}},
   read_artifact: {icon: 'file', phrases: {done: ['已读取 {t}', '已读取产物'], running: ['正在读取 {t}', '正在读取产物'], failed: ['读取 {t} 失败', '读取产物失败']}},
   find: {icon: 'search', phrases: {done: ['已搜索 {t}', '已搜索'], running: ['正在搜索 {t}', '正在搜索'], failed: ['搜索 {t} 失败', '搜索失败']}},
@@ -396,14 +398,19 @@ export function toolGroupSummary(items: ActivityItem[]): string {
   const named = new Map<string, number>()
   for (const item of items) {
     const payload = item.payload.kind === 'tool' ? item.payload : null
-    if (payload && !TOOL_VERBS[payload.tool_name]) {
-      named.set(payload.tool_name, (named.get(payload.tool_name) ?? 0) + 1)
+    if (payload && (!TOOL_VERBS[payload.tool_name] || TOOL_VERBS[payload.tool_name].icon === 'tool')) {
+      const name = payload.tool_name === 'computer_observe' ? '桌面观察'
+        : payload.tool_name === 'computer_action' ? '桌面动作' : payload.tool_name
+      named.set(name, (named.get(name) ?? 0) + 1)
     }
   }
   const parts = [...counts.entries()]
     .filter(([icon]) => icon !== 'tool')
     .map(([icon, count]) => `${GROUP_VERBS[icon as Exclude<ToolIcon, 'tool'>]}了 ${count} ${GROUP_NOUNS[icon as ToolIcon]}`)
   for (const [name, count] of named) parts.push(`调用 ${name} ${count} 次`)
+  const unknownDesktop = items.filter(item => item.state === 'unknown' && item.payload.kind === 'tool'
+    && item.payload.tool_name === 'computer_action').length
+  if (unknownDesktop) parts.push(`${unknownDesktop} 次桌面动作效果未知`)
   return parts.join('，')
 }
 
@@ -512,7 +519,7 @@ export function buildParts(
   const flushAssets = () => { if (assets.length) { parts.push({kind: 'assets', items: assets}); assets = [] } }
   for (const item of items) {
     if (item.kind === 'tool') {
-      if (item.preview_ref) {
+      if (item.preview_ref && !(item.payload.kind === 'tool' && ['computer_observe', 'computer_action'].includes(item.payload.tool_name))) {
         flushTools()
         assets.push(item)
       } else {

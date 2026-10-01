@@ -113,4 +113,18 @@ describe('activity content refs (3c)', () => {
     expect(screen.getByText('实时片段')).toBeTruthy()
     expect(activityContent).not.toHaveBeenCalled()
   })
+  it('keeps desktop evidence with its screenshot and never labels unknown effects as success', async () => {
+    const fetchBlob = vi.fn().mockResolvedValue(new Blob(['png-bytes'], {type: 'image/png'}))
+    const client = mockClient({fetchBlob})
+    const desktop = toolItem({state: 'unknown', safe_title: 'computer_action',
+      payload: {kind: 'tool', tool_name: 'computer_action', tool_execution_id: 'tex_1'},
+      preview_ref: '/v1/workspaces/ws/sessions/s/artifacts/art_1/content'})
+    act(() => root.render(<ToolRow item={desktop} now={BASE} open={true} onToggle={() => {}} client={client}/>))
+    await screen.findByAltText('computer_action')
+    expect(screen.getByRole('alert').textContent).toContain('不要自动重试')
+    expect(screen.getByRole('button', {name: /桌面动作效果未知/})).toBeDefined()
+    expect(container.textContent).not.toContain('桌面动作已返回结果')
+    expect(fetchBlob).toHaveBeenCalledWith('/v1/workspaces/ws/sessions/s/artifacts/art_1/content?raw=1')
+  })
+
 })

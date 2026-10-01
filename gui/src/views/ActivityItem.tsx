@@ -95,6 +95,8 @@ export function ToolRow({item, content, now, open, onToggle, client}: {
     : item.state === 'running' ? copy.runningLabel
     : item.state === 'cancelled' ? `已取消 · ${copy.rowLabel}`
     : item.state === 'skipped' ? `已跳过 · ${copy.rowLabel}`
+    : item.state === 'unknown' ? (item.payload.kind === 'tool' && item.payload.tool_name === 'computer_action'
+      ? '桌面动作效果未知' : `结果未知 · ${item.safe_title}`)
     : copy.rowLabel
   const span = durationText(item.started_at, item.ended_at, now)
   return <li className="exec-row-wrap">
@@ -145,6 +147,10 @@ export function ToolDetail({item, content, client}: {item: ActivityItem; content
       {failed && payload?.validation_path && <><dt>字段位置</dt><dd>{payload.validation_path}</dd></>}
       {item.safe_summary && <><dt>摘要</dt><dd>{item.safe_summary}</dd></>}
     </dl>
+    {item.state === 'unknown' && payload?.tool_name === 'computer_action' && <p className="exec-note" role="alert">
+      桌面动作效果未知。已投递效果无法撤回，请检查目标窗口；不要自动重试。
+    </p>}
+    {client && item.preview_ref && payload && ['computer_observe', 'computer_action'].includes(payload.tool_name) && <AssetThumb item={item} client={client}/>}
     {validationAction && <p className="exec-note">{validationAction}</p>}
     {outputText && <div className="exec-output">
       <div className="exec-output-head">

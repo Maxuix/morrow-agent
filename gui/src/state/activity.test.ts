@@ -580,3 +580,15 @@ describe('ActivityStore reconnection', () => {
     store.stop()
   })
 })
+
+
+it('keeps desktop tool status together with its preview instead of replacing it with an asset card', () => {
+  const desktop = item({state: 'unknown', preview_ref: '/controlled-image',
+    payload: {kind: 'tool', tool_name: 'computer_action', tool_execution_id: 'tex_desktop'}})
+  const parts = buildParts([desktop], {})
+  expect(parts).toHaveLength(1)
+  expect(parts[0].kind).toBe('tools')
+  expect(toolGroupSummary([desktop])).toBe('调用 桌面动作 1 次，1 次桌面动作效果未知')
+  if (parts[0].kind === 'tools') expect(parts[0].items[0].state).toBe('unknown')
+  expect(toolCopy(item({safe_title: 'computer_action', payload: {kind: 'tool', tool_name: 'computer_action', call_id: 'c'}})).rowLabel).toBe('桌面动作已返回结果')
+})
