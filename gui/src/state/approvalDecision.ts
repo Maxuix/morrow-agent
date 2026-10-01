@@ -133,7 +133,7 @@ function resolvedMessage(decision: ApprovalDecisionWire | null, resolution: Appr
   if (resolution === 'approved' && decision === 'allow_session') {
     return '已允许本次执行，并记录本会话相同工具与操作范围免批。'
   }
-  if (resolution === 'approved') return '已允许本次执行，等待工具结果；决定不等于工具已成功。'
+  if (resolution === 'approved') return '已允许本次执行；工具结果请查看执行详情。决定不等于工具已成功。'
   if (resolution === 'denied') return '已拒绝此次操作，工具不会执行。'
   return '此请求已过期，工具不会执行。'
 }

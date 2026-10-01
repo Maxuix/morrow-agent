@@ -74,7 +74,7 @@ describe('InlineApprovalCard', () => {
     await user.dblClick(screen.getByRole('button', {name: '允许本次执行'}))
     expect(client.resolveApproval).toHaveBeenCalledTimes(1)
     resolve(resultFor(source, 'allow_once'))
-    await waitFor(() => expect(screen.getByText('已允许本次执行，等待工具结果；决定不等于工具已成功。')).toBeDefined())
+    await waitFor(() => expect(screen.getByText('已允许本次执行；工具结果请查看执行详情。决定不等于工具已成功。')).toBeDefined())
   })
 
   it('preserves the command id after an uncertain response and allows the same decision to retry', async () => {
@@ -89,7 +89,7 @@ describe('InlineApprovalCard', () => {
     await user.click(screen.getByRole('button', {name: '允许本次执行'}))
     await waitFor(() => expect(screen.getByRole('button', {name: '重试相同决定'})).toBeDefined())
     await user.click(screen.getByRole('button', {name: '重试相同决定'}))
-    await waitFor(() => expect(screen.getByText('已允许本次执行，等待工具结果；决定不等于工具已成功。')).toBeDefined())
+    await waitFor(() => expect(screen.getByText('已允许本次执行；工具结果请查看执行详情。决定不等于工具已成功。')).toBeDefined())
     expect(client.resolveApproval).toHaveBeenCalledTimes(2)
     expect(client.resolveApproval.mock.calls[0][2]).toBe(client.resolveApproval.mock.calls[1][2])
   })

@@ -89,12 +89,16 @@ export function ToolRow({item, content, now, open, onToggle, client}: {
 }) {
   const copy = toolCopy(item)
   const failed = item.state === 'failed'
+  const desktopName = item.payload.kind === 'tool' ? item.payload.tool_name : null
+  const desktopPending = desktopName === 'computer_action' ? '桌面动作'
+    : desktopName === 'computer_observe' ? '桌面观察' : null
+  const unsettledLabel = desktopPending ?? copy.rowLabel
   const label = item.state === 'failed' ? copy.failedLabel
-    : item.state === 'waiting' ? `等待批准 · ${copy.rowLabel}`
+    : item.state === 'waiting' ? `等待批准 · ${unsettledLabel}`
     : item.state === 'preparing' ? '正在准备调用'
     : item.state === 'running' ? copy.runningLabel
-    : item.state === 'cancelled' ? `已取消 · ${copy.rowLabel}`
-    : item.state === 'skipped' ? `已跳过 · ${copy.rowLabel}`
+    : item.state === 'cancelled' ? `已取消 · ${unsettledLabel}`
+    : item.state === 'skipped' ? `已跳过 · ${unsettledLabel}`
     : item.state === 'unknown' ? (item.payload.kind === 'tool' && item.payload.tool_name === 'computer_action'
       ? '桌面动作效果未知' : `结果未知 · ${item.safe_title}`)
     : copy.rowLabel

@@ -127,6 +127,15 @@ describe('activity content refs (3c)', () => {
     expect(fetchBlob).toHaveBeenCalledWith('/v1/workspaces/ws/sessions/s/artifacts/art_1/content?raw=1')
   })
 
+  it.each(['waiting', 'cancelled', 'skipped'] as const)('does not claim desktop completion while %s', state => {
+    const desktop = toolItem({state, safe_title: '等待批准 computer_action',
+      payload: {kind: 'tool', tool_name: 'computer_action', tool_execution_id: 'tex_1'}})
+    act(() => root.render(<ToolRow item={desktop} now={BASE} open={false} onToggle={() => {}}/>))
+    expect(container.textContent).not.toContain('已返回结果')
+    const prefix = {waiting: '等待批准', cancelled: '已取消', skipped: '已跳过'}[state]
+    expect(screen.getByRole('button', {name: `${prefix} · 桌面动作`})).toBeDefined()
+  })
+
   it('separates native completion, actual delivery and failed postconditions from task completion', () => {
     const desktop = toolItem({safe_title: 'computer_action Controlled notes', payload: {
       kind: 'tool', tool_name: 'computer_action', tool_execution_id: 'tex_1', computer: {

@@ -115,29 +115,32 @@ export function applyRekey(
   return {items: next, content: nextContent}
 }
 
-/**
- * Merge durable recovery skeletons with live items: identical tool execution
- * identity (agent_run_id + ordinal, durable call ids are normalized) never
- * appears twice; leftovers render as recovered history marked `unsaved`.
- */
+/** Merge recovery by stable execution identity, preserving live content ownership. */
 export function mergeDurable(items: ActivityItem[], recovery: ActivityRecovery): ActivityItem[] {
-  const liveKeys = new Set(items.map(liveKey))
-  const seenIds = new Set(items.map(item => item.activity_id))
   const merged = [...items]
-  for (const item of recovery.items) {
-    if (seenIds.has(item.activity_id)) continue
-    const key = liveKey(item)
-    if (liveKeys.has(key)) continue
-    seenIds.add(item.activity_id)
-    merged.push(item)
+  const indices = new Map(merged.map((item, index) => [liveKey(item), index]))
+  for (const recovered of recovery.items) {
+    const key = liveKey(recovered)
+    const index = indices.get(key)
+    if (index !== undefined) {
+      const live = merged[index]
+      // Admission facts can lack turn attribution. The original execution ledger
+      // supplies it without replacing the live revision, state or content key.
+      merged[index] = {...live, identity: {...live.identity,
+        turn_id: live.identity.turn_id ?? recovered.identity.turn_id}}
+    } else {
+      indices.set(key, merged.length)
+      merged.push(recovered)
+    }
   }
   return merged
 }
 
-const liveKey = (item: ActivityItem) =>
-  item.kind === 'tool' && item.identity.agent_run_id && item.payload.kind === 'tool' && item.payload.ordinal
-  ? `${item.identity.agent_run_id}#${item.payload.ordinal}`
-  : item.activity_id
+const liveKey = (item: ActivityItem) => {
+  const executionId = item.identity.tool_execution_id
+    ?? (item.payload.kind === 'tool' ? item.payload.tool_execution_id : null)
+  return item.kind === 'tool' && executionId ? `tool:${executionId}` : item.activity_id
+}
 
 const parseTs = (value: string | null | undefined): number | null => {
   if (!value) return null

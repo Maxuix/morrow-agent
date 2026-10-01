@@ -150,12 +150,29 @@ describe('activity content', () => {
 
 describe('durable merge', () => {
   it('dedupes by execution identity and keeps recovered leftovers', () => {
-    const live = item({activity_id: 'act_call_live', payload: {kind: 'tool', tool_name: 'read', call_id: 'provider_1', ordinal: 1}})
-    const durableSame = item({activity_id: 'act_tool_durable', payload: {kind: 'tool', tool_name: 'read', call_id: 'normalized_hash', ordinal: 1}, availability: 'unsaved'})
+    const live = item({activity_id: 'act_call_live', payload: {kind: 'tool', tool_name: 'read', tool_execution_id: 'tex_1', call_id: 'provider_1', ordinal: 1}})
+    const durableSame = item({activity_id: 'act_tool_durable', payload: {kind: 'tool', tool_name: 'read', tool_execution_id: 'tex_1', call_id: 'normalized_hash', ordinal: 1}, availability: 'unsaved'})
     const durableOther = item({activity_id: 'act_tool_durable2', payload: {kind: 'tool', tool_name: 'read', call_id: 'normalized_hash2', ordinal: 2}, availability: 'unsaved'})
     const merged = mergeDurable([live], {items: [durableSame, durableOther], truncated: false})
     expect(merged.map(entry => entry.activity_id)).toEqual(['act_call_live', 'act_tool_durable2'])
   })
+})
+
+it('recovers missing turn attribution without collapsing same-ordinal desktop executions', () => {
+  const live = ['tex_discover', 'tex_observe', 'tex_action'].map((executionId, index) => item({
+    activity_id: `act_tool_${executionId}`, state: 'succeeded', revision: 4,
+    identity: {workspace_id: 'ws', root_session_id: 's', source_session_id: 's',
+      agent_run_id: 'arun_1', turn_id: null, tool_execution_id: executionId},
+    payload: {kind: 'tool', tool_name: index === 2 ? 'computer_action' : 'computer_observe',
+      tool_execution_id: executionId, ordinal: 1},
+  }))
+  const recovered = live.map(entry => ({...entry, revision: 1, availability: 'unsaved' as const,
+    identity: {...entry.identity, turn_id: 't_desktop'}}))
+  const merged = mergeDurable(live, {items: recovered, truncated: false})
+  expect(merged).toHaveLength(3)
+  expect(merged.every(entry => entry.identity.turn_id === 't_desktop' && entry.revision === 4)).toBe(true)
+  expect(groupByRun(merged).map(run => [run.key, run.items.length])).toEqual([['turn:t_desktop', 3]])
+  expect(mergeDurable([], {items: recovered, truncated: false})).toHaveLength(3)
 })
 
 describe('run attribution', () => {
