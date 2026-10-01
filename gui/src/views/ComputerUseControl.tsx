@@ -71,6 +71,7 @@ export function ComputerUseControl({client, workspace, session, modelKey, permis
         </select>
       </label>
       <p className="menu-note" role="status">宿主：{hostReasons[view.host.reason] ?? '桌面暂不可用'}</p>
+      {view.host_recovery && <p className="menu-note">{view.host_recovery}</p>}
       {view.model_error && <p className="menu-note">{modelReasons[view.model_error]}</p>}
       <p className="menu-note">更改对后续运行生效。启用后仍需完整访问（逐次确认）及本次运行的独立桌面授权；现有运行请使用停止或撤销。</p>
     </>}

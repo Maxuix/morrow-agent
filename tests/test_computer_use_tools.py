@@ -102,3 +102,30 @@ async def test_context_binding_rejection_never_opens_driver(environment, overrid
         )
     assert lifecycle.calls == []
     assert lifecycle.device.calls == []
+
+
+@pytest.mark.parametrize(
+    "reason, recovery",
+    [
+        ("desktop_busy", "等待停稳"),
+        ("stale_observation", "不重复旧动作"),
+        ("tcc_missing", "实际运行宿主"),
+        ("image_missing", "重新观察"),
+        ("image_publish_failed", "不要自动重试"),
+        ("model_image_tools_required", "同时支持图像与函数工具"),
+    ],
+)
+async def test_refusal_returns_bounded_code_and_local_recovery_without_device_reads(
+    reason, recovery
+):
+    from morrow.core.computer_use import ComputerUseContractError
+
+    class Refused:
+        def execution_for_context(self, context):
+            raise ComputerUseContractError(reason)
+
+    tool = make_computer_observe_tool(Refused(), None)
+    with pytest.raises(ToolExecutionError) as raised:
+        await tool.context_handler(ComputerObserveArguments(operation="discover"), context())
+    assert raised.value.details == ({"reason": reason},)
+    assert recovery in str(raised.value)

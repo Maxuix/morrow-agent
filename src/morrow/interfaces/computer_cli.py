@@ -37,6 +37,7 @@ def _emit(view, *, as_json):
     typer.echo(f"全局修订：{view['revision']}")
     typer.echo(f"桌面功能：{'启用' if settings['enabled'] else '关闭'} · {settings['mode']}")
     typer.echo(f"宿主：{view['host']['status']} ({view['host']['reason']})")
+    typer.echo(view["host_recovery"])
     typer.echo(f"当前全局模型：{view['model_error'] or '支持所需协议'}")
     typer.echo("配置对后续运行生效；仍需 Full Access Manual 和本次运行的独立桌面授权。")
 

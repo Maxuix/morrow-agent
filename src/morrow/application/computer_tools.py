@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from morrow.application.computer_recovery import computer_refusal_message
 from morrow.core.capabilities import (
     OperationIntent,
     OperationKind,
@@ -71,7 +72,11 @@ def make_computer_observe_tool(observations, visuals) -> RegisteredTool:
             )
         except ComputerUseContractError as exc:
             # Contract errors contain bounded codes, never raw SDK diagnostics.
-            raise ToolExecutionError(ToolErrorCode.PREFLIGHT_FAILED, str(exc)) from None
+            raise ToolExecutionError(
+                ToolErrorCode.PREFLIGHT_FAILED,
+                computer_refusal_message(exc.code),
+                details=({"reason": exc.code},),
+            ) from None
 
     def intent(_: ComputerObserveArguments, __: ToolCallContext):
         return OperationIntent(
@@ -124,7 +129,11 @@ def make_computer_action_tool(observations, visuals) -> RegisteredTool:
                 completion=result.outcome.status,
             )
         except ComputerUseContractError as exc:
-            raise ToolExecutionError(ToolErrorCode.PREFLIGHT_FAILED, exc.code) from None
+            raise ToolExecutionError(
+                ToolErrorCode.PREFLIGHT_FAILED,
+                computer_refusal_message(exc.code),
+                details=({"reason": exc.code},),
+            ) from None
 
     def intent(arguments: ComputerActionArguments, _: ToolCallContext):
         return OperationIntent(

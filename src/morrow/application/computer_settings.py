@@ -1,5 +1,6 @@
 """Local desktop configuration and exact-model availability, without creating a run."""
 
+from morrow.application.computer_recovery import computer_recovery_guidance
 from morrow.core.agent_runs import exact_model_capabilities
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.models import StateWriteStatus
@@ -53,6 +54,7 @@ class ComputerUseSettingsService:
             "revision": loaded.revision,
             "settings": settings.model_dump(mode="json"),
             "host": host.model_dump(mode="json"),
+            "host_recovery": computer_recovery_guidance(host.reason),
             "model": model.model_dump(mode="json") if model is not None else None,
             "model_capabilities": {"function_tools": function_tools, "images": images},
             "model_error": model_error,

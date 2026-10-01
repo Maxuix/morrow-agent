@@ -47,6 +47,8 @@ async def test_desktop_settings_occ_status_and_session_model_without_grant(tmp_p
         assert saved["host"] == {"status": "unavailable", "reason": "native_unverified"}
         assert saved["model_capabilities"] == {"function_tools": True, "images": False}
         assert saved["model_error"] == "images_not_supported"
+        assert "原生验收尚未通过" in saved["host_recovery"]
+        assert "不能绕过验收" in saved["host_recovery"]
         assert (await fx.client.post(url, request)).status == 409
         assert (await fx.client.get(url)).json() == saved
         chat = (await fx.client.get(path + "/settings")).json()

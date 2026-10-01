@@ -48,6 +48,7 @@ export interface ComputerUseSettingsView {
   revision: number
   settings: ComputerUseSettings
   host: {status: 'unavailable'; reason: string}
+  host_recovery?: string
   model: ModelRefWire | null
   model_capabilities: {function_tools: boolean; images: boolean}
   model_error: 'model_unavailable' | 'function_tools_required' | 'images_not_supported' | null

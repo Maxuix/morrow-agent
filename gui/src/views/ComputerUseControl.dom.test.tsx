@@ -62,3 +62,15 @@ it('discards late status from an old session and refreshes when the model change
   view.rerender(<ComputerUseControl client={client as unknown as ApiClient} workspace="ws" session="new" modelKey="b"/> )
   await waitFor(() => expect(client.computerUseSettings).toHaveBeenCalledTimes(3))
 })
+
+
+it('shows recovery guidance for the actual host without changing permissions', async () => {
+  const client = {computerUseSettings: vi.fn(async () => ({...initial,
+    host: {status: 'unavailable' as const, reason: 'tcc_missing'},
+    host_recovery: '在系统隐私与安全设置中检查实际运行宿主的辅助功能和屏幕录制权限，再重新检查状态。',
+  })), saveComputerUseSettings: vi.fn()}
+  render(<ComputerUseControl client={client as unknown as ApiClient} workspace="ws" session="s"/>)
+  await screen.findByText(/实际运行宿主的辅助功能/)
+  expect(screen.getByText('宿主：缺少系统权限')).toBeDefined()
+  expect(client.saveComputerUseSettings).not.toHaveBeenCalled()
+})

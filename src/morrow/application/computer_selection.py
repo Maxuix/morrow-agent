@@ -6,6 +6,7 @@ from datetime import datetime
 
 from pydantic import Field, ValidationError, field_validator
 
+from morrow.application.computer_recovery import computer_refusal_message
 from morrow.application.computer_requests import ComputerUseSelection
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.computer_use import (
@@ -73,7 +74,7 @@ class ComputerUseSelectionService:
             if exc.code in {"stale_observation", "unknown_target"}
             else ApplicationErrorCode.UNAVAILABLE
         )
-        raise ApplicationError(code, f"桌面选择不可用（{exc.code}）") from None
+        raise ApplicationError(code, computer_refusal_message(exc.code)) from None
 
     async def prepare_catalog(self, *, permission):
         settings = self._settings(permission)
