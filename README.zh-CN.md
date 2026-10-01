@@ -214,6 +214,22 @@ uv run morrow workflow --help
 
 ## 权限与执行边界
 
+### 桌面配置（实验性）
+
+桌面执行默认关闭，原生验收门槛尚未通过。
+`uv run morrow computer status` 查看共享全局配置、宿主状态及当前全局模型能力。
+使用状态中返回的修订号明确修改配置：
+
+```bash
+uv run morrow computer configure --enable --mode hybrid --expected-revision <revision>
+uv run morrow computer configure --disable --expected-revision <revision>
+```
+
+`--json` 返回与 GUI 相同的配置/状态字段；`computer configure --help` 列出操作次数、
+运行/调用期限、图像字节与尺寸预算。更改对未来运行生效，启用开关不会创建设备授权。
+GUI 权限菜单也提供这些配置及当前会话精确模型的限制。每个桌面运行仍需
+Full Access Manual 与独立本地目标选择；现有运行请使用停止或撤销。
+
 工作区文件工具的路径约束与操作系统进程隔离是两种不同机制。
 
 | 预设 | 项目命令在哪里执行 | 审批与边界 |

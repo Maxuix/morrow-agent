@@ -58,6 +58,7 @@ from morrow.core.recovery import RecoveryResolution
 from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.interfaces.approval_cli import approval_app
 from morrow.interfaces.attach_cli import register as _register_attach
+from morrow.interfaces.computer_cli import computer_app
 from morrow.interfaces.gui_cli import register as _register_gui
 from morrow.interfaces.headless_diagnostics import HeadlessDiagnostics
 from morrow.interfaces.learning_cli import learning_app, memory_app
@@ -84,6 +85,7 @@ grant_app = typer.Typer(help="Foreground AgentRun 的手动权限授予与撤销
 state_app = typer.Typer(help="Operational Store 诊断、事件与备份。")
 agent_run_app = typer.Typer(help="AgentRun 观测查询。")
 preferences_app = typer.Typer(help="Generic Preference 查询与直接生命周期管理。")
+app.add_typer(computer_app, name="computer")
 app.add_typer(skill_app, name="skill")
 app.add_typer(management_app, name="manage")
 app.add_typer(provider_app, name="provider")

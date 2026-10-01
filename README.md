@@ -214,6 +214,23 @@ The lifecycle is **edit → validate → publish an immutable revision → expli
 
 ## Permissions and execution boundaries
 
+### Desktop configuration (experimental)
+
+Desktop execution is disabled by default and its native acceptance gates are still pending.
+Inspect shared global settings and the current global model with `uv run morrow computer status`.
+Use the reported revision to change settings explicitly:
+
+```bash
+uv run morrow computer configure --enable --mode hybrid --expected-revision <revision>
+uv run morrow computer configure --disable --expected-revision <revision>
+```
+
+`--json` returns the same settings/status fields as the GUI. Run `computer configure --help`
+for bounded operation, time, image-byte and image-size budgets. Changes apply to future runs;
+enabling configuration does not grant device access. The GUI's permission menu also exposes
+these settings and the current session model's limitations. Each desktop run still needs
+Full Access Manual and its own local target selection; existing runs require stop or revoke.
+
 Workspace-scoped file tools and operating-system process isolation are separate mechanisms.
 
 | Preset | Project command execution | Approval behavior and limits |
