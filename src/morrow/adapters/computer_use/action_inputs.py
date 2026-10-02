@@ -38,7 +38,18 @@ class _WindowInput(BaseModel):
     delivery_mode: Literal["background", "foreground"]
 
 
-class NativeTextInput(_WindowInput):
+class _GuardedWindowInput(_WindowInput):
+    require_non_sensitive: Literal[True] | None = Field(default=None, repr=False)
+
+    @field_validator("require_non_sensitive", mode="before")
+    @classmethod
+    def exact_guard_flag(cls, value):
+        if value is not None and value is not True:
+            raise ValueError("rejected_action")
+        return value
+
+
+class NativeTextInput(_GuardedWindowInput):
     element_token: str = Field(min_length=1, max_length=1024, repr=False)
     text: str = Field(min_length=1, max_length=4096, repr=False)
 
@@ -107,12 +118,12 @@ NativeKey = Literal[
 ]
 
 
-class NativeKeyInput(_WindowInput):
+class NativeKeyInput(_GuardedWindowInput):
     element_token: str = Field(min_length=1, max_length=1024, repr=False)
     key: NativeKey
 
 
-class NativeHotkeyInput(_WindowInput):
+class NativeHotkeyInput(_GuardedWindowInput):
     element_token: str = Field(min_length=1, max_length=1024, repr=False)
     keys: tuple[NativeKey, ...] = Field(min_length=2, max_length=4)
 

@@ -50,6 +50,7 @@ class ComputerDriverOwner:
         lease: DesktopLease | None = None,
         call_timeout: float = 15,
         process_reader: Callable[[int], ProcessBirth] = read_process_birth,
+        native_security: bool = False,
     ) -> None:
         self._loop = asyncio.get_running_loop()
         self._thread = threading.get_ident()
@@ -61,6 +62,7 @@ class ComputerDriverOwner:
         self._leased = False
         self._call_timeout = call_timeout
         self._process_reader = process_reader
+        self._native_security = native_security
         self._session: TypedComputerSession | None = None
         self._run: RunSession | None = None
         self._generations: dict[str, int] = {}
@@ -252,6 +254,7 @@ class ComputerDriverOwner:
                     else self._call_timeout
                 ),
                 process_reader=self._process_reader,
+                native_security=self._native_security,
                 window_bindings=bindings,
             )
             self._run = await self._session.open_run_session(request)

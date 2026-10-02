@@ -68,7 +68,12 @@ class Native(_Native):
         )
 
 
-async def setup(delivery=ComputerUseDelivery.FOREGROUND, *, safety_probe=lambda subject: True):
+async def setup(
+    delivery=ComputerUseDelivery.FOREGROUND,
+    *,
+    safety_probe=lambda subject: True,
+    native_security=False,
+):
     native, clock = Native(), FixedClock(NOW)
     scope = _scope(delivery=delivery)
     session = TypedComputerSession(
@@ -79,6 +84,7 @@ async def setup(delivery=ComputerUseDelivery.FOREGROUND, *, safety_probe=lambda 
         clock,
         process_reader=_process_birth,
         element_safety_probe=safety_probe,
+        native_security=native_security,
     )
     run = await session.open_run_session(
         OpenRunSessionRequest(

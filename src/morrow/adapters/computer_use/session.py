@@ -23,6 +23,7 @@ from morrow.adapters.computer_use.action_inputs import (
 from morrow.adapters.computer_use.calls import NativeActionInterrupted, NativeCalls
 from morrow.adapters.computer_use.process_identity import ProcessBirth, read_process_birth
 from morrow.adapters.computer_use.registry import TrustedDesktopRegistry, WindowGeometry
+from morrow.adapters.computer_use.security import NativeElementSafetyProbe
 from morrow.core.computer_use import (
     MAX_AX_DEPTH,
     MAX_AX_ELEMENTS,
@@ -96,6 +97,7 @@ class TypedComputerSession:
         process_reader: Callable[[int], ProcessBirth] = read_process_birth,
         element_safety_probe: Callable[[ElementSafetySubject], bool | None | Awaitable[bool | None]]
         | None = None,
+        native_security: bool = False,
         window_bindings: dict | None = None,
     ) -> None:
         self._sdk = sdk
@@ -115,7 +117,14 @@ class TypedComputerSession:
         self._observations: dict[str, Observation] = {}
         self._calls = NativeCalls(self.invalidate, timeout=call_timeout)
         self._process_reader = process_reader
-        self._element_safety_probe = element_safety_probe
+        if native_security and element_safety_probe is not None:
+            raise ValueError("conflicting_element_safety_probe")
+        self._native_security = native_security
+        self._element_safety_probe = (
+            NativeElementSafetyProbe(native_session, self._require_session)
+            if native_security
+            else element_safety_probe
+        )
         self._window_bindings = dict(window_bindings or {})
 
     async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession:
@@ -341,6 +350,8 @@ class TypedComputerSession:
                     session=self._require_session(),
                     delivery_mode=request.delivery.value,
                 )
+                if self._native_security and action.type in {"type_text", "press_key", "hotkey"}:
+                    common["require_non_sensitive"] = True
                 try:
                     if action.type == "type_text":
                         payload = NativeTextInput(

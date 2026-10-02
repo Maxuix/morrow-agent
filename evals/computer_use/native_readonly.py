@@ -164,7 +164,9 @@ class _DiagnosedSession:
         return state
 
 
-async def inspect_fixture(*, fixture_window=None, native_walk_limit=None) -> dict:
+async def inspect_fixture(
+    *, fixture_window=None, native_walk_limit=None, native_security=False
+) -> dict:
     settings = ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID)
     probe = collect_host_probe()
     diagnostic = diagnose_host(settings, probe, images_required=True)
@@ -190,6 +192,7 @@ async def inspect_fixture(*, fixture_window=None, native_walk_limit=None) -> dic
         session_factory=lambda driver, name: _DiagnosedSession(
             construct_run_session(sdk, driver, name), result, native_walk_limit=native_walk_limit
         ),
+        native_security=native_security,
     )
     scope = ComputerUseScope(
         generation=1,
@@ -266,6 +269,15 @@ async def inspect_fixture(*, fixture_window=None, native_walk_limit=None) -> dic
                 },
             }
         )
+        editable = [
+            element
+            for element in observed.observation.elements
+            if element.role in {"axtextfield", "axtextarea", "axcombobox", "axsearchfield"}
+        ]
+        result["editable_classification"] = {
+            "non_sensitive": sum(not element.sensitive for element in editable),
+            "sensitive": sum(element.sensitive for element in editable),
+        }
         if observed.image_error is None:
             phase = "mask_capture"
             masks = tuple(

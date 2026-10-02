@@ -180,7 +180,7 @@ def test_construct_driver_uses_the_same_process_runtime():
     assert created[0].authorization.max_idle_ttl_seconds == 600
 
 
-def test_sdk_protocol_bridge_has_only_four_fixed_action_calls():
+def test_sdk_protocol_bridge_has_only_fixed_action_and_security_calls():
     root = __import__("pathlib").Path(SOURCE)
     fixed_names = []
     for path in root.rglob("*.py"):
@@ -189,10 +189,16 @@ def test_sdk_protocol_bridge_has_only_four_fixed_action_calls():
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
                 if node.func.attr != "call_tool":
                     continue
-                assert path.name == "action_inputs.py"
+                assert path.name in {"action_inputs.py", "security.py"}
                 assert isinstance(node.args[0], ast.Constant)
-                fixed_names.append(node.args[0].value)
-    assert sorted(fixed_names) == ["hotkey", "press_key", "scroll", "type_text"]
+                fixed_names.append((path.name, node.args[0].value))
+    assert sorted(fixed_names) == [
+        ("action_inputs.py", "hotkey"),
+        ("action_inputs.py", "press_key"),
+        ("action_inputs.py", "scroll"),
+        ("action_inputs.py", "type_text"),
+        ("security.py", "get_element_security"),
+    ]
 
 
 def test_importing_the_adapter_does_not_load_the_native_module():

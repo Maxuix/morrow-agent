@@ -19,51 +19,15 @@ from pathlib import Path
 from morrow.core.computer_use import ComputerUseContractError
 
 FIXTURE_BUNDLE_ID = "com.morrow.ComputerUseFixture"
-REASONS = {
-    None,
-    "invalid_arguments",
-    "token_unconfirmed",
-    "target_unconfirmed",
-    "query_failed",
-    "ancestry_unconfirmed",
-    "subrole_unreadable",
-    "leaf_subrole_unreadable",
-    "ancestor_subrole_unreadable",
-    "unsupported_role",
-    "unsupported_subrole",
-    "generic_leaf_subrole",
-    "generic_ancestor_subrole",
-    "leaf_custom_subrole",
-    "ancestor_custom_subrole",
-    "ancestor_section_list",
-    "ancestor_collection_list",
-    "ancestor_content_list",
-    "ancestor_other_window",
-}
 
 
 def security_response(content: str | None) -> dict:
+    from morrow.adapters.computer_use.security import parse_element_security
+
     try:
-        if not isinstance(content, str) or len(content) > 4096:
-            raise ValueError
-        value = json.loads(content)
-        if (
-            not isinstance(value, dict)
-            or set(value) != {"schema_version", "classification", "binding_verified", "reason"}
-            or type(value["schema_version"]) is not int
-            or value["schema_version"] != 1
-            or value["classification"] not in {"non_sensitive", "sensitive", "unknown"}
-            or type(value["binding_verified"]) is not bool
-            or value["reason"] not in REASONS
-            or (
-                value["classification"] != "unknown"
-                and (value["binding_verified"] is not True or value["reason"] is not None)
-            )
-        ):
-            raise ValueError
-    except (ValueError, TypeError, KeyError):
+        return parse_element_security(content).model_dump()
+    except ComputerUseContractError:
         raise ComputerUseContractError("prototype_query_invalid") from None
-    return value
 
 
 def prototype_module(root: Path, expected_sha256: str):
@@ -94,16 +58,29 @@ def input_refusal_response(is_error: object, content: str | None) -> bool:
 
 
 async def inspect_security(
-    path: Path, *, sdk, prototype_sha256: str, verify_input_refusal: bool = False
+    path: Path,
+    *,
+    sdk,
+    prototype_sha256: str,
+    verify_input_refusal: bool = False,
+    verify_owner_security: bool = False,
 ) -> dict:
     readonly = runpy.run_path(str(Path(__file__).with_name("native_readonly.py")))
     counter = runpy.run_path(str(Path(__file__).with_name("native_counter.py")))
     before = counter["counter_oracle"](path)
     queries = []
     input_refusals = []
+    owner_queries = []
     diagnostic = {"query_entries": 0}
 
     class Query(readonly["_DiagnosedSession"]):
+        async def call_tool(self, name, content):
+            if name != "get_element_security":
+                raise ComputerUseContractError("prototype_query_invalid")
+            result = await self._native.call_tool(name, content)
+            owner_queries.append(security_response(result.structured_json))
+            return result
+
         async def get_window_state(self, request):
             state = await super().get_window_state(request)
             for field in state.elements or ():
@@ -154,7 +131,10 @@ async def inspect_security(
     inspect = readonly["inspect_fixture"]
     inspect.__globals__["_DiagnosedSession"] = Query
     inspect.__globals__["load_sdk"] = lambda: sdk
-    result = await inspect(fixture_window=(before["pid"], before["window_id"]))
+    result = await inspect(
+        fixture_window=(before["pid"], before["window_id"]),
+        native_security=verify_owner_security,
+    )
     after = counter["counter_oracle"](path)
     counter["validate_counter_identity"](before, after, unchanged=True)
     result.update(
@@ -166,6 +146,8 @@ async def inspect_security(
         fixture_state_unchanged=before["sha256"] == after["sha256"],
         input_refusals=input_refusals,
         input_refusal_requested=verify_input_refusal,
+        owner_security_requested=verify_owner_security,
+        owner_security_queries=owner_queries,
     )
     passed = (
         result["status"] == "passed"
@@ -174,6 +156,15 @@ async def inspect_security(
         and sorted(item["classification"] for item in queries) == ["non_sensitive", "sensitive"]
         and result["fixture_state_unchanged"]
         and (not verify_input_refusal or len(input_refusals) == 3)
+        and (
+            not verify_owner_security
+            or (
+                len(owner_queries) == 2
+                and result.get("editable_classification") == {"non_sensitive": 1, "sensitive": 1}
+                and result.get("masked_capture", {}).get("mask_count") == 1
+                and result.get("masked_capture", {}).get("mask_pixels_verified") is True
+            )
+        )
     )
     result["security_classification_passed"] = passed
     if not passed:
@@ -190,6 +181,7 @@ def main():
     parser.add_argument("--prototype-dylib-sha256", required=True)
     parser.add_argument("--evidence-file", type=Path, required=True)
     parser.add_argument("--verify-input-refusal", action="store_true")
+    parser.add_argument("--verify-owner-security", action="store_true")
     args = parser.parse_args()
     try:
         sdk = prototype_module(args.prototype_package_directory, args.prototype_dylib_sha256)
@@ -199,6 +191,7 @@ def main():
                 sdk=sdk,
                 prototype_sha256=args.prototype_dylib_sha256,
                 verify_input_refusal=args.verify_input_refusal,
+                verify_owner_security=args.verify_owner_security,
             )
         )
     except ComputerUseContractError as exc:

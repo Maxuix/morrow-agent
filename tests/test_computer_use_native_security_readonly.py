@@ -15,7 +15,8 @@ def module():
 
 def test_unknown_exact_binding_is_preserved(module):
     value = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "input_guard_version": 1,
         "classification": "unknown",
         "binding_verified": True,
         "reason": "unsupported_subrole",
@@ -40,7 +41,8 @@ def test_unknown_exact_binding_is_preserved(module):
 )
 def test_bounded_diagnostics_never_promote_unknown_input(module, reason):
     value = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "input_guard_version": 1,
         "classification": "unknown",
         "binding_verified": True,
         "reason": reason,
@@ -55,6 +57,9 @@ def test_bounded_diagnostics_never_promote_unknown_input(module, reason):
     "changes",
     [
         {"schema_version": True},
+        {"schema_version": 1},
+        {"input_guard_version": True},
+        {"input_guard_version": 0},
         {"binding_verified": 1},
         {"classification": "safe"},
         {"classification": "non_sensitive", "binding_verified": False},
@@ -66,7 +71,8 @@ def test_bounded_diagnostics_never_promote_unknown_input(module, reason):
 )
 def test_rejects_open_or_inconsistent_security_response(module, changes):
     value = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "input_guard_version": 1,
         "classification": "unknown",
         "binding_verified": False,
         "reason": "target_unconfirmed",
