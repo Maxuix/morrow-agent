@@ -1,7 +1,8 @@
 """Opt-in exact-token security experiment using a hash-bound SDK prototype.
 
-No input, dependency installation or production gate change. Unknown remains
-unknown. This is not native action admission or full security acceptance.
+By default no input is requested. An additional opt-in checks three guarded
+input refusals on the controlled secure field. No dependency installation or
+production gate change. This is not full native security acceptance.
 """
 
 from __future__ import annotations
@@ -82,11 +83,24 @@ def prototype_module(root: Path, expected_sha256: str):
     return sdk
 
 
-async def inspect_security(path: Path, *, sdk, prototype_sha256: str) -> dict:
+def input_refusal_response(is_error: object, content: str | None) -> bool:
+    if is_error is not True or not isinstance(content, str) or len(content) > 4096:
+        return False
+    try:
+        value = json.loads(content)
+    except (ValueError, TypeError):
+        return False
+    return value == {"code": "input_security_unconfirmed", "effect": "refused"}
+
+
+async def inspect_security(
+    path: Path, *, sdk, prototype_sha256: str, verify_input_refusal: bool = False
+) -> dict:
     readonly = runpy.run_path(str(Path(__file__).with_name("native_readonly.py")))
     counter = runpy.run_path(str(Path(__file__).with_name("native_counter.py")))
     before = counter["counter_oracle"](path)
     queries = []
+    input_refusals = []
     diagnostic = {"query_entries": 0}
 
     class Query(readonly["_DiagnosedSession"]):
@@ -109,7 +123,32 @@ async def inspect_security(path: Path, *, sdk, prototype_sha256: str) -> dict:
                 )
                 if result.is_error:
                     raise ComputerUseContractError("prototype_query_refused")
-                queries.append(security_response(result.structured_json))
+                classification = security_response(result.structured_json)
+                queries.append(classification)
+                if verify_input_refusal and classification["classification"] == "sensitive":
+                    for tool, parameters in (
+                        ("type_text", {"text": "Morrow controlled refusal"}),
+                        ("press_key", {"key": "left"}),
+                        ("hotkey", {"keys": ["cmd", "a"]}),
+                    ):
+                        result = await self._native.call_tool(
+                            tool,
+                            json.dumps(
+                                {
+                                    **parameters,
+                                    "pid": request.pid,
+                                    "window_id": request.window_id,
+                                    "element_token": field.element_token,
+                                    "session": request.session,
+                                    "delivery_mode": "background",
+                                    "require_non_sensitive": True,
+                                }
+                            ),
+                        )
+                        refused = input_refusal_response(result.is_error, result.structured_json)
+                        input_refusals.append({"action": tool, "refused": refused})
+                        if not refused:
+                            raise ComputerUseContractError("prototype_input_not_refused")
             return state
 
     inspect = readonly["inspect_fixture"]
@@ -125,6 +164,8 @@ async def inspect_security(path: Path, *, sdk, prototype_sha256: str) -> dict:
         query_diagnostic=diagnostic,
         original_probe_reason=result.get("reason"),
         fixture_state_unchanged=before["sha256"] == after["sha256"],
+        input_refusals=input_refusals,
+        input_refusal_requested=verify_input_refusal,
     )
     passed = (
         result["status"] == "passed"
@@ -132,6 +173,7 @@ async def inspect_security(path: Path, *, sdk, prototype_sha256: str) -> dict:
         and all(item["binding_verified"] for item in queries)
         and sorted(item["classification"] for item in queries) == ["non_sensitive", "sensitive"]
         and result["fixture_state_unchanged"]
+        and (not verify_input_refusal or len(input_refusals) == 3)
     )
     result["security_classification_passed"] = passed
     if not passed:
@@ -147,12 +189,16 @@ def main():
     parser.add_argument("--prototype-package-directory", type=Path, required=True)
     parser.add_argument("--prototype-dylib-sha256", required=True)
     parser.add_argument("--evidence-file", type=Path, required=True)
+    parser.add_argument("--verify-input-refusal", action="store_true")
     args = parser.parse_args()
     try:
         sdk = prototype_module(args.prototype_package_directory, args.prototype_dylib_sha256)
         result = asyncio.run(
             inspect_security(
-                args.fixture_state_file, sdk=sdk, prototype_sha256=args.prototype_dylib_sha256
+                args.fixture_state_file,
+                sdk=sdk,
+                prototype_sha256=args.prototype_dylib_sha256,
+                verify_input_refusal=args.verify_input_refusal,
             )
         )
     except ComputerUseContractError as exc:

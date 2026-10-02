@@ -84,3 +84,21 @@ def test_hash_mismatch_rejects_before_import(module, tmp_path):
         module["prototype_module"](tmp_path, "0" * 64)
     with pytest.raises(ComputerUseContractError, match="prototype_hash_invalid"):
         module["prototype_module"](tmp_path, "invalid")
+
+
+@pytest.mark.parametrize(
+    "is_error,content,expected",
+    [
+        (True, '{"code":"input_security_unconfirmed","effect":"refused"}', True),
+        (False, '{"code":"input_security_unconfirmed","effect":"refused"}', False),
+        (1, '{"code":"input_security_unconfirmed","effect":"refused"}', False),
+        (True, '{"code":"input_security_unconfirmed","effect":"unverifiable"}', False),
+        (True, '{"code":"background_unavailable","effect":"refused"}', False),
+        (True, '{"code":"input_security_unconfirmed","effect":"refused","value":"x"}', False),
+        (True, None, False),
+        (True, "not json", False),
+        (True, "x" * 4097, False),
+    ],
+)
+def test_only_exact_guard_refusal_proves_no_input(module, is_error, content, expected):
+    assert module["input_refusal_response"](is_error, content) is expected

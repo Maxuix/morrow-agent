@@ -212,7 +212,18 @@ checks PID/window ownership and bounded ancestry, and returns only a closed
 security classification. The harness validates that response and checks the
 independent fixture file is unchanged. A sensitive field plus an unknown normal
 field fails the gate; binding proof alone never establishes non-sensitive.
-Native admission-time input protection, async Morrow integration, reproducible
+Production admission-time input integration, async Morrow integration, reproducible
 patched wheels and complete native acceptance remain separate work. Local
 prototype source patch, license, source/binary hashes and actual evidence live
 in the ignored acceptance assets; it is not a released SDK or supported package.
+
+Add `--verify-input-refusal` to explicitly request three guarded refusal checks
+on the fixture's classified secure field. The prototype's native
+`require_non_sensitive` option requires an exact token and window, checks the
+retained object before focus routing, repeats the check before native input,
+and requires exact focus for keyboard delivery. The harness accepts only the
+closed `input_security_unconfirmed` / `refused` response and stops at the first
+unexpected result. It verifies the complete independent fixture state is
+unchanged. A different SDK refusal, input effect, or unknown response fails the
+gate; there is no retry. This verifies secure-field refusal, not normal-field
+input delivery or production integration.
