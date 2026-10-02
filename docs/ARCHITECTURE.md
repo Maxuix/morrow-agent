@@ -72,6 +72,13 @@ application 中的组合、跨域事务、配置生命周期、诊断和备份�
 
 ## 桌面运行的准备边界
 
+Computer-use 使用官方固定 cua-driver 0.30.4；2026-10-03 用户纠正后移除密码框输入
+禁令、逐字段安全证明和自编 guarded SDK。type_text/key/hotkey 对普通及 secure 字段
+共用已授权路径，sensitive 标志仅用于内容展示/已知截图区域处理，不决定输入资格。
+macOS arm64 基础观察、普通输入和带实际图像的 ordinary loop 实测后允许显式激活；
+其他平台保留 unavailable。隐藏字段输入可能产生效果但由 SDK 返回 unknown，仍按
+原副作用恢复语义处理，不重新投递，也不读取密码来追加验证。
+
 可选 computer-use 默认关闭，原生验收未通过时不激活 Driver。bootstrap 为运行准备器与
 CoreHost 关闭路径传递同一 lifecycle；每个已授权 AgentRun 的 facade 持有独立 Session 与观察引用。
 本地 ComputerUseSelection 先决定冻结工具集合，不能作为模型参数；durable AgentRun 创建后，
