@@ -215,6 +215,28 @@ The lifecycle is **edit → validate → publish an immutable revision → expli
 ## Desktop configuration (experimental)
 
 Desktop execution is disabled by default and its native acceptance gates are still pending.
+Install the pinned optional SDK separately; ordinary coding tasks do not need it:
+
+```bash
+uv sync --locked --extra computer-use
+```
+
+The extra pins `cua-driver==0.30.4`. Installation and an enabled setting do not establish
+native support. The current native gate is unverified on macOS 27.0, arm64, Python 3.13.0;
+no other OS/CPU has been accepted. macOS Accessibility and Screen Recording permission
+must apply to the actual responsible host; a positive permission probe does not prove
+window capture works. Use the opt-in controlled fixture gate in
+[evals/computer_use](evals/computer_use/README.md) from that host before claiming it works.
+
+The exact selected model needs OpenAI function-tool support. Hybrid mode also requires
+image input and explicit permission to share the selected window; semantic mode uses AX
+without images. Known sensitive regions are masked and uncertain captures are refused;
+this is not comprehensive secret detection. Keep credentials and private working windows
+out of the controlled desktop scope.
+
+Default per-run budgets are 100 operations, 600 seconds and 64 MiB of observation bytes;
+each call defaults to 15 seconds and image long edges to 1920 pixels. Configuration can
+lower the run/image limits; the per-call deadline can be set between 1 and 60 seconds.
 Inspect shared global settings and the current global model with `uv run morrow computer status`.
 Use the reported revision to change settings explicitly:
 

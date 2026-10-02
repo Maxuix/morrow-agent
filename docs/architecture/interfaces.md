@@ -45,6 +45,13 @@ wire 模型、委托 Core/application 并投影结果。Route 不拥有第二套
 `attach` 从私有连接文件发现 loopback 地址，禁用代理和重定向；退出 attach 或关闭浏览器不表示 Stop。
 安全行为以服务端中间件和当前 API 实现为准。
 
+桌面候选、选择、全局配置在 Session 的 computer-use 路由委托相同应用服务。读取候选是
+显式 POST：先异步准备同一 lifecycle 的只读目录，再在 command bus 上重验 Session/权限；
+选择只创建短期同会话标识。普通 chat submit 绑定该标识到 client_message_id，新 AgentRun
+prepare 才消费并冻结设备 grant；模型不能提交本地 native 身份或自授设备权限。
+终端 `/computer`、GUI permission 控件、headless 的拒绝审批都沿原 AgentLoop/ToolExecutor。
+生产 native gate 仍关闭，产品的假SDK验收不改变该状态。
+
 ## 事件、回复和活动
 
 | 流 | Owner 与用途 | 不承担的职责 |
@@ -61,6 +68,10 @@ resync。快照与水位一致，hint 在最外层事务提交后发出。回复
 
 `ModelContentObserver` 是运行时到展示层的观察接缝；Workflow bridge 同时提供叶子与根流的来源。
 观察者失败只产生有界诊断，不改变执行结果。GUI 不自行推断服务端 allowed intents。
+
+桌面 native-call 结算从真实执行账本协调原 activity_upsert 流，并保留原 turn/AgentRun 来源。
+snapshot 修复也通知该流；展示层用同来源的真实轮次终态收束活动，busy转idle时刷新原审批。
+停止或撤销后在途未停稳显示 quarantine，UNKNOWN 效果不因状态变idle消失或自动重试。
 
 ## GUI 导航与状态
 

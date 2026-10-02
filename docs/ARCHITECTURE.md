@@ -98,8 +98,8 @@ shutdown 即失效；本地 DTO 只含应用、清洗标签与编号，不作为
 序列化不增加字段，保持原证据摘要。owner 开启 run 前消费尚未过期的选择并重验 process birth，
 将原生绑定复制给该 Session；discover 只注册选中窗口，Core observe/action 与服务返回目标
 也验证窗口范围。刷新/过期/重用选择在 SDK Session 前拒绝，不扩展到同应用其他窗口。
-CLI/GUI 的明确窗口选择及新入口强制使用 v2 尚待接线；旧 v1 仅保持协议兼容，不能声明
-已经完成首版窗口授权流程。
+CLI/GUI 的明确窗口选择已接入该 v2 链路；旧 v1 仅保持协议兼容。生产原生验收尚未通过，
+不能把离线和受控假SDK产品流程视为实机窗口授权已验收。
 ComputerUseSelectionService 管理最多八个会话的本地候选与一次性选择标识，scope 始终由
 owner 解析候选生成 v2，不接受客户端自造原生身份或授权。Core API 的显式 POST candidates
 通过异步只读准备读取 SDK，再在命令总线上重新检查 Session/权限/配置并保存临时目录；
@@ -110,7 +110,9 @@ POST selection 检查同会话目录、精确模型/图像能力及操作/投递
 Session；首次 Provider 请求前由原 activate/grant/snapshot 链路授权。排队过期或重启后
 临时选择丢失即拒绝准备，不从 interaction JSON 恢复 native 身份或授权。未使用该字段的
 普通输入序列化保持原样。选择不能用于 steer 或根 Workflow，shell Host 与 desktop 仍需
-各自显式运行选择；CLI/GUI 控件与 Workflow 叶子宿主选择尚待接线。
+各自显式运行选择。CLI 的 TerminalComputerPicker 与 GUI 的 permission/computer-use 控件
+共用这些服务；Workflow scheduler 在新叶子或继续 admission 调用 prepare_workflow_leaf，
+仅消费可信宿主显式绑定到该 NodeRun 的本地选择，不继承根 grant 或从磁盘恢复设备授权。
 
 ## 文档与验证约定
 
