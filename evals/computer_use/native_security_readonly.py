@@ -26,8 +26,18 @@ REASONS = {
     "query_failed",
     "ancestry_unconfirmed",
     "subrole_unreadable",
+    "leaf_subrole_unreadable",
+    "ancestor_subrole_unreadable",
     "unsupported_role",
     "unsupported_subrole",
+    "generic_leaf_subrole",
+    "generic_ancestor_subrole",
+    "leaf_custom_subrole",
+    "ancestor_custom_subrole",
+    "ancestor_section_list",
+    "ancestor_collection_list",
+    "ancestor_content_list",
+    "ancestor_other_window",
 }
 
 

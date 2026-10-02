@@ -24,6 +24,34 @@ def test_unknown_exact_binding_is_preserved(module):
 
 
 @pytest.mark.parametrize(
+    "reason",
+    [
+        "leaf_subrole_unreadable",
+        "ancestor_subrole_unreadable",
+        "generic_leaf_subrole",
+        "generic_ancestor_subrole",
+        "leaf_custom_subrole",
+        "ancestor_custom_subrole",
+        "ancestor_section_list",
+        "ancestor_collection_list",
+        "ancestor_content_list",
+        "ancestor_other_window",
+    ],
+)
+def test_bounded_diagnostics_never_promote_unknown_input(module, reason):
+    value = {
+        "schema_version": 1,
+        "classification": "unknown",
+        "binding_verified": True,
+        "reason": reason,
+    }
+    assert module["security_response"](json.dumps(value)) == value
+    value["classification"] = "non_sensitive"
+    with pytest.raises(ComputerUseContractError, match="prototype_query_invalid"):
+        module["security_response"](json.dumps(value))
+
+
+@pytest.mark.parametrize(
     "changes",
     [
         {"schema_version": True},
