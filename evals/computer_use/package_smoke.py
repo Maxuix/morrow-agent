@@ -115,6 +115,7 @@ async def ordinary_task(root: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expect-sdk", choices=("absent", "present"), required=True)
+    parser.add_argument("--sdk-version", choices=("0.30.4", "0.30.4+morrow.1"), default="0.30.4")
     parser.add_argument("--require-wheel", action="store_true")
     parser.add_argument("--gui-source", type=Path, required=True)
     parser.add_argument("--wheel", type=Path)
@@ -143,7 +144,7 @@ def main() -> int:
         installed = importlib.util.find_spec("cua_driver") is not None
         require(installed == (args.expect_sdk == "present"), "wrong_sdk_installation")
         sdk_version = importlib.metadata.version("cua-driver") if installed else None
-        require(not installed or sdk_version == "0.30.4", "wrong_sdk_version")
+        require(not installed or sdk_version == args.sdk_version, "wrong_sdk_version")
         distribution = importlib.metadata.distribution("morrow-agent")
         if args.require_wheel:
             require("site-packages" in Path(morrow.__file__).parts, "source_tree_imported")

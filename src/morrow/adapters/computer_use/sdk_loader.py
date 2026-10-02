@@ -9,7 +9,7 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
-from morrow.adapters.computer_use.diagnostics import PINNED_SDK_VERSION, HostProbe
+from morrow.adapters.computer_use.diagnostics import DIAGNOSTIC_SDK_VERSIONS, HostProbe
 
 SDK_MODULE_NAME = "cua_driver"
 
@@ -82,7 +82,7 @@ def collect_host_probe(
     accessibility: bool | None = None
     screen_recording: bool | None = None
     if (
-        version == PINNED_SDK_VERSION
+        version in DIAGNOSTIC_SDK_VERSIONS
         and resolved_system == "darwin"
         and resolved_interactive
         and resolved_version is not None

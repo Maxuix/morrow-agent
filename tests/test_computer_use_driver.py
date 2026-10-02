@@ -141,6 +141,31 @@ def test_collect_host_probe_does_not_construct_or_echo_loader_errors():
     assert old.accessibility is None
 
 
+@pytest.mark.parametrize("version", ("0.30.4", "0.30.4+morrow.1"))
+def test_known_sdk_diagnostics_read_permissions_but_never_enable_native(version):
+    calls = []
+
+    def permissions():
+        calls.append("read")
+        return SimpleNamespace(accessibility=True, screen_recording=True)
+
+    probe = collect_host_probe(
+        spec_present=True,
+        loader=lambda: SimpleNamespace(
+            __version__=version, current_mac_os_permission_status=permissions
+        ),
+        system="darwin",
+        os_version=(14, 0, 0),
+        interactive=True,
+        driver_activated=True,
+    )
+    assert calls == ["read"]
+    assert probe.sdk_version == version
+    result = diagnose_host(ComputerUseSettings(enabled=True), probe)
+    assert result.status == "unavailable"
+    assert result.reason == "native_unverified"
+
+
 def test_construct_driver_uses_the_same_process_runtime():
     import morrow.adapters.computer_use as adapter
 

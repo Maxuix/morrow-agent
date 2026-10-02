@@ -20,9 +20,11 @@ do not gain this confirmation path; field values never enter the result.
 
 `manifest.json` binds the exact upstream Git commit and patch SHA256. These
 source materials are tracked so they can be reproduced without an agent's
-temporary checkout. A release wheel, install matrix and production dependency
-integration remain to be completed. Native component evidence is separate from
-release-package acceptance.
+temporary checkout. The local `0.30.4+morrow.1` macOS arm64 release candidate
+has passed installation, ABI import, ordinary-task isolation and exact native
+security/refusal checks on Python 3.12 and 3.13. One guarded Unicode insertion
+also passed using the installed release wheel. Production dependency integration
+and complete native product acceptance remain pending.
 
 Prepare an empty source directory from a local upstream clone:
 
@@ -37,3 +39,28 @@ subtrees, checks and applies the patch, and records source provenance. Git lazy
 fetch and credential prompting are disabled: missing source objects fail rather
 than triggering network access. It never edits the existing checkout or starts
 a native Driver. Build dependencies must be provisioned separately.
+
+Build a local wheel on macOS arm64 with Rust 1.97.1, uv and cached build
+dependencies available:
+
+```sh
+uv run python evals/computer_use/build_sdk_wheel.py \
+  --sdk-repository /path/to/cua-clone \
+  --output-directory /tmp/morrow-cua-wheel-build \
+  --cargo-target-directory /tmp/morrow-cua-cargo-target
+```
+
+The output directory must be empty and separate from Cargo's target directory.
+The builder prepares fresh verified source, builds the SDK and bundled CLI
+with `--release --locked --offline`, and uses an explicit macOS 14 arm64 tag.
+It disables release stripping: stripped proc-macro dylibs failed to load on
+the acceptance host with a mis-aligned LINKEDIT string pool. The wheel includes
+the MIT license and source/binary provenance. Its distribution and Python module
+versions both identify Morrow's local variant; the native upstream ABI version
+is retained. No upstream release is downloaded, Driver started, wheel installed
+or artifact published by this builder.
+
+Build evidence marks installed validation false until separate checks run.
+Hashes identify the actual artifact, without promising identical native binary
+bytes across toolchains or build paths. Production diagnostics recognize this
+exact local version while continuing to report native support unavailable.

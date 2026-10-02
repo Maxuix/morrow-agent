@@ -119,6 +119,8 @@ the real completed turn and tool result, and confirms the desktop owner stayed
 inactive. Output contains only fixed check codes, versions, counts and hashes.
 This proves packaging and default-off behavior; it does not prove native device
 access or model quality. No desktop authorization is needed for this gate.
+For the explicitly built guarded SDK variant, pass
+`--sdk-version 0.30.4+morrow.1`; the default remains the original pinned release.
 
 ## Independent fixture state
 

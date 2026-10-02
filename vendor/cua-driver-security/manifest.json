@@ -8,5 +8,9 @@
   "input_guard_version": 1,
   "patch_platform": "macOS",
   "native_validation_platform": "macOS 27 arm64",
-  "release_package_verified": false
+  "release_package_verified": true,
+  "release_distribution_version": "0.30.4+morrow.1",
+  "release_wheel_tag": "py3-none-macosx_14_0_arm64",
+  "release_wheel_sha256": "3723f8e55a4933447015c0efa1a967fb6b8f83e502751376741df18433062179",
+  "native_product_verified": false
 }

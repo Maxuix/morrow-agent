@@ -8,6 +8,8 @@ from morrow.core.computer_use import ComputerUsePreflight
 from morrow.core.runtime_policy import ComputerUseSettings
 
 PINNED_SDK_VERSION = "0.30.4"
+GUARDED_SDK_VERSION = "0.30.4+morrow.1"
+DIAGNOSTIC_SDK_VERSIONS = (PINNED_SDK_VERSION, GUARDED_SDK_VERSION)
 MINIMUM_MACOS = (14, 0, 0)
 
 
@@ -41,7 +43,7 @@ def diagnose_host(
         return ComputerUsePreflight(status="unavailable", reason="sdk_missing")
     if probe.native_load_failed:
         return ComputerUsePreflight(status="unavailable", reason="abi_mismatch")
-    if probe.sdk_version != PINNED_SDK_VERSION:
+    if probe.sdk_version not in DIAGNOSTIC_SDK_VERSIONS:
         return ComputerUsePreflight(status="unavailable", reason="native_version_mismatch")
     if not _supported_macos(probe):
         return ComputerUsePreflight(status="unavailable", reason="unsupported_os")
