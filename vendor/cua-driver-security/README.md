@@ -12,6 +12,12 @@ before native input; keyboard delivery also requires exact native focus.
 Unknown controls, unreadable facts, unsupported ancestors and secure fields
 cannot grant input. It is not general screenshot DLP.
 
+Guarded native hotkeys additionally use the existing key readback policy on
+the same retained input object. Confirmation requires readable changed native
+value/selection and a successful security recheck after input. Failed or
+unchanged readback remains unverifiable. Legacy hotkeys and arbitrary controls
+do not gain this confirmation path; field values never enter the result.
+
 `manifest.json` binds the exact upstream Git commit and patch SHA256. These
 source materials are tracked so they can be reproduced without an agent's
 temporary checkout. A release wheel, install matrix and production dependency

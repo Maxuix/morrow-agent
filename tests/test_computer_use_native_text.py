@@ -88,7 +88,7 @@ def test_stale_snapshot_or_missing_fixture_effect_is_not_success(module):
 def test_keyboard_modes_are_fixed_and_do_not_admit_arbitrary_tools(module):
     ref = "celem_controlled"
     assert module["keyboard_action"]("press_key", ref, "ignored").key == "z"
-    assert module["keyboard_action"]("hotkey", ref, "ignored").keys == ("shift", "z")
+    assert module["keyboard_action"]("hotkey", ref, "ignored").keys == ("shift", "x")
     assert module["keyboard_action"]("type_text", ref, "中文🧭").text == "中文🧭"
     with pytest.raises(ComputerUseContractError, match="fixture_action_invalid"):
         module["keyboard_action"]("clipboard", ref, "ignored")

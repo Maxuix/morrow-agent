@@ -124,7 +124,7 @@ def keyboard_action(kind: str, element_ref: str, text: str):
     if kind == "press_key":
         return PressKeyAction(type="press_key", element_ref=element_ref, key="z")
     if kind == "hotkey":
-        return HotkeyAction(type="hotkey", element_ref=element_ref, keys=("shift", "z"))
+        return HotkeyAction(type="hotkey", element_ref=element_ref, keys=("shift", "x"))
     raise ComputerUseContractError("fixture_action_invalid")
 
 
@@ -141,7 +141,7 @@ async def insert_once(
         if action_type == "type_text"
         else "z"
         if action_type == "press_key"
-        else "Z"
+        else "X"
     )
     if text in before["text"]:
         raise ComputerUseContractError("fixture_marker_present")

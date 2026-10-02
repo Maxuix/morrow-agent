@@ -245,9 +245,12 @@ bounded metadata are exported. Unknown or failed outcomes remain failed even
 when the independent file shows an effect; the harness never repeats input.
 
 Use `--action press_key --allow-one-key` or `--action hotkey --allow-one-key`
-instead of the text opt-in to test one fixed `z` or `Shift+Z` action. An existing
+instead of the text opt-in to test one fixed `z` or `Shift+X` action. An existing
 marker refuses the run before input. The SDK's unknown hotkey outcome remains
 a failed gate even when the independent normal field contains the new character.
+The earlier `Shift+Z` unknown evidence remains unchanged. The current guarded
+prototype can confirm a new native hotkey only from its own same-object
+readback; the fixture's independent result is a separate required gate.
 These modes never retry or send arbitrary SDK tools.
 
 The tracked experimental patch and license are in

@@ -727,9 +727,18 @@ index 0000000..3e1ffa2
 +    }
 +}
 diff --git a/libs/cua-driver/rust/crates/platform-macos/src/tools/hotkey.rs b/libs/cua-driver/rust/crates/platform-macos/src/tools/hotkey.rs
-index 81f4aac..bf0af75 100644
+index 81f4aac..78abf33 100644
 --- a/libs/cua-driver/rust/crates/platform-macos/src/tools/hotkey.rs
 +++ b/libs/cua-driver/rust/crates/platform-macos/src/tools/hotkey.rs
+@@ -47,7 +47,7 @@ fn def() -> &'static ToolDef {
+                ignore a background combo. With an AX target or x,y, the focused field \
+                receives the chord through the foreground HID queue (needed by native \
+                Chromium fields such as the omnibox). Requires window_id.\n\n\
+-             A combo is never driver-verifiable (no read-back) → effect:\"unverifiable\"; \
++             Without require_non_sensitive on an exact native input, a combo has no trusted read-back → effect:\"unverifiable\"; \
+              confirm via screenshot. NOTE: a keyboard combo does NOT focus a text \
+              field — to type into a backgrounded Electron input, establish real \
+              renderer focus with a PIXEL click first, then `type_text`. If an app only \
 @@ -62,6 +62,7 @@ fn def() -> &'static ToolDef {
              "type": "object",
              "required": ["keys"],
@@ -766,7 +775,7 @@ index 81f4aac..bf0af75 100644
          // delivery_mode gates whether we raise: background (default) never fronts
          // the window — passing window_id only targets the combo. foreground is the
          // explicit NSMenu-activation rung for menu shortcuts that ignore a
-@@ -394,6 +409,15 @@ impl Tool for HotkeyTool {
+@@ -394,8 +409,17 @@ impl Tool for HotkeyTool {
              || async move {
                  tokio::task::spawn_blocking(move || {
                      let element_ptr = element_guard.as_ref().map(|guard| guard.as_ptr());
@@ -780,8 +789,11 @@ index 81f4aac..bf0af75 100644
 +                        )?;
 +                    }
                      let m: Vec<&str> = modifiers.iter().map(String::as_str).collect();
-                     match (fg, coordinate_focus, window_id, element_ptr) {
+-                    match (fg, coordinate_focus, window_id, element_ptr) {
++                    let dispatch = || match (fg, coordinate_focus, window_id, element_ptr) {
                          // Chrome's native omnibox and Chromium/Electron inputs
+                         // require a genuine foreground HID chord. Keep the exact
+                         // target frontmost until both key events are consumed;
 @@ -424,6 +448,15 @@ impl Tool for HotkeyTool {
                                  wid,
                                  || {
@@ -798,7 +810,7 @@ index 81f4aac..bf0af75 100644
                                      crate::input::keyboard::press_key_bare_global(&key, &m)
                                  },
                              )?;
-@@ -457,6 +490,15 @@ impl Tool for HotkeyTool {
+@@ -457,9 +490,29 @@ impl Tool for HotkeyTool {
                          // raise — even when window_id was supplied for targeting.
                          (false, false, _, Some(ptr)) => {
                              focus_hotkey_element(pid, ptr)?;
@@ -814,6 +826,67 @@ index 81f4aac..bf0af75 100644
                              crate::input::keyboard::hotkey(pid, &key, &m)
                          }
                          _ => crate::input::keyboard::hotkey(pid, &key, &m),
++                    };
++                    if security_required {
++                        super::press_key::dispatch_with_guarded_ax_oracle(
++                            pid,
++                            window_id,
++                            element_ptr,
++                            dispatch,
++                        )
++                    } else {
++                        dispatch()?;
++                        Ok(false)
+                     }
+                 })
+                 .await
+@@ -470,21 +523,20 @@ impl Tool for HotkeyTool {
+         let changes = super::finish_window_observation(snapshot).await;
+ 
+         match result {
+-            Ok(Ok(())) => {
++            Ok(Ok(confirmed)) => {
+                 let label = if fg {
+                     " (delivery_mode:foreground)"
+                 } else {
+                     ""
+                 };
+-                // A combo is never read-back-verifiable. On the background rung,
+-                // point the agent at the foreground escalation for menu shortcuts
+-                // an app drops in the background — same contract as type_text.
++                // Only the opt-in exact guarded native input can provide a
++                // value/selection readback. Other combos stay unverifiable.
+                 let mut structured = serde_json::json!({
+                     "path": if fg { "key_events_fg" } else { "key_events" },
+-                    "verified": false,
+-                    "effect": "unverifiable",
++                    "verified": confirmed,
++                    "effect": if confirmed { "confirmed" } else { "unverifiable" },
+                 });
+-                if !fg && window_id.is_some() {
++                if !confirmed && !fg && window_id.is_some() {
+                     structured["escalation"] = serde_json::json!({
+                         "recommended": "foreground",
+                         "reason": "a background combo didn't land? menu key-equivalents \
+@@ -493,11 +545,16 @@ impl Tool for HotkeyTool {
+                                    pixel-click to focus then type_text instead.)"
+                     });
+                 }
+-                ToolResult::text(format!(
++                let output = ToolResult::text(format!(
+                     "Pressed {key_display} on pid {pid}{label}.{}",
+                     changes.result_suffix()
+                 ))
+-                .with_structured(structured)
++                .with_structured(structured);
++                if security_required {
++                    output.with_action_record(super::press_key::action_record(confirmed, fg))
++                } else {
++                    output
++                }
+             }
+             Ok(Err(e)) => ToolResult::error(format!("hotkey failed: {e}")),
+             Err(e) => ToolResult::error(format!("Task error: {e}")),
 diff --git a/libs/cua-driver/rust/crates/platform-macos/src/tools/mod.rs b/libs/cua-driver/rust/crates/platform-macos/src/tools/mod.rs
 index b6ec2b0..3911c02 100644
 --- a/libs/cua-driver/rust/crates/platform-macos/src/tools/mod.rs
@@ -837,10 +910,63 @@ index b6ec2b0..3911c02 100644
      registry.register(Box::new(list_windows::ListWindowsTool));
      registry.register(Box::new(get_window_state::GetWindowStateTool::new(
 diff --git a/libs/cua-driver/rust/crates/platform-macos/src/tools/press_key.rs b/libs/cua-driver/rust/crates/platform-macos/src/tools/press_key.rs
-index 8162ec9..20d1125 100644
+index 8162ec9..aff1efb 100644
 --- a/libs/cua-driver/rust/crates/platform-macos/src/tools/press_key.rs
 +++ b/libs/cua-driver/rust/crates/platform-macos/src/tools/press_key.rs
-@@ -200,6 +200,7 @@ fn def() -> &'static ToolDef {
+@@ -123,12 +123,51 @@ fn dispatch_with_ax_oracle(
+     Ok(matches!((before, after), (Some(before), Some(after)) if ax_state_changed(&before, &after)))
+ }
+ 
++/// Guarded hotkeys only: read the same retained, proven native input before
++/// and after dispatch. Failure of the post-input security proof is unknown,
++/// never a refusal claiming that no actuator ran.
++pub(super) fn dispatch_with_guarded_ax_oracle(
++    pid: i32,
++    window_id: Option<u32>,
++    element_ptr: Option<usize>,
++    dispatch: impl FnOnce() -> anyhow::Result<()>,
++) -> anyhow::Result<bool> {
++    guarded_readback(
++        || unsafe {
++            crate::ax::element_security::admit_input(true, pid, window_id, element_ptr, false)
++                .is_ok()
++        },
++        || element_ptr.and_then(|ptr| read_ax_key_state(pid, window_id, ptr)),
++        dispatch,
++        || std::thread::sleep(std::time::Duration::from_millis(60)),
++    )
++}
++
++fn guarded_readback(
++    mut security: impl FnMut() -> bool,
++    mut read: impl FnMut() -> Option<AxKeyState>,
++    dispatch: impl FnOnce() -> anyhow::Result<()>,
++    settle: impl FnOnce(),
++) -> anyhow::Result<bool> {
++    if !security() {
++        anyhow::bail!("input_security_unconfirmed");
++    }
++    let before = read();
++    dispatch()?;
++    settle();
++    if !security() {
++        return Ok(false);
++    }
++    let after = read();
++    Ok(matches!((before, after), (Some(before), Some(after)) if ax_state_changed(&before, &after)))
++}
++
+ fn ax_state_changed(before: &AxKeyState, after: &AxKeyState) -> bool {
+     matches!((&before.value, &after.value), (Some(before), Some(after)) if before != after)
+         || matches!((before.selected, after.selected), (Some(before), Some(after)) if before != after)
+ }
+ 
+-fn action_record(confirmed: bool, foreground: bool) -> ActionExecutionRecord {
++pub(super) fn action_record(confirmed: bool, foreground: bool) -> ActionExecutionRecord {
+     let effect = if confirmed {
+         ActionEffect::Confirmed
+     } else {
+@@ -200,6 +239,7 @@ fn def() -> &'static ToolDef {
              "type": "object",
              "required": ["key"],
              "properties": {
@@ -848,7 +974,7 @@ index 8162ec9..20d1125 100644
                  "session": { "type": "string", "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session." },
                  "pid": { "type": "integer" },
                  "key": { "type": "string", "description": "Key name: return, tab, escape, up, down, etc." },
-@@ -233,6 +234,10 @@ impl Tool for PressKeyTool {
+@@ -233,6 +273,10 @@ impl Tool for PressKeyTool {
      }
  
      async fn invoke(&self, args: Value) -> ToolResult {
@@ -859,7 +985,7 @@ index 8162ec9..20d1125 100644
          use cua_driver_core::tool_args::ArgsExt;
          if args.opt_str("scope").as_deref() == Some("desktop")
              && args.get("pid").is_none()
-@@ -290,6 +295,16 @@ impl Tool for PressKeyTool {
+@@ -290,6 +334,16 @@ impl Tool for PressKeyTool {
              Ok(window_id) => window_id,
              Err(error) => return error,
          };
@@ -876,7 +1002,7 @@ index 8162ec9..20d1125 100644
  
          if let Err(error) = validate_post_target(pid) {
              return delivery_failed(error);
-@@ -402,6 +417,15 @@ impl Tool for PressKeyTool {
+@@ -402,6 +456,15 @@ impl Tool for PressKeyTool {
                  // side-effects are captured by the snapshot + lease.
                  if let Some(guard) = pre_focus_guard.clone() {
                      let _ = tokio::task::spawn_blocking(move || {
@@ -892,7 +1018,7 @@ index 8162ec9..20d1125 100644
                          crate::input::ax_actions::focus_element(guard.as_ptr())
                      })
                      .await;
-@@ -410,6 +434,15 @@ impl Tool for PressKeyTool {
+@@ -410,6 +473,15 @@ impl Tool for PressKeyTool {
  
                  tokio::task::spawn_blocking(move || {
                      let pre_focus_ptr = pre_focus_guard.as_ref().map(|guard| guard.as_ptr());
@@ -908,7 +1034,7 @@ index 8162ec9..20d1125 100644
                      let m: Vec<&str> = modifiers.iter().map(String::as_str).collect();
                      // Foreground rung: keep the exact target frontmost through a genuine
                      // physical HID key down/up pair, then restore. PID-routed events without the
-@@ -436,6 +469,15 @@ impl Tool for PressKeyTool {
+@@ -436,6 +508,15 @@ impl Tool for PressKeyTool {
                                          let _ =
                                              crate::input::ax_actions::focus_element(element_ptr);
                                      }
@@ -924,7 +1050,7 @@ index 8162ec9..20d1125 100644
                                      crate::input::keyboard::press_key_bare_global(&key, &m)
                                  },
                              )
-@@ -443,6 +485,15 @@ impl Tool for PressKeyTool {
+@@ -443,6 +524,15 @@ impl Tool for PressKeyTool {
                      }
                      // background (default): auth-envelope post, no raise.
                      dispatch_with_ax_oracle(pid, window_id, pre_focus_ptr, || {
@@ -940,6 +1066,95 @@ index 8162ec9..20d1125 100644
                          crate::input::keyboard::press_key(pid, &key, &m)
                      })
                  })
+@@ -490,6 +580,88 @@ impl Tool for PressKeyTool {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn guarded_oracle_refuses_before_read_or_dispatch() {
++        let result = guarded_readback(
++            || false,
++            || panic!("read must not run"),
++            || panic!("input must not run"),
++            || panic!("settle must not run"),
++        );
++        assert!(result.is_err());
++    }
++    #[test]
++    fn guarded_oracle_does_not_read_or_confirm_after_security_loss() {
++        let mut checks = [true, false].into_iter();
++        let mut reads = 0;
++        let mut dispatched = 0;
++        let result = guarded_readback(
++            || checks.next().unwrap(),
++            || {
++                reads += 1;
++                Some(AxKeyState {
++                    value: Some("before".into()),
++                    selected: None,
++                })
++            },
++            || {
++                dispatched += 1;
++                Ok(())
++            },
++            || {},
++        )
++        .unwrap();
++        assert!(!result);
++        assert_eq!(reads, 1);
++        assert_eq!(dispatched, 1);
++    }
++    #[test]
++    fn guarded_oracle_failed_dispatch_never_confirms() {
++        let mut reads = 0;
++        let result = guarded_readback(
++            || true,
++            || {
++                reads += 1;
++                Some(AxKeyState {
++                    value: Some("before".into()),
++                    selected: None,
++                })
++            },
++            || anyhow::bail!("test dispatch failure"),
++            || panic!("settle must not run"),
++        );
++        assert!(result.is_err());
++        assert_eq!(reads, 1);
++    }
++    #[test]
++    fn guarded_oracle_requires_two_readable_changed_states() {
++        for (before, after, expected) in [
++            (None, Some("after"), false),
++            (Some("before"), None, false),
++            (Some("same"), Some("same"), false),
++            (Some("before"), Some("after"), true),
++        ] {
++            let mut states = [before, after].into_iter();
++            let mut dispatched = 0;
++            let result = guarded_readback(
++                || true,
++                || {
++                    states.next().unwrap().map(|value| AxKeyState {
++                        value: Some(value.into()),
++                        selected: None,
++                    })
++                },
++                || {
++                    dispatched += 1;
++                    Ok(())
++                },
++                || {},
++            )
++            .unwrap();
++            assert_eq!(result, expected);
++            assert_eq!(dispatched, 1);
++        }
++    }
+     #[test]
+     fn delivery_outcome_mapper_distinguishes_confirmed_unverifiable_and_failed() {
+         assert!(matches!(
 diff --git a/libs/cua-driver/rust/crates/platform-macos/src/tools/type_text.rs b/libs/cua-driver/rust/crates/platform-macos/src/tools/type_text.rs
 index 8d7e2aa..ef832dd 100644
 --- a/libs/cua-driver/rust/crates/platform-macos/src/tools/type_text.rs
