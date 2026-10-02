@@ -44,10 +44,6 @@ def action_context(**fields):
             "observation_id": "native_snapshot",
             "action": {"type": "click", "element_ref": "celem_1"},
         },
-        {
-            "observation_id": "cobs_1",
-            "action": {"type": "type_text", "element_ref": "celem_1", "text": "sk-" + "A" * 40},
-        },
     ],
 )
 def test_model_cannot_supply_authority_native_names_or_action_batches(payload):
@@ -285,3 +281,15 @@ async def test_trusted_executor_flag_cannot_bypass_actual_missing_consumed_appro
     )
     assert not result.ok and "execution_not_authorized" in result.envelope
     assert lifecycle.device.actions == [] and len(lifecycle.device.calls) == reads
+
+
+def test_input_text_is_not_rejected_by_credential_patterns_or_echoed_in_repr():
+    text = "sk-" + "A" * 40
+    arguments = ComputerActionArguments.model_validate(
+        {
+            "observation_id": "cobs_1",
+            "action": {"type": "type_text", "element_ref": "celem_1", "text": text},
+        }
+    )
+    assert arguments.action.text == text
+    assert text not in repr(arguments)

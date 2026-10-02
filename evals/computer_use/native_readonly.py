@@ -164,9 +164,7 @@ class _DiagnosedSession:
         return state
 
 
-async def inspect_fixture(
-    *, fixture_window=None, native_walk_limit=None, native_security=False
-) -> dict:
+async def inspect_fixture(*, fixture_window=None, native_walk_limit=None) -> dict:
     settings = ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID)
     probe = collect_host_probe()
     diagnostic = diagnose_host(settings, probe, images_required=True)
@@ -192,7 +190,6 @@ async def inspect_fixture(
         session_factory=lambda driver, name: _DiagnosedSession(
             construct_run_session(sdk, driver, name), result, native_walk_limit=native_walk_limit
         ),
-        native_security=native_security,
     )
     scope = ComputerUseScope(
         generation=1,

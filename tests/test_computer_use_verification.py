@@ -320,22 +320,19 @@ async def test_predicate_success_never_upgrades_unknown_native_completion(enviro
 
 
 @pytest.mark.parametrize(
-    "native_flag,proven,expected",
+    "native_flag,expected",
     [
-        (True, True, True),
-        (False, True, False),
-        (1, True, None),
-        ("true", True, None),
-        (True, False, None),
+        (True, True),
+        (False, False),
+        (1, None),
+        ("true", None),
     ],
 )
-async def test_adapter_projects_only_confirmed_non_sensitive_sdk_boolean(
-    native_flag, proven, expected
-):
+async def test_adapter_projects_only_typed_sdk_boolean(native_flag, expected):
     from morrow.core.computer_use import ObserveWindowRequest
     from test_computer_use_actions import setup as adapter_setup
 
-    session, native, _, before, request = await adapter_setup(safety_probe=lambda subject: proven)
+    session, native, _, before, request = await adapter_setup()
     execute_request = request(
         ClickAction(type="click", element_ref=before.observation.elements[0].element_ref)
     )
@@ -364,4 +361,4 @@ async def test_adapter_projects_only_confirmed_non_sensitive_sdk_boolean(
     element = after.observation.elements[0]
     assert element.enabled is expected
     assert element.focused is None and element.checked is None and element.expanded is None
-    assert element.sensitive is not proven
+    assert element.sensitive is False

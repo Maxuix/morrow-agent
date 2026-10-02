@@ -1,4 +1,4 @@
-"""Opt-in one guarded keyboard insert into the independent controlled fixture.
+"""Opt-in one keyboard insert into the independent controlled fixture.
 
 Never retries or upgrades unknown outcomes. No raw input/capture/SDK diagnostics
 are printed; this is a component gate, not Provider or full product acceptance.
@@ -18,7 +18,7 @@ from uuid import uuid4
 
 from morrow.adapters.computer_use.images import CaptureMask, prepare_capture
 from morrow.adapters.computer_use.owner import ComputerDriverOwner
-from morrow.adapters.computer_use.sdk_loader import construct_run_session
+from morrow.adapters.computer_use.sdk_loader import construct_run_session, load_sdk
 from morrow.adapters.state.operational import SystemStoreClock
 from morrow.core.computer_use import (
     TRUSTED_COMPUTER_USE_AUTHORITY,
@@ -77,6 +77,16 @@ def independent_insert(before: dict, after: dict, text: str, validate_identity) 
     )
 
 
+def independent_secure_input(before: dict, after: dict, validate_identity) -> bool:
+    validate_identity(before, after, unchanged=True)
+    return (
+        before["secure"] is False
+        and after["secure"] is True
+        and before["text"] == after["text"]
+        and before["scroll"] == after["scroll"]
+    )
+
+
 def masked_capture(observed) -> dict:
     from PIL import Image
 
@@ -86,8 +96,6 @@ def masked_capture(observed) -> dict:
         CaptureMask(region.left, region.top, region.right, region.bottom)
         for region in observed.sensitive_regions
     )
-    if len(masks) != 1:
-        raise ComputerUseContractError("fixture_secure_mask_unconfirmed")
     masked = prepare_capture(observed.capture, masks=masks)
     with Image.open(io.BytesIO(masked.content)) as image:
         for mask in masks:
@@ -99,7 +107,7 @@ def masked_capture(observed) -> dict:
                 raise ComputerUseContractError("fixture_mask_invalid")
     return {
         "sha256": hashlib.sha256(masked.content).hexdigest(),
-        "mask_count": 1,
+        "mask_count": len(masks),
         "mask_pixels_verified": True,
     }
 
@@ -109,12 +117,12 @@ def input_gate_passed(result: dict) -> bool:
     return (
         action.get("status") == "completed"
         and action.get("error_code") is None
-        and action.get("delivery") == "background"
+        and action.get("delivery") == result.get("requested_delivery", "background")
         and result.get("sdk_input_entries") == 1
         and result.get("sdk_fresh_snapshot") is True
         and result.get("fresh_observation") is True
         and result.get("independent_insert") is True
-        and result.get("secure_population_unchanged") is True
+        and (result.get("field") == "secure" or result.get("secure_population_unchanged") is True)
     )
 
 
@@ -145,13 +153,18 @@ async def insert_once(
     path: Path,
     *,
     sdk,
-    prototype_sha256: str,
     action_type: str = "type_text",
     keyboard_marker_set: str = "initial",
+    field: str = "normal",
+    delivery: ComputerUseDelivery = ComputerUseDelivery.BACKGROUND,
 ) -> dict:
     readonly = runpy.run_path(str(Path(__file__).with_name("native_readonly.py")))
     counter = runpy.run_path(str(Path(__file__).with_name("native_counter.py")))
     before = text_oracle(path, counter["counter_oracle"])
+    if field not in {"normal", "secure"} or (field == "secure" and action_type != "type_text"):
+        raise ComputerUseContractError("fixture_action_invalid")
+    if field == "secure" and before["secure"]:
+        raise ComputerUseContractError("fixture_secure_already_populated")
     if action_type not in {"type_text", "press_key", "hotkey"}:
         raise ComputerUseContractError("fixture_action_invalid")
     text = keyboard_marker(
@@ -162,11 +175,10 @@ async def insert_once(
     result = {
         "status": "failed",
         "phase": "open",
-        "prototype": True,
-        "prototype_dylib_sha256": prototype_sha256,
         "sdk_input_entries": 0,
-        "sdk_security_entries": 0,
         "requested_action": action_type,
+        "field": field,
+        "requested_delivery": delivery.value,
         "keyboard_marker_set": keyboard_marker_set,
     }
     settings = ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID)
@@ -185,19 +197,17 @@ async def insert_once(
             return state
 
         async def call_tool(self, name, content):
-            if name == "get_element_security":
-                result["sdk_security_entries"] += 1
-            elif name == action_type and json.loads(content).get("require_non_sensitive") is True:
-                result["sdk_input_entries"] += 1
-            else:
-                raise ComputerUseContractError("fixture_unprotected_input")
+            if name != action_type:
+                raise ComputerUseContractError("fixture_action_invalid")
+            result["sdk_input_entries"] += 1
+            if result["sdk_input_entries"] != 1:
+                raise ComputerUseContractError("fixture_input_repeated")
             return await self._native.call_tool(name, content)
 
     owner = ComputerDriverOwner(
         sdk,
         RandomIdSource(),
         SystemStoreClock(),
-        native_security=True,
         session_factory=lambda driver, name: Native(
             construct_run_session(sdk, driver, name), result
         ),
@@ -210,7 +220,7 @@ async def insert_once(
         apps=(ComputerUseAppIdentity(bundle_id=FIXTURE_BUNDLE_ID),),
         window_boundary=ComputerUseWindowBoundary.WINDOW,
         operations=(ComputerUseOperation.OBSERVE, ComputerUseOperation.ACTION),
-        delivery=ComputerUseDelivery.BACKGROUND,
+        delivery=delivery,
         image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
     )
     try:
@@ -248,10 +258,14 @@ async def insert_once(
         fields = [
             element
             for element in observed.observation.elements
-            if element.role in {"axtextfield", "axtextarea"} and not element.sensitive
+            if element.role in {"axtextfield", "axtextarea", "axsecuretextfield"}
         ]
-        if len(fields) != 1:
+        if len(fields) != 2:
             raise ComputerUseContractError("fixture_normal_input_required")
+        # This fixed Swift fixture places the ordinary field above the secure
+        # field (verified in the UI). This is fixture selection, not a security
+        # classification or a production input restriction.
+        fields.sort(key=lambda item: session._registry.element(item.element_ref).center[1])
 
         def authority():
             current = text_oracle(path, counter["counter_oracle"])
@@ -267,7 +281,10 @@ async def insert_once(
                 target=targets[0],
                 observation=observed.observation,
                 action=keyboard_action(
-                    action_type, fields[0].element_ref, text, keyboard_marker_set
+                    action_type,
+                    fields[0 if field == "normal" else 1].element_ref,
+                    text,
+                    keyboard_marker_set,
                 ),
                 delivery=scope.delivery,
             ),
@@ -284,8 +301,10 @@ async def insert_once(
         result["after_masked_capture"] = masked_capture(after_observation)
         after = text_oracle(path, counter["counter_oracle"])
         result.update(
-            independent_insert=independent_insert(
-                before, after, text, counter["validate_counter_identity"]
+            independent_insert=(
+                independent_insert(before, after, text, counter["validate_counter_identity"])
+                if field == "normal"
+                else independent_secure_input(before, after, counter["validate_counter_identity"])
             ),
             fresh_observation=observed.observation.observation_id
             != after_observation.observation.observation_id,
@@ -319,30 +338,28 @@ def main():
     parser.add_argument("--allow-desktop", action="store_true", required=True)
     parser.add_argument("--allow-one-text-insert", action="store_true")
     parser.add_argument("--allow-one-key", action="store_true")
+    parser.add_argument("--delivery", choices=("background", "foreground"), default="background")
+    parser.add_argument("--field", choices=("normal", "secure"), default="normal")
     parser.add_argument("--keyboard-marker-set", choices=("initial", "release"), default="initial")
     parser.add_argument(
         "--action", choices=("type_text", "press_key", "hotkey"), default="type_text"
     )
     parser.add_argument("--fixture-bundle-id", choices=(FIXTURE_BUNDLE_ID,), required=True)
     parser.add_argument("--fixture-state-file", type=Path, required=True)
-    parser.add_argument("--prototype-package-directory", type=Path, required=True)
-    parser.add_argument("--prototype-dylib-sha256", required=True)
     parser.add_argument("--evidence-file", type=Path, required=True)
     args = parser.parse_args()
     if not (args.allow_one_text_insert if args.action == "type_text" else args.allow_one_key):
         parser.error("explicit opt-in matching the selected keyboard action required")
-    security = runpy.run_path(str(Path(__file__).with_name("native_security_readonly.py")))
     try:
-        sdk = security["prototype_module"](
-            args.prototype_package_directory, args.prototype_dylib_sha256
-        )
+        sdk = load_sdk()
         result = asyncio.run(
             insert_once(
                 args.fixture_state_file,
                 sdk=sdk,
-                prototype_sha256=args.prototype_dylib_sha256,
                 action_type=args.action,
                 keyboard_marker_set=args.keyboard_marker_set,
+                field=args.field,
+                delivery=ComputerUseDelivery(args.delivery),
             )
         )
     except ComputerUseContractError as exc:

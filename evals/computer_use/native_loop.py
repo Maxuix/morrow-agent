@@ -22,7 +22,11 @@ from PIL import Image
 
 from morrow.adapters.computer_use.diagnostics import diagnose_host
 from morrow.adapters.computer_use.owner import ComputerDriverOwner
-from morrow.adapters.computer_use.sdk_loader import collect_host_probe, construct_run_session
+from morrow.adapters.computer_use.sdk_loader import (
+    collect_host_probe,
+    construct_run_session,
+    load_sdk,
+)
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.state.operational import SystemStoreClock
 from morrow.application.computer_requests import ComputerUseSelection
@@ -111,9 +115,9 @@ class NativeProvider(ScriptedModelProvider):
                 editable = [
                     item
                     for item in result["elements"]
-                    if item["role"] == "axtextfield" and not item["sensitive"]
+                    if item["role"] in {"axtextfield", "axsecuretextfield"}
                 ]
-                require(len(editable) == 1, "fixture_input_ambiguous")
+                require(1 <= len(editable) <= 2, "fixture_input_ambiguous")
                 self.responses.append(
                     tool(
                         "input",
@@ -151,7 +155,6 @@ async def run_fixture(path: Path, sdk, root: Path) -> dict:
         "schema_version": 1,
         "scripted_provider": True,
         "sdk_input_entries": 0,
-        "sdk_security_entries": 0,
         "approval_count": 0,
         "native_product_complete": False,
     }
@@ -188,20 +191,17 @@ async def run_fixture(path: Path, sdk, root: Path) -> dict:
 
     class Native(readonly["_DiagnosedSession"]):
         async def call_tool(self, name, content):
-            if name == "get_element_security":
-                result["sdk_security_entries"] += 1
-            elif name == "type_text" and json.loads(content).get("require_non_sensitive") is True:
-                result["sdk_input_entries"] += 1
-                require(result["sdk_input_entries"] == 1, "fixture_input_repeated")
-            else:
-                raise ComputerUseContractError("fixture_unprotected_input")
+            if name != "type_text":
+                raise ComputerUseContractError("fixture_action_invalid")
+            result["sdk_input_entries"] += 1
+            if result["sdk_input_entries"] != 1:
+                raise ComputerUseContractError("fixture_input_repeated")
             return await self._native.call_tool(name, content)
 
     owner = ComputerDriverOwner(
         sdk,
         app.id_source,
         SystemStoreClock(),
-        native_security=True,
         session_factory=lambda driver, name: Native(
             construct_run_session(sdk, driver, name), result
         ),
@@ -349,16 +349,11 @@ def main():
     parser.add_argument("--allow-one-text-insert", action="store_true", required=True)
     parser.add_argument("--fixture-bundle-id", choices=(FIXTURE_BUNDLE_ID,), required=True)
     parser.add_argument("--fixture-state-file", type=Path, required=True)
-    parser.add_argument("--prototype-package-directory", type=Path, required=True)
-    parser.add_argument("--prototype-dylib-sha256", required=True)
     parser.add_argument("--evidence-file", type=Path, required=True)
     args = parser.parse_args()
-    security = runpy.run_path(str(Path(__file__).with_name("native_security_readonly.py")))
     with tempfile.TemporaryDirectory(prefix="morrow-native-loop-") as temporary:
         try:
-            sdk = security["prototype_module"](
-                args.prototype_package_directory, args.prototype_dylib_sha256
-            )
+            sdk = load_sdk()
             result = asyncio.run(run_fixture(args.fixture_state_file, sdk, Path(temporary)))
         except ComputerUseContractError as exc:
             result = {"status": "failed", "reason": exc.code}

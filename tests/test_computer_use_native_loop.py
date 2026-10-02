@@ -39,26 +39,6 @@ def image_part():
     return SimpleNamespace(data=base64.b64encode(stream.getvalue()).decode())
 
 
-@pytest.mark.parametrize(
-    "elements",
-    [
-        [{"role": "axtextfield", "sensitive": True, "element_ref": "secure"}],
-        [
-            {"role": "axtextfield", "sensitive": False, "element_ref": value}
-            for value in ("one", "two")
-        ],
-    ],
-)
-async def test_secure_or_ambiguous_input_never_proposes_an_action(module, elements):
-    provider = module["NativeProvider"]("controlled marker")
-    provider.images = [[], []]
-    module["NativeProvider"].stream.__globals__["iter_image_parts"] = lambda _: (image_part(),)
-    with pytest.raises(ComputerUseContractError, match="fixture_input_ambiguous"):
-        async for _ in provider.stream(None, observation(elements)):
-            pass
-    assert len(provider.responses) == 1
-
-
 async def test_missing_provider_image_refuses_before_input_proposal(module):
     provider = module["NativeProvider"]("controlled marker")
     provider.images = [[], []]
@@ -69,13 +49,13 @@ async def test_missing_provider_image_refuses_before_input_proposal(module):
     assert len(provider.responses) == 1
 
 
-async def test_provider_uses_only_non_sensitive_current_reference(module):
+async def test_fixture_provider_uses_current_reference_without_sensitive_input_ban(module):
     provider = module["NativeProvider"]("controlled marker")
     provider.images = [[], []]
     module["NativeProvider"].stream.__globals__["iter_image_parts"] = lambda _: (image_part(),)
     elements = [
-        {"role": "axtextfield", "sensitive": True, "element_ref": "secure"},
-        {"role": "axtextfield", "sensitive": False, "element_ref": "current"},
+        {"role": "axtextfield", "sensitive": True, "element_ref": "current"},
+        {"role": "axtextfield", "sensitive": False, "element_ref": "second"},
     ]
     async for _ in provider.stream(None, observation(elements)):
         pass

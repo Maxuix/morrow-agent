@@ -103,7 +103,7 @@ uv pip install --python "$package_gate_root/extra/bin/python" --no-deps --reinst
   --expect-sdk absent --require-wheel --gui-source src/morrow/gui_static \
   --wheel dist/morrow_agent-0.1.0-py3-none-any.whl --sdist dist/morrow_agent-0.1.0.tar.gz
 "$package_gate_root/extra/bin/python" -I evals/computer_use/package_smoke.py \
-  --expect-sdk present --sdk-version 0.30.4+morrow.1 --require-wheel --gui-source src/morrow/gui_static \
+  --expect-sdk present --sdk-version 0.30.4 --require-wheel --gui-source src/morrow/gui_static \
   --wheel dist/morrow_agent-0.1.0-py3-none-any.whl --sdist dist/morrow_agent-0.1.0.tar.gz
 "$package_gate_root/no-extra/bin/morrow" --help
 "$package_gate_root/extra/bin/morrow" --help
@@ -119,8 +119,7 @@ the real completed turn and tool result, and confirms the desktop owner stayed
 inactive. Output contains only fixed check codes, versions, counts and hashes.
 This proves packaging and default-off behavior; it does not prove native device
 access or model quality. No desktop authorization is needed for this gate.
-For the explicitly built guarded SDK variant, pass
-`--sdk-version 0.30.4+morrow.1`; the default remains the original pinned release.
+The verifier expects the official pinned SDK version 0.30.4.
 
 ## Independent fixture state
 
@@ -194,96 +193,39 @@ probe; it never opens a diagnostic SDK endpoint to HTTP clients. This verifies
 responsible-host/read coexistence, not the native action/Provider-image/product
 end-to-end acceptance gates.
 
-## Exact-token SDK security prototype
+## Basic native input and ordinary loop
 
-`native_security_readonly.py` explicitly loads a separately built experimental
-SDK package whose dylib hash must match the supplied value. It never replaces
-installed SDK files or enables production native input:
+Use the official pinned SDK in a disposable environment. No custom package,
+security-classification query or field-specific input guard is needed. Password
+fields use the same authorized keyboard path as ordinary fields; existing AX
+values and screenshots still receive content protection.
 
 ```sh
-/tmp/morrow-computer-use-sdk-check/bin/python evals/computer_use/native_security_readonly.py \
-  --allow-desktop --fixture-bundle-id com.morrow.ComputerUseFixture \
+/path/to/isolated/python evals/computer_use/native_text.py \
+  --allow-desktop --allow-one-text-insert \
+  --fixture-bundle-id com.morrow.ComputerUseFixture \
   --fixture-state-file /tmp/morrow-computer-use-scroll-evidence/state.json \
-  --prototype-package-directory /tmp/morrow-cua-sdk-security-prototype/python \
-  --prototype-dylib-sha256 VERIFIED_BUILT_SHA256 \
-  --evidence-file /tmp/morrow-security-query.json
+  --evidence-file /tmp/morrow-native-text.json
 ```
 
-The SDK prototype resolves the current token inside its own retained AX cache,
-checks PID/window ownership and bounded ancestry, and returns only a closed
-security classification. The harness validates that response and checks the
-independent fixture file is unchanged. A sensitive field plus an unknown normal
-field fails the gate; binding proof alone never establishes non-sensitive.
-Production admission-time input integration, async Morrow integration, reproducible
-patched wheels and complete native acceptance remain separate work. Local
-prototype source patch, license, source/binary hashes and actual evidence live
-in the ignored acceptance assets; it is not a released SDK or supported package.
+The harness inserts one synthetic Unicode marker and compares an independent
+fixture state. `--action press_key --allow-one-key` and
+`--action hotkey --allow-one-key` select fixed keys; `--keyboard-marker-set release`
+selects unused q/Shift+Y markers. An existing marker refuses a duplicate run.
+Unknown remains unknown even when the fixture records a change; no input is retried.
 
-Add `--verify-input-refusal` to explicitly request three guarded refusal checks
-on the fixture's classified secure field. The prototype's native
-`require_non_sensitive` option requires an exact token and window, checks the
-retained object before focus routing, repeats the check before native input,
-and requires exact focus for keyboard delivery. The harness accepts only the
-closed `input_security_unconfirmed` / `refused` response and stops at the first
-unexpected result. It verifies the complete independent fixture state is
-unchanged. A different SDK refusal, input effect, or unknown response fails the
-gate; there is no retry. This verifies secure-field refusal, not normal-field
-input delivery or production integration.
-
-The current security response uses schema version 2 and input guard version 1.
-Morrow rejects older responses before input. Add `--verify-owner-security` to
-check the real typed owner session's async query and projection: exactly one
-normal field, one sensitive field, and one verified secure-region mask. These
-options use the hash-bound prototype; production remains disabled.
-
-`native_text.py` requires a separate `--allow-one-text-insert` opt-in and the
-same fixture identity/package/hash/evidence arguments. It sends one bounded
-Unicode insert through the typed Morrow owner with native security enabled,
-requests `require_non_sensitive`, then collects a fresh observation. Its gate
-requires a completed background outcome, one SDK input call, a new SDK snapshot,
-an independent normal-field insert and unchanged counter/secure-population/
-scroll facts, plus actual secure-mask pixels before and after. Only hashes and
-bounded metadata are exported. Unknown or failed outcomes remain failed even
-when the independent file shows an effect; the harness never repeats input.
-
-Use `--action press_key --allow-one-key` or `--action hotkey --allow-one-key`
-instead of the text opt-in to test one fixed `z` or `Shift+X` action. An existing
-marker refuses the run before input. The SDK's unknown hotkey outcome remains
-a failed gate even when the independent normal field contains the new character.
-The earlier `Shift+Z` unknown evidence remains unchanged. The current guarded
-prototype can confirm a new native hotkey only from its own same-object
-readback; the fixture's independent result is a separate required gate.
-These modes never retry or send arbitrary SDK tools.
-For the installed release candidate, `--keyboard-marker-set release` selects
-one fixed `q` or `Shift+Y` input. This uses fresh markers for the optimized
-published binary while preserving prior `z`/`Shift+X` evidence. It still refuses
-an existing marker before input and never accepts arbitrary keys or retries.
-
-`native_loop.py` performs one controlled text action through the production
-ordinary AgentLoop, frozen permission/tool composition, manual approval,
-durable tool ledger, Artifact publication and image hydration. The isolated
-scripted Provider uses only references from tool replies; it decodes the
-before/after images and requires their hashes to match committed source refs.
-An independent fixture state check requires exactly one insertion. The shared
-local picker binds the actual fixture window before the run. No real Provider
-or account is used and production activation remains closed.
+`native_loop.py` uses the ordinary AgentLoop, ScriptedProvider, local fixture grant,
+manual approval, durable ledger and before/after Artifact image hashes. It uses
+no real account or Provider network:
 
 ```sh
 /path/to/isolated/python evals/computer_use/native_loop.py \
   --allow-desktop --allow-one-text-insert \
   --fixture-bundle-id com.morrow.ComputerUseFixture \
   --fixture-state-file /tmp/morrow-computer-use-scroll-evidence/state.json \
-  --prototype-package-directory /path/to/isolated/site-packages \
-  --prototype-dylib-sha256 HASH_OF_INSTALLED_GUARDED_DYLIB \
-  --evidence-file /tmp/morrow-native-loop-evidence.json
+  --evidence-file /tmp/morrow-native-loop.json
 ```
 
-The temporary application/store is removed at exit. Evidence contains only
-counts, hashes and completion metadata. Failed or unknown actions remain
-failed and are never repeated. This proves the native scripted text/image loop,
-without completing the remaining GUI, mouse, scroll or recovery gates.
-
-The tracked experimental patch and license are in
-`vendor/cua-driver-security/`. `prepare_sdk_source.py` reproduces the patch from
-the pinned Git commit with implicit fetching disabled. A prepared source tree
-does not constitute a release wheel or production dependency acceptance.
+The previous guarded SDK prototype, custom build route and refusal experiments
+are retired by the 2026-10-03 user scope correction. Historical evidence remains
+in Git/local acceptance archives and is not a current implementation requirement.

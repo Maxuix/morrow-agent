@@ -94,3 +94,15 @@ def test_keyboard_modes_are_fixed_and_do_not_admit_arbitrary_tools(module):
         module["keyboard_action"]("clipboard", ref, "ignored")
     with pytest.raises(ComputerUseContractError, match="fixture_action_invalid"):
         module["keyboard_action"]("press_key", ref, "ignored", marker_set="arbitrary")
+
+
+def test_secure_input_oracle_uses_population_boolean_without_reading_secret_bytes(module):
+    before = {"secure": False, "text": "ordinary", "scroll": 0}
+    after = {"secure": True, "text": "ordinary", "scroll": 0}
+
+    def validate(*args, **kwargs):
+        pass
+
+    assert module["independent_secure_input"](before, after, validate)
+    assert not module["independent_secure_input"](before, {**after, "text": "changed"}, validate)
+    assert not module["independent_secure_input"](after, after, validate)

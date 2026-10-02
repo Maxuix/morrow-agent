@@ -1,9 +1,6 @@
 """Single admitted actions with fake SDK and deterministic events/clocks."""
 
-import asyncio
-import copy
 import json
-import threading
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -68,12 +65,7 @@ class Native(_Native):
         )
 
 
-async def setup(
-    delivery=ComputerUseDelivery.FOREGROUND,
-    *,
-    safety_probe=lambda subject: True,
-    native_security=False,
-):
+async def setup(delivery=ComputerUseDelivery.FOREGROUND):
     native, clock = Native(), FixedClock(NOW)
     scope = _scope(delivery=delivery)
     session = TypedComputerSession(
@@ -83,8 +75,6 @@ async def setup(
         FixedIdSource(),
         clock,
         process_reader=_process_birth,
-        element_safety_probe=safety_probe,
-        native_security=native_security,
     )
     run = await session.open_run_session(
         OpenRunSessionRequest(
@@ -169,19 +159,23 @@ async def test_fixed_protocol_actions_bind_exact_token_window_and_delivery(deliv
 
 
 @pytest.mark.parametrize("kind", ["type_text", "press_key", "hotkey"])
-async def test_sensitive_keyboard_targets_never_reach_sdk(kind):
+async def test_secure_keyboard_targets_use_the_same_sdk_path(kind):
     session, native, _, read, request = await setup()
     ref = read.observation.elements[1].element_ref
     action = {
-        "type_text": lambda: TypeTextAction(type=kind, element_ref=ref, text="hello"),
+        "type_text": lambda: TypeTextAction(type=kind, element_ref=ref, text="my password value"),
         "press_key": lambda: PressKeyAction(type=kind, element_ref=ref, key="enter"),
         "hotkey": lambda: HotkeyAction(type=kind, element_ref=ref, keys=("meta", "a")),
     }[kind]()
-    with pytest.raises(ComputerUseContractError, match="sensitive_target"):
-        await session.execute_one(
-            request(action), settings=ComputerUseSettings(enabled=True), authority=lambda: None
-        )
-    assert effects(native) == []
+    assert read.observation.elements[1].sensitive
+    assert read.observation.elements[1].label is None
+    outcome = await session.execute_one(
+        request(action), settings=ComputerUseSettings(enabled=True), authority=lambda: None
+    )
+    assert outcome.status == "completed"
+    assert len(effects(native)) == 1
+    assert effects(native)[0][1]["element_token"] == "tok-secure"
+    assert "require_non_sensitive" not in effects(native)[0][1]
 
 
 async def test_geometry_change_rejects_action_and_consumes_the_old_observation():
@@ -388,240 +382,3 @@ async def test_interruption_preserves_native_completion_without_retry(completion
     assert outcome.status == expected and outcome.error_code == "action_interrupted"
     assert "untrusted" not in outcome.model_dump_json()
     assert len(effects(native)) == 1
-
-
-async def test_missing_secure_subrole_proof_suppresses_text_label_and_refuses_input():
-    session, native, _, read, request = await setup(safety_probe=None)
-    element = read.observation.elements[0]
-    assert element.sensitive and element.label is None
-    with pytest.raises(ComputerUseContractError, match="sensitive_target"):
-        await session.execute_one(
-            request(
-                TypeTextAction(type="type_text", text="hello", element_ref=element.element_ref)
-            ),
-            settings=ComputerUseSettings(enabled=True),
-            authority=lambda: None,
-        )
-    assert effects(native) == []
-
-
-async def test_live_secure_subrole_proof_is_rechecked_and_failure_is_closed():
-    safe = True
-
-    def probe(subject):
-        assert subject.pid == 4242 and subject.window_id == 9001
-        assert "4242" not in repr(subject) and "tok-hidden" not in repr(subject)
-        return safe
-
-    session, native, _, read, request = await setup(safety_probe=probe)
-    assert not read.observation.elements[0].sensitive
-    safe = False
-    with pytest.raises(ComputerUseContractError, match="element_safety_unconfirmed"):
-        await session.execute_one(
-            request(
-                TypeTextAction(
-                    type="type_text",
-                    text="hello",
-                    element_ref=read.observation.elements[0].element_ref,
-                )
-            ),
-            settings=ComputerUseSettings(enabled=True),
-            authority=lambda: None,
-        )
-    assert effects(native) == []
-
-
-async def test_native_privacy_probe_error_is_never_echoed_or_treated_as_safe():
-    def broken(subject):
-        raise RuntimeError("native raw secure value")
-
-    _, _, _, read, _ = await setup(safety_probe=broken)
-    assert read.observation.elements[0].sensitive
-    assert "native raw" not in read.observation.model_dump_json()
-
-
-async def test_async_security_queries_share_owner_and_do_not_nest_native_admission():
-    owner = (asyncio.get_running_loop(), threading.get_ident())
-    queries = []
-
-    async def probe(subject):
-        assert (asyncio.get_running_loop(), threading.get_ident()) == owner
-        queries.append(subject)
-        return True
-
-    session, native, _, read, request = await setup(safety_probe=probe)
-    assert not read.observation.elements[0].sensitive
-    outcome = await session.execute_one(
-        request(
-            TypeTextAction(
-                type="type_text", text="hello", element_ref=read.observation.elements[0].element_ref
-            )
-        ),
-        settings=ComputerUseSettings(enabled=True),
-        authority=lambda: None,
-    )
-    assert outcome.status == "completed"
-    assert len(queries) == 3 and len(set(queries)) == 1
-    assert len(effects(native)) == 1 and not session.pending
-
-
-async def test_authority_revoked_during_final_async_query_prevents_native_input():
-    entered, release = asyncio.Event(), asyncio.Event()
-    queries = 0
-    revoked = False
-
-    async def probe(subject):
-        nonlocal queries
-        queries += 1
-        if queries == 3:
-            entered.set()
-            await release.wait()
-        return True
-
-    def authority():
-        if revoked:
-            raise ComputerUseContractError("target_revoked")
-
-    session, native, _, read, request = await setup(safety_probe=probe)
-    task = asyncio.create_task(
-        session.execute_one(
-            request(
-                TypeTextAction(
-                    type="type_text",
-                    text="hello",
-                    element_ref=read.observation.elements[0].element_ref,
-                )
-            ),
-            settings=ComputerUseSettings(enabled=True),
-            authority=authority,
-        )
-    )
-    await entered.wait()
-    revoked = True
-    release.set()
-    with pytest.raises(ComputerUseContractError, match="target_revoked"):
-        await task
-    assert effects(native) == [] and not session.pending
-
-
-async def test_cancelled_async_security_query_retains_original_task_until_settled():
-    entered, release = asyncio.Event(), asyncio.Event()
-    queries = 0
-
-    async def probe(subject):
-        nonlocal queries
-        queries += 1
-        if queries == 2:
-            entered.set()
-            await release.wait()
-        return True
-
-    session, native, _, read, request = await setup(safety_probe=probe)
-    task = asyncio.create_task(
-        session.execute_one(
-            request(
-                TypeTextAction(
-                    type="type_text",
-                    text="hello",
-                    element_ref=read.observation.elements[0].element_ref,
-                )
-            ),
-            settings=ComputerUseSettings(enabled=True),
-            authority=lambda: None,
-        )
-    )
-    await entered.wait()
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert session.quarantined and session.pending and effects(native) == []
-    release.set()
-    await session.settle()
-    assert not session.pending and effects(native) == []
-
-
-async def test_async_security_error_suppresses_native_diagnostic_and_input():
-    async def probe(subject):
-        raise RuntimeError("private native security diagnostic")
-
-    _, native, _, read, _ = await setup(safety_probe=probe)
-    assert read.observation.elements[0].sensitive
-    assert "private native" not in read.observation.model_dump_json()
-    assert effects(native) == []
-
-
-async def test_cancelled_observation_does_not_start_later_security_queries(monkeypatch):
-    original = Native.get_window_state
-
-    async def two_inputs(native, payload):
-        state = await original(native, payload)
-        second = copy.deepcopy(state.elements[0])
-        second.element_token = "other-private-token"
-        state.elements = [state.elements[0], second]
-        return state
-
-    monkeypatch.setattr(Native, "get_window_state", two_inputs)
-    entered, release = asyncio.Event(), asyncio.Event()
-    hold = False
-    queries = []
-
-    async def probe(subject):
-        queries.append(subject)
-        if hold:
-            entered.set()
-            await release.wait()
-        return True
-
-    session, native, _, read, request = await setup(safety_probe=probe)
-    prior = request(
-        TypeTextAction(
-            type="type_text", text="hello", element_ref=read.observation.elements[0].element_ref
-        )
-    )
-    queries.clear()
-    hold = True
-    task = asyncio.create_task(
-        session.observe(
-            ObserveWindowRequest(
-                authority=prior.authority,
-                scope=prior.scope,
-                target=prior.target,
-                delivery=prior.delivery,
-                include_image=False,
-            )
-        )
-    )
-    await entered.wait()
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert session.quarantined and session.pending
-    release.set()
-    await session.settle()
-    assert len(queries) == 1 and not session.pending and effects(native) == []
-
-
-async def test_privacy_change_at_last_authority_check_prevents_input_dispatch():
-    safe = True
-    session, native, _, read, request = await setup(safety_probe=lambda subject: safe)
-    calls = 0
-
-    def authority():
-        nonlocal safe, calls
-        calls += 1
-        if calls == 3:
-            safe = False
-
-    with pytest.raises(ComputerUseContractError, match="element_safety_unconfirmed"):
-        await session.execute_one(
-            request(
-                TypeTextAction(
-                    type="type_text",
-                    text="hello",
-                    element_ref=read.observation.elements[0].element_ref,
-                )
-            ),
-            settings=ComputerUseSettings(enabled=True),
-            authority=authority,
-        )
-    assert effects(native) == []

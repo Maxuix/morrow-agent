@@ -221,14 +221,14 @@ Install the pinned optional SDK separately; ordinary coding tasks do not need it
 uv sync --locked --extra computer-use
 ```
 
-On macOS arm64, the extra pins Morrow's guarded `cua-driver==0.30.4+morrow.1`
-[candidate wheel](https://github.com/Maxuix/morrow-agent/releases/tag/cua-driver-morrow-v0.30.4.1)
-by URL and SHA256. Other platforms retain upstream `0.30.4` for diagnostic compatibility;
-this does not enable native support there. The guarded source, patch, licenses and build
-recipe are in [vendor/cua-driver-security](vendor/cua-driver-security/README.md).
-Installation and an enabled setting do not establish native support. Controlled read,
-input and scripted image-loop checks passed on macOS 27 arm64 with Python 3.12/3.13;
-the full native product matrix is still pending and activation remains closed.
+The extra pins the official `cua-driver==0.30.4`. Morrow uses its direct Python SDK;
+no custom SDK build or field-security query is required. Authorized text, key and
+hotkey actions use the same path for ordinary and password fields. Sensitive
+labels/values remain hidden in observations and known screenshot regions are masked;
+that display protection does not prevent input.
+Installation and an enabled setting do not establish native support. Basic native
+validation of the simplified integration is in progress; activation remains closed
+until that validation is recorded.
 macOS Accessibility and Screen Recording permission
 must apply to the actual responsible host; a positive permission probe does not prove
 window capture works. Use the opt-in controlled fixture gate in

@@ -94,8 +94,6 @@ async def test_ax_screen_points_map_outward_to_delivered_downscaled_image():
     [
         lambda s: setattr(s.elements[1], "frame", None),
         lambda s: setattr(s.elements[1].frame, "x", float("nan")),
-        lambda s: setattr(s.elements[1].frame, "x", -101),
-        lambda s: setattr(s.elements[1].frame, "w", 100),
         lambda s: setattr(s, "degraded", True),
         lambda s: setattr(s, "truncated", True),
         lambda s: setattr(s, "total_element_count", 3),
@@ -127,3 +125,23 @@ async def test_known_secret_in_value_is_sensitive_without_exposing_the_value():
     assert len(result.sensitive_regions) == 1
     assert result.observation.elements[1].sensitive
     assert "do-not-export" not in result.observation.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "x,width,expected", [(-101, 10, (0, 1, 5, 4)), (-95.5, 100, (2, 1, 20, 4)), (-200, 10, None)]
+)
+async def test_ax_panels_mask_only_their_intersection_with_captured_window(x, width, expected):
+    native = Native()
+
+    def change(state):
+        state.elements[1].frame.x = x
+        state.elements[1].frame.w = width
+
+    native.change = change
+    result = await read(native)
+    assert result.image_error is None
+    if expected is None:
+        assert result.sensitive_regions == ()
+    else:
+        (region,) = result.sensitive_regions
+        assert (region.left, region.top, region.right, region.bottom) == expected

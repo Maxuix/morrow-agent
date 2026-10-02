@@ -6,27 +6,12 @@ tokens and text are transient. No caller supplies a tool name or argument dict.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from morrow.core.computer_use import ComputerUseContractError
-from morrow.core.domain import canonical_json_bytes, refuse_secret_material
-
-
-@dataclass(frozen=True, slots=True, repr=False)
-class ElementSafetySubject:
-    """Private native binding for a read-only secure-subrole proof."""
-
-    pid: int
-    window_id: int
-    token: str | None
-    role: str
-    center: tuple[float, float] | None
-
-    def __repr__(self) -> str:
-        return "ElementSafetySubject()"
+from morrow.core.domain import canonical_json_bytes
 
 
 class _WindowInput(BaseModel):
@@ -38,26 +23,9 @@ class _WindowInput(BaseModel):
     delivery_mode: Literal["background", "foreground"]
 
 
-class _GuardedWindowInput(_WindowInput):
-    require_non_sensitive: Literal[True] | None = Field(default=None, repr=False)
-
-    @field_validator("require_non_sensitive", mode="before")
-    @classmethod
-    def exact_guard_flag(cls, value):
-        if value is not None and value is not True:
-            raise ValueError("rejected_action")
-        return value
-
-
-class NativeTextInput(_GuardedWindowInput):
+class NativeTextInput(_WindowInput):
     element_token: str = Field(min_length=1, max_length=1024, repr=False)
     text: str = Field(min_length=1, max_length=4096, repr=False)
-
-    @field_validator("text")
-    @classmethod
-    def safe_text(cls, value):
-        refuse_secret_material(value, label="computer use text")
-        return value
 
 
 NativeKey = Literal[
@@ -118,12 +86,12 @@ NativeKey = Literal[
 ]
 
 
-class NativeKeyInput(_GuardedWindowInput):
+class NativeKeyInput(_WindowInput):
     element_token: str = Field(min_length=1, max_length=1024, repr=False)
     key: NativeKey
 
 
-class NativeHotkeyInput(_GuardedWindowInput):
+class NativeHotkeyInput(_WindowInput):
     element_token: str = Field(min_length=1, max_length=1024, repr=False)
     keys: tuple[NativeKey, ...] = Field(min_length=2, max_length=4)
 

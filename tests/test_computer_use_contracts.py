@@ -147,7 +147,7 @@ def _observation(**overrides) -> Observation:
         "frame": _frame(),
         "elements": (
             AxElement(element_ref="celem_1", depth=1, role="button", label="Save"),
-            AxElement(element_ref="celem_2", depth=1, role="text_field", sensitive=True),
+            AxElement(element_ref="celem_2", depth=1, role="axsecuretextfield", sensitive=True),
         ),
     }
     values.update(overrides)
@@ -306,7 +306,6 @@ def test_targets_observations_and_actions_reject_before_the_device():
             {"type": "click", "actions": [{"type": "click"}], "element_ref": "celem_1"},
             "rejected_action",
         ),
-        ({"type": "type_text", "text": "my password value"}, "secret_material"),
         ({"type": "hotkey", "keys": ["ctrl", "alt", "shift", "meta", "a"]}, "rejected_action"),
         ({"type": "scroll", "direction": "down", "amount": 2001}, "rejected_action"),
         ({"type": "type_text", "text": "x" * 4097}, "rejected_action"),
@@ -325,11 +324,10 @@ def test_targets_observations_and_actions_reject_before_the_device():
             port, _execute({"type": "click", "x": 1, "y": 1}, observation=missing_scale)
         )
     assert unknown.value.code == "unknown_scale"
-    with pytest.raises(ComputerUseContractError) as sensitive:
-        execute_one_if_admitted(
-            port, _execute({"type": "type_text", "text": "hello", "element_ref": "celem_2"})
-        )
-    assert sensitive.value.code == "sensitive_target"
+    prepared = prepare_execute_request(
+        _execute({"type": "type_text", "text": "my password value", "element_ref": "celem_2"})
+    )
+    assert prepared.action.text == "my password value"
     with pytest.raises(ComputerUseContractError) as stale_ref:
         prepare_execute_request(
             _execute(

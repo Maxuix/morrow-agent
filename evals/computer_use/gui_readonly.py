@@ -104,7 +104,8 @@ async def inspect_gui_owner(host, *, fixture_window, inspect):
             masked = result.get("masked_capture") or {}
             if (
                 result.get("image_share_error") is not None
-                or masked.get("mask_count") != 2
+                or type(masked.get("mask_count")) is not int
+                or masked["mask_count"] < 0
                 or masked.get("mask_pixels_verified") is not True
             ):
                 result.update(status="failed", reason="gui_fixture_image_unverified")

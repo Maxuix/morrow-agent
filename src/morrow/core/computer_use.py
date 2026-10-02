@@ -889,7 +889,7 @@ class ClickAction(ComputerUseModel):
 
 class TypeTextAction(ComputerUseModel):
     type: Literal["type_text"]
-    text: str = Field(min_length=1, max_length=MAX_TEXT_CHARS)
+    text: str = Field(min_length=1, max_length=MAX_TEXT_CHARS, repr=False)
     element_ref: str | None = None
     postcondition: Postcondition | None = None
 
@@ -899,15 +899,6 @@ class TypeTextAction(ComputerUseModel):
         if value is None:
             return None
         return validate_prefixed_id(value, COMPUTER_ELEMENT_ID_PREFIX)
-
-    @field_validator("text")
-    @classmethod
-    def safe_text(cls, value: str) -> str:
-        try:
-            refuse_secret_material(value, label="computer use text")
-        except ValueError:
-            raise ValueError("secret_material") from None
-        return value
 
 
 class ScrollAction(ComputerUseModel):
@@ -994,11 +985,6 @@ def parse_computer_action(payload: object) -> ComputerUseAction:
         raise ComputerUseContractError("rejected_action")
     if isinstance(payload.get("action"), list) or isinstance(payload.get("actions"), list):
         raise ComputerUseContractError("rejected_action")
-    if payload.get("type") == "type_text" and isinstance(payload.get("text"), str):
-        try:
-            refuse_secret_material(payload["text"], label="computer use text")
-        except ValueError:
-            raise ComputerUseContractError("secret_material") from None
     try:
         return TypeAdapter(ComputerUseAction).validate_python(payload)
     except ValidationError:
@@ -1129,13 +1115,13 @@ def prepare_execute_request(
     if isinstance(action, (TypeTextAction, PressKeyAction, HotkeyAction)):
         if element is None:
             raise ComputerUseContractError("element_required")
-        if element.sensitive:
-            raise ComputerUseContractError("sensitive_target")
         if isinstance(action, TypeTextAction) and element.role not in {
             "axtextfield",
             "axtextarea",
             "axcombobox",
             "axsearchfield",
+            "axsecuretextfield",
+            "axpasswordfield",
         }:
             raise ComputerUseContractError("not_editable")
     if isinstance(action, ScrollAction) and element is None and action.x is None:

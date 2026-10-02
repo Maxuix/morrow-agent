@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import inspect
 import math
 import re
 import threading
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from typing import Any
 
 from morrow.adapters.computer_use.action_inputs import (
-    ElementSafetySubject,
     NativeHotkeyInput,
     NativeKeyInput,
     NativeScrollInput,
@@ -23,7 +21,6 @@ from morrow.adapters.computer_use.action_inputs import (
 from morrow.adapters.computer_use.calls import NativeActionInterrupted, NativeCalls
 from morrow.adapters.computer_use.process_identity import ProcessBirth, read_process_birth
 from morrow.adapters.computer_use.registry import TrustedDesktopRegistry, WindowGeometry
-from morrow.adapters.computer_use.security import NativeElementSafetyProbe
 from morrow.core.computer_use import (
     MAX_AX_DEPTH,
     MAX_AX_ELEMENTS,
@@ -68,7 +65,6 @@ from morrow.core.ports import Clock, IdSource
 from morrow.core.runtime_policy import ComputerUseSettings
 
 _CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
-_EDITABLE_ROLES = frozenset({"axtextfield", "axtextarea", "axcombobox", "axsearchfield"})
 # The pinned SDK counts every traversed node, including collapsed layout containers.
 # Bound native work separately from the unchanged 200-element model projection.
 MAX_NATIVE_AX_NODES = 400
@@ -95,9 +91,6 @@ class TypedComputerSession:
         session_name: str | None = None,
         call_timeout: float = 15,
         process_reader: Callable[[int], ProcessBirth] = read_process_birth,
-        element_safety_probe: Callable[[ElementSafetySubject], bool | None | Awaitable[bool | None]]
-        | None = None,
-        native_security: bool = False,
         window_bindings: dict | None = None,
     ) -> None:
         self._sdk = sdk
@@ -117,14 +110,6 @@ class TypedComputerSession:
         self._observations: dict[str, Observation] = {}
         self._calls = NativeCalls(self.invalidate, timeout=call_timeout)
         self._process_reader = process_reader
-        if native_security and element_safety_probe is not None:
-            raise ValueError("conflicting_element_safety_probe")
-        self._native_security = native_security
-        self._element_safety_probe = (
-            NativeElementSafetyProbe(native_session, self._require_session)
-            if native_security
-            else element_safety_probe
-        )
         self._window_bindings = dict(window_bindings or {})
 
     async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession:
@@ -315,18 +300,13 @@ class TypedComputerSession:
             if action.type in {"type_text", "press_key", "hotkey"}:
                 if element is None:
                     raise ComputerUseContractError("element_required")
-                if element.sensitive:
-                    raise ComputerUseContractError("sensitive_target")
-                subject = ElementSafetySubject(
-                    window.pid, window.window_id, element.token, element.role, element.center
-                )
-                if not await self._element_is_non_sensitive(subject):
-                    raise ComputerUseContractError("element_safety_unconfirmed")
                 if action.type == "type_text" and element.role not in {
                     "axtextfield",
                     "axtextarea",
                     "axcombobox",
                     "axsearchfield",
+                    "axsecuretextfield",
+                    "axpasswordfield",
                 }:
                     raise ComputerUseContractError("not_editable")
             if action.type == "click":
@@ -350,8 +330,6 @@ class TypedComputerSession:
                     session=self._require_session(),
                     delivery_mode=request.delivery.value,
                 )
-                if self._native_security and action.type in {"type_text", "press_key", "hotkey"}:
-                    common["require_non_sensitive"] = True
                 try:
                     if action.type == "type_text":
                         payload = NativeTextInput(
@@ -392,17 +370,6 @@ class TypedComputerSession:
                 authority()
                 self._require_scope(request.scope)
                 self._validate_process(window)
-                if action.type in {"type_text", "press_key", "hotkey"}:
-                    subject = ElementSafetySubject(
-                        window.pid, window.window_id, element.token, element.role, element.center
-                    )
-                    if not await self._element_is_non_sensitive(subject, admitted=True):
-                        raise ComputerUseContractError("element_safety_unconfirmed")
-                    # An async security query may outlive authorization. Recheck
-                    # after it returns and before entering the mutating SDK call.
-                    authority()
-                    self._require_scope(request.scope)
-                    self._validate_process(window)
                 age = (self._clock.now() - current.captured_at).total_seconds()
                 if not 0 <= age < MAX_OBSERVATION_AGE_SECONDS:
                     raise ComputerUseContractError("stale_observation")
@@ -566,39 +533,7 @@ class TypedComputerSession:
         *,
         geometry: WindowGeometry,
     ) -> ObservedWindow:
-        # Query exact subjects on the owner loop under one bounded native task.
-        # The projection uses only these transient results, never a synchronous
-        # wait on the owner loop or a geometry/label identity match.
-        window = self._registry.window(window_identity)
-        proofs = {}
-        if self._element_safety_probe is not None:
-
-            async def classify_visible_inputs():
-                considered = 0
-                for raw in getattr(state, "elements", None) or ():
-                    depth = getattr(raw, "depth", None)
-                    if type(depth) is not int or not 0 <= depth <= MAX_AX_DEPTH:
-                        continue
-                    if considered >= MAX_AX_ELEMENTS:
-                        break
-                    considered += 1
-                    role = _role(getattr(raw, "role", ""))
-                    if role not in _EDITABLE_ROLES:
-                        continue
-                    if not self._calls.accepting:
-                        raise ComputerUseContractError("driver_not_activated")
-                    self._require_scope(request.scope)
-                    self._validate_process(window)
-                    subject = _safety_subject(window, raw, role)
-                    proofs[subject] = await _await_safety_probe(self._element_safety_probe, subject)
-
-            await self._calls.run(classify_visible_inputs)
-            self._require_scope(request.scope)
-            if await self._validate_live_target(window) != geometry:
-                raise ComputerUseContractError("stale_observation")
-        elements, omitted, truncated = _elements(
-            state, self._registry, window_identity, safety_probe=lambda subject: proofs.get(subject)
-        )
+        elements, omitted, truncated = _elements(state, self._registry, window_identity)
         degraded = bool(getattr(state, "degraded", False))
         degraded_reason = None
         if degraded:
@@ -703,19 +638,6 @@ class TypedComputerSession:
         self._check_owner()
         await self._calls.settle()
 
-    async def _element_is_non_sensitive(
-        self, subject: ElementSafetySubject, *, admitted: bool = False
-    ) -> bool:
-        if self._element_safety_probe is None:
-            return False
-
-        async def query():
-            return await _await_safety_probe(self._element_safety_probe, subject)
-
-        # The final query already runs inside NativeCalls' retained admission
-        # task; nesting NativeCalls would falsely report desktop_busy.
-        return await query() if admitted else await self._calls.run(query)
-
     async def _call(self, name: str, payload: Any, *, cleanup: bool = False) -> Any:
         method = self._require(name)
         return await self._calls.run(lambda: method(payload), cleanup=cleanup)
@@ -799,8 +721,6 @@ def _elements(
     state: Any,
     registry: TrustedDesktopRegistry,
     window_identity: str,
-    *,
-    safety_probe: Callable[[ElementSafetySubject], bool | None] | None = None,
 ) -> tuple[list[AxElement], int, bool]:
     raw_elements = getattr(state, "elements", None) or ()
     total = getattr(state, "total_element_count", None)
@@ -828,11 +748,6 @@ def _elements(
             continue
         role = _role(getattr(raw, "role", ""))
         label, sensitive = _element_label(raw, role)
-        if role in _EDITABLE_ROLES:
-            window = registry.window(window_identity)
-            subject = _safety_subject(window, raw, role)
-            if not _proven_non_sensitive(safety_probe, subject):
-                label, sensitive = None, True
         addition = len(role.encode()) + len((label or "").encode())
         if text_bytes + addition > MAX_AX_TEXT_BYTES:
             omitted += 1
@@ -988,39 +903,6 @@ def _role(value: object) -> str:
     return token[:64]
 
 
-def _safety_subject(window, raw, role: str) -> ElementSafetySubject:
-    token = getattr(raw, "element_token", None)
-    return ElementSafetySubject(
-        window.pid,
-        window.window_id,
-        token if isinstance(token, str) else None,
-        role,
-        _center(getattr(raw, "frame", None)),
-    )
-
-
-async def _await_safety_probe(probe, subject: ElementSafetySubject) -> bool:
-    try:
-        value = probe(subject)
-        if inspect.isawaitable(value):
-            value = await value
-        return value is True
-    except Exception:
-        # Cancellation remains visible to NativeCalls so the original task is
-        # retained/quarantined until it settles. Private native errors stay closed.
-        return False
-
-
-def _proven_non_sensitive(probe, subject: ElementSafetySubject) -> bool:
-    if probe is None:
-        return False
-    try:
-        return probe(subject) is True
-    except Exception:
-        # Neither probe failures nor native subrole strings escape to the model.
-        return False
-
-
 def _element_label(raw: Any, role: str) -> tuple[str | None, bool]:
     if "secure" in role or "password" in role:
         return None, True
@@ -1068,23 +950,23 @@ def _sensitive_regions(
         ):
             raise ComputerUseContractError("image_safety_unconfirmed")
         x, y, width, height = numbers
-        if (
-            width <= 0
-            or height <= 0
-            or x < geometry.x
-            or y < geometry.y
-            or x + width > geometry.x + geometry.width
-            or y + height > geometry.y + geometry.height
-        ):
+        if width <= 0 or height <= 0:
             raise ComputerUseContractError("image_safety_unconfirmed")
+        # AX may include a tooltip/panel outside the captured window. Only its
+        # intersection with this window can appear in a window-scoped image.
+        right = min(x + width, geometry.x + geometry.width)
+        bottom = min(y + height, geometry.y + geometry.height)
+        x, y = max(x, geometry.x), max(y, geometry.y)
+        if right <= x or bottom <= y:
+            continue
         sx, sy = capture.width / geometry.width, capture.height / geometry.height
         regions.append(
             SensitiveCaptureRegion(
                 element_ref=element.element_ref,
                 left=math.floor((x - geometry.x) * sx),
                 top=math.floor((y - geometry.y) * sy),
-                right=math.ceil((x + width - geometry.x) * sx),
-                bottom=math.ceil((y + height - geometry.y) * sy),
+                right=math.ceil((right - geometry.x) * sx),
+                bottom=math.ceil((bottom - geometry.y) * sy),
             )
         )
     return tuple(regions)

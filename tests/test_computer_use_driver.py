@@ -141,7 +141,7 @@ def test_collect_host_probe_does_not_construct_or_echo_loader_errors():
     assert old.accessibility is None
 
 
-@pytest.mark.parametrize("version", ("0.30.4", "0.30.4+morrow.1"))
+@pytest.mark.parametrize("version", ("0.30.4",))
 def test_known_sdk_diagnostics_read_permissions_but_never_enable_native(version):
     calls = []
 
@@ -205,7 +205,7 @@ def test_construct_driver_uses_the_same_process_runtime():
     assert created[0].authorization.max_idle_ttl_seconds == 600
 
 
-def test_sdk_protocol_bridge_has_only_fixed_action_and_security_calls():
+def test_sdk_protocol_bridge_has_only_four_fixed_action_calls():
     root = __import__("pathlib").Path(SOURCE)
     fixed_names = []
     for path in root.rglob("*.py"):
@@ -214,7 +214,7 @@ def test_sdk_protocol_bridge_has_only_fixed_action_and_security_calls():
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
                 if node.func.attr != "call_tool":
                     continue
-                assert path.name in {"action_inputs.py", "security.py"}
+                assert path.name == "action_inputs.py"
                 assert isinstance(node.args[0], ast.Constant)
                 fixed_names.append((path.name, node.args[0].value))
     assert sorted(fixed_names) == [
@@ -222,7 +222,6 @@ def test_sdk_protocol_bridge_has_only_fixed_action_and_security_calls():
         ("action_inputs.py", "press_key"),
         ("action_inputs.py", "scroll"),
         ("action_inputs.py", "type_text"),
-        ("security.py", "get_element_security"),
     ]
 
 

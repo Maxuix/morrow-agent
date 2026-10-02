@@ -1546,7 +1546,6 @@ def build_computer_use_lifecycle(application, settings=None):
                 sdk, driver, name, lifetime_seconds=current.max_run_seconds
             ),
             call_timeout=resolved.max_call_seconds,
-            native_security=True,
         )
 
     # Native read-only acceptance must be recorded before enabling this gate.

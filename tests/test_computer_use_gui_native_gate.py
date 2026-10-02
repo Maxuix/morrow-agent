@@ -26,7 +26,7 @@ def test_gui_gate_uses_full_context_and_preserves_production_default_off(
             "reason": "fixture_ax_missing" if case == "read_failed" else None,
             "image_share_error": "image_safety_unconfirmed" if case == "image_blocked" else None,
             "masked_capture": {
-                "mask_count": 0 if case == "missing_mask" else 2,
+                "mask_count": None if case == "missing_mask" else 0,
                 "mask_pixels_verified": True,
             },
         }
