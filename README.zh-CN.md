@@ -214,7 +214,16 @@ uv run morrow workflow --help
 
 ## 桌面配置（实验性）
 
-桌面执行默认关闭，原生验收门槛尚未通过。
+桌面执行默认关闭。macOS arm64 的基础观察、Unicode 输入和带实际图像的普通 AgentLoop
+已通过实机验证；安装官方固定 SDK 后，可显式启用并授权窗口：
+
+```bash
+uv sync --locked --extra computer-use
+```
+
+普通字段与密码字段共用输入路径，不再要求字段安全证明、自编 SDK 或凭据内容检测。
+内容展示脱敏不会禁止输入。SDK 对隐藏字段可能报告 `unknown`，即使实际输入已发生；
+Morrow 保留该状态，不自动重试。其他平台暂不开放原生执行。
 `uv run morrow computer status` 查看共享全局配置、宿主状态及当前全局模型能力。
 使用状态中返回的修订号明确修改配置：
 
