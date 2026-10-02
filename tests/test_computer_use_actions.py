@@ -1,6 +1,9 @@
 """Single admitted actions with fake SDK and deterministic events/clocks."""
 
+import asyncio
+import copy
 import json
+import threading
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -429,6 +432,167 @@ async def test_native_privacy_probe_error_is_never_echoed_or_treated_as_safe():
     _, _, _, read, _ = await setup(safety_probe=broken)
     assert read.observation.elements[0].sensitive
     assert "native raw" not in read.observation.model_dump_json()
+
+
+async def test_async_security_queries_share_owner_and_do_not_nest_native_admission():
+    owner = (asyncio.get_running_loop(), threading.get_ident())
+    queries = []
+
+    async def probe(subject):
+        assert (asyncio.get_running_loop(), threading.get_ident()) == owner
+        queries.append(subject)
+        return True
+
+    session, native, _, read, request = await setup(safety_probe=probe)
+    assert not read.observation.elements[0].sensitive
+    outcome = await session.execute_one(
+        request(
+            TypeTextAction(
+                type="type_text", text="hello", element_ref=read.observation.elements[0].element_ref
+            )
+        ),
+        settings=ComputerUseSettings(enabled=True),
+        authority=lambda: None,
+    )
+    assert outcome.status == "completed"
+    assert len(queries) == 3 and len(set(queries)) == 1
+    assert len(effects(native)) == 1 and not session.pending
+
+
+async def test_authority_revoked_during_final_async_query_prevents_native_input():
+    entered, release = asyncio.Event(), asyncio.Event()
+    queries = 0
+    revoked = False
+
+    async def probe(subject):
+        nonlocal queries
+        queries += 1
+        if queries == 3:
+            entered.set()
+            await release.wait()
+        return True
+
+    def authority():
+        if revoked:
+            raise ComputerUseContractError("target_revoked")
+
+    session, native, _, read, request = await setup(safety_probe=probe)
+    task = asyncio.create_task(
+        session.execute_one(
+            request(
+                TypeTextAction(
+                    type="type_text",
+                    text="hello",
+                    element_ref=read.observation.elements[0].element_ref,
+                )
+            ),
+            settings=ComputerUseSettings(enabled=True),
+            authority=authority,
+        )
+    )
+    await entered.wait()
+    revoked = True
+    release.set()
+    with pytest.raises(ComputerUseContractError, match="target_revoked"):
+        await task
+    assert effects(native) == [] and not session.pending
+
+
+async def test_cancelled_async_security_query_retains_original_task_until_settled():
+    entered, release = asyncio.Event(), asyncio.Event()
+    queries = 0
+
+    async def probe(subject):
+        nonlocal queries
+        queries += 1
+        if queries == 2:
+            entered.set()
+            await release.wait()
+        return True
+
+    session, native, _, read, request = await setup(safety_probe=probe)
+    task = asyncio.create_task(
+        session.execute_one(
+            request(
+                TypeTextAction(
+                    type="type_text",
+                    text="hello",
+                    element_ref=read.observation.elements[0].element_ref,
+                )
+            ),
+            settings=ComputerUseSettings(enabled=True),
+            authority=lambda: None,
+        )
+    )
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert session.quarantined and session.pending and effects(native) == []
+    release.set()
+    await session.settle()
+    assert not session.pending and effects(native) == []
+
+
+async def test_async_security_error_suppresses_native_diagnostic_and_input():
+    async def probe(subject):
+        raise RuntimeError("private native security diagnostic")
+
+    _, native, _, read, _ = await setup(safety_probe=probe)
+    assert read.observation.elements[0].sensitive
+    assert "private native" not in read.observation.model_dump_json()
+    assert effects(native) == []
+
+
+async def test_cancelled_observation_does_not_start_later_security_queries(monkeypatch):
+    original = Native.get_window_state
+
+    async def two_inputs(native, payload):
+        state = await original(native, payload)
+        second = copy.deepcopy(state.elements[0])
+        second.element_token = "other-private-token"
+        state.elements = [state.elements[0], second]
+        return state
+
+    monkeypatch.setattr(Native, "get_window_state", two_inputs)
+    entered, release = asyncio.Event(), asyncio.Event()
+    hold = False
+    queries = []
+
+    async def probe(subject):
+        queries.append(subject)
+        if hold:
+            entered.set()
+            await release.wait()
+        return True
+
+    session, native, _, read, request = await setup(safety_probe=probe)
+    prior = request(
+        TypeTextAction(
+            type="type_text", text="hello", element_ref=read.observation.elements[0].element_ref
+        )
+    )
+    queries.clear()
+    hold = True
+    task = asyncio.create_task(
+        session.observe(
+            ObserveWindowRequest(
+                authority=prior.authority,
+                scope=prior.scope,
+                target=prior.target,
+                delivery=prior.delivery,
+                include_image=False,
+            )
+        )
+    )
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert session.quarantined and session.pending
+    release.set()
+    await session.settle()
+    assert len(queries) == 1 and not session.pending and effects(native) == []
 
 
 async def test_privacy_change_at_last_authority_check_prevents_input_dispatch():
