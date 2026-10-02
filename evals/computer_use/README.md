@@ -1,5 +1,26 @@
 # Controlled native computer-use gates
 
+`native_counter.py` is a separate opt-in component gate for exactly one
+background or foreground token click on the running fixture's Increment button:
+
+```sh
+/tmp/morrow-computer-use-sdk-check/bin/python evals/computer_use/native_counter.py \
+  --allow-desktop --allow-one-increment \
+  --fixture-bundle-id com.morrow.ComputerUseFixture \
+  --fixture-state-file /tmp/morrow-computer-use-scroll-evidence/state.json \
+  --delivery background
+```
+
+It binds the independent fixture PID/window/instance, rejects concurrent counter
+changes before SDK admission, consumes the observation once, reads a fresh SDK
+snapshot and masked capture, and checks the independent count. It never retries
+or falls back to another delivery mode. An independently observed increment
+does not upgrade the SDK's unknown outcome: the gate fails unless the normalized
+native outcome is completed. The pinned macOS SDK reports generic AX presses as
+unverifiable because dispatch success has no independent read-back. Record any
+actual effect even when this gate exits nonzero. This does not attest text input,
+whole-tree uniqueness, Provider hydration, or full production acceptance.
+
 These are explicit opt-in gates, excluded from default pytest. They operate on
 an isolated local fixture with no network, account, or real credential. SDK
 installation is separate from desktop authorization. Permission probes are
