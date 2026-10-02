@@ -103,7 +103,7 @@ uv pip install --python "$package_gate_root/extra/bin/python" --no-deps --reinst
   --expect-sdk absent --require-wheel --gui-source src/morrow/gui_static \
   --wheel dist/morrow_agent-0.1.0-py3-none-any.whl --sdist dist/morrow_agent-0.1.0.tar.gz
 "$package_gate_root/extra/bin/python" -I evals/computer_use/package_smoke.py \
-  --expect-sdk present --require-wheel --gui-source src/morrow/gui_static \
+  --expect-sdk present --sdk-version 0.30.4+morrow.1 --require-wheel --gui-source src/morrow/gui_static \
   --wheel dist/morrow_agent-0.1.0-py3-none-any.whl --sdist dist/morrow_agent-0.1.0.tar.gz
 "$package_gate_root/no-extra/bin/morrow" --help
 "$package_gate_root/extra/bin/morrow" --help
@@ -254,6 +254,10 @@ The earlier `Shift+Z` unknown evidence remains unchanged. The current guarded
 prototype can confirm a new native hotkey only from its own same-object
 readback; the fixture's independent result is a separate required gate.
 These modes never retry or send arbitrary SDK tools.
+For the installed release candidate, `--keyboard-marker-set release` selects
+one fixed `q` or `Shift+Y` input. This uses fresh markers for the optimized
+published binary while preserving prior `z`/`Shift+X` evidence. It still refuses
+an existing marker before input and never accepts arbitrary keys or retries.
 
 `native_loop.py` performs one controlled text action through the production
 ordinary AgentLoop, frozen permission/tool composition, manual approval,

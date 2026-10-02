@@ -92,3 +92,5 @@ def test_keyboard_modes_are_fixed_and_do_not_admit_arbitrary_tools(module):
     assert module["keyboard_action"]("type_text", ref, "中文🧭").text == "中文🧭"
     with pytest.raises(ComputerUseContractError, match="fixture_action_invalid"):
         module["keyboard_action"]("clipboard", ref, "ignored")
+    with pytest.raises(ComputerUseContractError, match="fixture_action_invalid"):
+        module["keyboard_action"]("press_key", ref, "ignored", marker_set="arbitrary")

@@ -26,12 +26,16 @@ dependencies = [
 
 [project.optional-dependencies]
 computer-use = [
-  "cua-driver==0.30.4",
+  "cua-driver @ https://github.com/Maxuix/morrow-agent/releases/download/cua-driver-morrow-v0.30.4.1/cua_driver-0.30.4%2Bmorrow.1-py3-none-macosx_14_0_arm64.whl#sha256=3723f8e55a4933447015c0efa1a967fb6b8f83e502751376741df18433062179 ; sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "cua-driver==0.30.4 ; sys_platform != 'darwin' or platform_machine != 'arm64'",
 ]
 
 [build-system]
 requires = ["hatchling>=1.25,<2"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/morrow"]

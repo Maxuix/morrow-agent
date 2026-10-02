@@ -12,5 +12,7 @@
   "release_distribution_version": "0.30.4+morrow.1",
   "release_wheel_tag": "py3-none-macosx_14_0_arm64",
   "release_wheel_sha256": "3723f8e55a4933447015c0efa1a967fb6b8f83e502751376741df18433062179",
-  "native_product_verified": false
+  "native_product_verified": false,
+  "release_url": "https://github.com/Maxuix/morrow-agent/releases/tag/cua-driver-morrow-v0.30.4.1",
+  "release_wheel_url": "https://github.com/Maxuix/morrow-agent/releases/download/cua-driver-morrow-v0.30.4.1/cua_driver-0.30.4%2Bmorrow.1-py3-none-macosx_14_0_arm64.whl"
 }

@@ -2,8 +2,9 @@
 
 This is Morrow's experimental macOS security extension to the pinned Cua Driver
 0.30.4 source. It preserves upstream MIT licensing and does not constitute an
-upstream release or cross-platform support claim. The main optional dependency
-is unchanged and production native support remains disabled.
+upstream release or cross-platform support claim. The macOS arm64 optional
+dependency now pins this guarded candidate by URL and SHA256; production native
+support remains disabled until the full product gates pass.
 
 The patch resolves the current opaque token in the SDK retained AX cache,
 checks exact PID/window ancestry, and provides the closed schema-2 security
@@ -23,8 +24,14 @@ source materials are tracked so they can be reproduced without an agent's
 temporary checkout. The local `0.30.4+morrow.1` macOS arm64 release candidate
 has passed installation, ABI import, ordinary-task isolation and exact native
 security/refusal checks on Python 3.12 and 3.13. One guarded Unicode insertion
-also passed using the installed release wheel. Production dependency integration
-and complete native product acceptance remain pending.
+also passed using the installed release wheel. The production owner now composes
+the exact security query and mandatory native input guard. Complete native product
+acceptance remains pending.
+
+The [candidate release](https://github.com/Maxuix/morrow-agent/releases/tag/cua-driver-morrow-v0.30.4.1)
+provides the wheel, exact patched source, source/patch checksums, MIT license,
+third-party notices and registry source archives for the SDK/CLI build graph.
+The wheel SHA256 is `3723f8e55a4933447015c0efa1a967fb6b8f83e502751376741df18433062179`.
 
 Prepare an empty source directory from a local upstream clone:
 

@@ -118,30 +118,44 @@ def input_gate_passed(result: dict) -> bool:
     )
 
 
-def keyboard_action(kind: str, element_ref: str, text: str):
+def keyboard_marker(kind: str, text: str, marker_set: str = "initial") -> str:
+    if marker_set not in ("initial", "release"):
+        raise ComputerUseContractError("fixture_action_invalid")
+    if kind == "type_text":
+        return text
+    if kind == "press_key":
+        return "z" if marker_set == "initial" else "q"
+    if kind == "hotkey":
+        return "X" if marker_set == "initial" else "Y"
+    raise ComputerUseContractError("fixture_action_invalid")
+
+
+def keyboard_action(kind: str, element_ref: str, text: str, marker_set: str = "initial"):
+    marker = keyboard_marker(kind, text, marker_set)
     if kind == "type_text":
         return TypeTextAction(type="type_text", element_ref=element_ref, text=text)
     if kind == "press_key":
-        return PressKeyAction(type="press_key", element_ref=element_ref, key="z")
+        return PressKeyAction(type="press_key", element_ref=element_ref, key=marker)
     if kind == "hotkey":
-        return HotkeyAction(type="hotkey", element_ref=element_ref, keys=("shift", "x"))
+        return HotkeyAction(type="hotkey", element_ref=element_ref, keys=("shift", marker.lower()))
     raise ComputerUseContractError("fixture_action_invalid")
 
 
 async def insert_once(
-    path: Path, *, sdk, prototype_sha256: str, action_type: str = "type_text"
+    path: Path,
+    *,
+    sdk,
+    prototype_sha256: str,
+    action_type: str = "type_text",
+    keyboard_marker_set: str = "initial",
 ) -> dict:
     readonly = runpy.run_path(str(Path(__file__).with_name("native_readonly.py")))
     counter = runpy.run_path(str(Path(__file__).with_name("native_counter.py")))
     before = text_oracle(path, counter["counter_oracle"])
     if action_type not in {"type_text", "press_key", "hotkey"}:
         raise ComputerUseContractError("fixture_action_invalid")
-    text = (
-        "Morrow-guard-" + uuid4().hex[:8] + " 中文🧭"
-        if action_type == "type_text"
-        else "z"
-        if action_type == "press_key"
-        else "X"
+    text = keyboard_marker(
+        action_type, "Morrow-guard-" + uuid4().hex[:8] + " 中文🧭", keyboard_marker_set
     )
     if text in before["text"]:
         raise ComputerUseContractError("fixture_marker_present")
@@ -153,6 +167,7 @@ async def insert_once(
         "sdk_input_entries": 0,
         "sdk_security_entries": 0,
         "requested_action": action_type,
+        "keyboard_marker_set": keyboard_marker_set,
     }
     settings = ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID)
 
@@ -251,7 +266,9 @@ async def insert_once(
                 scope=scope,
                 target=targets[0],
                 observation=observed.observation,
-                action=keyboard_action(action_type, fields[0].element_ref, text),
+                action=keyboard_action(
+                    action_type, fields[0].element_ref, text, keyboard_marker_set
+                ),
                 delivery=scope.delivery,
             ),
             settings=settings,
@@ -302,6 +319,7 @@ def main():
     parser.add_argument("--allow-desktop", action="store_true", required=True)
     parser.add_argument("--allow-one-text-insert", action="store_true")
     parser.add_argument("--allow-one-key", action="store_true")
+    parser.add_argument("--keyboard-marker-set", choices=("initial", "release"), default="initial")
     parser.add_argument(
         "--action", choices=("type_text", "press_key", "hotkey"), default="type_text"
     )
@@ -324,6 +342,7 @@ def main():
                 sdk=sdk,
                 prototype_sha256=args.prototype_dylib_sha256,
                 action_type=args.action,
+                keyboard_marker_set=args.keyboard_marker_set,
             )
         )
     except ComputerUseContractError as exc:
