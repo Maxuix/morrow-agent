@@ -133,8 +133,8 @@ class NativeProvider(ScriptedModelProvider):
                     )
                 )
             elif step == 3:
-                require(len(hashes) == 2, "fixture_provider_post_image_missing")
                 self.action_outcome = result["outcome"]
+                require(len(hashes) == 2, "fixture_provider_post_image_missing")
                 self.responses.append(
                     "The single controlled action returned; no retry is requested."
                 )
@@ -196,7 +196,11 @@ async def run_fixture(path: Path, sdk, root: Path) -> dict:
             result["sdk_input_entries"] += 1
             if result["sdk_input_entries"] != 1:
                 raise ComputerUseContractError("fixture_input_repeated")
-            return await self._native.call_tool(name, content)
+            returned = await self._native.call_tool(name, content)
+            from morrow.adapters.computer_use.session import outcome_from_tool
+
+            result["sdk_action_outcome"] = outcome_from_tool(returned).model_dump(mode="json")
+            return returned
 
     owner = ComputerDriverOwner(
         sdk,
@@ -267,6 +271,7 @@ async def run_fixture(path: Path, sdk, root: Path) -> dict:
             provider_image_hashes=provider.images,
             provider_refusal=provider.refusal_code,
             provider_exception_type=provider.exception_type,
+            action_outcome=provider.action_outcome,
         )
         require(
             not completed.degraded and completed.events[-1].payload.get("finish_reason") == "stop",

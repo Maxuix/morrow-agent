@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -1548,7 +1549,11 @@ def build_computer_use_lifecycle(application, settings=None):
             call_timeout=resolved.max_call_seconds,
         )
 
-    # Native read-only acceptance must be recorded before enabling this gate.
+    # Basic official-SDK capture/input and ordinary-loop gates were verified on
+    # macOS arm64. Per-host diagnostics and explicit enable/grant remain required.
     return ComputerUseLifecycle(
-        factory, diagnostic, native_verified=False, run_diagnostic=diagnostic_for
+        factory,
+        diagnostic,
+        native_verified=sys.platform == "darwin" and platform.machine() == "arm64",
+        run_diagnostic=diagnostic_for,
     )

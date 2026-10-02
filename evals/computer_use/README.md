@@ -185,8 +185,8 @@ Open that URL in an isolated test tab; normal scripted chat can verify that the
 GUI composition still works after the SDK probe. Stop the process to close its
 host/listener and remove its temporary state.
 
-The host's ordinary computer-use lifecycle remains not_activated and
-native_verified stays false. This observes the fixed fixture via the opt-in
+The host's ordinary computer-use lifecycle remains not_activated;
+the probe does not create an active desktop run. This observes the fixed fixture via the opt-in
 probe, not through a model grant. A partial/degraded image, missing two-field
 mask proof, minimal service context or active production desktop fails the
 probe; it never opens a diagnostic SDK endpoint to HTTP clients. This verifies
@@ -229,3 +229,9 @@ no real account or Provider network:
 The previous guarded SDK prototype, custom build route and refusal experiments
 are retired by the 2026-10-03 user scope correction. Historical evidence remains
 in Git/local acceptance archives and is not a current implementation requirement.
+
+`native_text.py --field secure --delivery foreground` explicitly tests the empty
+synthetic secure field. Its independent oracle reads only the population boolean,
+never secure bytes; it refuses an already populated test field. A hidden-field
+write may take effect while the official SDK reports unknown. That evidence is
+retained without retry or upgrading completion.

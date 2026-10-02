@@ -214,7 +214,8 @@ The lifecycle is **edit → validate → publish an immutable revision → expli
 
 ## Desktop configuration (experimental)
 
-Desktop execution is disabled by default and its native acceptance gates are still pending.
+Desktop execution is disabled by default. Basic SDK integration is available on macOS arm64
+after explicit enablement, host permissions and local window authorization.
 Install the pinned optional SDK separately; ordinary coding tasks do not need it:
 
 ```bash
@@ -226,9 +227,11 @@ no custom SDK build or field-security query is required. Authorized text, key an
 hotkey actions use the same path for ordinary and password fields. Sensitive
 labels/values remain hidden in observations and known screenshot regions are masked;
 that display protection does not prevent input.
-Installation and an enabled setting do not establish native support. Basic native
-validation of the simplified integration is in progress; activation remains closed
-until that validation is recorded.
+The official SDK has passed controlled macOS arm64 capture, Unicode input and an
+ordinary AgentLoop with approved input and real before/after Provider images.
+A synthetic password-field input also took effect; the SDK reported `unknown`
+because hidden contents could not be verified. Morrow preserves that status and
+never retries automatically. Other platforms remain unavailable.
 macOS Accessibility and Screen Recording permission
 must apply to the actual responsible host; a positive permission probe does not prove
 window capture works. Use the opt-in controlled fixture gate in
@@ -237,8 +240,8 @@ window capture works. Use the opt-in controlled fixture gate in
 The exact selected model needs OpenAI function-tool support. Hybrid mode also requires
 image input and explicit permission to share the selected window; semantic mode uses AX
 without images. Known sensitive regions are masked and uncertain captures are refused;
-this is not comprehensive secret detection. Keep credentials and private working windows
-out of the controlled desktop scope.
+this is not comprehensive secret detection. Choose the window you intend to share. Input permission does not grant permission to
+read back hidden values.
 
 Default per-run budgets are 100 operations, 600 seconds and 64 MiB of observation bytes;
 each call defaults to 15 seconds and image long edges to 1920 pixels. Configuration can
