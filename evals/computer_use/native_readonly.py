@@ -14,7 +14,10 @@ import io
 import json
 import platform
 import sys
+import threading
 from dataclasses import asdict
+from pathlib import Path
+from types import SimpleNamespace
 
 from morrow.adapters.computer_use.diagnostics import diagnose_host
 from morrow.adapters.computer_use.owner import ComputerDriverOwner
@@ -44,6 +47,42 @@ from morrow.runtime.ids import RandomIdSource
 FIXTURE_BUNDLE_ID = "com.morrow.ComputerUseFixture"
 
 
+def read_fixture_window(path: Path | None) -> tuple[int, int] | None:
+    if path is None:
+        return None
+    try:
+        with path.open("rb") as stream:
+            content = stream.read(64 * 1024 + 1)
+        if len(content) > 64 * 1024:
+            raise ValueError
+        state = json.loads(content)
+        pid, window_id = state["pid"], state["window"]["number"]
+        if (
+            type(state["schemaVersion"]) is not int
+            or state["schemaVersion"] != 1
+            or type(pid) is not int
+            or not 0 < pid < 2**31
+            or type(window_id) is not int
+            or not 0 < window_id < 2**32
+        ):
+            raise ValueError
+    except (OSError, ValueError, TypeError, KeyError):
+        raise ComputerUseContractError("fixture_state_invalid") from None
+    return pid, window_id
+
+
+def select_fixture_targets(session, targets, fixture_window):
+    if fixture_window is None:
+        return targets
+    pid, window_id = fixture_window
+    return tuple(
+        target
+        for target in targets
+        if (record := session._registry.window(target.window_identity)).pid == pid
+        and record.window_id == window_id
+    )
+
+
 class _DiagnosedSession:
     """Inspect bounded typed metadata without persisting SDK content or errors."""
 
@@ -53,6 +92,34 @@ class _DiagnosedSession:
 
     def __getattr__(self, name):
         return getattr(self._native, name)
+
+    async def list_apps(self, request):
+        result = await self._native.list_apps(request)
+        fixtures = [app for app in (result.apps or ()) if app.bundle_id == FIXTURE_BUNDLE_ID]
+        self._evidence.setdefault("discovery", {}).update(
+            {
+                "fixture_app_count": len(fixtures),
+                "fixture_pids": [
+                    app.pid
+                    for app in fixtures[:100]
+                    if type(app.pid) is int and 0 < app.pid < 2**31
+                ],
+            }
+        )
+        return result
+
+    async def list_windows(self, request):
+        result = await self._native.list_windows(request)
+        self._evidence.setdefault("discovery", {})["window_count"] = len(result.windows or ())
+        self._evidence["discovery"]["windows"] = [
+            {
+                "window_id": window.window_id,
+                "fixture_title": window.title == "Morrow Computer Use Fixture",
+            }
+            for window in (result.windows or ())[:100]
+            if type(window.window_id) is int and 0 < window.window_id < 2**32
+        ]
+        return result
 
     async def get_window_state(self, request):
         state = await self._native.get_window_state(request)
@@ -69,11 +136,26 @@ class _DiagnosedSession:
             "reason": reason_code,
             "image_count": len(state.images),
             "frame_valid": state.screenshot_frame_valid,
+            "max_returned_depth": max(
+                (
+                    element.depth
+                    for element in (state.elements or ())
+                    if type(getattr(element, "depth", None)) is int and 0 <= element.depth <= 100
+                ),
+                default=None,
+            ),
+            "truncation_reason": (
+                getattr(state, "truncation_reason", None)
+                if getattr(state, "truncation_reason", None) in ("timeout", "node_budget")
+                else "unknown"
+                if state.truncated
+                else None
+            ),
         }
         return state
 
 
-async def inspect_fixture() -> dict:
+async def inspect_fixture(*, fixture_window=None) -> dict:
     settings = ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID)
     probe = collect_host_probe()
     diagnostic = diagnose_host(settings, probe, images_required=True)
@@ -84,6 +166,7 @@ async def inspect_fixture() -> dict:
         "python": platform.python_version(),
         "host_executable": sys.executable,
         "probe": asdict(probe),
+        "owner_main_thread": threading.current_thread() is threading.main_thread(),
         "status": "failed",
         "reason": diagnostic.reason,
     }
@@ -128,14 +211,17 @@ async def inspect_fixture() -> dict:
                 bundle_id=FIXTURE_BUNDLE_ID,
             )
         )
-        if len(found.targets) != 1:
+        result.setdefault("discovery", {})["target_count"] = len(found.targets)
+        selected = select_fixture_targets(session, found.targets, fixture_window)
+        result["discovery"]["selected_count"] = len(selected)
+        if len(selected) != 1:
             raise ComputerUseContractError("fixture_window_required")
         phase = "observe"
         observed = await session.observe(
             ObserveWindowRequest(
                 authority=TRUSTED_COMPUTER_USE_AUTHORITY,
                 scope=scope,
-                target=found.targets[0],
+                target=selected[0],
                 delivery=scope.delivery,
                 include_image=True,
             ),
@@ -160,6 +246,7 @@ async def inspect_fixture() -> dict:
                 "reason": None,
                 "ax_element_count": len(observed.observation.elements),
                 "ax_complete": observed.observation.complete,
+                "image_share_error": observed.image_error,
                 "capture": {
                     "mime": observed.capture.mime,
                     "width": observed.capture.width,
@@ -193,15 +280,41 @@ async def inspect_fixture() -> dict:
     return result
 
 
+async def inspect_on_core_host(*, fixture_window=None) -> dict:
+    """Probe the real CoreHost owner loop, without GUI/application composition."""
+    from morrow.server.host import ApprovalWaiters, CoreHost, RunSupervisor
+
+    host = CoreHost(
+        lambda: SimpleNamespace(
+            supervisor=RunSupervisor(), approval_waiters=ApprovalWaiters(), close=lambda: None
+        )
+    )
+    host.start()
+    try:
+        result = await host.execute_preparation(
+            lambda: inspect_fixture(fixture_window=fixture_window)
+        )
+        result["host_mode"] = "core_owner_probe"
+        return result
+    finally:
+        host.stop()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--allow-desktop", action="store_true", required=True)
     parser.add_argument("--fixture-bundle-id", choices=[FIXTURE_BUNDLE_ID], required=True)
+    parser.add_argument("--fixture-state-file", type=Path)
+    parser.add_argument("--core-owner", action="store_true")
     args = parser.parse_args()
     if not args.allow_desktop:
         parser.error("explicit desktop opt-in required")
     try:
-        result = asyncio.run(inspect_fixture())
+        inspect = inspect_on_core_host if args.core_owner else inspect_fixture
+        result = asyncio.run(inspect(fixture_window=read_fixture_window(args.fixture_state_file)))
+        result.setdefault("host_mode", "cli_main")
+    except ComputerUseContractError as exc:
+        result = {"status": "failed", "reason": exc.code, "phase": "fixture_identity"}
     except Exception as exc:
         result = {
             "status": "failed",

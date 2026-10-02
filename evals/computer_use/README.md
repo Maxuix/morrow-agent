@@ -20,12 +20,26 @@ open /tmp/morrow-computer-use-fixture/MorrowComputerUseFixture.app
   --allow-desktop --fixture-bundle-id com.morrow.ComputerUseFixture
 ```
 
-The script accepts only this fixture identity and requires exactly one running
-window. It creates a named Session, discovers the fixture, reads its AX tree and
+The script accepts only this fixture identity and requires exactly one selected
+window. With multiple SDK surfaces, supply `--fixture-state-file` pointing to
+the running fixture's independent `state.json`; selection matches both its PID
+and native window number in the trusted adapter registry. Without that file,
+multiple candidates remain an error. This acceptance-only selector is not a
+model-facing grant or a title-based fallback.
+
+It creates a named Session, discovers the fixture, reads its AX tree and
 screenshot, checks encoded dimensions by decoding, then ends the Session and
 shuts down the Driver. It prints bounded metadata, counts, dimensions and hash;
 SDK objects, AX text, image bytes, input values and native exceptions are absent
 from its output. A capture stays transient and is never sent to a Provider.
+
+Add `--core-owner` to run construction, discovery, observation and shutdown on
+the actual CoreHost owner loop. Its minimal host context proves owner-thread
+compatibility but does not attest full GUI composition or responsible-host
+authorization. `owner_main_thread` records the actual thread. Both modes report
+tree truncation and image-sharing rejection separately: passing capture/decode
+can still have `image_share_error=image_safety_unconfirmed`. Neither mode opens
+production gates.
 
 Record the actual responsible host, OS, CPU, Python/SDK versions and TCC facts.
 A CLI result does not prove GUI responsible-host authorization or real model
@@ -98,6 +112,9 @@ frame. Verify the snapshot PID/window belongs to the selected fixture instance.
 The app displays `State output: ready`, `failed`, or `disabled`; a failed writer
 is not evidence of a successful action. Without `--state-directory` no state is
 written. Use only synthetic input in this application, never actual credentials.
+On macOS 15+, scroll export uses SwiftUI's scroll geometry callback. The legacy
+preference fallback is retained for older systems; verify it on those systems
+before claiming a working scroll oracle there.
 
 The browser fixture binds only to 127.0.0.1 and launches no browser or SDK:
 

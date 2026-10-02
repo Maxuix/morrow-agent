@@ -58,6 +58,21 @@ struct ScrollOffset: PreferenceKey {
     static func reduce(value: inout Double, nextValue: () -> Double) { value = nextValue() }
 }
 
+struct ScrollObservation: ViewModifier {
+    @Binding var offset: Double
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.onScrollGeometryChange(for: Double.self) { geometry in
+                Double(geometry.contentOffset.y + geometry.contentInsets.top)
+            } action: { _, newValue in offset = newValue }
+        } else {
+            content.onPreferenceChange(ScrollOffset.self) { offset = $0 }
+        }
+    }
+}
+
 final class WindowProbeView: NSView {
     var onFacts: ((WindowFacts) -> Void)?
     private var observers: [NSObjectProtocol] = []
@@ -141,7 +156,7 @@ struct FixtureView: View {
                         value: -proxy.frame(in: .named("fixture-scroll")).minY)
                 })
             }.coordinateSpace(name: "fixture-scroll").frame(height: 200)
-                .onPreferenceChange(ScrollOffset.self) { scrollOffset = $0 }
+                .modifier(ScrollObservation(offset: $scrollOffset))
         }.padding(20)
             .background(WindowProbe { windowFacts = $0 })
             .onAppear { publish() }
