@@ -46,7 +46,9 @@ byId('increment').onclick=()=>event('increment');
 byId('text').oninput=()=>event('text',byId('text').value);
 byId('secure').oninput=()=>event('secure',byId('secure').value.length>0);
 byId('rows').onscroll=()=>event('scroll',byId('rows').scrollTop);
-fetch('/state').then(r=>r.json()).then(state=>{byId('text').value=state.text;display(state);})
+fetch('/state').then(r=>r.json()).then(state=>{byId('text').value=state.text;
+ byId('rows').scrollTop=state.scroll_offset;
+ if(state.secure_field_populated)event('secure',false);else display(state);})
  .catch(()=>{byId('status').textContent='State output failed';});
 </script></html>"""
 
