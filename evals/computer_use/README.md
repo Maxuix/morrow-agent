@@ -77,3 +77,42 @@ the real completed turn and tool result, and confirms the desktop owner stayed
 inactive. Output contains only fixed check codes, versions, counts and hashes.
 This proves packaging and default-off behavior; it does not prove native device
 access or model quality. No desktop authorization is needed for this gate.
+
+## Independent fixture state
+
+Build a separate app bundle with an explicit private state directory. Building
+does not launch the app, activate the SDK, or request system permissions:
+
+```sh
+uv run python evals/computer_use/build_fixture.py \
+  --output-directory /tmp/morrow-computer-use-state-fixture \
+  --state-directory /tmp/morrow-computer-use-state-evidence
+```
+
+Once that exact app is running, `state.json` is its independent effect oracle.
+The snapshot records instance UUID, PID, revision, counter, controlled Unicode
+text, scroll offset, native window number/frame/backing scale, and whether the
+synthetic secure field is populated. Secure-field bytes are never exported.
+The window frame uses AppKit screen points; it is not an SDK screenshot pixel
+frame. Verify the snapshot PID/window belongs to the selected fixture instance.
+The app displays `State output: ready`, `failed`, or `disabled`; a failed writer
+is not evidence of a successful action. Without `--state-directory` no state is
+written. Use only synthetic input in this application, never actual credentials.
+
+The browser fixture binds only to 127.0.0.1 and launches no browser or SDK:
+
+```sh
+uv run python evals/computer_use/browser_fixture.py \
+  --state-directory /tmp/morrow-controlled-browser-state --port 18788
+```
+
+Open the printed localhost URL in an isolated test tab. The form has its own
+counter, Unicode echo, password field and scroll rows. It exports independent
+atomic `state.json` snapshots with instance/PID/revision, and keeps secure input
+entirely in the page; only a Boolean populated marker is transmitted. Scroll
+offset is in CSS pixels. Events require the exact loopback Host and same Origin,
+bounded JSON and known fields; there are no external resources or accounts.
+Use fresh state directories for each campaign; startup creates a new instance
+and resets state. These fixtures provide evidence inputs for native acceptance;
+building them or driving the form through Browser Use does not prove Morrow's
+SDK can observe or operate the native desktop.
