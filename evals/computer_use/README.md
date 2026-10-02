@@ -140,3 +140,33 @@ Use fresh state directories for each campaign; startup creates a new instance
 and resets state. These fixtures provide evidence inputs for native acceptance;
 building them or driving the form through Browser Use does not prove Morrow's
 SDK can observe or operate the native desktop.
+
+## Full GUI responsible-host read probe
+
+After building the GUI and running the independent Swift fixture, this explicit
+probe uses production application/bootstrap, workspace/runtime registry,
+CoreHost, full chat/workflow service context, and ASGI GUI composition:
+
+```sh
+/tmp/morrow-computer-use-sdk-check/bin/python evals/computer_use/gui_readonly.py \
+  --allow-desktop --fixture-bundle-id com.morrow.ComputerUseFixture \
+  --fixture-state-file /tmp/morrow-computer-use-scroll-evidence/state.json \
+  --evidence-file /tmp/morrow-native-gui-read.json
+```
+
+It allocates its own temporary workspace/state root and memory-only synthetic
+Provider credential. The scripted Provider makes no model/network request.
+The SDK read/decode/masking/close runs on that full host's owner loop before its
+local GUI serves. Output includes only bounded evidence and the actual loopback
+URL. A held OS-assigned socket prevents conflicts and port-selection races.
+Open that URL in an isolated test tab; normal scripted chat can verify that the
+GUI composition still works after the SDK probe. Stop the process to close its
+host/listener and remove its temporary state.
+
+The host's ordinary computer-use lifecycle remains not_activated and
+native_verified stays false. This observes the fixed fixture via the opt-in
+probe, not through a model grant. A partial/degraded image, missing two-field
+mask proof, minimal service context or active production desktop fails the
+probe; it never opens a diagnostic SDK endpoint to HTTP clients. This verifies
+responsible-host/read coexistence, not the native action/Provider-image/product
+end-to-end acceptance gates.
