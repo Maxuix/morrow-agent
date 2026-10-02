@@ -255,6 +255,30 @@ prototype can confirm a new native hotkey only from its own same-object
 readback; the fixture's independent result is a separate required gate.
 These modes never retry or send arbitrary SDK tools.
 
+`native_loop.py` performs one controlled text action through the production
+ordinary AgentLoop, frozen permission/tool composition, manual approval,
+durable tool ledger, Artifact publication and image hydration. The isolated
+scripted Provider uses only references from tool replies; it decodes the
+before/after images and requires their hashes to match committed source refs.
+An independent fixture state check requires exactly one insertion. The shared
+local picker binds the actual fixture window before the run. No real Provider
+or account is used and production activation remains closed.
+
+```sh
+/path/to/isolated/python evals/computer_use/native_loop.py \
+  --allow-desktop --allow-one-text-insert \
+  --fixture-bundle-id com.morrow.ComputerUseFixture \
+  --fixture-state-file /tmp/morrow-computer-use-scroll-evidence/state.json \
+  --prototype-package-directory /path/to/isolated/site-packages \
+  --prototype-dylib-sha256 HASH_OF_INSTALLED_GUARDED_DYLIB \
+  --evidence-file /tmp/morrow-native-loop-evidence.json
+```
+
+The temporary application/store is removed at exit. Evidence contains only
+counts, hashes and completion metadata. Failed or unknown actions remain
+failed and are never repeated. This proves the native scripted text/image loop,
+without completing the remaining GUI, mouse, scroll or recovery gates.
+
 The tracked experimental patch and license are in
 `vendor/cua-driver-security/`. `prepare_sdk_source.py` reproduces the patch from
 the pinned Git commit with implicit fetching disabled. A prepared source tree

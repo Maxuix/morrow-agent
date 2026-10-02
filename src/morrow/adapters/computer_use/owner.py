@@ -144,7 +144,13 @@ class ComputerDriverOwner:
         assert calls is not None
         try:
             listed = await calls.run(lambda: self._driver.list_apps(self._sdk.ListAppsInput()))
-            apps = getattr(listed, "apps", ()) or ()
+            # The SDK also lists installed applications. Only explicitly running
+            # apps can supply local window candidates or consume their budget.
+            apps = tuple(
+                app
+                for app in (getattr(listed, "apps", ()) or ())
+                if getattr(app, "running", False) is True
+            )
             if len(apps) > MAX_DISCOVERED_TARGETS:
                 raise ComputerUseContractError("target_budget")
             candidates, seen = [], set()

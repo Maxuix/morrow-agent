@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 
@@ -49,6 +50,47 @@ class Driver(_Native):
 
     async def shutdown(self):
         self.calls.append(("shutdown", None))
+
+
+async def test_installed_apps_do_not_consume_running_window_candidate_budget():
+    class InstalledApps(Driver):
+        async def list_apps(self, payload):
+            result = await super().list_apps(payload)
+            result.apps.extend(
+                SimpleNamespace(pid=0, running=False, bundle_id=f"com.installed.app{index}")
+                for index in range(150)
+            )
+            result.apps.append(SimpleNamespace(pid=9000, bundle_id="com.unknown.running"))
+            return result
+
+    driver = InstalledApps()
+    owner, lease, _, _ = owner_for(driver)
+    try:
+        found = await owner.discover_local_candidates(SETTINGS, authority=AUTH)
+        assert len(found.candidates) == 1
+        assert found.candidates[0].app.bundle_id == "com.example.Notes"
+        assert len([name for name, _ in driver.calls if name == "list_windows"]) == 2
+        assert not lease.held
+    finally:
+        await owner.shutdown()
+
+
+async def test_running_app_budget_still_refuses_without_window_queries():
+    class TooManyRunning(Driver):
+        async def list_apps(self, payload):
+            result = await super().list_apps(payload)
+            result.apps = [result.apps[0]] * 101
+            return result
+
+    driver = TooManyRunning()
+    owner, lease, _, _ = owner_for(driver)
+    try:
+        with pytest.raises(ComputerUseContractError, match="target_budget"):
+            await owner.discover_local_candidates(SETTINGS, authority=AUTH)
+        assert not any(name == "list_windows" for name, _ in driver.calls)
+        assert not lease.held
+    finally:
+        await owner.shutdown()
 
 
 async def test_local_discovery_hides_native_identity_and_shares_owner_with_runs():
