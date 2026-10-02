@@ -164,8 +164,9 @@ async def test_core_probe_constructs_reads_and_finishes_on_owner_loop(monkeypatc
     module = runpy.run_path("evals/computer_use/native_readonly.py")
     inspect = module["inspect_on_core_host"]
 
-    async def fake_inspect(*, fixture_window):
+    async def fake_inspect(*, fixture_window, native_walk_limit):
         assert fixture_window == (2, 3)
+        assert native_walk_limit is None
         return {"owner_main_thread": threading.current_thread() is threading.main_thread()}
 
     monkeypatch.setitem(inspect.__globals__, "inspect_fixture", fake_inspect)
@@ -173,3 +174,34 @@ async def test_core_probe_constructs_reads_and_finishes_on_owner_loop(monkeypatc
         "owner_main_thread": False,
         "host_mode": "core_owner_probe",
     }
+
+
+async def test_native_walk_experiment_is_explicit_and_bounded():
+    module = runpy.run_path("evals/computer_use/native_readonly.py")
+    request = SimpleNamespace(max_elements=200)
+    state = SimpleNamespace(
+        elements=[],
+        images=[],
+        elements_complete=False,
+        truncated=False,
+        degraded=False,
+        degraded_reason=None,
+        screenshot_frame_valid=True,
+    )
+
+    async def read(actual):
+        assert actual is request
+        assert actual.max_elements == 400
+        return state
+
+    session = module["_DiagnosedSession"](
+        SimpleNamespace(get_window_state=read), {}, native_walk_limit=400
+    )
+    assert await session.get_window_state(request) is state
+
+
+@pytest.mark.parametrize("limit", [True, 400.0, 401, -1])
+def test_native_walk_experiment_rejects_other_limits(limit):
+    module = runpy.run_path("evals/computer_use/native_readonly.py")
+    with pytest.raises(module["ComputerUseContractError"], match="fixture_walk_limit_invalid"):
+        module["_DiagnosedSession"](None, {}, native_walk_limit=limit)

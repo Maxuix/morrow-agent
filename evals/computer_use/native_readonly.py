@@ -20,6 +20,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from morrow.adapters.computer_use.diagnostics import diagnose_host
+from morrow.adapters.computer_use.images import CaptureMask, prepare_capture
 from morrow.adapters.computer_use.owner import ComputerDriverOwner
 from morrow.adapters.computer_use.sdk_loader import (
     collect_host_probe,
@@ -86,9 +87,14 @@ def select_fixture_targets(session, targets, fixture_window):
 class _DiagnosedSession:
     """Inspect bounded typed metadata without persisting SDK content or errors."""
 
-    def __init__(self, native, evidence: dict) -> None:
+    def __init__(self, native, evidence: dict, *, native_walk_limit=None) -> None:
         self._native = native
         self._evidence = evidence
+        self._native_walk_limit = native_walk_limit
+        if native_walk_limit is not None and (
+            type(native_walk_limit) is not int or native_walk_limit not in (200, 400)
+        ):
+            raise ComputerUseContractError("fixture_walk_limit_invalid")
 
     def __getattr__(self, name):
         return getattr(self._native, name)
@@ -122,6 +128,9 @@ class _DiagnosedSession:
         return result
 
     async def get_window_state(self, request):
+        if self._native_walk_limit is not None:
+            # Acceptance-only, bounded experiment. Model/adapter export caps remain unchanged.
+            request.max_elements = self._native_walk_limit
         state = await self._native.get_window_state(request)
         reason = getattr(state, "degraded_reason", None) or ""
         reason_code = next(
@@ -155,7 +164,7 @@ class _DiagnosedSession:
         return state
 
 
-async def inspect_fixture(*, fixture_window=None) -> dict:
+async def inspect_fixture(*, fixture_window=None, native_walk_limit=None) -> dict:
     settings = ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID)
     probe = collect_host_probe()
     diagnostic = diagnose_host(settings, probe, images_required=True)
@@ -167,6 +176,7 @@ async def inspect_fixture(*, fixture_window=None) -> dict:
         "host_executable": sys.executable,
         "probe": asdict(probe),
         "owner_main_thread": threading.current_thread() is threading.main_thread(),
+        "native_walk_limit": native_walk_limit,
         "status": "failed",
         "reason": diagnostic.reason,
     }
@@ -178,7 +188,7 @@ async def inspect_fixture(*, fixture_window=None) -> dict:
         RandomIdSource(),
         SystemStoreClock(),
         session_factory=lambda driver, name: _DiagnosedSession(
-            construct_run_session(sdk, driver, name), result
+            construct_run_session(sdk, driver, name), result, native_walk_limit=native_walk_limit
         ),
     )
     scope = ComputerUseScope(
@@ -256,6 +266,26 @@ async def inspect_fixture(*, fixture_window=None) -> dict:
                 },
             }
         )
+        if observed.image_error is None:
+            phase = "mask_capture"
+            masks = tuple(
+                CaptureMask(region.left, region.top, region.right, region.bottom)
+                for region in observed.sensitive_regions
+            )
+            masked = prepare_capture(observed.capture, masks=masks)
+            with Image.open(io.BytesIO(masked.content)) as image:
+                for mask in masks:
+                    pixels = image.crop((mask.left, mask.top, mask.right, mask.bottom))
+                    if pixels.getextrema() != ((0, 0), (0, 0), (0, 0)):
+                        raise ComputerUseContractError("fixture_mask_invalid")
+                if image.info:
+                    raise ComputerUseContractError("fixture_metadata_retained")
+            result["masked_capture"] = {
+                "mask_count": len(masks),
+                "byte_size": len(masked.content),
+                "sha256": hashlib.sha256(masked.content).hexdigest(),
+                "mask_pixels_verified": True,
+            }
         phase = "close_session"
         await owner.close_run_session(
             CloseRunSessionRequest(
@@ -280,7 +310,7 @@ async def inspect_fixture(*, fixture_window=None) -> dict:
     return result
 
 
-async def inspect_on_core_host(*, fixture_window=None) -> dict:
+async def inspect_on_core_host(*, fixture_window=None, native_walk_limit=None) -> dict:
     """Probe the real CoreHost owner loop, without GUI/application composition."""
     from morrow.server.host import ApprovalWaiters, CoreHost, RunSupervisor
 
@@ -292,7 +322,9 @@ async def inspect_on_core_host(*, fixture_window=None) -> dict:
     host.start()
     try:
         result = await host.execute_preparation(
-            lambda: inspect_fixture(fixture_window=fixture_window)
+            lambda: inspect_fixture(
+                fixture_window=fixture_window, native_walk_limit=native_walk_limit
+            )
         )
         result["host_mode"] = "core_owner_probe"
         return result
@@ -306,12 +338,18 @@ def main() -> None:
     parser.add_argument("--fixture-bundle-id", choices=[FIXTURE_BUNDLE_ID], required=True)
     parser.add_argument("--fixture-state-file", type=Path)
     parser.add_argument("--core-owner", action="store_true")
+    parser.add_argument("--native-walk-limit", type=int, choices=(200, 400))
     args = parser.parse_args()
     if not args.allow_desktop:
         parser.error("explicit desktop opt-in required")
     try:
         inspect = inspect_on_core_host if args.core_owner else inspect_fixture
-        result = asyncio.run(inspect(fixture_window=read_fixture_window(args.fixture_state_file)))
+        result = asyncio.run(
+            inspect(
+                fixture_window=read_fixture_window(args.fixture_state_file),
+                native_walk_limit=args.native_walk_limit,
+            )
+        )
         result.setdefault("host_mode", "cli_main")
     except ComputerUseContractError as exc:
         result = {"status": "failed", "reason": exc.code, "phase": "fixture_identity"}

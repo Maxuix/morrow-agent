@@ -41,6 +41,13 @@ tree truncation and image-sharing rejection separately: passing capture/decode
 can still have `image_share_error=image_safety_unconfirmed`. Neither mode opens
 production gates.
 
+The adapter bounds SDK traversal at 400 nodes, while model output remains capped
+at 200 elements, depth 8 and 32 KiB of text. The pinned SDK counts collapsed
+layout containers against traversal; those are not exported elements. Any
+native truncation or projection omission still blocks image sharing. For bounded
+acceptance comparisons only, `--native-walk-limit 200` or `400` overrides the
+SDK traversal request, leaving production and model projection limits unchanged.
+
 Record the actual responsible host, OS, CPU, Python/SDK versions and TCC facts.
 A CLI result does not prove GUI responsible-host authorization or real model
 quality. The app builder uses the SwiftUI property wrapper via a type alias so

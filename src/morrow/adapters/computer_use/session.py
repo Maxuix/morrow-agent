@@ -67,6 +67,9 @@ from morrow.core.runtime_policy import ComputerUseSettings
 
 _CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _EDITABLE_ROLES = frozenset({"axtextfield", "axtextarea", "axcombobox", "axsearchfield"})
+# The pinned SDK counts every traversed node, including collapsed layout containers.
+# Bound native work separately from the unchanged 200-element model projection.
+MAX_NATIVE_AX_NODES = 400
 
 _MIME = {
     "image/png": "image/png",
@@ -249,7 +252,7 @@ class TypedComputerSession:
                 include_accessibility_tree=True,
                 include_screenshot=request.include_image,
                 screenshot_out_file=None,
-                max_elements=MAX_AX_ELEMENTS,
+                max_elements=MAX_NATIVE_AX_NODES,
                 max_depth=MAX_AX_DEPTH,
                 max_dimension=None,
                 max_image_dimension=min(resolved.image_long_edge_px, MAX_IMAGE_LONG_EDGE_PX),

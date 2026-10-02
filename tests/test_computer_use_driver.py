@@ -434,7 +434,7 @@ async def test_typed_session_hides_native_identity_and_keeps_the_real_frame():
     )
     state_input = next(payload for name, payload in native.calls if name == "get_window_state")
     assert state_input.screenshot_out_file is None
-    assert state_input.max_elements == 200
+    assert state_input.max_elements == 400
     assert state_input.max_depth == 8
     assert state_input.max_image_dimension == 1280
     assert state_input.pid == 4242
@@ -712,6 +712,58 @@ async def test_capture_limits_are_checked_before_base64_decode(monkeypatch, kind
     capture, reason = _capture(state)
     assert capture is None
     assert reason == "image_bounds"
+
+
+@pytest.mark.parametrize("element_count", [201, 400])
+async def test_larger_native_walk_never_expands_model_projection_or_shares_omissions(element_count):
+    class LargeWindow(_Native):
+        async def get_window_state(self, payload):
+            result = await super().get_window_state(payload)
+            result.elements = [
+                SimpleNamespace(role="AXButton", depth=1, element_token=f"token-{index}")
+                for index in range(element_count)
+            ]
+            result.elements_complete = True
+            result.truncated = result.degraded = False
+            result.total_element_count = result.returned_element_count = element_count
+            return result
+
+    ids = FixedIdSource()
+    session = TypedComputerSession(
+        _sdk(),
+        LargeWindow(),
+        TrustedDesktopRegistry(ids),
+        ids,
+        FixedClock(NOW),
+        process_reader=_process_birth,
+    )
+    run = await session.open_run_session(
+        OpenRunSessionRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY, agent_run_id="arun_1", scope=_scope()
+        )
+    )
+    found = await session.discover(
+        DiscoverRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+            scope=_scope(),
+            run_session_id=run.run_session_id,
+        )
+    )
+    observed = await session.observe(
+        ObserveWindowRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+            scope=_scope(),
+            target=found.targets[0],
+            delivery=ComputerUseDelivery.FOREGROUND,
+            include_image=True,
+        )
+    )
+    assert len(observed.observation.elements) == 200
+    assert observed.observation.omitted_count == element_count - 200
+    assert observed.observation.truncated is True
+    assert observed.observation.complete is False
+    assert observed.image_error == "image_safety_unconfirmed"
+    assert observed.sensitive_regions == ()
 
 
 async def test_unverified_screenshot_frame_never_enables_coordinate_mapping():
