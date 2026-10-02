@@ -191,3 +191,28 @@ mask proof, minimal service context or active production desktop fails the
 probe; it never opens a diagnostic SDK endpoint to HTTP clients. This verifies
 responsible-host/read coexistence, not the native action/Provider-image/product
 end-to-end acceptance gates.
+
+## Exact-token SDK security prototype
+
+`native_security_readonly.py` explicitly loads a separately built experimental
+SDK package whose dylib hash must match the supplied value. It never replaces
+installed SDK files or enables production native input:
+
+```sh
+/tmp/morrow-computer-use-sdk-check/bin/python evals/computer_use/native_security_readonly.py \
+  --allow-desktop --fixture-bundle-id com.morrow.ComputerUseFixture \
+  --fixture-state-file /tmp/morrow-computer-use-scroll-evidence/state.json \
+  --prototype-package-directory /tmp/morrow-cua-sdk-security-prototype/python \
+  --prototype-dylib-sha256 VERIFIED_BUILT_SHA256 \
+  --evidence-file /tmp/morrow-security-query.json
+```
+
+The SDK prototype resolves the current token inside its own retained AX cache,
+checks PID/window ownership and bounded ancestry, and returns only a closed
+security classification. The harness validates that response and checks the
+independent fixture file is unchanged. A sensitive field plus an unknown normal
+field fails the gate; binding proof alone never establishes non-sensitive.
+Native admission-time input protection, async Morrow integration, reproducible
+patched wheels and complete native acceptance remain separate work. Local
+prototype source patch, license, source/binary hashes and actual evidence live
+in the ignored acceptance assets; it is not a released SDK or supported package.
