@@ -227,3 +227,19 @@ unexpected result. It verifies the complete independent fixture state is
 unchanged. A different SDK refusal, input effect, or unknown response fails the
 gate; there is no retry. This verifies secure-field refusal, not normal-field
 input delivery or production integration.
+
+The current security response uses schema version 2 and input guard version 1.
+Morrow rejects older responses before input. Add `--verify-owner-security` to
+check the real typed owner session's async query and projection: exactly one
+normal field, one sensitive field, and one verified secure-region mask. These
+options use the hash-bound prototype; production remains disabled.
+
+`native_text.py` requires a separate `--allow-one-text-insert` opt-in and the
+same fixture identity/package/hash/evidence arguments. It sends one bounded
+Unicode insert through the typed Morrow owner with native security enabled,
+requests `require_non_sensitive`, then collects a fresh observation. Its gate
+requires a completed background outcome, one SDK input call, a new SDK snapshot,
+an independent normal-field insert and unchanged counter/secure-population/
+scroll facts, plus actual secure-mask pixels before and after. Only hashes and
+bounded metadata are exported. Unknown or failed outcomes remain failed even
+when the independent file shows an effect; the harness never repeats input.
