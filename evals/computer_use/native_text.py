@@ -1,4 +1,4 @@
-"""Opt-in one guarded Unicode insert into the independent controlled fixture.
+"""Opt-in one guarded keyboard insert into the independent controlled fixture.
 
 Never retries or upgrades unknown outcomes. No raw input/capture/SDK diagnostics
 are printed; this is a component gate, not Provider or full product acceptance.
@@ -32,8 +32,10 @@ from morrow.core.computer_use import (
     ComputerUseWindowBoundary,
     DiscoverRequest,
     ExecuteRequest,
+    HotkeyAction,
     ObserveWindowRequest,
     OpenRunSessionRequest,
+    PressKeyAction,
     TypeTextAction,
 )
 from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
@@ -116,11 +118,33 @@ def input_gate_passed(result: dict) -> bool:
     )
 
 
-async def insert_once(path: Path, *, sdk, prototype_sha256: str) -> dict:
+def keyboard_action(kind: str, element_ref: str, text: str):
+    if kind == "type_text":
+        return TypeTextAction(type="type_text", element_ref=element_ref, text=text)
+    if kind == "press_key":
+        return PressKeyAction(type="press_key", element_ref=element_ref, key="z")
+    if kind == "hotkey":
+        return HotkeyAction(type="hotkey", element_ref=element_ref, keys=("shift", "z"))
+    raise ComputerUseContractError("fixture_action_invalid")
+
+
+async def insert_once(
+    path: Path, *, sdk, prototype_sha256: str, action_type: str = "type_text"
+) -> dict:
     readonly = runpy.run_path(str(Path(__file__).with_name("native_readonly.py")))
     counter = runpy.run_path(str(Path(__file__).with_name("native_counter.py")))
     before = text_oracle(path, counter["counter_oracle"])
-    text = "Morrow-guard-" + uuid4().hex[:8] + " 中文🧭"
+    if action_type not in {"type_text", "press_key", "hotkey"}:
+        raise ComputerUseContractError("fixture_action_invalid")
+    text = (
+        "Morrow-guard-" + uuid4().hex[:8] + " 中文🧭"
+        if action_type == "type_text"
+        else "z"
+        if action_type == "press_key"
+        else "Z"
+    )
+    if text in before["text"]:
+        raise ComputerUseContractError("fixture_marker_present")
     result = {
         "status": "failed",
         "phase": "open",
@@ -128,6 +152,7 @@ async def insert_once(path: Path, *, sdk, prototype_sha256: str) -> dict:
         "prototype_dylib_sha256": prototype_sha256,
         "sdk_input_entries": 0,
         "sdk_security_entries": 0,
+        "requested_action": action_type,
     }
     settings = ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID)
 
@@ -147,7 +172,7 @@ async def insert_once(path: Path, *, sdk, prototype_sha256: str) -> dict:
         async def call_tool(self, name, content):
             if name == "get_element_security":
                 result["sdk_security_entries"] += 1
-            elif name == "type_text" and json.loads(content).get("require_non_sensitive") is True:
+            elif name == action_type and json.loads(content).get("require_non_sensitive") is True:
                 result["sdk_input_entries"] += 1
             else:
                 raise ComputerUseContractError("fixture_unprotected_input")
@@ -219,16 +244,14 @@ async def insert_once(path: Path, *, sdk, prototype_sha256: str) -> dict:
             if current["sha256"] != before["sha256"]:
                 raise ComputerUseContractError("fixture_state_changed")
 
-        result["phase"] = "type_text"
+        result["phase"] = action_type
         outcome = await session.execute_one(
             ExecuteRequest(
                 authority=TRUSTED_COMPUTER_USE_AUTHORITY,
                 scope=scope,
                 target=targets[0],
                 observation=observed.observation,
-                action=TypeTextAction(
-                    type="type_text", element_ref=fields[0].element_ref, text=text
-                ),
+                action=keyboard_action(action_type, fields[0].element_ref, text),
                 delivery=scope.delivery,
             ),
             settings=settings,
@@ -277,13 +300,19 @@ async def insert_once(path: Path, *, sdk, prototype_sha256: str) -> dict:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--allow-desktop", action="store_true", required=True)
-    parser.add_argument("--allow-one-text-insert", action="store_true", required=True)
+    parser.add_argument("--allow-one-text-insert", action="store_true")
+    parser.add_argument("--allow-one-key", action="store_true")
+    parser.add_argument(
+        "--action", choices=("type_text", "press_key", "hotkey"), default="type_text"
+    )
     parser.add_argument("--fixture-bundle-id", choices=(FIXTURE_BUNDLE_ID,), required=True)
     parser.add_argument("--fixture-state-file", type=Path, required=True)
     parser.add_argument("--prototype-package-directory", type=Path, required=True)
     parser.add_argument("--prototype-dylib-sha256", required=True)
     parser.add_argument("--evidence-file", type=Path, required=True)
     args = parser.parse_args()
+    if not (args.allow_one_text_insert if args.action == "type_text" else args.allow_one_key):
+        parser.error("explicit opt-in matching the selected keyboard action required")
     security = runpy.run_path(str(Path(__file__).with_name("native_security_readonly.py")))
     try:
         sdk = security["prototype_module"](
@@ -291,7 +320,10 @@ def main():
         )
         result = asyncio.run(
             insert_once(
-                args.fixture_state_file, sdk=sdk, prototype_sha256=args.prototype_dylib_sha256
+                args.fixture_state_file,
+                sdk=sdk,
+                prototype_sha256=args.prototype_dylib_sha256,
+                action_type=args.action,
             )
         )
     except ComputerUseContractError as exc:
