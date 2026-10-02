@@ -1,0 +1,1114 @@
+diff --git a/libs/cua-driver/rust/crates/cua-driver-core/src/authorization.rs b/libs/cua-driver/rust/crates/cua-driver-core/src/authorization.rs
+index b0902a0..ad7bdaf 100644
+--- a/libs/cua-driver/rust/crates/cua-driver-core/src/authorization.rs
++++ b/libs/cua-driver/rust/crates/cua-driver-core/src/authorization.rs
+@@ -231,6 +231,7 @@ const PRIVATE_OBSERVATION_OPERATIONS: &[&str] = &[
+     "get_desktop_state",
+     "get_accessibility_tree",
+     "get_window_state",
++    "get_element_security",
+     "parse_visual_regions",
+     "verify_state",
+     "list_apps",
+@@ -739,6 +740,7 @@ pub fn enforcement_adapters_for_call(
+         "get_desktop_state"
+             | "get_accessibility_tree"
+             | "get_window_state"
++            | "get_element_security"
+             | "verify_state"
+             | "list_apps"
+             | "list_windows"
+@@ -914,6 +916,7 @@ pub fn advertised_risk_for(tool: &str) -> RiskAssessment {
+         | "debug_window_info"
+         | "check_permissions"
+         | "get_accessibility_tree"
++        | "get_element_security"
+         | "verify_state"
+         | "set_config"
+         | "escalate_session"
+@@ -1026,6 +1029,7 @@ pub fn classify_tool_call(tool: &str, args: &Value) -> RiskAssessment {
+             operation_sensitive: true,
+         },
+         "get_accessibility_tree"
++        | "get_element_security"
+         | "list_apps"
+         | "list_windows"
+         | "debug_window_info"
+@@ -1196,6 +1200,7 @@ fn enforce_hard_invariants(
+             | "bring_to_front"
+             | "get_accessibility_tree"
+             | "get_window_state"
++            | "get_element_security"
+             | "verify_state"
+             | "page"
+             | "browser_prepare"
+@@ -1424,6 +1429,19 @@ pub fn status_json_with_provider(authorization_host: Option<&'static str>) -> se
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++    #[test]
++    fn element_security_query_keeps_active_observation_authorization() {
++        let args = serde_json::json!({"pid":42,"window_id":7,"element_token":"fixture"});
++        let risk = classify_tool_call("get_element_security", &args);
++        assert_eq!(risk.class, RiskClass::R2);
++        assert_eq!(risk.enforcement, RiskEnforcement::Active);
++        assert!(enforcement_adapters_for_call("get_element_security", &args)
++            .iter()
++            .any(|adapter| adapter.id == "private_observation"));
++        let own =
++            serde_json::json!({"pid":std::process::id(),"window_id":7,"element_token":"fixture"});
++        assert!(enforce_hard_invariants("get_element_security", &own).is_err());
++    }
+ 
+     #[test]
+     fn standard_is_the_default() {
+diff --git a/libs/cua-driver/rust/crates/cua-driver-core/src/capture_scope.rs b/libs/cua-driver/rust/crates/cua-driver-core/src/capture_scope.rs
+index 3711b19..7ca9c61 100644
+--- a/libs/cua-driver/rust/crates/cua-driver-core/src/capture_scope.rs
++++ b/libs/cua-driver/rust/crates/cua-driver-core/src/capture_scope.rs
+@@ -188,6 +188,7 @@ fn tool_scope(tool_name: &str, args: &Value) -> ToolScope {
+     if matches!(
+         tool_name,
+         "get_window_state"
++            | "get_element_security"
+             | "verify_state"
+             | "get_accessibility_tree"
+             | "get_app_state"
+diff --git a/libs/cua-driver/rust/crates/cua-driver-core/src/session_manifest.rs b/libs/cua-driver/rust/crates/cua-driver-core/src/session_manifest.rs
+index 1d3b4c7..18f724e 100644
+--- a/libs/cua-driver/rust/crates/cua-driver-core/src/session_manifest.rs
++++ b/libs/cua-driver/rust/crates/cua-driver-core/src/session_manifest.rs
+@@ -991,6 +991,7 @@ pub fn load_manifest(path: &Path) -> Result<SessionManifest, String> {
+                 "parallel_mouse_drag",
+                 "get_accessibility_tree",
+                 "get_window_state",
++                "get_element_security",
+                 "verify_state",
+                 "get_desktop_state",
+             ];
+diff --git a/libs/cua-driver/rust/crates/cua-driver-core/src/tool.rs b/libs/cua-driver/rust/crates/cua-driver-core/src/tool.rs
+index 56392b6..9a600bf 100644
+--- a/libs/cua-driver/rust/crates/cua-driver-core/src/tool.rs
++++ b/libs/cua-driver/rust/crates/cua-driver-core/src/tool.rs
+@@ -348,6 +348,10 @@ pub fn default_capabilities_for(tool_name: &str) -> Vec<String> {
+             "screen.capture",
+             "screen.capture.window",
+         ],
++        "get_element_security" => &[
++            "accessibility.element_tokens",
++            "accessibility.element_security",
++        ],
+         "parse_visual_regions" => &["screen.perception.visual_regions"],
+ 
+         // ── apps / windows ───────────────────────────────────────────
+diff --git a/libs/cua-driver/rust/crates/platform-macos/src/ax/element_security.rs b/libs/cua-driver/rust/crates/platform-macos/src/ax/element_security.rs
+new file mode 100644
+index 0000000..9abecf3
+--- /dev/null
++++ b/libs/cua-driver/rust/crates/platform-macos/src/ax/element_security.rs
+@@ -0,0 +1,456 @@
++//! Private exact-element classifier. No AX values, labels or identifiers are read.
++use super::bindings::{
++    copy_element_attr, copy_string_attr, kAXErrorAttributeUnsupported, kAXErrorNoValue,
++    kAXErrorSuccess, AXUIElementCopyAttributeNames, AXUIElementCopyAttributeValue, AXUIElementRef,
++};
++use super::cache::RetainedElement;
++use core_foundation::array::{
++    CFArrayGetCount, CFArrayGetTypeID, CFArrayGetValueAtIndex, CFArrayRef,
++};
++use core_foundation::base::{CFEqual, CFRelease, CFTypeRef, TCFType};
++use core_foundation::string::{CFString, CFStringGetLength};
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub enum Security {
++    NonSensitive,
++    Sensitive,
++    Unknown,
++}
++impl Security {
++    pub fn label(self) -> &'static str {
++        match self {
++            Self::NonSensitive => "non_sensitive",
++            Self::Sensitive => "sensitive",
++            Self::Unknown => "unknown",
++        }
++    }
++}
++#[derive(Clone, Debug, PartialEq, Eq)]
++pub enum Subrole {
++    Known(String),
++    Absent,
++    Unreadable,
++}
++
++/// Complete native attribute inventory, bounded and type checked. This is not
++/// absence inferred from an incomplete projected tree or missing SDK DTO field.
++unsafe fn attributes_prove_no_subrole(names: CFArrayRef) -> bool {
++    if names.is_null()
++        || core_foundation::base::CFGetTypeID(names as CFTypeRef) != CFArrayGetTypeID()
++    {
++        return false;
++    }
++    let count = CFArrayGetCount(names);
++    if !(1..=128).contains(&count) {
++        return false;
++    }
++    let mut role_declared = false;
++    for index in 0..count {
++        let value = CFArrayGetValueAtIndex(names, index) as CFTypeRef;
++        if value.is_null()
++            || core_foundation::base::CFGetTypeID(value) != CFString::type_id()
++            || CFStringGetLength(value as _) > 128
++        {
++            return false;
++        }
++        let name = CFString::wrap_under_get_rule(value as _).to_string();
++        if name == "AXSubrole" {
++            return false;
++        }
++        if name == "AXRole" {
++            role_declared = true;
++        }
++    }
++    role_declared
++}
++unsafe fn declared_no_subrole(element: AXUIElementRef) -> bool {
++    let mut names: CFArrayRef = std::ptr::null();
++    let status = AXUIElementCopyAttributeNames(element, &mut names);
++    let result = status == kAXErrorSuccess && attributes_prove_no_subrole(names);
++    if !names.is_null() {
++        CFRelease(names as CFTypeRef);
++    }
++    result
++}
++
++/// Absent is only a native AX absent/no-value result, never a missing DTO field.
++unsafe fn read_subrole(element: AXUIElementRef) -> Subrole {
++    let attr = CFString::new("AXSubrole");
++    let mut value: CFTypeRef = std::ptr::null();
++    let status = AXUIElementCopyAttributeValue(element, attr.as_concrete_TypeRef(), &mut value);
++    let result = if status == kAXErrorNoValue
++        || (status == kAXErrorAttributeUnsupported && declared_no_subrole(element))
++    {
++        Subrole::Absent
++    } else if status == kAXErrorSuccess
++        && !value.is_null()
++        && core_foundation::base::CFGetTypeID(value) == CFString::type_id()
++        && CFStringGetLength(value as _) <= 128
++    {
++        Subrole::Known(CFString::wrap_under_get_rule(value as _).to_string())
++    } else {
++        Subrole::Unreadable
++    };
++    if !value.is_null() {
++        CFRelease(value);
++    }
++    result
++}
++
++fn classify_chain(chain: &[(String, Subrole)], reached_window: bool) -> Security {
++    if chain.iter().any(|(role, subrole)| {
++        role == "AXSecureTextField"
++            || matches!(subrole, Subrole::Known(value) if value == "AXSecureTextField")
++    }) {
++        return Security::Sensitive;
++    }
++    if !reached_window
++        || chain.is_empty()
++        || chain
++            .iter()
++            .any(|(_, subrole)| *subrole == Subrole::Unreadable)
++    {
++        return Security::Unknown;
++    }
++    // Deliberately narrow editable roles; arbitrary custom/web controls stay unknown.
++    if !matches!(chain[0].0.as_str(), "AXTextField" | "AXTextArea") {
++        return Security::Unknown;
++    }
++    // The addressed input itself must have native no-subrole evidence. A custom
++    // subtype on an input is never accepted. Layout ancestors have no typing
++    // destination of their own; their subtype does not redefine the exact child's
++    // basic AXTextField/AXTextArea role. Secure ancestors were refused above.
++    if matches!(&chain[0].1, Subrole::Known(value) if !value.is_empty()) {
++        return Security::Unknown;
++    }
++    if chain.iter().skip(1).any(|(role, _)| {
++        !matches!(
++            role.as_str(),
++            "AXWindow"
++                | "AXGroup"
++                | "AXScrollArea"
++                | "AXSplitGroup"
++                | "AXList"
++                | "AXLayoutArea"
++                | "AXLayoutItem"
++        )
++    }) {
++        return Security::Unknown;
++    }
++    Security::NonSensitive
++}
++
++/// Caller retains the addressed element and verifies its exact PID/window binding.
++/// The bounded ancestor walk must reach that same window. Cycles and read errors
++/// never establish non-sensitive. No role/subrole strings leave this classifier.
++pub unsafe fn classify_exact(
++    element: AXUIElementRef,
++    window_id: u32,
++) -> (Security, Option<&'static str>) {
++    let mut retained = vec![RetainedElement::retain(element as usize)];
++    let mut chain = Vec::new();
++    let mut reached_window = false;
++    for _ in 0..40 {
++        let current = retained.last().unwrap().as_ptr() as AXUIElementRef;
++        if retained[..retained.len() - 1]
++            .iter()
++            .any(|prior| CFEqual(prior.as_ptr() as CFTypeRef, current as CFTypeRef) != 0)
++        {
++            break;
++        }
++        let Some(role) = copy_string_attr(current, "AXRole") else {
++            break;
++        };
++        chain.push((role.clone(), read_subrole(current)));
++        if role == "AXWindow" {
++            reached_window = super::bindings::ax_get_window_id(current) == Some(window_id);
++            break;
++        }
++        let Some(parent) = copy_element_attr(current, "AXParent") else {
++            break;
++        };
++        retained.push(RetainedElement::retain(parent as usize));
++        CFRelease(parent as CFTypeRef);
++    }
++    let classification = classify_chain(&chain, reached_window);
++    let reason = if classification != Security::Unknown {
++        None
++    } else if !reached_window || chain.is_empty() {
++        Some("ancestry_unconfirmed")
++    } else if chain[0].1 == Subrole::Unreadable {
++        Some("leaf_subrole_unreadable")
++    } else if chain
++        .iter()
++        .skip(1)
++        .any(|(_, subrole)| *subrole == Subrole::Unreadable)
++    {
++        Some("ancestor_subrole_unreadable")
++    } else if !matches!(chain[0].0.as_str(), "AXTextField" | "AXTextArea") {
++        Some("unsupported_role")
++    } else if matches!(&chain[0].1, Subrole::Known(value) if value == "AXUnknown") {
++        Some("generic_leaf_subrole")
++    } else if chain
++        .iter()
++        .skip(1)
++        .any(|(_, subrole)| matches!(subrole, Subrole::Known(value) if value == "AXUnknown"))
++    {
++        Some("generic_ancestor_subrole")
++    } else if matches!(&chain[0].1, Subrole::Known(value) if !value.is_empty()) {
++        Some("leaf_custom_subrole")
++    } else if chain.iter().skip(1).any(|(_, subrole)| matches!(subrole, Subrole::Known(value) if value == "AXSectionList")) {
++        Some("ancestor_section_list")
++    } else if chain.iter().skip(1).any(|(_, subrole)| matches!(subrole, Subrole::Known(value) if value == "AXCollectionList")) {
++        Some("ancestor_collection_list")
++    } else if chain.iter().skip(1).any(|(_, subrole)| matches!(subrole, Subrole::Known(value) if value == "AXContentList")) {
++        Some("ancestor_content_list")
++    } else if chain.iter().skip(1).any(|(_, subrole)| matches!(subrole, Subrole::Known(value) if value == "AXDialog" || value == "AXFloatingWindow")) {
++        Some("ancestor_other_window")
++    } else {
++        Some("ancestor_custom_subrole")
++    };
++    (classification, reason)
++}
++
++/// Opt-in native admission contract. Only exact current tokens may request it;
++/// a coordinate/legacy/focused fallback cannot silently substitute a target.
++pub fn input_security_required(
++    args: &serde_json::Value,
++) -> Result<bool, cua_driver_core::protocol::ToolResult> {
++    let required = match args.get("require_non_sensitive") {
++        None | Some(serde_json::Value::Bool(false)) => false,
++        Some(serde_json::Value::Bool(true)) => true,
++        _ => return Err(input_security_refusal()),
++    };
++    if required
++        && (args
++            .get("pid")
++            .and_then(|value| value.as_i64())
++            .is_none_or(|value| value <= 0 || value > i32::MAX as i64)
++            || args
++                .get("window_id")
++                .and_then(|value| value.as_u64())
++                .is_none_or(|value| value == 0 || value > u32::MAX as u64)
++            || args
++                .get("element_token")
++                .and_then(|value| value.as_str())
++                .is_none_or(|value| value.is_empty() || value.len() > 1024)
++            || args.get("element_index").is_some()
++            || args.get("x").is_some()
++            || args.get("y").is_some()
++            || args.get("scope").and_then(|value| value.as_str()) == Some("desktop"))
++    {
++        return Err(input_security_refusal());
++    }
++    Ok(required)
++}
++
++fn input_security_refusal() -> cua_driver_core::protocol::ToolResult {
++    cua_driver_core::protocol::ToolResult::error("Exact non-sensitive input target required")
++        .with_structured(
++            serde_json::json!({"code":"input_security_unconfirmed", "effect":"refused"}),
++        )
++}
++
++/// Preflight precedes background/focus routing; the retained clone survives the
++/// blocking read. Admission is repeated in each actuator, not cached by this read.
++pub async fn input_security_preflight(
++    required: bool,
++    pid: i32,
++    window_id: Option<u32>,
++    element: Option<RetainedElement>,
++) -> Result<(), cua_driver_core::protocol::ToolResult> {
++    if !required {
++        return Ok(());
++    }
++    let admitted = tokio::task::spawn_blocking(move || unsafe {
++        admit_input(
++            true,
++            pid,
++            window_id,
++            element.as_ref().map(|element| element.as_ptr()),
++            false,
++        )
++    })
++    .await;
++    match admitted {
++        Ok(Ok(())) => Ok(()),
++        _ => Err(input_security_refusal()),
++    }
++}
++
++fn input_admitted(bound: bool, security: Security, focus: Option<bool>) -> bool {
++    bound && security == Security::NonSensitive && focus != Some(false)
++}
++
++/// Repeat exact-object binding/classification immediately before native input.
++/// The caller must keep the SDK RetainedElement alive throughout this call and
++/// the actuator; this function never resolves another token or reads AX values.
++pub unsafe fn admit_input(
++    required: bool,
++    pid: i32,
++    window_id: Option<u32>,
++    element: Option<usize>,
++    require_focus: bool,
++) -> anyhow::Result<()> {
++    if !required {
++        return Ok(());
++    }
++    let Some((window_id, pointer)) = window_id.zip(element).filter(|(_, pointer)| *pointer != 0)
++    else {
++        anyhow::bail!("input_security_unconfirmed");
++    };
++    #[link(name = "ApplicationServices", kind = "framework")]
++    extern "C" {
++        fn AXUIElementGetPid(element: AXUIElementRef, pid: *mut i32) -> i32;
++    }
++    let element = pointer as AXUIElementRef;
++    let mut actual_pid = 0;
++    let bound = AXUIElementGetPid(element, &mut actual_pid) == kAXErrorSuccess
++        && actual_pid == pid
++        && pid > 0
++        && super::exact_target::element_window_id(element) == Some(window_id)
++        && crate::windows::resolve_window_owner(pid, window_id)
++            == crate::windows::WindowOwner::SamePid;
++    if !bound {
++        anyhow::bail!("input_security_unconfirmed");
++    }
++    let (security, _) = classify_exact(element, window_id);
++    let focus = if require_focus {
++        let focused = super::exact_target::focused_element_in_window(pid, window_id);
++        let same = focused.is_some_and(|focused| {
++            let same = CFEqual(element as CFTypeRef, focused as CFTypeRef) != 0;
++            CFRelease(focused as CFTypeRef);
++            same
++        });
++        Some(same)
++    } else {
++        None
++    };
++    if !input_admitted(bound, security, focus) {
++        anyhow::bail!("input_security_unconfirmed");
++    }
++    Ok(())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn input_admission_requires_positive_security_and_exact_focus() {
++        for bound in [false, true] {
++            for security in [
++                Security::Unknown,
++                Security::Sensitive,
++                Security::NonSensitive,
++            ] {
++                for focus in [None, Some(false), Some(true)] {
++                    assert_eq!(
++                        input_admitted(bound, security, focus),
++                        bound && security == Security::NonSensitive && focus != Some(false)
++                    );
++                }
++            }
++        }
++    }
++    #[test]
++    fn guarded_input_shape_rejects_fallbacks_before_native_access() {
++        use serde_json::json;
++        let valid =
++            json!({"pid":1,"window_id":2,"element_token":"opaque","require_non_sensitive":true});
++        assert_eq!(input_security_required(&valid).unwrap(), true);
++        for (key, value) in [
++            ("pid", json!(false)),
++            ("window_id", json!(0)),
++            ("element_token", json!("")),
++            ("require_non_sensitive", json!(1)),
++            ("element_index", json!(0)),
++            ("x", json!(1)),
++            ("y", json!(1)),
++            ("scope", json!("desktop")),
++        ] {
++            let mut args = valid.clone();
++            args[key] = value;
++            assert!(input_security_required(&args).is_err(), "{key}");
++        }
++        assert_eq!(input_security_required(&json!({})).unwrap(), false);
++        // Missing retained target is refused before any AX API is called.
++        assert!(unsafe { admit_input(true, 1, Some(2), None, false) }.is_err());
++    }
++    fn normal() -> Vec<(String, Subrole)> {
++        vec![
++            ("AXTextField".into(), Subrole::Absent),
++            ("AXWindow".into(), Subrole::Absent),
++        ]
++    }
++    #[test]
++    fn complete_attribute_inventory_is_required_for_absence() {
++        use core_foundation::array::CFArray;
++        let role = CFString::new("AXRole");
++        let title = CFString::new("AXTitle");
++        let subrole = CFString::new("AXSubrole");
++        let complete = CFArray::from_CFTypes(&[role.clone(), title.clone()]);
++        assert!(unsafe { attributes_prove_no_subrole(complete.as_concrete_TypeRef()) });
++        let present = CFArray::from_CFTypes(&[role.clone(), subrole]);
++        assert!(!unsafe { attributes_prove_no_subrole(present.as_concrete_TypeRef()) });
++        let inconsistent = CFArray::from_CFTypes(&[title]);
++        assert!(!unsafe { attributes_prove_no_subrole(inconsistent.as_concrete_TypeRef()) });
++        let oversized = CFArray::from_CFTypes(&vec![role; 129]);
++        assert!(!unsafe { attributes_prove_no_subrole(oversized.as_concrete_TypeRef()) });
++        assert!(!unsafe { attributes_prove_no_subrole(std::ptr::null()) });
++    }
++    #[test]
++    fn known_normal_native_chain() {
++        assert_eq!(classify_chain(&normal(), true), Security::NonSensitive);
++    }
++    #[test]
++    fn unreadable_or_incomplete_is_unknown() {
++        let mut chain = normal();
++        chain[0].1 = Subrole::Unreadable;
++        assert_eq!(classify_chain(&chain, true), Security::Unknown);
++        assert_eq!(classify_chain(&normal(), false), Security::Unknown);
++    }
++    #[test]
++    fn secure_subrole_and_ancestor_win() {
++        for index in 0..2 {
++            let mut chain = normal();
++            chain[index].1 = Subrole::Known("AXSecureTextField".into());
++            assert_eq!(classify_chain(&chain, true), Security::Sensitive);
++        }
++    }
++    #[test]
++    fn known_layout_subtype_does_not_replace_the_exact_input_type() {
++        let chain = vec![
++            ("AXTextField".into(), Subrole::Absent),
++            ("AXGroup".into(), Subrole::Known("layout subtype".into())),
++            ("AXWindow".into(), Subrole::Known("AXStandardWindow".into())),
++        ];
++        assert_eq!(classify_chain(&chain, true), Security::NonSensitive);
++        let mut secure = chain.clone();
++        secure[1].1 = Subrole::Known("AXSecureTextField".into());
++        assert_eq!(classify_chain(&secure, true), Security::Sensitive);
++        let mut editable = chain.clone();
++        editable[1].0 = "AXTextArea".into();
++        assert_eq!(classify_chain(&editable, true), Security::Unknown);
++        let mut custom = chain.clone();
++        custom[1].0 = "custom role".into();
++        assert_eq!(classify_chain(&custom, true), Security::Unknown);
++        let mut unreadable = chain;
++        unreadable[1].1 = Subrole::Unreadable;
++        assert_eq!(classify_chain(&unreadable, true), Security::Unknown);
++    }
++    #[test]
++    fn explicit_unknown_subrole_stays_unknown() {
++        let mut chain = normal();
++        chain[0].1 = Subrole::Known("AXUnknown".into());
++        assert_eq!(classify_chain(&chain, true), Security::Unknown);
++    }
++    #[test]
++    fn custom_role_or_subrole_is_unknown() {
++        let mut chain = normal();
++        chain[0].0 = "AXGroup".into();
++        assert_eq!(classify_chain(&chain, true), Security::Unknown);
++        let mut chain = normal();
++        chain[0].1 = Subrole::Known("AXSearchField".into());
++        assert_eq!(classify_chain(&chain, true), Security::Unknown);
++    }
++}
+diff --git a/libs/cua-driver/rust/crates/platform-macos/src/ax/mod.rs b/libs/cua-driver/rust/crates/platform-macos/src/ax/mod.rs
+index ee7b6c4..ec3e08f 100644
+--- a/libs/cua-driver/rust/crates/platform-macos/src/ax/mod.rs
++++ b/libs/cua-driver/rust/crates/platform-macos/src/ax/mod.rs
+@@ -18,6 +18,7 @@
+ 
+ pub mod bindings;
+ pub mod cache;
++pub mod element_security;
+ pub mod enablement;
+ pub mod exact_target;
+ pub mod tree;
+diff --git a/libs/cua-driver/rust/crates/platform-macos/src/tools/get_element_security.rs b/libs/cua-driver/rust/crates/platform-macos/src/tools/get_element_security.rs
+new file mode 100644
+index 0000000..3e1ffa2
+--- /dev/null
++++ b/libs/cua-driver/rust/crates/platform-macos/src/tools/get_element_security.rs
+@@ -0,0 +1,145 @@
++//! Prototype closed read-only query resolving the SDK's retained element cache.
++use super::ToolState;
++use crate::ax::{
++    bindings::{kAXErrorSuccess, AXUIElementRef},
++    element_security::{classify_exact, Security},
++    exact_target::element_window_id,
++};
++use crate::windows::{resolve_window_owner, WindowOwner};
++use async_trait::async_trait;
++use cua_driver_core::{
++    protocol::ToolResult,
++    tool::{Tool, ToolDef},
++    tool_args::parse_typed_input,
++};
++use serde::Deserialize;
++use serde_json::{json, Value};
++use std::sync::Arc;
++
++#[link(name = "ApplicationServices", kind = "framework")]
++extern "C" {
++    fn AXUIElementGetPid(element: AXUIElementRef, pid: *mut i32) -> i32;
++}
++
++#[derive(Deserialize)]
++#[serde(deny_unknown_fields)]
++struct Input {
++    pid: i32,
++    window_id: u32,
++    element_token: String,
++    session: Option<String>,
++}
++
++pub struct GetElementSecurityTool {
++    state: Arc<ToolState>,
++}
++impl GetElementSecurityTool {
++    pub fn new(state: Arc<ToolState>) -> Self {
++        Self { state }
++    }
++}
++static DEF: std::sync::OnceLock<ToolDef> = std::sync::OnceLock::new();
++fn output(security: Security, binding_verified: bool, reason: Option<&str>) -> ToolResult {
++    ToolResult::text("Bounded element security classification").with_structured(json!({
++        "schema_version": 2, "input_guard_version": 1,
++        "classification": security.label(), "binding_verified": binding_verified,
++        "reason": reason
++    }))
++}
++
++#[async_trait]
++impl Tool for GetElementSecurityTool {
++    fn def(&self) -> &ToolDef {
++        DEF.get_or_init(|| ToolDef {
++            name: "get_element_security".into(),
++            description: "Read a closed security classification for one current exact SDK token; no field values or attributes are returned.".into(),
++            input_schema: json!({"type":"object","properties":{
++                "pid":{"type":"integer","minimum":1}, "window_id":{"type":"integer","minimum":1},
++                "element_token":{"type":"string","minLength":1,"maxLength":1024},
++                "session":cua_driver_core::tool_schema::session_schema()
++            },"required":["pid","window_id","element_token"],"additionalProperties":false}),
++            read_only:true, destructive:false, idempotent:true, open_world:false
++        })
++    }
++    async fn invoke(&self, args: Value) -> ToolResult {
++        let input: Input = match parse_typed_input("get_element_security", args) {
++            Ok(input) => input,
++            Err(_) => return output(Security::Unknown, false, Some("invalid_arguments")),
++        };
++        if input.pid <= 0
++            || input.window_id == 0
++            || input.element_token.is_empty()
++            || input.element_token.len() > 1024
++            || input
++                .session
++                .as_ref()
++                .is_some_and(|value| value.len() > 128)
++        {
++            return output(Security::Unknown, false, Some("invalid_arguments"));
++        }
++        let resolved = match self.state.element_cache.resolve_element_args(
++            input.pid,
++            None,
++            Some(&input.element_token),
++            None,
++            Some(input.window_id as u64),
++            "get_element_security",
++        ) {
++            Ok(value) => value,
++            Err(_) => return output(Security::Unknown, false, Some("token_unconfirmed")),
++        };
++        let (_, window_id, element) = resolved.into_parts(Some(input.window_id as u64));
++        if window_id != Some(input.window_id as u64) {
++            return output(Security::Unknown, false, Some("target_unconfirmed"));
++        }
++        let Some(element) = element else {
++            return output(Security::Unknown, false, Some("token_unconfirmed"));
++        };
++        let result = tokio::task::spawn_blocking(move || unsafe {
++            let pointer = element.as_ptr() as AXUIElementRef;
++            let mut pid = 0;
++            if AXUIElementGetPid(pointer, &mut pid) != kAXErrorSuccess
++                || pid != input.pid
++                || element_window_id(pointer) != Some(input.window_id)
++                || resolve_window_owner(input.pid, input.window_id) != WindowOwner::SamePid
++            {
++                return (Security::Unknown, false, Some("target_unconfirmed"));
++            }
++            let (security, reason) = classify_exact(pointer, input.window_id);
++            (security, true, reason)
++        })
++        .await;
++        match result {
++            Ok((security, true, reason)) => output(security, true, reason),
++            Ok(_) => output(Security::Unknown, false, Some("target_unconfirmed")),
++            Err(_) => output(Security::Unknown, false, Some("query_failed")),
++        }
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn positive_response_declares_the_guarded_input_contract() {
++        let result = output(Security::NonSensitive, true, None);
++        assert_eq!(result.structured_content.unwrap(), json!({
++            "schema_version":2, "input_guard_version":1, "classification":"non_sensitive",
++            "binding_verified":true, "reason":null
++        }));
++    }
++    #[test]
++    fn security_query_arguments_are_closed() {
++        let input = json!({"pid":1,"window_id":2,"element_token":"fixture"});
++        assert!(parse_typed_input::<Input>("get_element_security", input.clone()).is_ok());
++        let mut extra = input.clone();
++        extra["attribute"] = json!("AXValue");
++        assert!(parse_typed_input::<Input>("get_element_security", extra).is_err());
++        let mut wrong = input.clone();
++        wrong["pid"] = json!(true);
++        assert!(parse_typed_input::<Input>("get_element_security", wrong).is_err());
++        let mut wrong = input;
++        wrong["window_id"] = json!(4294967296_u64);
++        assert!(parse_typed_input::<Input>("get_element_security", wrong).is_err());
++    }
++}
+diff --git a/libs/cua-driver/rust/crates/platform-macos/src/tools/hotkey.rs b/libs/cua-driver/rust/crates/platform-macos/src/tools/hotkey.rs
+index 81f4aac..bf0af75 100644
+--- a/libs/cua-driver/rust/crates/platform-macos/src/tools/hotkey.rs
++++ b/libs/cua-driver/rust/crates/platform-macos/src/tools/hotkey.rs
+@@ -62,6 +62,7 @@ fn def() -> &'static ToolDef {
+             "type": "object",
+             "required": ["keys"],
+             "properties": {
++                "require_non_sensitive": { "type": "boolean", "default": false, "description": "Require fresh non-sensitive proof for the exact retained SDK token before input; coordinate and focused-target fallbacks refused." },
+                 "session": { "type": "string", "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session." },
+                 "pid": { "type": "integer", "description": "Target process ID." },
+                 "keys": {
+@@ -150,6 +151,10 @@ impl Tool for HotkeyTool {
+     }
+ 
+     async fn invoke(&self, args: Value) -> ToolResult {
++        let security_required = match crate::ax::element_security::input_security_required(&args) {
++            Ok(required) => required,
++            Err(refusal) => return refusal,
++        };
+         use cua_driver_core::tool_args::ArgsExt;
+         if args.opt_str("scope").as_deref() == Some("desktop")
+             && args.get("pid").is_none()
+@@ -247,6 +252,16 @@ impl Tool for HotkeyTool {
+             Ok(window_id) => window_id,
+             Err(error) => return error,
+         };
++        if let Err(refusal) = crate::ax::element_security::input_security_preflight(
++            security_required,
++            pid,
++            window_id,
++            element_guard.clone(),
++        )
++        .await
++        {
++            return refusal;
++        }
+         // delivery_mode gates whether we raise: background (default) never fronts
+         // the window — passing window_id only targets the combo. foreground is the
+         // explicit NSMenu-activation rung for menu shortcuts that ignore a
+@@ -394,6 +409,15 @@ impl Tool for HotkeyTool {
+             || async move {
+                 tokio::task::spawn_blocking(move || {
+                     let element_ptr = element_guard.as_ref().map(|guard| guard.as_ptr());
++                    unsafe {
++                        crate::ax::element_security::admit_input(
++                            security_required,
++                            pid,
++                            window_id,
++                            element_ptr,
++                            false,
++                        )?;
++                    }
+                     let m: Vec<&str> = modifiers.iter().map(String::as_str).collect();
+                     match (fg, coordinate_focus, window_id, element_ptr) {
+                         // Chrome's native omnibox and Chromium/Electron inputs
+@@ -424,6 +448,15 @@ impl Tool for HotkeyTool {
+                                 wid,
+                                 || {
+                                     focus_hotkey_element(pid, ptr)?;
++                                    unsafe {
++                                        crate::ax::element_security::admit_input(
++                                            security_required,
++                                            pid,
++                                            window_id,
++                                            Some(ptr),
++                                            true,
++                                        )?;
++                                    }
+                                     crate::input::keyboard::press_key_bare_global(&key, &m)
+                                 },
+                             )?;
+@@ -457,6 +490,15 @@ impl Tool for HotkeyTool {
+                         // raise — even when window_id was supplied for targeting.
+                         (false, false, _, Some(ptr)) => {
+                             focus_hotkey_element(pid, ptr)?;
++                            unsafe {
++                                crate::ax::element_security::admit_input(
++                                    security_required,
++                                    pid,
++                                    window_id,
++                                    Some(ptr),
++                                    true,
++                                )?;
++                            }
+                             crate::input::keyboard::hotkey(pid, &key, &m)
+                         }
+                         _ => crate::input::keyboard::hotkey(pid, &key, &m),
+diff --git a/libs/cua-driver/rust/crates/platform-macos/src/tools/mod.rs b/libs/cua-driver/rust/crates/platform-macos/src/tools/mod.rs
+index b6ec2b0..3911c02 100644
+--- a/libs/cua-driver/rust/crates/platform-macos/src/tools/mod.rs
++++ b/libs/cua-driver/rust/crates/platform-macos/src/tools/mod.rs
+@@ -6,6 +6,7 @@ mod click;
+ mod clipboard;
+ mod double_click;
+ mod drag;
++mod get_element_security;
+ mod get_window_state;
+ mod hotkey;
+ mod invoke_menu;
+@@ -832,6 +833,9 @@ pub fn register_all(
+         registry.retain_session_revive_hook(revive_registration);
+     }
+ 
++    registry.register(Box::new(get_element_security::GetElementSecurityTool::new(
++        state.clone(),
++    )));
+     registry.register(Box::new(list_apps::ListAppsTool));
+     registry.register(Box::new(list_windows::ListWindowsTool));
+     registry.register(Box::new(get_window_state::GetWindowStateTool::new(
+diff --git a/libs/cua-driver/rust/crates/platform-macos/src/tools/press_key.rs b/libs/cua-driver/rust/crates/platform-macos/src/tools/press_key.rs
+index 8162ec9..20d1125 100644
+--- a/libs/cua-driver/rust/crates/platform-macos/src/tools/press_key.rs
++++ b/libs/cua-driver/rust/crates/platform-macos/src/tools/press_key.rs
+@@ -200,6 +200,7 @@ fn def() -> &'static ToolDef {
+             "type": "object",
+             "required": ["key"],
+             "properties": {
++                "require_non_sensitive": { "type": "boolean", "default": false, "description": "Require fresh non-sensitive proof for the exact retained SDK token before input; coordinate and focused-target fallbacks refused." },
+                 "session": { "type": "string", "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session." },
+                 "pid": { "type": "integer" },
+                 "key": { "type": "string", "description": "Key name: return, tab, escape, up, down, etc." },
+@@ -233,6 +234,10 @@ impl Tool for PressKeyTool {
+     }
+ 
+     async fn invoke(&self, args: Value) -> ToolResult {
++        let security_required = match crate::ax::element_security::input_security_required(&args) {
++            Ok(required) => required,
++            Err(refusal) => return refusal,
++        };
+         use cua_driver_core::tool_args::ArgsExt;
+         if args.opt_str("scope").as_deref() == Some("desktop")
+             && args.get("pid").is_none()
+@@ -290,6 +295,16 @@ impl Tool for PressKeyTool {
+             Ok(window_id) => window_id,
+             Err(error) => return error,
+         };
++        if let Err(refusal) = crate::ax::element_security::input_security_preflight(
++            security_required,
++            pid,
++            window_id,
++            pre_focus_guard.clone(),
++        )
++        .await
++        {
++            return refusal;
++        }
+ 
+         if let Err(error) = validate_post_target(pid) {
+             return delivery_failed(error);
+@@ -402,6 +417,15 @@ impl Tool for PressKeyTool {
+                 // side-effects are captured by the snapshot + lease.
+                 if let Some(guard) = pre_focus_guard.clone() {
+                     let _ = tokio::task::spawn_blocking(move || {
++                        unsafe {
++                            crate::ax::element_security::admit_input(
++                                security_required,
++                                pid,
++                                window_id,
++                                Some(guard.as_ptr()),
++                                false,
++                            )?;
++                        }
+                         crate::input::ax_actions::focus_element(guard.as_ptr())
+                     })
+                     .await;
+@@ -410,6 +434,15 @@ impl Tool for PressKeyTool {
+ 
+                 tokio::task::spawn_blocking(move || {
+                     let pre_focus_ptr = pre_focus_guard.as_ref().map(|guard| guard.as_ptr());
++                    unsafe {
++                        crate::ax::element_security::admit_input(
++                            security_required,
++                            pid,
++                            window_id,
++                            pre_focus_ptr,
++                            false,
++                        )?;
++                    }
+                     let m: Vec<&str> = modifiers.iter().map(String::as_str).collect();
+                     // Foreground rung: keep the exact target frontmost through a genuine
+                     // physical HID key down/up pair, then restore. PID-routed events without the
+@@ -436,6 +469,15 @@ impl Tool for PressKeyTool {
+                                         let _ =
+                                             crate::input::ax_actions::focus_element(element_ptr);
+                                     }
++                                    unsafe {
++                                        crate::ax::element_security::admit_input(
++                                            security_required,
++                                            pid,
++                                            window_id,
++                                            pre_focus_ptr,
++                                            true,
++                                        )?;
++                                    }
+                                     crate::input::keyboard::press_key_bare_global(&key, &m)
+                                 },
+                             )
+@@ -443,6 +485,15 @@ impl Tool for PressKeyTool {
+                     }
+                     // background (default): auth-envelope post, no raise.
+                     dispatch_with_ax_oracle(pid, window_id, pre_focus_ptr, || {
++                        unsafe {
++                            crate::ax::element_security::admit_input(
++                                security_required,
++                                pid,
++                                window_id,
++                                pre_focus_ptr,
++                                true,
++                            )?;
++                        }
+                         crate::input::keyboard::press_key(pid, &key, &m)
+                     })
+                 })
+diff --git a/libs/cua-driver/rust/crates/platform-macos/src/tools/type_text.rs b/libs/cua-driver/rust/crates/platform-macos/src/tools/type_text.rs
+index 8d7e2aa..ef832dd 100644
+--- a/libs/cua-driver/rust/crates/platform-macos/src/tools/type_text.rs
++++ b/libs/cua-driver/rust/crates/platform-macos/src/tools/type_text.rs
+@@ -94,6 +94,7 @@ fn def() -> &'static ToolDef {
+             "type": "object",
+             "required": ["text"],
+             "properties": {
++                "require_non_sensitive": { "type": "boolean", "default": false, "description": "Require fresh non-sensitive proof for the exact retained SDK token before input; coordinate and focused-target fallbacks refused." },
+                 "session": { "type": "string", "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session." },
+                 "pid":  { "type": "integer", "description": "Target process ID." },
+                 "text": { "type": "string",  "description": "Text to insert at the target's cursor." },
+@@ -161,6 +162,10 @@ impl Tool for TypeTextTool {
+     }
+ 
+     async fn invoke(&self, args: Value) -> ToolResult {
++        let security_required = match crate::ax::element_security::input_security_required(&args) {
++            Ok(required) => required,
++            Err(refusal) => return refusal,
++        };
+         use cua_driver_core::tool_args::ArgsExt;
+         if args.opt_str("scope").as_deref() == Some("desktop")
+             && args.get("pid").is_none()
+@@ -230,6 +235,16 @@ impl Tool for TypeTextTool {
+             Ok(window_id) => window_id,
+             Err(error) => return error,
+         };
++        if let Err(refusal) = crate::ax::element_security::input_security_preflight(
++            security_required,
++            pid,
++            window_id,
++            element_guard.clone(),
++        )
++        .await
++        {
++            return refusal;
++        }
+         let delay_ms = args.u64_or("delay_ms", 30);
+         let delivery_mode = super::DeliveryMode::parse(args.opt_str("delivery_mode").as_deref());
+         if let Some(error) = screen_sharing_delivery_error(
+@@ -392,6 +407,7 @@ impl Tool for TypeTextTool {
+                         delivery_mode,
+                         window_id,
+                         blocking_policy,
++                        security_required,
+                     )
+                 })
+                 .await
+@@ -1082,7 +1098,17 @@ fn cgevent_type_verified(
+     element_ptr_and_idx: Option<(usize, Option<usize>)>,
+     settle_ms: u64,
+     window_id: Option<u32>,
++    security_required: bool,
+ ) -> anyhow::Result<(bool, Option<usize>)> {
++    unsafe {
++        crate::ax::element_security::admit_input(
++            security_required,
++            pid,
++            window_id,
++            element_ptr_and_idx.map(|(ptr, _)| ptr),
++            false,
++        )?;
++    }
+     // Focus the target element so the keystrokes land in IT. Critical in
+     // foreground mode: a freshly-fronted window's keyboard focus may be on the
+     // search box or nowhere, so without this the text goes into the void (or the
+@@ -1109,6 +1135,15 @@ fn cgevent_type_verified(
+     if settle_ms > 0 {
+         std::thread::sleep(std::time::Duration::from_millis(settle_ms));
+     }
++    unsafe {
++        crate::ax::element_security::admit_input(
++            security_required,
++            pid,
++            window_id,
++            element_ptr_and_idx.map(|(ptr, _)| ptr),
++            true,
++        )?;
++    }
+     crate::input::keyboard::type_text_with_delay(pid, text, delay_ms)?;
+ 
+     // CGEvent posting is asynchronous with respect to the renderer. In
+@@ -1170,7 +1205,17 @@ fn type_text_blocking(
+     delivery_mode: super::DeliveryMode,
+     window_id: Option<u32>,
+     keyboard_policy: BackgroundKeyboardPolicy,
++    security_required: bool,
+ ) -> anyhow::Result<TypeTextDelivery> {
++    unsafe {
++        crate::ax::element_security::admit_input(
++            security_required,
++            pid,
++            window_id,
++            element_ptr_and_idx.map(|(ptr, _)| ptr),
++            false,
++        )?;
++    }
+     // Original field value before any rung drives read-back verification only.
+     // An unreadable value is not evidence that the field is empty — and for a
+     // window-addressed request it must come from the exact target window,
+@@ -1217,6 +1262,7 @@ fn type_text_blocking(
+                 element_ptr_and_idx,
+                 foreground_settle_ms,
+                 window_id,
++                security_required,
+             )
+         };
+         let ((verified, delivered_chars), fronted) = match window_id {
+@@ -1236,6 +1282,15 @@ fn type_text_blocking(
+                                 foreground_settle_ms,
+                             ));
+                         }
++                        unsafe {
++                            crate::ax::element_security::admit_input(
++                                security_required,
++                                pid,
++                                window_id,
++                                element_ptr_and_idx.map(|(ptr, _)| ptr),
++                                true,
++                            )?;
++                        }
+                         crate::input::keyboard::type_text_physical_global(text, delay_ms)
+                     },
+                 )?;
+@@ -1306,6 +1361,7 @@ fn type_text_blocking(
+             element_ptr_and_idx,
+             /*settle_ms=*/ 0,
+             window_id,
++            security_required,
+         )?;
+         return Ok(TypeTextDelivery::Typed(TypeTextOutcome {
+             detail: format!(" via CGEvent (terminal emulator, {delay_ms}ms delay)"),
+@@ -1331,6 +1387,15 @@ fn type_text_blocking(
+     };
+     let mut ax_attempt = AxAttempt::NotAttempted;
+     if let Some((element, owns, idx_opt)) = ax_target {
++        unsafe {
++            crate::ax::element_security::admit_input(
++                security_required,
++                pid,
++                window_id,
++                Some(element as usize),
++                false,
++            )?;
++        }
+         let role = unsafe { copy_string_attr(element, "AXRole") }.unwrap_or_default();
+         let title = unsafe { copy_string_attr(element, "AXTitle") }.unwrap_or_default();
+         let err = unsafe { set_string_attr(element, "AXSelectedText", text) };
+@@ -1418,6 +1483,7 @@ fn type_text_blocking(
+         element_ptr_and_idx,
+         /*settle_ms=*/ 0,
+         window_id,
++        security_required,
+     )?;
+     Ok(TypeTextDelivery::Typed(TypeTextOutcome {
+         detail: format!(" via CGEvent ({delay_ms}ms delay)"),
+@@ -1450,6 +1516,7 @@ mod tests {
+             super::super::DeliveryMode::Background,
+             Some(7),
+             BackgroundKeyboardPolicy::SemanticOnly(refusal.clone()),
++            false,
+         );
+         match r {
+             Ok(TypeTextDelivery::Refused(returned)) => assert_eq!(returned, refusal),
+@@ -1469,6 +1536,7 @@ mod tests {
+             super::super::DeliveryMode::Background,
+             None,
+             BackgroundKeyboardPolicy::Allowed,
++            false,
+         )
+         .expect("preflight refusal must not attempt the invalid pid");
+         let TypeTextDelivery::SynthesisRefused {

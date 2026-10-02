@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "https://github.com/trycua/cua",
+  "upstream_commit": "bf6c76786d938070f4ecf1e44004752f69f518b8",
+  "upstream_sdk_version": "0.30.4",
+  "patch_sha256": "f98cfd0d6dc0cd597027a433f6496fc8718bf4fb0455a7233a6f0f9865e3dda2",
+  "security_response_version": 2,
+  "input_guard_version": 1,
+  "patch_platform": "macOS",
+  "native_validation_platform": "macOS 27 arm64",
+  "release_package_verified": false
+}

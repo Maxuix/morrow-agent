@@ -243,3 +243,14 @@ an independent normal-field insert and unchanged counter/secure-population/
 scroll facts, plus actual secure-mask pixels before and after. Only hashes and
 bounded metadata are exported. Unknown or failed outcomes remain failed even
 when the independent file shows an effect; the harness never repeats input.
+
+Use `--action press_key --allow-one-key` or `--action hotkey --allow-one-key`
+instead of the text opt-in to test one fixed `z` or `Shift+Z` action. An existing
+marker refuses the run before input. The SDK's unknown hotkey outcome remains
+a failed gate even when the independent normal field contains the new character.
+These modes never retry or send arbitrary SDK tools.
+
+The tracked experimental patch and license are in
+`vendor/cua-driver-security/`. `prepare_sdk_source.py` reproduces the patch from
+the pinned Git commit with implicit fetching disabled. A prepared source tree
+does not constitute a release wheel or production dependency acceptance.
