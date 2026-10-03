@@ -508,6 +508,8 @@ def target_authority_key(target: TargetRef) -> tuple[str, str, str, str, int]:
 
 
 class CoordinateFrame(ComputerUseModel):
+    """Unmapped window extent, or bounded coordinates of a delivered image."""
+
     space: Literal["image_px"] = "image_px"
     target_space: Literal["window"] = "window"
     width: int = Field(ge=1)
@@ -532,9 +534,12 @@ class CoordinateFrame(ComputerUseModel):
             raise ValueError("unknown_scale")
         if (self.crop_width is None) != (self.crop_height is None):
             raise ValueError("unknown_scale")
-        if self.width * self.height > MAX_IMAGE_PIXELS:
-            raise ValueError("image_bounds")
-        if max(self.width, self.height) > MAX_IMAGE_LONG_EDGE_PX:
+        # AX-only reads retain logical window dimensions without enabling image
+        # coordinates. Image frames and actual captures keep their image budgets.
+        if self.scale_x is not None and (
+            self.width * self.height > MAX_IMAGE_PIXELS
+            or max(self.width, self.height) > MAX_IMAGE_LONG_EDGE_PX
+        ):
             raise ValueError("image_bounds")
         if self.crop_width is not None and (
             self.crop_width > self.width

@@ -273,6 +273,13 @@ def test_selected_window_replacement_and_version_downgrade_are_expansion():
     reject_scope_expansion(current, current)
 
 
+@pytest.mark.parametrize("dimensions", [(2560, 1440), (1440, 2560), (7680, 4320)])
+def test_image_coordinate_frames_keep_image_dimension_limits(dimensions):
+    width, height = dimensions
+    with pytest.raises(ValidationError, match="image_bounds"):
+        _frame(width=width, height=height, crop_width=width, crop_height=height)
+
+
 def test_targets_observations_and_actions_reject_before_the_device():
     target = _target()
     labeled = target.model_copy(update={"display_label": "Renamed"})

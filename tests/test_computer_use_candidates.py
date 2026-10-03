@@ -200,6 +200,80 @@ async def test_cancelled_candidate_read_retains_lease_until_the_driver_settles()
     assert [name for name, _ in driver.calls].count("shutdown") == 1
 
 
+@pytest.mark.parametrize("blocked_call", ["list_apps", "list_windows"])
+@pytest.mark.parametrize("stop", ["cancel", "shutdown"])
+async def test_stopped_candidate_enumeration_finishes_only_current_call(
+    monkeypatch, blocked_call, stop
+):
+    entered, release, settled, stopping = (asyncio.Event() for _ in range(4))
+    window_reads = []
+
+    class BlockingDriver(Driver):
+        async def list_apps(self, payload):
+            result = await super().list_apps(payload)
+            result.apps = [
+                SimpleNamespace(pid=4242, running=True, bundle_id="com.example.Notes"),
+                SimpleNamespace(pid=4343, running=True, bundle_id="com.example.Calendar"),
+            ]
+            if blocked_call == "list_apps":
+                entered.set()
+                await release.wait()
+                settled.set()
+            return result
+
+        async def list_windows(self, payload):
+            window_reads.append(payload.pid)
+            if blocked_call == "list_windows" and len(window_reads) == 1:
+                entered.set()
+                await release.wait()
+                settled.set()
+            result = await super().list_windows(payload)
+            result.windows[0].pid = payload.pid
+            return result
+
+        async def shutdown(self):
+            assert settled.is_set()
+            await super().shutdown()
+
+    driver = BlockingDriver()
+    owner, lease, _, sessions = owner_for(driver)
+    stop_admission = owner.stop_admission
+
+    def stopped():
+        stop_admission()
+        stopping.set()
+
+    monkeypatch.setattr(owner, "stop_admission", stopped)
+    discovery = asyncio.create_task(owner.discover_local_candidates(SETTINGS, authority=AUTH))
+    closing = None
+    try:
+        await entered.wait()
+        if stop == "cancel":
+            discovery.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await discovery
+            assert owner.quarantined
+        closing = asyncio.create_task(owner.shutdown())
+        await stopping.wait()
+        assert lease.held and not settled.is_set() and not closing.done()
+        assert not any(name == "shutdown" for name, _ in driver.calls)
+        with pytest.raises(ComputerUseContractError, match="driver_not_activated"):
+            await owner.discover_local_candidates(SETTINGS, authority=AUTH)
+        release.set()
+        await closing
+        if stop == "shutdown":
+            with pytest.raises(ComputerUseContractError, match="driver_not_activated"):
+                await discovery
+        assert window_reads == ([] if blocked_call == "list_apps" else [4242])
+        assert not lease.held and sessions == []
+        assert repr(owner._candidates) == "LocalCandidateRegistry(count=0)"
+        assert [name for name, _ in driver.calls].count("shutdown") == 1
+    finally:
+        release.set()
+        await asyncio.gather(discovery, *([closing] if closing else []), return_exceptions=True)
+        await owner.shutdown()
+
+
 async def test_local_read_keeps_native_gate_and_trusted_authority_before_owner_creation():
     created = []
     lifecycle = ComputerUseLifecycle(

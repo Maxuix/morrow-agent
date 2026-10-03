@@ -114,6 +114,8 @@ class ComputerDriverOwner:
     def _quarantine(self) -> None:
         self._quarantined = True
         self._candidates.clear()
+        if self._candidate_calls is not None:
+            self._candidate_calls.stop()
         if self._session is not None:
             self._session.invalidate()
 
@@ -274,6 +276,8 @@ class ComputerDriverOwner:
         self._check_owner()
         self._stopping = True
         self._candidates.clear()
+        if self._candidate_calls is not None:
+            self._candidate_calls.stop()
         if self._session is not None:
             self._session.invalidate()
 

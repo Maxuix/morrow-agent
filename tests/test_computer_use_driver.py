@@ -757,6 +757,79 @@ async def test_unresolved_native_window_does_not_invent_image_mapping():
         map_image_point(read.observation.frame, 0, 0)
 
 
+@pytest.mark.parametrize("dimensions", [(2560, 1440), (1440, 2560), (7680, 4320)])
+async def test_large_semantic_window_can_observe_and_click_an_element(dimensions):
+    from morrow.services.computer_use import ComputerUseRunService
+
+    width, height = dimensions
+
+    class SemanticWindow(_Native):
+        async def list_windows(self, payload):
+            result = await super().list_windows(payload)
+            result.windows[0].bounds = SimpleNamespace(x=0, y=0, width=width, height=height)
+            return result
+
+        async def get_window_state(self, payload):
+            assert payload.include_screenshot is False
+            result = await super().get_window_state(payload)
+            result.images = []
+            result.screenshot_width = result.screenshot_height = result.screenshot_scale = None
+            result.screenshot_frame_valid = False
+            result.degraded = result.truncated = False
+            result.total_element_count = result.returned_element_count = len(result.elements)
+            return result
+
+        async def click(self, payload):
+            result = await super().click(payload)
+            result.delivery.mode = SimpleNamespace(name="FOREGROUND")
+            return result
+
+    native = SemanticWindow()
+    clock = FixedClock(NOW)
+    session = _bound_session(native, clock=clock)
+    scope = _selected_scope()
+    opened = await session.open_run_session(
+        OpenRunSessionRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+            agent_run_id=scope.agent_run_id,
+            scope=scope,
+        )
+    )
+    service = ComputerUseRunService(
+        session, opened, scope, ComputerUseSettings(enabled=True), clock
+    )
+
+    def authority():
+        pass
+
+    try:
+        found = await service.discover(authority=authority)
+        read = await service.observe(found.targets[0].target_ref, authority=authority)
+        observation = read.observation
+        assert observation.complete and observation.elements[0].label == "Save"
+        assert read.capture is None and observation.image is None
+        assert (observation.frame.width, observation.frame.height) == dimensions
+        with pytest.raises(ComputerUseContractError, match="unknown_scale"):
+            map_image_point(observation.frame, 1, 1)
+        coordinate = await service.execute_one(
+            observation.observation_id, ClickAction(type="click", x=1, y=1), authority=authority
+        )
+        assert coordinate.status == "not_started" and coordinate.error_code == "unknown_scale"
+        assert not any(name == "click" for name, _ in native.calls)
+
+        outcome = await service.execute_one(
+            observation.observation_id,
+            ClickAction(type="click", element_ref=observation.elements[0].element_ref),
+            authority=authority,
+        )
+        assert outcome.status == "completed" and outcome.error_code is None
+        assert outcome.delivery is scope.delivery
+        assert [name for name, _ in native.calls].count("click") == 1
+    finally:
+        service.stop()
+        await session.settle()
+
+
 @pytest.mark.parametrize("degraded", [False, True])
 async def test_unknown_tree_completeness_does_not_invent_truncation(degraded):
     class IncompleteWindow(_Native):
