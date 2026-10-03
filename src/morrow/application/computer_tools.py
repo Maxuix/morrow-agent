@@ -203,6 +203,8 @@ def make_computer_action_tool(observations: ComputerObservationSurface, visuals)
             "Coordinates use pixels in the published observation image. "
             "Token scroll requires an observed scroll container; SDK 0.30.4 may omit it. "
             "Use an image point inside the real scroll area when tokens are unavailable. "
+            "SDK 0.30.4 image-coordinate scroll supports background delivery only; foreground "
+            "wheel delivery is unsupported and never switches modes automatically. "
             "Only enabled is a supported attribute. attribute_equals requires a complete unique "
             "selector match; exact old element_ref readback is unavailable in SDK 0.30.4. "
             "The action consumes its observation and returns a new observation. "

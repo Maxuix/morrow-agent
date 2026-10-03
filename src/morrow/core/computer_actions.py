@@ -447,6 +447,14 @@ def prepare_execute_request(
         if observation.frame.target_space != "window":
             raise ComputerUseContractError("desktop_coordinates")
         point = map_image_point(observation.frame, action.x, action.y)
+        if (
+            isinstance(action, ScrollAction)
+            and observation.image is not None
+            and request.delivery is ComputerUseDelivery.FOREGROUND
+        ):
+            # 0.30.4's foreground assist + PID wheel route loses AppKit events.
+            # A background grant must be explicit, never an automatic fallback.
+            raise ComputerUseContractError("unsupported_foreground_scroll_delivery")
     postcondition = action.postcondition
     if (
         isinstance(postcondition, ElementPostconditionTarget)

@@ -534,3 +534,29 @@ async def test_background_double_click_is_refused_before_native_delivery(target)
             settings=ComputerUseSettings(enabled=True),
         )
     assert effects(native) == []
+
+
+async def test_foreground_coordinate_scroll_is_refused_before_sdk_entry():
+    from morrow.core.computer_use import ObservationImageRef
+
+    _, native, _, read, request = await setup(ComputerUseDelivery.FOREGROUND)
+    observation = read.observation.model_copy(
+        update={
+            "image": ObservationImageRef(
+                artifact_id="art_1",
+                sha256="a" * 64,
+                mime="image/png",
+                byte_size=8,
+                width=20,
+                height=10,
+                tool_execution_id="tex_1",
+            )
+        }
+    )
+    action = ScrollAction(type="scroll", x=1, y=1, direction="down", amount=3)
+    with pytest.raises(ComputerUseContractError, match="unsupported_foreground_scroll_delivery"):
+        admit_execute(
+            request(action).model_copy(update={"observation": observation}),
+            settings=ComputerUseSettings(enabled=True),
+        )
+    assert effects(native) == []
