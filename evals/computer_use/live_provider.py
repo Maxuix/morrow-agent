@@ -446,6 +446,10 @@ async def run_fixture(
         )
         result.update(
             fixture_window=baseline["window"],
+            fixture_foreground={
+                "is_key": baseline.get("windowIsKey"),
+                "active": baseline.get("appActive"),
+            },
             fixture_identity_unchanged=all(after[k] == baseline[k] for k in ("instanceId", "pid")),
             status="tested",
             degraded=completed.degraded,
@@ -590,11 +594,7 @@ async def start_fixture(
                         and state.get("window")
                         and state["revision"] > 0
                         and state.get("scrollRegion")
-                        and (
-                            not foreground
-                            or state["window"].get("isKey")
-                            and state["window"].get("appActive")
-                        )
+                        and (not foreground or state.get("windowIsKey") and state.get("appActive"))
                         and (not edit_seed or state.get("liveText") == edit_seed)
                     ):
                         return process

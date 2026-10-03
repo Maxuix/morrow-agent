@@ -12,8 +12,6 @@ struct WindowFacts: Codable, Equatable {
     let height: Double
     let backingScale: Double
     let contentHeight: Double
-    let isKey: Bool
-    let appActive: Bool
 }
 
 struct RegionFacts: Codable, Equatable {
@@ -46,6 +44,8 @@ struct FixtureSnapshot: Encodable {
     let keyUpEvents: Int
     let pointerEvents: [PointerEvent]
     let scrollRegion: RegionFacts?
+    let windowIsKey: Bool
+    let appActive: Bool
 }
 
 struct PointerEvent: Codable {
@@ -74,6 +74,8 @@ final class FixtureStateWriter {
     var keyUpEvents = 0
     var pointerEvents: [PointerEvent] = []
     var scrollRegion: RegionFacts? = nil
+    var windowIsKey = false
+    var appActive = false
     private var eventMonitor: Any?
     init() {
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .leftMouseDown, .rightMouseDown, .scrollWheel]) { [weak self] event in
@@ -139,7 +141,7 @@ final class FixtureStateWriter {
             mouseClickCounts: mouseClickCounts, rightMouseEvents: rightMouseEvents,
             menuActions: menuActions, keyDownCharacters: keyDownCharacters,
             keyDownFields: keyDownFields, keyUpEvents: keyUpEvents, pointerEvents: pointerEvents,
-            scrollRegion: scrollRegion)
+            scrollRegion: scrollRegion, windowIsKey: windowIsKey, appActive: appActive)
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
@@ -215,6 +217,12 @@ final class WindowProbeView: NSView {
 
     private func publish() {
         guard let window else { return }
+        // Diagnostic focus changes must not rebuild SwiftUI's native controls.
+        if writer?.windowIsKey != window.isKeyWindow || writer?.appActive != NSApp.isActive {
+            writer?.windowIsKey = window.isKeyWindow
+            writer?.appActive = NSApp.isActive
+            writer?.publish?()
+        }
         if let content = window.contentView {
             let region = scrollRegion(in: content)
             if writer?.scrollRegion != region {
@@ -227,8 +235,7 @@ final class WindowProbeView: NSView {
         onFacts?(WindowFacts(number: window.windowNumber, x: frame.origin.x, y: frame.origin.y,
                             width: frame.width, height: frame.height,
                             backingScale: window.backingScaleFactor,
-                            contentHeight: Double(window.contentView?.bounds.height ?? 0),
-                            isKey: window.isKeyWindow, appActive: NSApp.isActive))
+                            contentHeight: Double(window.contentView?.bounds.height ?? 0)))
     }
 
     private func scrollRegion(in view: NSView) -> RegionFacts? {

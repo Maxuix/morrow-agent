@@ -159,8 +159,8 @@ async def increment_once(path: Path, *, delivery: ComputerUseDelivery) -> dict:
         before = await session.observe(admit_observe(request, settings=settings))
         if before.capture is None or before.image_error is not None or before.observation.truncated:
             raise ComputerUseContractError("fixture_image_unconfirmed")
-        masked = prepare_capture(before.capture)
-        result["before_masked_sha256"] = hashlib.sha256(masked.content).hexdigest()
+        prepared = prepare_capture(before.capture)
+        result["before_capture_sha256"] = hashlib.sha256(prepared.content).hexdigest()
         # Select one positively observed token; do not claim whole-tree uniqueness/completeness.
         buttons = [
             element
@@ -208,8 +208,8 @@ async def increment_once(path: Path, *, delivery: ComputerUseDelivery) -> dict:
         )
         if after.capture is None or after.image_error is not None:
             raise ComputerUseContractError("fixture_after_image_unconfirmed")
-        masked_after = prepare_capture(after.capture)
-        result["after_masked_sha256"] = hashlib.sha256(masked_after.content).hexdigest()
+        prepared_after = prepare_capture(after.capture)
+        result["after_capture_sha256"] = hashlib.sha256(prepared_after.content).hexdigest()
         if (
             outcome.status != "completed"
             or outcome.error_code is not None
