@@ -1,5 +1,7 @@
 # Computer-use 真实 Provider 功能测试（2026-10-04）
 
+后续分析：[问题分析与修复方案](computer-use-analysis-and-fix-plan-2026-10-04.md)。补充原生诊断已确认 q/Y 在编辑控件中出现、SwiftUI oracle 尚未提交；下文原始状态数据保留，按键“未及时送达”的推断以该分析修正为准。滚动的正确坐标 SDK 组件诊断也已生效，原真实 Provider 场景仍未通过。
+
 结论：**不能认定所有功能正常**。真实模型工具调用与语义输入链路可用；图片发布、滚动、键盘效果反馈与部分验证仍有未通过项。未修复或升级这些结果为成功。
 
 本轮使用用户指定的 `https://api.deepseek.com` / `deepseek-flash`，实际调用生产 `OpenAICompatibleProvider.stream()`，由模型生成工具名和参数，经普通 `AgentLoop`、授权/审批、执行账本及官方 `cua-driver==0.30.4` 操作本地 Swift fixture。没有用 scripted Provider 生成回复，没有 Browser Use 代替原生 SDK。Provider 包装器仅记录元数据、限制公开工具和请求次数。测试组合使用临时工作区与内存凭据存储，未修改用户的常用 Provider 或默认 computer-use 设置。
@@ -17,7 +19,7 @@
 | token 单击 | 前后台计数 +1，SDK `unknown/unverified_action`；新观察与账本闭合 | 实际有效，完成状态未通过 |
 | press_key(q) | 前后台返回 `completed`，该步骤独立 q_delta=0/text_changed=false | 完成反馈与当步效果不一致，未通过 |
 | hotkey(shift+y) | 前后台 `unknown/unverified_action`，该步骤 Y_delta=0 | 未确认及时生效 |
-| 后续键盘状态 | 两轮 secure 步骤又出现普通文本 q_delta=1、Y_delta=1 | 与前两步按键标记一致，存在跨步骤迟到效果；不能据此反推先前已及时完成，原因待定位 |
+| 后续键盘状态 | 两轮 secure 步骤又出现普通文本 q_delta=1、Y_delta=1 | 与前两步按键标记一致；后续诊断确认原生编辑缓冲已变化而 SwiftUI oracle 未提交，不再据此判断事件迟到 |
 | token 滚动 down/3 | 前后台都进入 SDK；`unknown/unverified_action`；独立 scroll_delta=0 | 未通过 |
 | 合成 secure 输入 | 前后台 populated false→true，但 SDK 都是 `unknown/unverified_action`；普通文本还出现上述 q/Y 变化 | 真实输入发生，完成与隔离效果未通过 |
 | 双击 left/count=2 | 模型实际提交 count=2；1 次 SDK 入口，计数 +1，SDK unknown | fixture 无双击事件 oracle，双击语义未证实 |
