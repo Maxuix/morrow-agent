@@ -54,8 +54,8 @@ async def test_fixture_provider_uses_current_reference_without_sensitive_input_b
     provider.images = [[], []]
     module["NativeProvider"].stream.__globals__["iter_image_parts"] = lambda _: (image_part(),)
     elements = [
-        {"role": "axtextfield", "sensitive": True, "element_ref": "current"},
-        {"role": "axtextfield", "sensitive": False, "element_ref": "second"},
+        {"role": "axtextfield", "element_ref": "current"},
+        {"role": "axtextfield", "element_ref": "second"},
     ]
     async for _ in provider.stream(None, observation(elements)):
         pass

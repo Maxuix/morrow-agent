@@ -11,7 +11,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_serializer, model_validator
 
 from morrow.core.capabilities import (
     AccessScope,
@@ -299,6 +299,10 @@ def _budget_and_redact(payload: dict[str, Any] | object, maximum: int, *, label:
     encoded = canonical_json_bytes(dumped)
     require_payload_budget(encoded, maximum, label=label)
     secret_scan = dumped
+    if getattr(payload, "text_safety_profile", None) == TextSafetyProfile.COMPUTER_USE_TRANSPARENT:
+        return
+    if isinstance(payload, DurableToolFacts):
+        secret_scan = {**dumped, "computer": None}
     if isinstance(dumped, dict) and isinstance(dumped.get("preview"), list):
         preview_text = "\n".join(str(line) for line in dumped["preview"])
         if getattr(payload, "text_safety_profile", "legacy_strict") == "workflow_value_sensitive":
@@ -507,6 +511,7 @@ class ToolRecoveryDeclaration(ProtocolModel):
 
 
 class PreparedIntent(ProtocolModel):
+    text_safety_profile: TextSafetyProfile = TextSafetyProfile.LEGACY_STRICT
     tool_name: str
     call_id: str
     ordinal: int = Field(ge=1, le=128)
@@ -550,8 +555,21 @@ class PreparedIntent(ProtocolModel):
     def valid_preview(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         return _bounded_preview(values)
 
+    @model_serializer(mode="wrap")
+    def intent_wire(self, handler):
+        payload = handler(self)
+        # Preserve pre-profile intent hashes, including on supported Pydantic 2.9.
+        if self.text_safety_profile is TextSafetyProfile.LEGACY_STRICT:
+            payload.pop("text_safety_profile", None)
+        return payload
+
     @model_validator(mode="after")
     def enforce_budget(self) -> PreparedIntent:
+        if (
+            self.text_safety_profile is TextSafetyProfile.COMPUTER_USE_TRANSPARENT
+            and self.tool_name not in {"computer_observe", "computer_action"}
+        ):
+            raise ValueError("transparent text profile requires a computer-use tool")
         _budget_and_redact(self, PREPARED_INTENT_MAX_BYTES, label="prepared intent")
         return self
 

@@ -1,4 +1,4 @@
-"""Bounded predicates over sanitized observations, without SDK identity guesses."""
+"""Bounded predicates over public observations, without SDK identity guesses."""
 
 import asyncio
 from collections.abc import Awaitable, Callable
@@ -22,13 +22,14 @@ def evaluate_postcondition(observation: Observation, predicate: Postcondition) -
     exhaustive = (
         observation.complete and not observation.truncated and observation.omitted_count == 0
     )
-    elements = tuple(element for element in observation.elements if not element.sensitive)
+    elements = observation.elements
     if predicate.type == "text_appears":
-        if any(predicate.text in (element.label or "") for element in elements):
+        if any(
+            predicate.text in (text or "")
+            for element in elements
+            for text in (element.label, element.value, element.value_description)
+        ):
             return "passed"
-        # Hidden sensitive text can never establish absence or satisfy a predicate.
-        if any(element.sensitive for element in observation.elements):
-            return "pending"
         return "failed" if exhaustive else "pending"
     if predicate.selector is None:
         # The old element_ref identifies the consumed snapshot. A fresh node with
@@ -41,19 +42,13 @@ def evaluate_postcondition(observation: Observation, predicate: Postcondition) -
         if (selector.role is None or element.role == selector.role)
         and (selector.label is None or element.label == selector.label)
     )
-    hidden_possible = any(
-        element.sensitive and (selector.role is None or element.role == selector.role)
-        for element in observation.elements
-    )
     if predicate.type == "element_exists":
         if matches:
             return "passed"
-        if hidden_possible:
-            return "pending"
         return "failed" if exhaustive else "pending"
     # A property assertion needs one proven match in an exhaustive tree. Local
     # uniqueness in a truncated/partial tree does not prove window uniqueness.
-    if not exhaustive or hidden_possible:
+    if not exhaustive:
         return "not_checked"
     if not matches:
         return "failed"

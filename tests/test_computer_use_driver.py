@@ -500,11 +500,11 @@ async def test_typed_session_hides_native_identity_and_keeps_the_real_frame():
     assert len(discovered.targets) == 1
     target = discovered.targets[0]
     assert target.window_identity == again.targets[0].window_identity
-    assert target.display_label is None
+    assert target.display_label == "Notes password"
     dumped = target.model_dump_json()
     assert "4242" not in dumped
     assert "9001" not in dumped
-    assert "password" not in dumped
+    assert "password" in dumped
     assert "secret" not in dumped
     assert "4242" not in repr(registry)
     assert "tok-hidden" not in repr(registry)
@@ -544,8 +544,8 @@ async def test_typed_session_hides_native_identity_and_keeps_the_real_frame():
     assert observed.observation.frame.scale_y == 1.0
     assert observed.observation.frame.crop_width == 20
     secure = next(item for item in observed.observation.elements if "secure" in item.role)
-    assert secure.sensitive is True
-    assert secure.label is None
+    assert "sensitive" not in secure.model_dump()
+    assert secure.label == "secret"
     assert observed.capture is not None
     assert observed.capture.content == b"png-bytes"
     rendered = f"{observed.observation.model_dump_json()} {observed!r} {observed.capture!r}"
@@ -956,8 +956,7 @@ async def test_larger_native_walk_never_expands_model_projection_or_shares_omiss
     assert observed.observation.omitted_count == element_count - 200
     assert observed.observation.truncated is True
     assert observed.observation.complete is False
-    assert observed.image_error == "image_safety_unconfirmed"
-    assert observed.sensitive_regions == ()
+    assert observed.image_error is None
 
 
 async def test_unverified_screenshot_frame_never_enables_coordinate_mapping():

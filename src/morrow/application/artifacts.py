@@ -112,6 +112,9 @@ class ArtifactService:
             excerpt=excerpt,
             artifact_id=artifact_id,
             already_redacted=already_redacted,
+            text_safety_profile=TextSafetyProfile.COMPUTER_USE_TRANSPARENT
+            if kind is ArtifactKind.COMPUTER_OBSERVATION
+            else TextSafetyProfile.LEGACY_STRICT,
         )
 
     def publish_attachment_bytes(
@@ -261,7 +264,12 @@ class ArtifactService:
         if len(selected_excerpt.encode("utf-8")) > ARTIFACT_EXCERPT_MAX_BYTES:
             raise ArtifactBudgetError("artifact excerpt budget exceeded")
         try:
-            if attachment_input:
+            if (
+                kind is ArtifactKind.COMPUTER_OBSERVATION
+                and text_safety_profile is TextSafetyProfile.COMPUTER_USE_TRANSPARENT
+            ):
+                pass
+            elif attachment_input:
                 refuse_secret_material(
                     content.decode("utf-8", errors="replace"),
                     label="attachment",

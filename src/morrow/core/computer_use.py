@@ -29,7 +29,6 @@ from morrow.core.domain import (
     DIGEST_PATTERN,
     TASK_RUN_ID_PREFIX,
     WORKSPACE_ID_PREFIX,
-    refuse_secret_material,
     validate_prefixed_id,
 )
 from morrow.core.models import ToolEffect
@@ -129,7 +128,6 @@ class ComputerUseAppIdentity(ComputerUseModel):
     def valid_bundle_id(cls, value: str) -> str:
         if not isinstance(value, str) or not _BUNDLE_ID.fullmatch(value) or "*" in value:
             raise ValueError("invalid_bundle_id")
-        refuse_secret_material(value, label="computer use app")
         return value
 
 
@@ -153,7 +151,6 @@ class LocalComputerUseCandidate(ComputerUseModel):
         if value is not None:
             if len(value) > 120 or not value.strip():
                 raise ValueError("invalid_display_label")
-            refuse_secret_material(value, label="computer use label")
         return value
 
 
@@ -491,7 +488,6 @@ class TargetRef(ComputerUseModel):
         cleaned = " ".join(value.split())
         if not cleaned or len(cleaned) > 120:
             raise ValueError("rejected_action")
-        refuse_secret_material(cleaned, label="computer use label")
         return cleaned
 
 
@@ -622,7 +618,8 @@ class AxElement(ComputerUseModel):
     depth: int = Field(ge=0, le=MAX_AX_DEPTH)
     role: str
     label: str | None = None
-    sensitive: bool = False
+    value: str | None = Field(default=None, max_length=MAX_TEXT_CHARS)
+    value_description: str | None = Field(default=None, max_length=MAX_TEXT_CHARS)
     enabled: bool | None = None
     focused: bool | None = None
     checked: bool | None = None
@@ -648,20 +645,7 @@ class AxElement(ComputerUseModel):
         cleaned = " ".join(value.split())
         if not cleaned or len(cleaned) > 200:
             raise ValueError("rejected_action")
-        refuse_secret_material(cleaned, label="computer use element")
         return cleaned
-
-    @model_validator(mode="after")
-    def sensitive_has_no_label(self) -> AxElement:
-        if self.sensitive and (
-            self.label is not None
-            or any(
-                getattr(self, key) is not None
-                for key in ("enabled", "focused", "checked", "expanded")
-            )
-        ):
-            raise ValueError("sensitive_label")
-        return self
 
 
 class Observation(ComputerUseModel):
@@ -739,7 +723,10 @@ class Observation(ComputerUseModel):
             raise ValueError("ax_bounds")
         if len({item.element_ref for item in self.elements}) != len(self.elements):
             raise ValueError("duplicate_element")
-        text = "".join(f"{item.role}{item.label or ''}" for item in self.elements)
+        text = "".join(
+            f"{item.role}{item.label or ''}{item.value or ''}{item.value_description or ''}"
+            for item in self.elements
+        )
         if len(text.encode("utf-8")) > MAX_AX_TEXT_BYTES:
             raise ValueError("ax_bounds")
         if self.complete and (self.degraded or self.truncated or self.omitted_count != 0):
@@ -769,28 +756,13 @@ class TransientCapture:
     __str__ = __repr__
 
 
-@dataclass(frozen=True, slots=True, repr=False)
-class SensitiveCaptureRegion:
-    """Transient trusted mapping to delivered-image pixels, never model input."""
-
-    element_ref: str
-    left: int
-    top: int
-    right: int
-    bottom: int
-
-    def __repr__(self) -> str:
-        return "SensitiveCaptureRegion()"
-
-
 @dataclass(frozen=True, slots=True)
 class ObservedWindow:
-    """Transient read result; safe Observation is the only persistent projection."""
+    """Transient read result; Observation is the public projection."""
 
     observation: Observation
     capture: TransientCapture | None = None
     image_error: str | None = None
-    sensitive_regions: tuple[SensitiveCaptureRegion, ...] = ()
 
     def __repr__(self) -> str:
         return (

@@ -146,9 +146,9 @@ describe('activity content refs (3c)', () => {
     }})
     act(() => root.render(<ToolRow item={desktop} now={BASE} open={true} onToggle={() => {}}/>))
     expect(screen.getByText('后台')).toBeDefined()
-    expect(screen.getByText('已返回')).toBeDefined()
+    expect(screen.getByText('SDK 已确认')).toBeDefined()
     expect(screen.getByText('验证失败')).toBeDefined()
-    expect(screen.getByText('输入文本（内容隐藏）')).toBeDefined()
+    expect(screen.getByText('输入文本')).toBeDefined()
     expect(screen.getByText(/image_publish_failed/).textContent).toContain('不要自动重试')
     expect(container.textContent).not.toContain('任务已完成')
     if (desktop.payload.kind !== 'tool') throw new Error('expected tool fixture')
@@ -158,6 +158,12 @@ describe('activity content refs (3c)', () => {
     }}} now={BASE} open={true} onToggle={() => {}}/>))
     expect(screen.getByText('未记录实际投递方式')).toBeDefined()
     expect(screen.getByText('未验证')).toBeDefined()
+    act(() => root.render(<ToolRow item={{...desktop, state: 'unknown', payload: {
+      ...payload, computer: {...payload.computer!, completion: 'unknown', delivery: 'background', postcondition: 'passed'},
+    }}} now={BASE} open={true} onToggle={() => {}}/>))
+    expect(screen.getByText('SDK 效果未知')).toBeDefined()
+    expect(screen.getByText('验证通过')).toBeDefined()
+    expect(container.textContent).not.toContain('任务已完成')
   })
 
 })

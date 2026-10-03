@@ -7,7 +7,6 @@ from typing import Any
 
 from morrow.adapters.computer_use.registry import WindowGeometry
 from morrow.core.computer_use import ComputerUseContractError
-from morrow.core.domain import refuse_secret_material
 
 
 def running_app(app: object) -> bool:
@@ -65,9 +64,5 @@ def display_label(value: object) -> str | None:
         return None
     cleaned = " ".join(value.split())
     if not cleaned or len(cleaned) > 120:
-        return None
-    try:
-        refuse_secret_material(cleaned, label="computer use label")
-    except ValueError:
         return None
     return cleaned

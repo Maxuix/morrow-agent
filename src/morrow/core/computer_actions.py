@@ -29,7 +29,6 @@ from morrow.core.computer_use import (
 )
 from morrow.core.domain import (
     COMPUTER_ELEMENT_ID_PREFIX,
-    refuse_secret_material,
     validate_prefixed_id,
 )
 from morrow.core.runtime_policy import ComputerUseSettings
@@ -82,7 +81,7 @@ EDITABLE_ROLES = frozenset(
 
 
 class PostconditionSelector(ComputerUseModel):
-    """Exact safe labels/roles in a fresh tree, never an old snapshot token."""
+    """Exact labels/roles in a fresh tree, never an old snapshot token."""
 
     role: str | None = None
     label: str | None = None
@@ -126,19 +125,13 @@ class ElementExistsPostcondition(ElementPostconditionTarget):
 
 class AttributeEqualsPostcondition(ElementPostconditionTarget):
     type: Literal["attribute_equals"]
-    attribute: Literal["enabled", "focused", "checked", "expanded"]
+    attribute: Literal["enabled"]
     value: Literal["true", "false"]
 
 
 class TextAppearsPostcondition(ComputerUseModel):
     type: Literal["text_appears"]
     text: str = Field(min_length=1, max_length=MAX_TEXT_CHARS)
-
-    @field_validator("text")
-    @classmethod
-    def safe_text(cls, value: str) -> str:
-        refuse_secret_material(value, label="computer use postcondition")
-        return value
 
 
 Postcondition = Annotated[
@@ -220,7 +213,7 @@ class ScrollAction(ComputerUseModel):
 class PressKeyAction(ComputerUseModel):
     type: Literal["press_key"]
     element_ref: str | None = None
-    key: str
+    key: str = Field(description="Lowercase canonical key, for example q, enter, tab or escape.")
     postcondition: Postcondition | None = None
 
     @field_validator("element_ref")
@@ -239,7 +232,9 @@ class PressKeyAction(ComputerUseModel):
 class HotkeyAction(ComputerUseModel):
     type: Literal["hotkey"]
     element_ref: str | None = None
-    keys: tuple[str, ...]
+    keys: tuple[str, ...] = Field(
+        description="Lowercase canonical keys, for example [shift, y] or [meta, a]."
+    )
     postcondition: Postcondition | None = None
 
     @field_validator("element_ref")
@@ -279,6 +274,13 @@ def parse_computer_action(payload: object) -> ComputerUseAction:
         raise ComputerUseContractError("rejected_action")
     if isinstance(payload.get("action"), list) or isinstance(payload.get("actions"), list):
         raise ComputerUseContractError("rejected_action")
+    predicate = payload.get("postcondition")
+    if (
+        isinstance(predicate, dict)
+        and predicate.get("type") == "attribute_equals"
+        and predicate.get("attribute") in {"focused", "checked", "expanded"}
+    ):
+        raise ComputerUseContractError("unsupported_attribute")
     try:
         return TypeAdapter(ComputerUseAction).validate_python(payload)
     except ValidationError:
@@ -399,6 +401,12 @@ def prepare_execute_request(
         if long_edge > resolved.image_long_edge_px:
             raise ComputerUseContractError("image_budget")
     action = request.action
+    if (
+        action.postcondition is not None
+        and action.postcondition.type == "attribute_equals"
+        and action.postcondition.attribute != "enabled"
+    ):
+        raise ComputerUseContractError("unsupported_attribute")
     element = _matching_element(observation, action.element_ref)
     if isinstance(action, (TypeTextAction, PressKeyAction, HotkeyAction)):
         if element is None:
@@ -407,6 +415,21 @@ def prepare_execute_request(
             raise ComputerUseContractError("not_editable")
     if isinstance(action, ScrollAction) and element is None and action.x is None:
         raise ComputerUseContractError("element_required")
+    if (
+        isinstance(action, ScrollAction)
+        and element is not None
+        and element.role not in {"axscrollarea", "axscrollview"}
+    ):
+        raise ComputerUseContractError("unsupported_scroll_target")
+    if (
+        isinstance(action, ClickAction)
+        and action.element_ref is not None
+        and (action.count == 2 or action.button == "right")
+    ):
+        # Gestures need a delivered image even when their target was selected by token.
+        map_image_point(observation.frame, 0, 0)
+        if observation.image is None:
+            raise ComputerUseContractError("image_not_published")
     point = None
     if isinstance(action, (ClickAction, ScrollAction)) and (
         action.x is not None or action.y is not None

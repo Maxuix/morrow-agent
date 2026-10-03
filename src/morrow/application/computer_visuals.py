@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
-from morrow.adapters.computer_use.images import CaptureMask, prepare_capture
+from morrow.adapters.computer_use.images import prepare_capture
 from morrow.application.timeline_index import TimelineIndexService
 from morrow.core.artifacts import (
     ArtifactError,
@@ -93,32 +91,17 @@ class ComputerVisualService:
         scope: SelectedWindowScope,
         settings: ComputerUseSettings,
     ) -> ToolVisualRef:
-        """Only trusted adapter regions may flow from an observation to masks."""
+        """Publish geometrically valid captures independently of AX completeness."""
         if read.image_error is not None:
             raise ComputerUseContractError(read.image_error)
         if read.capture is None:
             raise ComputerUseContractError("image_missing")
-        if (
-            read.observation.degraded
-            or read.observation.truncated
-            or read.observation.omitted_count
-        ):
-            raise ComputerUseContractError("image_safety_unconfirmed")
-        regions = read.sensitive_regions
-        if len({region.element_ref for region in regions}) != len(regions):
-            raise ComputerUseContractError("image_safety_unconfirmed")
         return self.publish(
             read.capture,
             read.observation,
             tool_execution_id=tool_execution_id,
             scope=scope,
             settings=settings,
-            masks={
-                region.element_ref: CaptureMask(
-                    region.left, region.top, region.right, region.bottom
-                )
-                for region in regions
-            },
         )
 
     def publish(
@@ -128,11 +111,9 @@ class ComputerVisualService:
         *,
         tool_execution_id: str,
         scope: SelectedWindowScope,
-        masks: Mapping[str, CaptureMask] | None = None,
         settings: ComputerUseSettings | None = None,
     ) -> ToolVisualRef:
         settings = settings or ComputerUseSettings()
-        masks = masks or {}
         execution = self.journal.get_execution(self.workspace_id, tool_execution_id)
         if (
             execution is None
@@ -185,10 +166,7 @@ class ComputerVisualService:
             )
         except ValueError:
             raise ComputerUseContractError("image_source_not_authorized") from None
-        sensitive = {element.element_ref for element in observation.elements if element.sensitive}
-        if set(masks) != sensitive:
-            raise ComputerUseContractError("image_safety_unconfirmed")
-        processed = prepare_capture(capture, masks=tuple(masks.values()))
+        processed = prepare_capture(capture)
         current = sum(
             metadata.byte_size
             for metadata in self.journal.list_artifacts(
@@ -209,9 +187,7 @@ class ComputerVisualService:
                 kind=ArtifactKind.COMPUTER_OBSERVATION,
                 session_id=execution.session_id,
                 task_run_id=execution.task_run_id,
-                sensitivity=ArtifactSensitivity.REDACTED
-                if masks
-                else ArtifactSensitivity.NON_SENSITIVE,
+                sensitivity=ArtifactSensitivity.UNCLASSIFIED,
                 excerpt="Controlled window observation",
                 provenance_refs=(
                     ArtifactProvenanceRef(

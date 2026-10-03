@@ -12,6 +12,7 @@ from morrow.core.domain import (
     ArtifactReference,
     DurableAgentRun,
     DurableTaskRun,
+    TextSafetyProfile,
     canonical_json_bytes,
 )
 from morrow.core.execution import (
@@ -710,6 +711,7 @@ def _execution_from_row(row: tuple[object, ...]) -> DurableToolExecution:
         )
         artifact_refs = _artifact_refs_from_raw(row[27])
         return DurableToolExecution(
+            text_safety_profile=intent.text_safety_profile,
             tool_execution_id=str(row[0]),
             workspace_id=str(row[1]),
             session_id=str(row[2]),
@@ -755,6 +757,9 @@ def _approval_from_row(row: tuple[object, ...]) -> DurableApproval:
         ):
             raise ValueError("approval preview is not a string list")
         return DurableApproval(
+            text_safety_profile=TextSafetyProfile.COMPUTER_USE_TRANSPARENT
+            if str(row[5]).rsplit(":", 1)[-1] in COMPUTER_TOOL_NAMES
+            else TextSafetyProfile.LEGACY_STRICT,
             approval_id=str(row[0]),
             tool_execution_id=str(row[1]),
             intent_hash=str(row[2]),

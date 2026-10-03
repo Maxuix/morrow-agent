@@ -44,11 +44,11 @@ def computer_scope_lines(scope: ComputerUseScope) -> tuple[str, ...]:
 def computer_action_preview_lines(
     scope: ComputerUseScope, target: TargetRef | None, action: ComputerUseAction
 ) -> tuple[str, ...]:
-    """Only safe action facts are projected; input text, AX content and native references stay private."""
+    """Only bounded action facts are projected; input text, AX content and native references stay private."""
     label = target.display_label or target.app.bundle_id if target else "观察已失效，请重新观察"
     app = target.app.bundle_id if target else "、".join(item.bundle_id for item in scope.apps)
     names = {
-        "type_text": "输入文本（内容不展示）",
+        "type_text": "输入文本",
         "scroll": "滚动",
         "press_key": "按键",
         "hotkey": "组合键",

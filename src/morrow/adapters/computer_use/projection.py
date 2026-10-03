@@ -16,15 +16,14 @@ from morrow.core.computer_use import (
     MAX_IMAGE_BYTES,
     MAX_IMAGE_LONG_EDGE_PX,
     MAX_IMAGE_PIXELS,
+    MAX_TEXT_CHARS,
     ActionOutcome,
     AxElement,
     ComputerUseContractError,
     ComputerUseDelivery,
     CoordinateFrame,
-    SensitiveCaptureRegion,
     TransientCapture,
 )
-from morrow.core.domain import refuse_secret_material
 
 _CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _MIME = {
@@ -97,8 +96,26 @@ def project_elements(
             truncated = True
             continue
         role = _role(getattr(raw, "role", ""))
-        label, sensitive = _element_label(raw, role)
-        addition = len(role.encode()) + len((label or "").encode())
+        if any(
+            isinstance(getattr(raw, name, None), str) and len(getattr(raw, name)) > limit
+            for name, limit in (
+                ("label", 200),
+                ("value", MAX_TEXT_CHARS),
+                ("value_description", MAX_TEXT_CHARS),
+            )
+        ):
+            omitted += 1
+            truncated = True
+            continue
+        label = _element_label(raw)
+        value = _bounded_value(getattr(raw, "value", None))
+        description = _bounded_value(getattr(raw, "value_description", None))
+        addition = (
+            len(role.encode())
+            + len((label or "").encode())
+            + len((value or "").encode())
+            + len((description or "").encode())
+        )
         if text_bytes + addition > MAX_AX_TEXT_BYTES:
             omitted += 1
             truncated = True
@@ -110,7 +127,6 @@ def project_elements(
             token=token if isinstance(token, str) and token else None,
             center=_center(getattr(raw, "frame", None)),
             role=role,
-            sensitive=sensitive,
         )
         kept.append(
             AxElement(
@@ -118,10 +134,11 @@ def project_elements(
                 depth=depth,
                 role=role,
                 label=label,
-                sensitive=sensitive,
+                value=value,
+                value_description=description,
                 enabled=(
                     getattr(raw, "enabled", None)
-                    if type(getattr(raw, "enabled", None)) is bool and not sensitive
+                    if type(getattr(raw, "enabled", None)) is bool
                     else None
                 ),
             )
@@ -196,53 +213,6 @@ def project_capture(state: Any) -> tuple[TransientCapture | None, str | None]:
     return TransientCapture(content=content, mime=mime, width=width, height=height), None
 
 
-def project_sensitive_regions(
-    state: Any,
-    elements: list[AxElement],
-    geometry: WindowGeometry,
-    capture: TransientCapture,
-) -> tuple[SensitiveCaptureRegion, ...]:
-    """Pinned AX frames are top-left screen points, unlike SDK action pixels.
-
-    Only a full, uncropped window image with matching live bounds is accepted.
-    Round outward so downscaling never leaves an edge of a secret visible.
-    """
-    raw = iter(getattr(state, "elements", None) or ())
-    regions = []
-    for element in elements:
-        native = next(raw, None)
-        if not element.sensitive:
-            continue
-        frame = getattr(native, "frame", None)
-        numbers = tuple(getattr(frame, name, None) for name in ("x", "y", "w", "h"))
-        if any(
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-            for value in numbers
-        ):
-            raise ComputerUseContractError("image_safety_unconfirmed")
-        x, y, width, height = numbers
-        if width <= 0 or height <= 0:
-            raise ComputerUseContractError("image_safety_unconfirmed")
-        right = min(x + width, geometry.x + geometry.width)
-        bottom = min(y + height, geometry.y + geometry.height)
-        x, y = max(x, geometry.x), max(y, geometry.y)
-        if right <= x or bottom <= y:
-            continue
-        sx, sy = capture.width / geometry.width, capture.height / geometry.height
-        regions.append(
-            SensitiveCaptureRegion(
-                element_ref=element.element_ref,
-                left=math.floor((x - geometry.x) * sx),
-                top=math.floor((y - geometry.y) * sy),
-                right=math.ceil((right - geometry.x) * sx),
-                bottom=math.ceil((bottom - geometry.y) * sy),
-            )
-        )
-    return tuple(regions)
-
-
 def reported_window_geometry(state: Any) -> WindowGeometry:
     return bounds_geometry(getattr(state, "window_bounds", None))
 
@@ -276,23 +246,17 @@ def _role(value: object) -> str:
     return token[:64]
 
 
-def _element_label(raw: Any, role: str) -> tuple[str | None, bool]:
-    if "secure" in role or "password" in role:
-        return None, True
-    for name in ("value", "value_description", "label"):
-        value = getattr(raw, name, None)
-        if isinstance(value, str):
-            try:
-                refuse_secret_material(value, label="computer use element")
-            except ValueError:
-                return None, True
+def _element_label(raw: Any) -> str | None:
     label = getattr(raw, "label", None)
     if not isinstance(label, str):
-        return None, False
+        return None
     cleaned = " ".join(label.split())
-    if not cleaned or len(cleaned) > 200:
-        return None, False
-    return cleaned, False
+    return cleaned if cleaned and len(cleaned) <= 200 else None
+
+
+def _bounded_value(value: object) -> str | None:
+    # A missing SDK field remains unavailable. Do not infer or read private AX data.
+    return value if isinstance(value, str) and len(value) <= MAX_TEXT_CHARS else None
 
 
 def _center(frame: Any) -> tuple[float, float] | None:

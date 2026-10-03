@@ -64,8 +64,9 @@ class ArtifactKind(StrEnum):
 
 
 class ArtifactSensitivity(StrEnum):
-    """Only explicitly safe classifications may be persisted."""
+    """Record processing facts; unclassified does not assert content safety."""
 
+    UNCLASSIFIED = "unclassified"
     NON_SENSITIVE = "non_sensitive"
     REDACTED = "redacted"
 
@@ -243,6 +244,11 @@ class ArtifactMetadata(ProtocolModel):
 
     @model_validator(mode="after")
     def validate_scope_and_budget(self) -> ArtifactMetadata:
+        if (
+            self.text_safety_profile is TextSafetyProfile.COMPUTER_USE_TRANSPARENT
+            and self.kind is not ArtifactKind.COMPUTER_OBSERVATION
+        ):
+            raise ValueError("transparent text profile requires a computer observation")
         if (self.producer_node_run_id is None) != (self.output_slot is None):
             raise ValueError("Artifact producer and output slot must be supplied together")
         if self.producer_node_run_id is not None:

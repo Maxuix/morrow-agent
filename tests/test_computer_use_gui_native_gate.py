@@ -8,7 +8,7 @@ import pytest
 import uvicorn
 
 
-@pytest.mark.parametrize("case", ["passed", "read_failed", "image_blocked", "missing_mask"])
+@pytest.mark.parametrize("case", ["passed", "read_failed", "image_blocked", "missing_capture"])
 def test_gui_gate_uses_full_context_and_preserves_production_default_off(
     tmp_path, monkeypatch, case
 ):
@@ -24,10 +24,10 @@ def test_gui_gate_uses_full_context_and_preserves_production_default_off(
         return {
             "status": "failed" if case == "read_failed" else "passed",
             "reason": "fixture_ax_missing" if case == "read_failed" else None,
-            "image_share_error": "image_safety_unconfirmed" if case == "image_blocked" else None,
-            "masked_capture": {
-                "mask_count": None if case == "missing_mask" else 0,
-                "mask_pixels_verified": True,
+            "image_share_error": "image_decode" if case == "image_blocked" else None,
+            "prepared_capture": {
+                "byte_size": None if case == "missing_capture" else 100,
+                "sha256": "a" * 64,
             },
         }
 

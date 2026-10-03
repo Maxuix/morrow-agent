@@ -95,6 +95,7 @@ class DurableToolExecutionCoordinator:
         preview = execution.intent.preview
         requested_scope = f"{execution.intent.effect_class.value}:{execution.tool_name}"
         approval = DurableApproval(
+            text_safety_profile=execution.text_safety_profile,
             approval_id=self.id_source.new_id(APPROVAL_ID_PREFIX),
             tool_execution_id=execution.tool_execution_id,
             intent_hash=intent_hash(execution.intent),

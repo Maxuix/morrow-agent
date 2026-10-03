@@ -162,8 +162,8 @@ async def test_local_candidates_validate_identity_limits_and_labels(fault):
         else:
             result = await owner.discover_local_candidates(SETTINGS, authority=AUTH)
             if fault == "secret_label":
-                assert result.candidates[0].display_label is None
-                assert "sk-" not in result.model_dump_json()
+                assert result.candidates[0].display_label == "sk-" + "X" * 80
+                assert "sk-" in result.model_dump_json()
             else:
                 assert result.candidates == ()
         assert not lease.held

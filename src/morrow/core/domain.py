@@ -97,6 +97,7 @@ def session_can_start_work(
 class TextSafetyProfile(StrEnum):
     LEGACY_STRICT = "legacy_strict"
     WORKFLOW_VALUE_SENSITIVE = "workflow_value_sensitive"
+    COMPUTER_USE_TRANSPARENT = "computer_use_transparent"
 
 
 class TaskRunPurpose(StrEnum):
@@ -478,8 +479,12 @@ def refuse_secret_material(
     payload: str | bytes,
     *,
     label: str,
-    profile: Literal["legacy_strict", "workflow_value_sensitive"] = "legacy_strict",
+    profile: Literal[
+        "legacy_strict", "workflow_value_sensitive", "computer_use_transparent"
+    ] = "legacy_strict",
 ) -> None:
+    if profile == "computer_use_transparent":
+        return
     text = payload if isinstance(payload, str) else payload.decode("utf-8")
     if profile == "workflow_value_sensitive":
         if workflow_secret_spans(text):

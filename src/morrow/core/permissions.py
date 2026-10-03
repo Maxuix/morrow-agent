@@ -307,7 +307,10 @@ class CapabilityGrant(LocalCapabilityModel):
                 raise ValueError("revoked grant requires a revocation reason")
         payload = canonical_json_bytes(self.model_dump(mode="json"))
         require_payload_budget(payload, PERMISSION_SNAPSHOT_MAX_BYTES, label="capability grant")
-        refuse_secret_material(payload, label="capability grant")
+        refuse_secret_material(
+            canonical_json_bytes(self.model_dump(mode="json", exclude={"computer_use_scope"})),
+            label="capability grant",
+        )
         return self
 
     def is_active(self, now: datetime) -> bool:
@@ -465,7 +468,10 @@ class PermissionSnapshot(LocalCapabilityModel):
             raise ValueError("MCP review evidence must match the PermissionSnapshot AgentRun")
         payload = canonical_json_bytes(self.model_dump(mode="json"))
         require_payload_budget(payload, PERMISSION_SNAPSHOT_MAX_BYTES, label="PermissionSnapshot")
-        refuse_secret_material(payload, label="PermissionSnapshot")
+        refuse_secret_material(
+            canonical_json_bytes(self.model_dump(mode="json", exclude={"computer_use_scope"})),
+            label="PermissionSnapshot",
+        )
         return self
 
     @property

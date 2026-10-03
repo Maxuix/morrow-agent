@@ -1,17 +1,11 @@
-"""Bounded capture decoding and masking before any durable publication.
-
-This does not classify arbitrary screen contents as safe. Application admission
-must separately require an explicitly shareable controlled window.
-"""
+"""Bounded capture decoding and metadata normalization before publication."""
 
 from __future__ import annotations
 
 import io
 import warnings
-from collections.abc import Sequence
-from dataclasses import dataclass
 
-from PIL import Image, ImageDraw, UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 
 from morrow.core.computer_use import (
     MAX_IMAGE_BYTES,
@@ -24,20 +18,8 @@ from morrow.core.computer_use import (
 _FORMATS = {"PNG": "image/png", "JPEG": "image/jpeg", "WEBP": "image/webp"}
 
 
-@dataclass(frozen=True, slots=True)
-class CaptureMask:
-    """Already mapped, encoded-image pixel bounds; right/bottom are exclusive."""
-
-    left: int
-    top: int
-    right: int
-    bottom: int
-
-
-def prepare_capture(
-    capture: TransientCapture, *, masks: Sequence[CaptureMask] = ()
-) -> TransientCapture:
-    """Validate actual pixels, remove metadata and irreversibly mask known secrets."""
+def prepare_capture(capture: TransientCapture) -> TransientCapture:
+    """Validate pixels and dimensions and normalize encoding; no content classification."""
     if (
         not capture.content
         or len(capture.content) > MAX_IMAGE_BYTES
@@ -47,16 +29,6 @@ def prepare_capture(
         or max(capture.width, capture.height) > MAX_IMAGE_LONG_EDGE_PX
     ):
         raise ComputerUseContractError("image_bounds")
-    if len(masks) > 200:
-        raise ComputerUseContractError("image_bounds")
-    for mask in masks:
-        numbers = (mask.left, mask.top, mask.right, mask.bottom)
-        if (
-            any(type(value) is not int for value in numbers)
-            or not 0 <= mask.left < mask.right <= capture.width
-            or not 0 <= mask.top < mask.bottom <= capture.height
-        ):
-            raise ComputerUseContractError("out_of_bounds")
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
@@ -73,9 +45,6 @@ def prepare_capture(
                 pixels = Image.new("RGB", image.size, "white")
                 rgba = image.convert("RGBA")
                 pixels.paste(rgba, mask=rgba.getchannel("A"))
-        draw = ImageDraw.Draw(pixels)
-        for mask in masks:
-            draw.rectangle((mask.left, mask.top, mask.right - 1, mask.bottom - 1), fill="black")
         output = io.BytesIO()
         pixels.save(output, format="PNG")
         content = output.getvalue()

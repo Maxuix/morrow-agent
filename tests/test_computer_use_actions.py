@@ -124,6 +124,20 @@ def effects(native):
 async def test_fixed_protocol_actions_bind_exact_token_window_and_delivery(delivery, kind):
     session, native, _, read, request = await setup(delivery)
     ref = read.observation.elements[0].element_ref
+    if kind == "scroll":
+        observed = read.observation.model_copy(
+            update={
+                "elements": tuple(
+                    e.model_copy(update={"role": "axscrollarea"}) if e.element_ref == ref else e
+                    for e in read.observation.elements
+                )
+            }
+        )
+        old_request = request
+
+        def request(a):
+            return old_request(a).model_copy(update={"observation": observed})
+
     action = {
         "type_text": lambda: TypeTextAction(type="type_text", element_ref=ref, text="你好🙂 hello"),
         "press_key": lambda: PressKeyAction(type="press_key", element_ref=ref, key="delete"),
@@ -166,8 +180,8 @@ async def test_secure_keyboard_targets_use_the_same_sdk_path(kind):
         "press_key": lambda: PressKeyAction(type=kind, element_ref=ref, key="enter"),
         "hotkey": lambda: HotkeyAction(type=kind, element_ref=ref, keys=("meta", "a")),
     }[kind]()
-    assert read.observation.elements[1].sensitive
-    assert read.observation.elements[1].label is None
+    assert read.observation.elements[1].role == "axsecuretextfield"
+    assert read.observation.elements[1].label == "secret"
     outcome = await session.execute_one(
         admit_execute(request(action), settings=ComputerUseSettings(enabled=True)),
         authority=lambda: None,
@@ -309,15 +323,41 @@ async def test_click_keeps_exact_button_count_and_bound_token(button, count):
         count=count,
         element_ref=read.observation.elements[0].element_ref,
     )
+    from morrow.core.computer_use import ObservationImageRef
+
+    observation = read.observation
+    if count == 2 or button == "right":
+        with pytest.raises(ComputerUseContractError, match="image_not_published"):
+            admit_execute(request(action), settings=ComputerUseSettings(enabled=True))
+        observation = observation.model_copy(
+            update={
+                "image": ObservationImageRef(
+                    artifact_id="art_1",
+                    sha256="a" * 64,
+                    mime="image/png",
+                    byte_size=8,
+                    width=20,
+                    height=10,
+                    tool_execution_id="tex_1",
+                )
+            }
+        )
     outcome = await session.execute_one(
-        admit_execute(request(action), settings=ComputerUseSettings(enabled=True)),
+        admit_execute(
+            request(action).model_copy(update={"observation": observation}),
+            settings=ComputerUseSettings(enabled=True),
+        ),
         authority=lambda: None,
     )
     assert outcome.status == "completed"
     _, payload = effects(native)[0]
     assert payload.count == count and payload.button.name == button.upper()
     assert payload.target.pid == 4242 and payload.target.window_id == 9001
-    assert payload.position.element_token == "tok-hidden"
+    if count == 1 and button == "left":
+        assert payload.position.element_token == "tok-hidden"
+    else:
+        assert not hasattr(payload.position, "element_token")
+        assert (payload.position.x, payload.position.y) == (2, 1)
 
 
 async def test_coordinates_are_delivered_image_pixels_without_second_retina_conversion():
@@ -400,3 +440,50 @@ async def test_interruption_preserves_native_completion_without_retry(completion
     assert outcome.status == expected and outcome.error_code == "action_interrupted"
     assert "untrusted" not in outcome.model_dump_json()
     assert len(effects(native)) == 1
+
+
+async def test_scroll_rejects_a_text_field_without_guessing_its_center():
+    _, _, _, read, request = await setup()
+    action = ScrollAction(
+        type="scroll",
+        element_ref=read.observation.elements[0].element_ref,
+        direction="down",
+        amount=3,
+    )
+    with pytest.raises(ComputerUseContractError, match="unsupported_scroll_target"):
+        admit_execute(request(action), settings=ComputerUseSettings(enabled=True))
+
+
+@pytest.mark.parametrize(
+    "center,error", [(None, "element_geometry_unavailable"), ((100, 100), "out_of_bounds")]
+)
+async def test_physical_gestures_without_exact_geometry_never_enter_sdk(center, error):
+    from morrow.core.computer_use import ObservationImageRef
+
+    session, native, _, read, request = await setup()
+    ref = read.observation.elements[0].element_ref
+    session._registry.element(ref).center = center
+    observation = read.observation.model_copy(
+        update={
+            "image": ObservationImageRef(
+                artifact_id="art_1",
+                sha256="a" * 64,
+                mime="image/png",
+                byte_size=8,
+                width=20,
+                height=10,
+                tool_execution_id="tex_1",
+            )
+        }
+    )
+    with pytest.raises(ComputerUseContractError, match=error):
+        await session.execute_one(
+            admit_execute(
+                request(ClickAction(type="click", element_ref=ref, count=2)).model_copy(
+                    update={"observation": observation}
+                ),
+                settings=ComputerUseSettings(enabled=True),
+            ),
+            authority=lambda: None,
+        )
+    assert effects(native) == []

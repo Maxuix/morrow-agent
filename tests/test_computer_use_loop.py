@@ -195,7 +195,16 @@ class ImageProvider(ScriptedModelProvider):
 
 
 @pytest.mark.parametrize(
-    "status", ["completed", "unknown", "revoked", "revoked_before_intent", "stale", "image_failed"]
+    "status",
+    [
+        "completed",
+        "unknown",
+        "revoked",
+        "revoked_before_intent",
+        "stale",
+        "image_failed",
+        "content",
+    ],
 )
 async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_path, status):
     app = _app(tmp_path)
@@ -241,11 +250,44 @@ async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_pa
             authority=TRUSTED_COMPUTER_USE_AUTHORITY,
         )
         prepared = preparation.prepare_new(agent_run_id="arun_loop", computer_request=selected)
+        if status == "content":
+            original_open = lifecycle.open_run_session
+
+            async def content_open(request):
+                run = await original_open(request)
+                lifecycle.device.target = lifecycle.device.target.model_copy(
+                    update={"display_label": "password=synthetic-title"}
+                )
+                original_observe = lifecycle.device.observe
+
+                async def content_observe(admitted):
+                    read = await original_observe(admitted)
+                    return ObservedWindow(
+                        read.observation.model_copy(
+                            update={
+                                "elements": tuple(
+                                    e.model_copy(
+                                        update={
+                                            "label": "password=synthetic-title",
+                                            "value": "sk-synthetic-credential-shape-1234567890",
+                                        }
+                                    )
+                                    for e in read.observation.elements
+                                )
+                            }
+                        ),
+                        read.capture,
+                    )
+
+                lifecycle.device.observe = content_observe
+                return run
+
+            lifecycle.open_run_session = content_open
         if status == "image_failed":
             prepared.provider.responses[-1] = (
                 "The action returned, but I could not verify its screen."
             )
-        if status == "completed":
+        if status in {"completed", "content"}:
 
             def reject_cross_context_preview():
                 calls = (len(lifecycle.device.actions), len(lifecycle.device.reads))
@@ -313,7 +355,7 @@ async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_pa
             expected_images.append(expected_images[-1])
         assert prepared.provider.image_pixels == expected_images
         assert lifecycle.calls == ["open", "close"]
-        if status == "completed":
+        if status in {"completed", "content"}:
             assert products.session.latest_metrics.approval_requests == 1
         assert len(lifecycle.device.actions) == int(
             status not in {"revoked", "revoked_before_intent"}

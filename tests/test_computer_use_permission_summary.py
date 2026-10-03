@@ -81,6 +81,6 @@ def test_action_preview_excludes_input_refs_and_uses_frozen_delivery(action):
     if action["type"] == "click":
         assert "右键双击" in preview
     if action["type"] == "type_text":
-        assert "输入文本（内容不展示）" in preview
+        assert "输入文本" in preview
     unknown = "\n".join(computer_action_preview_lines(scope, None, typed))
     assert "观察已失效，请重新观察" in unknown

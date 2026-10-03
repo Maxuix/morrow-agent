@@ -304,7 +304,7 @@ class ComputerUseObservationService:
         visuals,
         include_image: bool | None = None,
     ) -> tuple[Observation, tuple[ToolVisualRef, ...]]:
-        """Return safe durable DTOs; capture and mask coordinates stay transient."""
+        """Return durable DTOs; capture bytes and native identifiers stay transient."""
         read = await self.observe(execution_id, target_ref, include_image=include_image)
         if read.capture is None:
             return read.observation, ()

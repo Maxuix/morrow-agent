@@ -215,23 +215,8 @@ def test_actual_bytes_readable_only_after_completion_for_exact_run_or_visible_hi
         service.read_preview(reference.artifact_id, session_id="ses_other")
 
 
-def test_publication_refuses_revoked_grant_and_unconfirmed_sensitive_regions(environment):
+def test_publication_refuses_revoked_grant(environment):
     service, journal, scope, capture, observation, _ = environment
-    from morrow.core.computer_use import AxElement
-
-    sensitive = observation.model_copy(
-        update={
-            "elements": (AxElement(element_ref="celem_1", depth=1, role="secure", sensitive=True),)
-        }
-    )
-    with pytest.raises(ComputerUseContractError, match="image_safety_unconfirmed"):
-        service.publish(
-            capture,
-            sensitive,
-            tool_execution_id="tex_1",
-            scope=scope,
-            settings=ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID),
-        )
     grant = journal.get_capability_grant("ws_a", "grt_1")
     journal.save_capability_grant(
         "ws_a",
@@ -463,44 +448,39 @@ def test_run_capture_quota_prevents_partial_extra_publication(environment):
     assert len(journal.list_artifacts("ws_a")) == 1
 
 
-def test_known_sensitive_element_requires_exact_mask_and_persists_actual_black_pixels(environment):
-    from morrow.adapters.computer_use.images import CaptureMask
+def test_unclassified_capture_preserves_pixels_with_password_controls(environment):
     from morrow.core.artifacts import ArtifactSensitivity
     from morrow.core.computer_use import AxElement
 
     service, _, scope, capture, observation, _ = environment
-    sensitive = observation.model_copy(
+    observation = observation.model_copy(
         update={
+            "complete": False,
             "elements": (
-                AxElement(element_ref="celem_secret", depth=1, role="secure", sensitive=True),
-            )
+                AxElement(
+                    element_ref="celem_secret",
+                    depth=1,
+                    role="axsecuretextfield",
+                    label="password=synthetic",
+                ),
+            ),
         }
     )
-    settings = ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID)
-    with pytest.raises(ComputerUseContractError, match="image_safety_unconfirmed"):
-        service.publish(
-            capture,
-            sensitive,
-            tool_execution_id="tex_1",
-            scope=scope,
-            masks={"celem_wrong": CaptureMask(0, 0, 2, 2)},
-            settings=settings,
-        )
     reference = service.publish(
         capture,
-        sensitive,
+        observation,
         tool_execution_id="tex_1",
         scope=scope,
-        masks={"celem_secret": CaptureMask(0, 0, 2, 2)},
-        settings=settings,
+        settings=ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID),
     )
     complete(environment, reference)
-    metadata = service.artifacts.get(reference.artifact_id)
-    assert metadata.sensitivity is ArtifactSensitivity.REDACTED
-    data = service.read(reference, session_id="ses_1", agent_run_id="arun_1").content
-    with Image.open(io.BytesIO(data)) as decoded:
-        assert decoded.getpixel((0, 0)) == (0, 0, 0)
-        assert decoded.getpixel((2, 2)) == (255, 0, 0)
+    assert (
+        service.artifacts.get(reference.artifact_id).sensitivity is ArtifactSensitivity.UNCLASSIFIED
+    )
+    with Image.open(
+        io.BytesIO(service.read(reference, session_id="ses_1", agent_run_id="arun_1").content)
+    ) as image:
+        assert image.getextrema() == ((255, 255), (0, 0), (0, 0))
 
 
 def test_hydration_uses_latest_two_run_images_and_preserves_original_messages(environment):

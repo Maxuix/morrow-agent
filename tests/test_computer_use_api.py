@@ -82,7 +82,9 @@ async def test_desktop_settings_occ_status_and_session_model_without_grant(tmp_p
         fx.close()
 
 
-async def test_local_window_picker_is_session_scoped_and_does_not_create_grants(tmp_path):
+async def test_local_window_picker_is_session_scoped_and_does_not_create_grants(
+    tmp_path, monkeypatch
+):
     import pytest
 
     from morrow.application.computer_use import ComputerUseLifecycle
@@ -114,6 +116,7 @@ async def test_local_window_picker_is_session_scoped_and_does_not_create_grants(
                 )
             ).status == 200
 
+        monkeypatch.setattr("morrow.adapters.computer_use.sdk_loader._spec_present", lambda: False)
         before_driver = computer_use.DRIVER_CONSTRUCTION_COUNT
         unavailable = await fx.client.post(path + "/computer-use/candidates", {})
         assert unavailable.status == 503

@@ -65,7 +65,6 @@ class _ElementRecord:
     window_identity: str
     center: tuple[float, float] | None
     role: str
-    sensitive: bool
 
     def __repr__(self) -> str:
         return f"_ElementRecord(element_ref={self.element_ref!r})"
@@ -147,7 +146,6 @@ class TrustedDesktopRegistry:
         token: str | None,
         center: tuple[float, float] | None,
         role: str,
-        sensitive: bool,
     ) -> str:
         element_ref = self._ids.new_id(COMPUTER_ELEMENT_ID_PREFIX)
         self._elements[element_ref] = _ElementRecord(
@@ -156,7 +154,6 @@ class TrustedDesktopRegistry:
             window_identity=window_identity,
             center=center,
             role=role,
-            sensitive=sensitive,
         )
         return element_ref
 

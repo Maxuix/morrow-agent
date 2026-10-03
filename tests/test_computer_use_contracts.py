@@ -139,7 +139,7 @@ def _observation(**overrides) -> Observation:
         "frame": _frame(),
         "elements": (
             AxElement(element_ref="celem_1", depth=1, role="button", label="Save"),
-            AxElement(element_ref="celem_2", depth=1, role="axsecuretextfield", sensitive=True),
+            AxElement(element_ref="celem_2", depth=1, role="axsecuretextfield"),
         ),
     }
     values.update(overrides)
@@ -284,8 +284,7 @@ def test_targets_observations_and_actions_reject_before_the_device():
     target = _target()
     labeled = target.model_copy(update={"display_label": "Renamed"})
     assert target_authority_key(target) == target_authority_key(labeled)
-    with pytest.raises(ValidationError):
-        _target(display_label="stored password")
+    assert _target(display_label="stored password").display_label == "stored password"
     capture = TransientCapture(content=b"secret-bytes-marker", mime="image/png", width=2, height=2)
     assert "secret-bytes-marker" not in repr(capture)
     assert "secret-bytes-marker" not in str(capture)

@@ -43,7 +43,7 @@ def predicate(kind="attribute_equals", **fields):
         (True, 0, True, "failed"),
     ],
 )
-def test_attribute_requires_complete_unique_known_non_sensitive_match(
+def test_attribute_requires_complete_unique_known_match(
     environment,
     complete,
     matches,
@@ -71,20 +71,20 @@ def test_attribute_requires_complete_unique_known_non_sensitive_match(
     assert evaluate_postcondition(observation, check) == expected
 
 
-def test_sensitive_partial_degraded_and_old_refs_never_prove_attribute_identity(environment):
+def test_partial_degraded_and_old_refs_never_prove_attribute_identity(environment):
     check = predicate(selector={"role": "axbutton"}, attribute="enabled", value="true")
     base = environment[4].model_copy(
         update={
             "elements": (
                 AxElement(element_ref="celem_new", depth=1, role="axbutton", enabled=True),
-                AxElement(element_ref="celem_secret", depth=1, role="axtextfield", sensitive=True),
+                AxElement(element_ref="celem_secret", depth=1, role="axtextfield"),
             )
         }
     )
     # A secure text field's known role rules out a button selector.
     assert evaluate_postcondition(base, check) == "passed"
     label_only = predicate(selector={"label": "Ready"}, attribute="enabled", value="true")
-    assert evaluate_postcondition(base, label_only) == "not_checked"
+    assert evaluate_postcondition(base, label_only) == "failed"
     assert (
         evaluate_postcondition(base.model_copy(update={"degraded": True}), check) == "not_checked"
     )
@@ -115,17 +115,17 @@ def test_positive_presence_is_proven_in_partial_tree_but_absence_is_not(environm
     assert evaluate_postcondition(missing.model_copy(update={"complete": True}), check) == "failed"
 
 
-def test_text_never_matches_across_labels_or_hidden_sensitive_content(environment):
+def test_text_never_matches_across_labels(environment):
     observation = environment[4].model_copy(
         update={
             "elements": (
                 AxElement(element_ref="celem_a", depth=1, role="axstatictext", label="Rea"),
                 AxElement(element_ref="celem_b", depth=1, role="axstatictext", label="dy"),
-                AxElement(element_ref="celem_c", depth=1, role="axtextfield", sensitive=True),
+                AxElement(element_ref="celem_c", depth=1, role="axtextfield"),
             )
         }
     )
-    assert evaluate_postcondition(observation, predicate("text_appears", text="Ready")) == "pending"
+    assert evaluate_postcondition(observation, predicate("text_appears", text="Ready")) == "failed"
 
 
 async def polling_setup(environment, *, succeeds_at=None, complete=True):
@@ -366,4 +366,49 @@ async def test_adapter_projects_only_typed_sdk_boolean(native_flag, expected):
     element = after.observation.elements[0]
     assert element.enabled is expected
     assert element.focused is None and element.checked is None and element.expanded is None
-    assert element.sensitive is False
+    assert "sensitive" not in element.model_dump()
+
+
+@pytest.mark.parametrize("attribute", ["focused", "checked", "expanded"])
+def test_unimplemented_attributes_have_bounded_unsupported_errors(attribute):
+    from morrow.core.computer_use import ComputerUseContractError
+
+    with pytest.raises(ComputerUseContractError, match="unsupported_attribute"):
+        predicate(element_ref="celem_1", attribute=attribute, value="true")
+
+
+def test_public_secure_value_and_known_enabled_are_not_content_filtered(environment):
+    observation = environment[4].model_copy(
+        update={
+            "elements": (
+                AxElement(
+                    element_ref="celem_known",
+                    depth=1,
+                    role="axsecuretextfield",
+                    label="password=synthetic",
+                    value="sk-synthetic-key-1234567890",
+                    enabled=False,
+                ),
+            )
+        }
+    )
+    assert (
+        evaluate_postcondition(
+            observation, predicate("text_appears", text="sk-synthetic-key-1234567890")
+        )
+        == "passed"
+    )
+    assert (
+        evaluate_postcondition(
+            observation,
+            predicate(selector={"label": "password=synthetic"}, attribute="enabled", value="false"),
+        )
+        == "passed"
+    )
+    assert (
+        evaluate_postcondition(
+            observation.model_copy(update={"complete": False}),
+            predicate(selector={"label": "password=synthetic"}, attribute="enabled", value="false"),
+        )
+        == "not_checked"
+    )

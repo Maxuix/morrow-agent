@@ -451,32 +451,36 @@ async def test_semantic_observation_does_not_publish_an_artifact(environment):
     assert environment[1].list_artifacts("ws_a", task_run_id="task_1") == ()
 
 
-async def test_application_masks_known_sensitive_pixels_before_persistence(environment):
+async def test_application_preserves_pixels_for_password_controls(environment):
     import io
 
     from PIL import Image
 
     from morrow.core.artifacts import ArtifactSensitivity
-    from morrow.core.computer_use import AxElement, SensitiveCaptureRegion
+    from morrow.core.computer_use import AxElement
 
     application, lifecycle = _application(environment)
     original = lifecycle.device.observation
     lifecycle.device.observation = original.model_copy(
         update={
             "elements": (
-                AxElement(element_ref="celem_1", depth=1, role="axsecuretextfield", sensitive=True),
+                AxElement(
+                    element_ref="celem_1",
+                    depth=1,
+                    role="axsecuretextfield",
+                    label="password=synthetic",
+                ),
             ),
         }
     )
 
-    async def sensitive_read(request):
+    async def content_read(request):
         return ObservedWindow(
             lifecycle.device.observation,
             lifecycle.device.capture,
-            sensitive_regions=(SensitiveCaptureRegion("celem_1", 1, 1, 5, 4),),
         )
 
-    lifecycle.device.observe = sensitive_read
+    lifecycle.device.observe = content_read
     found = await application.discover("tex_observe")
     _, references = await application.observe_published(
         "tex_observe",
@@ -485,18 +489,18 @@ async def test_application_masks_known_sensitive_pixels_before_persistence(envir
     )
     (reference,) = references
     metadata = environment[1].get_artifact("ws_a", reference.artifact_id)
-    assert metadata.sensitivity is ArtifactSensitivity.REDACTED
+    assert metadata.sensitivity is ArtifactSensitivity.UNCLASSIFIED
     content = (
         environment[0].artifacts.read(reference.artifact_id, max_bytes=reference.byte_size).content
     )
     with Image.open(io.BytesIO(content)) as image:
-        assert image.getpixel((1, 1)) == (0, 0, 0)
-        assert image.getpixel((4, 3)) == (0, 0, 0)
+        assert image.getpixel((1, 1)) == (255, 0, 0)
+        assert image.getpixel((4, 3)) == (255, 0, 0)
         assert image.getpixel((5, 3)) == (255, 0, 0)
     assert "sensitive_regions" not in metadata.model_dump_json()
 
 
-@pytest.mark.parametrize("image_error", ["image_safety_unconfirmed", "image_decode"])
+@pytest.mark.parametrize("image_error", ["unknown_scale", "image_decode"])
 async def test_unconfirmed_capture_does_not_create_artifact(environment, image_error):
     application, lifecycle = _application(environment)
 

@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from morrow.core.capabilities import PolicyVerdict, ProcessIsolation, ToolCallContext
 from morrow.core.computer_use import COMPUTER_TOOL_NAMES
-from morrow.core.domain import canonical_json_bytes, sha256_digest
+from morrow.core.domain import TextSafetyProfile, canonical_json_bytes, sha256_digest
 from morrow.core.execution import (
     ConfigMutationEvidence,
     DurableToolExecution,
@@ -244,6 +244,7 @@ def prepare_cycle_executions(
         )
         executions.append(
             DurableToolExecution(
+                text_safety_profile=intent.text_safety_profile,
                 tool_execution_id=id_source.new_id("tex"),
                 workspace_id=workspace_id,
                 session_id=session.session_id,
@@ -376,6 +377,9 @@ def _prepare_one(
                 approval_required=registered.execution_policy.approval is ToolApproval.REQUIRED,
             )
     return PreparedIntent(
+        text_safety_profile=TextSafetyProfile.COMPUTER_USE_TRANSPARENT
+        if call.name in COMPUTER_TOOL_NAMES
+        else TextSafetyProfile.LEGACY_STRICT,
         tool_name=call.name,
         call_id=call.id,
         ordinal=ordinal,

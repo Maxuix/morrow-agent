@@ -30,7 +30,6 @@ from morrow.adapters.computer_use.projection import (
     project_capture,
     project_elements,
     project_frame,
-    project_sensitive_regions,
     reported_window_geometry,
 )
 from morrow.adapters.computer_use.registry import TrustedDesktopRegistry, WindowGeometry
@@ -281,7 +280,9 @@ class TypedComputerSession:
             if action.type == "click":
                 payload = self._sdk.ClickInput(
                     target=self._sdk.ActionTarget.WINDOW(window.pid, window.window_id),
-                    position=self._click_position(action, prepared.window_point, element),
+                    position=self._click_position(
+                        action, prepared.window_point, element, observation, window.geometry
+                    ),
                     delivery_mode=_input_delivery(self._sdk, request.delivery),
                     session=self._require_session(),
                     button=_click_button(self._sdk, action.button),
@@ -508,29 +509,43 @@ class TypedComputerSession:
             raise
         except ValueError:
             raise ComputerUseContractError("rejected_action") from None
-        regions = ()
-        if capture is not None:
-            try:
-                if degraded or truncated or omitted:
-                    raise ComputerUseContractError("image_safety_unconfirmed")
-                regions = project_sensitive_regions(state, elements, geometry, capture)
-            except ComputerUseContractError:
-                image_error = "image_safety_unconfirmed"
         self._registry.window(window_identity).geometry = geometry
         return ObservedWindow(
             observation=observation,
             capture=capture,
             image_error=image_error,
-            sensitive_regions=regions,
         )
 
     def _click_position(
-        self, action: Any, window_point: tuple[float, float] | None, element: Any
+        self,
+        action: Any,
+        window_point: tuple[float, float] | None,
+        element: Any,
+        observation: Observation,
+        geometry: WindowGeometry,
     ) -> Any:
         if action.element_ref is not None:
             if element is None or element.token is None:
                 raise ComputerUseContractError("unknown_element")
-            return self._sdk.ClickPosition.ELEMENT(element.token)
+            if action.count == 1 and action.button == "left":
+                return self._sdk.ClickPosition.ELEMENT(element.token)
+            if observation.image is None:
+                raise ComputerUseContractError("image_not_published")
+            if element.center is None:
+                raise ComputerUseContractError("element_geometry_unavailable")
+            x, y = element.center
+            if not (
+                geometry.x <= x < geometry.x + geometry.width
+                and geometry.y <= y < geometry.y + geometry.height
+            ):
+                raise ComputerUseContractError("out_of_bounds")
+            # AX frames are screen points; SDK expects delivered-image pixels.
+            px = int((x - geometry.x) * observation.frame.width / geometry.width)
+            py = int((y - geometry.y) * observation.frame.height / geometry.height)
+            from morrow.core.computer_use import map_image_point
+
+            point = map_image_point(observation.frame, px, py)
+            return self._sdk.ClickPosition.COORDINATES(*point)
         if window_point is None:
             raise ComputerUseContractError("unknown_scale")
         return self._sdk.ClickPosition.COORDINATES(window_point[0], window_point[1])
