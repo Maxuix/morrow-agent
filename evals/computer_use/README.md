@@ -235,3 +235,43 @@ synthetic secure field. Its independent oracle reads only the population boolean
 never secure bytes; it refuses an already populated test field. A hidden-field
 write may take effect while the official SDK reports unknown. That evidence is
 retained without retry or upgrading completion.
+
+## Real Provider functional campaign
+
+`live_provider.py` exercises the ordinary AgentLoop with the production
+OpenAI-compatible streaming adapter, DeepSeek `deepseek-flash`, and the real
+pinned native SDK. Launch a fresh controlled Swift fixture with independent
+state first. Explicit desktop and Provider-network opt-ins are required:
+
+```sh
+PYTHONPATH=src /path/to/sdk-environment/bin/python evals/computer_use/live_provider.py \
+  --allow-desktop --allow-real-provider \
+  --fixture-state-file /path/to/fixture/state.json \
+  --evidence-file /path/to/semantic-background.json \
+  --mode semantic --delivery background
+```
+
+The key comes from `DEEPSEEK_API_KEY` or a hidden interactive prompt. Automated
+callers can explicitly use `--credential-stdin` with an echo-disabled input
+channel. Never put a key in command-line arguments or evidence files. Credentials
+stay in the temporary composition's memory credential store.
+
+The default cases cover observation, token click, Unicode text, single key,
+hotkey, scroll and synthetic secure input. Repeat with `--delivery foreground`.
+Additional comma-separated `--cases` include `double_click`, `right_click`,
+`postcondition_text`, `postcondition_exists`, `postcondition_attribute`, `denied`,
+`coordinate_click` and `coordinate_scroll`. `--mode hybrid` explicitly requests
+window screenshots and asks the model to stop on image refusal. A blocked image
+case does not prove coordinate-action coverage. The `denied` case deliberately
+rejects approval and must have zero SDK action entries.
+
+Each case grants only the fixture's independent PID/window, creates a temporary
+workspace/store, advertises only the two computer tools, limits model requests,
+and admits at most one native action. The model chooses its own tool arguments;
+responses are not scripted. Temporary journals and image artifacts are removed
+on exit; exported JSON contains metadata, hashes, normalized outcomes and
+independent state deltas. `status=tested` means evidence was collected, **not**
+that the feature passed. Compare action status, requested variant, independent
+effect and verification errors. Unknown outcomes remain unknown, with no action
+retry or delivery fallback. Polling/cancellation/revocation, GUI interaction and
+other applications need separate coverage.
