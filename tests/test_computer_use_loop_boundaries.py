@@ -35,9 +35,23 @@ from morrow.core.image_tokens import iter_image_parts
 from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings, RuntimePolicyOverrides
 from morrow.testing import FixedIdSource, ScriptedModelProvider
 from test_agent_run_preparation import _app, _configure_active, _dispatch_prepared
-from test_computer_use_driver import _Native, _process_birth, _sdk
+from test_computer_use_driver import _Native, _sdk
 from test_computer_use_lifecycle import _Lease, _open
 from test_computer_use_loop import Approval, tool
+
+
+async def selected_notes(lifecycle, image_share):
+    found = await lifecycle.discover_local_candidates(
+        ComputerUseSettings(enabled=True), authority=TRUSTED_COMPUTER_USE_AUTHORITY
+    )
+    windows = lifecycle.select_local_candidates(
+        (found.candidates[0].candidate_id,), authority=TRUSTED_COMPUTER_USE_AUTHORITY
+    )
+    return ComputerUseSelection(
+        apps=(ComputerUseAppIdentity(bundle_id="com.example.Notes"),),
+        windows=windows,
+        image_share=image_share,
+    )
 
 
 class ReferenceProvider(ScriptedModelProvider):
@@ -145,6 +159,9 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
     class Native(_Native):
         changed = False
 
+        async def shutdown(self):
+            return None
+
         async def list_windows(self, payload):
             result = await super().list_windows(payload)
             if self.changed and boundary == "window_changed":
@@ -189,7 +206,7 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
     native, lease = Native(), _Lease()
     session_settings, diagnosed_settings, call_timeouts = [], [], []
 
-    def configured_session(driver, name, settings):
+    def session_factory(driver, name, settings):
         session_settings.append(settings)
         return native
 
@@ -197,22 +214,21 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
         diagnosed_settings.append(settings)
         return ComputerUsePreflight(status="unavailable", reason="native_unverified")
 
-    async def shutdown():
-        pass
+    def read_birth(pid):
+        if pid != 4242:
+            raise ComputerUseContractError("target_identity_unavailable")
+        if native.changed and boundary == "process_replaced":
+            return ProcessBirth(2, 0)
+        return ProcessBirth(1, 0)
 
     owner = Owner(
         _sdk(),
         FixedIdSource(),
         SystemStoreClock(),
-        session_factory=lambda driver, name: native,
-        configured_session_factory=configured_session,
-        driver_factory=lambda sdk: SimpleNamespace(shutdown=shutdown),
+        session_factory=session_factory,
+        driver_factory=lambda sdk: native,
         lease=lease,
-        process_reader=lambda pid: (
-            ProcessBirth(2, 0)
-            if native.changed and boundary == "process_replaced"
-            else _process_birth(pid)
-        ),
+        process_reader=read_birth,
     )
     lifecycle = ComputerUseLifecycle(
         lambda: owner,
@@ -244,13 +260,11 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
     running = None
     try:
         request = factory.select(
-            ComputerUseSelection(
-                apps=(ComputerUseAppIdentity(bundle_id="com.example.Notes"),),
-                image_share=(
-                    ComputerUseImageShare.CONTROLLED_WINDOW
-                    if boundary.startswith("hybrid")
-                    else ComputerUseImageShare.NONE
-                ),
+            await selected_notes(
+                lifecycle,
+                ComputerUseImageShare.CONTROLLED_WINDOW
+                if boundary.startswith("hybrid")
+                else ComputerUseImageShare.NONE,
             ),
             products.session,
             authority=TRUSTED_COMPUTER_USE_AUTHORITY,
@@ -337,10 +351,7 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
                 with pytest.raises(AgentRunPreparationError):
                     preparation.rehydrate(frozen, agent_run_id="arun_cancel")
                 request = factory.select(
-                    ComputerUseSelection(
-                        apps=(ComputerUseAppIdentity(bundle_id="com.example.Notes"),),
-                        image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
-                    ),
+                    await selected_notes(lifecycle, ComputerUseImageShare.CONTROLLED_WINDOW),
                     products.session,
                     authority=TRUSTED_COMPUTER_USE_AUTHORITY,
                 )
@@ -373,7 +384,13 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
                     assert session_settings[1].max_run_seconds == 120
                     assert session_settings[1].max_operations == 7
                     assert call_timeouts == [15, 7]
-                    assert diagnosed_settings == session_settings
+                    # Candidate reads diagnose their own settings. Each run open
+                    # diagnoses the same frozen settings the session factory receives.
+                    assert diagnosed_settings[1::2] == session_settings
+                    assert diagnosed_settings[0::2] == [
+                        ComputerUseSettings(enabled=True),
+                        ComputerUseSettings(enabled=True),
+                    ]
                 second_rows = [
                     row
                     for row in journal.list_session_executions(ws, products.session.session_id)
@@ -423,7 +440,7 @@ async def test_real_sdk_boundary_preserves_safe_tool_results(tmp_path, boundary)
         assert owner.quarantined and lease.held and not running.done()
         assert finished == []
         with pytest.raises(ComputerUseContractError, match="driver_not_activated"):
-            await owner.open_run_session(_open())
+            await owner.open_run_session(_open(owner))
         release.set()
         events = await running
         assert events[-1].payload["finish_reason"] == "cancelled"

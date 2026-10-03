@@ -12,11 +12,13 @@ from types import SimpleNamespace
 import pytest
 
 from morrow.adapters.computer_use import diagnose_host, preflight
+from morrow.adapters.computer_use.candidates import LocalWindowIdentity
 from morrow.adapters.computer_use.diagnostics import HostProbe
 from morrow.adapters.computer_use.process_identity import ProcessBirth
 from morrow.adapters.computer_use.registry import TrustedDesktopRegistry
 from morrow.adapters.computer_use.sdk_loader import collect_host_probe, construct_driver
 from morrow.adapters.computer_use.session import TypedComputerSession
+from morrow.core.computer_admission import admit_discover, admit_execute, admit_observe
 from morrow.core.computer_use import (
     TRUSTED_COMPUTER_USE_AUTHORITY,
     ClickAction,
@@ -27,14 +29,16 @@ from morrow.core.computer_use import (
     ComputerUseOperation,
     ComputerUseScope,
     ComputerUseWindowBoundary,
+    ComputerUseWindowIdentity,
     DiscoverRequest,
+    ExecuteRequest,
     ObserveWindowRequest,
     OpenRunSessionRequest,
-    PreparedComputerAction,
     TypeTextAction,
+    decode_computer_use_scope,
     map_image_point,
 )
-from morrow.core.runtime_policy import ComputerUseSettings
+from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
 from morrow.testing import FixedClock, FixedIdSource
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -59,7 +63,50 @@ def _scope(**overrides) -> ComputerUseScope:
         "image_share": ComputerUseImageShare.CONTROLLED_WINDOW,
     }
     values.update(overrides)
-    return ComputerUseScope(**values)
+    return decode_computer_use_scope({"schema_version": 1, **values})
+
+
+SELECTED_WINDOW = "cwin_notes"
+
+
+def _selected_scope(**overrides) -> ComputerUseScope:
+    windows = overrides.pop(
+        "windows",
+        (
+            ComputerUseWindowIdentity(
+                app=ComputerUseAppIdentity(bundle_id="com.example.Notes"),
+                window_identity=SELECTED_WINDOW,
+            ),
+        ),
+    )
+    return _scope(schema_version=2, windows=windows, **overrides)
+
+
+def _bindings(window_identity=SELECTED_WINDOW, *, birth=None):
+    return {
+        window_identity: LocalWindowIdentity(
+            "com.example.Notes", 4242, birth or ProcessBirth(1, 0), 9001
+        )
+    }
+
+
+def _hybrid_settings(**overrides) -> ComputerUseSettings:
+    values = {"enabled": True, "mode": ComputerUseMode.HYBRID}
+    values.update(overrides)
+    return ComputerUseSettings(**values)
+
+
+def _bound_session(native, *, reader=_process_birth, ids=None, clock=None, birth=None):
+    ids = ids or FixedIdSource()
+    return TypedComputerSession(
+        _sdk(),
+        native,
+        TrustedDesktopRegistry(ids),
+        ids,
+        clock or FixedClock(NOW),
+        process_reader=reader,
+        window_bindings=_bindings(birth=birth),
+    )
 
 
 def _enabled_probe(**overrides) -> HostProbe:
@@ -415,29 +462,39 @@ async def test_typed_session_hides_native_identity_and_keeps_the_real_frame():
     native = _Native()
     registry = TrustedDesktopRegistry(FixedIdSource())
     session = TypedComputerSession(
-        _sdk(), native, registry, FixedIdSource(), FixedClock(NOW), process_reader=_process_birth
+        _sdk(),
+        native,
+        registry,
+        FixedIdSource(),
+        FixedClock(NOW),
+        process_reader=_process_birth,
+        window_bindings=_bindings(),
     )
     opened = await session.open_run_session(
         OpenRunSessionRequest(
             authority=TRUSTED_COMPUTER_USE_AUTHORITY,
             agent_run_id="arun_1",
-            scope=_scope(),
+            scope=_selected_scope(),
         )
     )
     assert opened.run_session_id.startswith("crun_")
     assert "windows=0" in repr(registry)
     discovered = await session.discover(
-        DiscoverRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
-            run_session_id=opened.run_session_id,
+        admit_discover(
+            DiscoverRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=_selected_scope(),
+                run_session_id=opened.run_session_id,
+            )
         )
     )
     again = await session.discover(
-        DiscoverRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
-            run_session_id=opened.run_session_id,
+        admit_discover(
+            DiscoverRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=_selected_scope(),
+                run_session_id=opened.run_session_id,
+            )
         )
     )
     assert len(discovered.targets) == 1
@@ -452,20 +509,31 @@ async def test_typed_session_hides_native_identity_and_keeps_the_real_frame():
     assert "4242" not in repr(registry)
     assert "tok-hidden" not in repr(registry)
 
-    observed = await session.observe(
+    admitted = admit_observe(
         ObserveWindowRequest(
             authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
+            scope=_selected_scope(),
             target=target,
             delivery=ComputerUseDelivery.FOREGROUND,
             include_image=True,
         ),
-        settings=ComputerUseSettings(enabled=True, image_long_edge_px=1280),
+        settings=ComputerUseSettings(
+            enabled=True,
+            mode=ComputerUseMode.HYBRID,
+            image_long_edge_px=1280,
+            max_call_seconds=5,
+        ),
     )
+    observed = await session.observe(admitted)
+    calls = len(native.calls)
+    with pytest.raises(TypeError, match="settings"):
+        await session.observe(admitted, settings=ComputerUseSettings())
+    assert len(native.calls) == calls
     state_input = next(payload for name, payload in native.calls if name == "get_window_state")
     assert state_input.screenshot_out_file is None
     assert state_input.max_elements == 400
     assert state_input.max_depth == 8
+    assert state_input.timeout_ms == 5000
     assert state_input.max_image_dimension == 1280
     assert state_input.pid == 4242
     assert observed.observation.complete is False
@@ -494,43 +562,61 @@ async def test_click_results_preserve_delivery_and_reject_unsafe_text_target():
     ids = FixedIdSource()
     registry = TrustedDesktopRegistry(ids)
     session = TypedComputerSession(
-        _sdk(), native, registry, ids, FixedClock(NOW), process_reader=_process_birth
+        _sdk(),
+        native,
+        registry,
+        ids,
+        FixedClock(NOW),
+        process_reader=_process_birth,
+        window_bindings=_bindings(),
     )
     opened = await session.open_run_session(
         OpenRunSessionRequest(
             authority=TRUSTED_COMPUTER_USE_AUTHORITY,
             agent_run_id="arun_1",
-            scope=_scope(),
+            scope=_selected_scope(),
         )
     )
     target = (
         await session.discover(
-            DiscoverRequest(
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                scope=_scope(),
-                run_session_id=opened.run_session_id,
+            admit_discover(
+                DiscoverRequest(
+                    authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                    scope=_selected_scope(),
+                    run_session_id=opened.run_session_id,
+                )
             )
         )
     ).targets[0]
     observed = await session.observe(
-        ObserveWindowRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
-            target=target,
-            delivery=ComputerUseDelivery.FOREGROUND,
-            include_image=False,
+        admit_observe(
+            ObserveWindowRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=_selected_scope(),
+                target=target,
+                delivery=ComputerUseDelivery.FOREGROUND,
+                include_image=False,
+            ),
+            settings=ComputerUseSettings(),
         )
     )
     button = next(item for item in observed.observation.elements if item.role == "axbutton")
-    click = await session.execute(
-        PreparedComputerAction(
-            action=ClickAction(type="click", element_ref=button.element_ref),
-            window_point=None,
-        ),
-        window_identity=target.window_identity,
-        delivery=ComputerUseDelivery.FOREGROUND,
-        agent_run_id="arun_1",
-        generation=1,
+
+    def admitted(action, observation):
+        return admit_execute(
+            ExecuteRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=_selected_scope(),
+                target=target,
+                observation=observation,
+                action=action,
+                delivery=ComputerUseDelivery.FOREGROUND,
+            )
+        )
+
+    click = await session.execute_one(
+        admitted(ClickAction(type="click", element_ref=button.element_ref), observed.observation),
+        authority=lambda: None,
     )
     payload = next(item for name, item in native.calls if name == "click")
     assert payload.position.element_token == "tok-hidden"
@@ -542,30 +628,27 @@ async def test_click_results_preserve_delivery_and_reject_unsafe_text_target():
 
     async def fresh():
         return await session.observe(
-            ObserveWindowRequest(
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                scope=_scope(),
-                target=target,
-                delivery=ComputerUseDelivery.FOREGROUND,
-                include_image=False,
+            admit_observe(
+                ObserveWindowRequest(
+                    authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                    scope=_selected_scope(),
+                    target=target,
+                    delivery=ComputerUseDelivery.FOREGROUND,
+                    include_image=False,
+                ),
+                settings=ComputerUseSettings(),
             )
         )
 
     observed = await fresh()
     button = observed.observation.elements[0]
+    before_refusal = len(native.calls)
     with pytest.raises(ComputerUseContractError, match="not_editable"):
-        await session.execute(
-            PreparedComputerAction(
-                action=TypeTextAction(
-                    type="type_text", text="hello", element_ref=button.element_ref
-                ),
-                window_point=None,
-            ),
-            window_identity=target.window_identity,
-            delivery=ComputerUseDelivery.FOREGROUND,
-            agent_run_id="arun_1",
-            generation=1,
+        admitted(
+            TypeTextAction(type="type_text", text="hello", element_ref=button.element_ref),
+            observed.observation,
         )
+    assert len(native.calls) == before_refusal
 
     class ActionInterrupted(Exception):
         def __init__(self):
@@ -577,14 +660,9 @@ async def test_click_results_preserve_delivery_and_reject_unsafe_text_target():
         raise ActionInterrupted()
 
     native.click = interrupted
-    stopped = await session.execute(
-        PreparedComputerAction(
-            action=ClickAction(type="click", element_ref=button.element_ref), window_point=None
-        ),
-        window_identity=target.window_identity,
-        delivery=ComputerUseDelivery.FOREGROUND,
-        agent_run_id="arun_1",
-        generation=1,
+    stopped = await session.execute_one(
+        admitted(ClickAction(type="click", element_ref=button.element_ref), observed.observation),
+        authority=lambda: None,
     )
     assert stopped.status == "unknown" and stopped.error_code == "action_interrupted"
     assert "password" not in stopped.model_dump_json()
@@ -597,17 +675,12 @@ async def test_click_results_preserve_delivery_and_reject_unsafe_text_target():
 
     native.click = refused
     observed = await fresh()
-    denial = await session.execute(
-        PreparedComputerAction(
-            action=ClickAction(
-                type="click", element_ref=observed.observation.elements[0].element_ref
-            ),
-            window_point=None,
+    denial = await session.execute_one(
+        admitted(
+            ClickAction(type="click", element_ref=observed.observation.elements[0].element_ref),
+            observed.observation,
         ),
-        window_identity=target.window_identity,
-        delivery=ComputerUseDelivery.FOREGROUND,
-        agent_run_id="arun_1",
-        generation=1,
+        authority=lambda: None,
     )
     assert denial.status == "not_started" and denial.error_code == "refused"
     assert native.traps == 0
@@ -647,26 +720,32 @@ async def test_unresolved_native_window_does_not_invent_image_mapping():
         ids,
         FixedClock(NOW),
         process_reader=_process_birth,
+        window_bindings=_bindings(),
     )
     run = await session.open_run_session(
         OpenRunSessionRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY, agent_run_id="arun_1", scope=_scope()
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY, agent_run_id="arun_1", scope=_selected_scope()
         )
     )
     found = await session.discover(
-        DiscoverRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
-            run_session_id=run.run_session_id,
+        admit_discover(
+            DiscoverRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=_selected_scope(),
+                run_session_id=run.run_session_id,
+            )
         )
     )
     read = await session.observe(
-        ObserveWindowRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
-            target=found.targets[0],
-            delivery=ComputerUseDelivery.FOREGROUND,
-            include_image=True,
+        admit_observe(
+            ObserveWindowRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=_selected_scope(),
+                target=found.targets[0],
+                delivery=ComputerUseDelivery.FOREGROUND,
+                include_image=True,
+            ),
+            settings=ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID),
         )
     )
     assert read.capture is None
@@ -698,26 +777,32 @@ async def test_unknown_tree_completeness_does_not_invent_truncation(degraded):
         ids,
         FixedClock(NOW),
         process_reader=_process_birth,
+        window_bindings=_bindings(),
     )
     run = await session.open_run_session(
         OpenRunSessionRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY, agent_run_id="arun_1", scope=_scope()
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY, agent_run_id="arun_1", scope=_selected_scope()
         )
     )
     found = await session.discover(
-        DiscoverRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
-            run_session_id=run.run_session_id,
+        admit_discover(
+            DiscoverRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=_selected_scope(),
+                run_session_id=run.run_session_id,
+            )
         )
     )
     observed = await session.observe(
-        ObserveWindowRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
-            target=found.targets[0],
-            delivery=ComputerUseDelivery.FOREGROUND,
-            include_image=True,
+        admit_observe(
+            ObserveWindowRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=_selected_scope(),
+                target=found.targets[0],
+                delivery=ComputerUseDelivery.FOREGROUND,
+                include_image=True,
+            ),
+            settings=ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID),
         )
     )
     assert observed.observation.degraded is degraded
@@ -766,26 +851,32 @@ async def test_larger_native_walk_never_expands_model_projection_or_shares_omiss
         ids,
         FixedClock(NOW),
         process_reader=_process_birth,
+        window_bindings=_bindings(),
     )
     run = await session.open_run_session(
         OpenRunSessionRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY, agent_run_id="arun_1", scope=_scope()
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY, agent_run_id="arun_1", scope=_selected_scope()
         )
     )
     found = await session.discover(
-        DiscoverRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
-            run_session_id=run.run_session_id,
+        admit_discover(
+            DiscoverRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=_selected_scope(),
+                run_session_id=run.run_session_id,
+            )
         )
     )
     observed = await session.observe(
-        ObserveWindowRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
-            target=found.targets[0],
-            delivery=ComputerUseDelivery.FOREGROUND,
-            include_image=True,
+        admit_observe(
+            ObserveWindowRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=_selected_scope(),
+                target=found.targets[0],
+                delivery=ComputerUseDelivery.FOREGROUND,
+                include_image=True,
+            ),
+            settings=ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID),
         )
     )
     assert len(observed.observation.elements) == 200

@@ -4,27 +4,69 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
 
+from morrow.adapters.computer_use.candidates import LocalWindowIdentity
 from morrow.adapters.computer_use.owner import ComputerDriverOwner
+from morrow.adapters.computer_use.process_identity import ProcessBirth
+from morrow.core.computer_admission import admit_discover, admit_execute, admit_observe
 from morrow.core.computer_use import (
+    MAX_OBSERVATION_AGE_SECONDS,
     TRUSTED_COMPUTER_USE_AUTHORITY,
+    ClickAction,
     CloseRunSessionRequest,
+    ComputerUseAppIdentity,
     ComputerUseContractError,
+    ComputerUseDelivery,
+    ComputerUseImageShare,
+    ComputerUseOperation,
+    ComputerUseWindowBoundary,
+    ComputerUseWindowIdentity,
     DiscoverRequest,
+    ExecuteRequest,
+    ObserveWindowRequest,
     OpenRunSessionRequest,
+    SelectedWindowScope,
 )
+from morrow.core.runtime_policy import ComputerUseSettings
 from morrow.testing import FixedClock, FixedIdSource
-from test_computer_use_driver import NOW, _Native, _process_birth, _scope, _sdk
+from test_computer_use_driver import NOW, _Native, _process_birth, _sdk
 
 
-def _open(generation=1):
+def _seed_notes(owner, window_identity="cwin_notes"):
+    owner._candidates.clear()
+    owner._candidates._expires_at = owner._clock.now() + timedelta(
+        seconds=MAX_OBSERVATION_AGE_SECONDS
+    )
+    owner._candidates._selected[window_identity] = LocalWindowIdentity(
+        "com.example.Notes", 4242, ProcessBirth(1, 0), 9001
+    )
+
+
+def _open(owner=None, generation=1):
+    window_identity = "cwin_notes"
+    if owner is not None:
+        _seed_notes(owner, window_identity)
+    app = ComputerUseAppIdentity(bundle_id="com.example.Notes")
     return OpenRunSessionRequest(
         authority=TRUSTED_COMPUTER_USE_AUTHORITY,
         agent_run_id="arun_1",
-        scope=_scope(generation=generation),
+        scope=SelectedWindowScope(
+            schema_version=2,
+            generation=generation,
+            workspace_id="ws_1",
+            task_run_id="task_1",
+            agent_run_id="arun_1",
+            apps=(app,),
+            windows=(ComputerUseWindowIdentity(app=app, window_identity=window_identity),),
+            window_boundary=ComputerUseWindowBoundary.WINDOW,
+            operations=(ComputerUseOperation.OBSERVE, ComputerUseOperation.ACTION),
+            delivery=ComputerUseDelivery.FOREGROUND,
+            image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
+        ),
     )
 
 
@@ -72,7 +114,7 @@ def _owner(lease=None):
         record("create")
         return SimpleNamespace(shutdown=shutdown)
 
-    def session_factory(driver, name):
+    def session_factory(driver, name, settings):
         record("session")
         native = Native()
         sessions.append(native)
@@ -92,12 +134,14 @@ def _owner(lease=None):
 
 async def test_resources_have_one_owner_and_closed_sessions_cannot_be_reused():
     owner, calls, _ = _owner()
-    first = await owner.open_run_session(_open())
+    first = await owner.open_run_session(_open(owner))
     session = owner.session_for(first)
-    discovery = DiscoverRequest(
-        authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-        scope=_scope(),
-        run_session_id=first.run_session_id,
+    discovery = admit_discover(
+        DiscoverRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+            scope=session._scope,
+            run_session_id=first.run_session_id,
+        )
     )
     target = (await session.discover(discovery)).targets[0]
     await owner.close_run_session(_close(first))
@@ -106,10 +150,10 @@ async def test_resources_have_one_owner_and_closed_sessions_cannot_be_reused():
     with pytest.raises(ComputerUseContractError, match="driver_not_activated"):
         await session.discover(discovery)
     with pytest.raises(ComputerUseContractError, match="session_not_reusable"):
-        await session.open_run_session(_open(2))
+        await session.open_run_session(_open(owner, 2))
     with pytest.raises(ComputerUseContractError, match="stale_observation"):
-        await owner.open_run_session(_open())
-    second = await owner.open_run_session(_open(2))
+        await owner.open_run_session(_open(owner))
+    second = await owner.open_run_session(_open(owner, 2))
     assert second.run_session_id != first.run_session_id
     await owner.close_run_session(_close(second))
     await owner.shutdown()
@@ -120,7 +164,7 @@ async def test_resources_have_one_owner_and_closed_sessions_cannot_be_reused():
 
 async def test_foreign_thread_and_loop_rejected_before_sdk_calls():
     owner, calls, natives = _owner()
-    run = await owner.open_run_session(_open())
+    run = await owner.open_run_session(_open(owner))
     session = owner.session_for(run)
     before = len(calls), len(natives[0].calls)
 
@@ -129,10 +173,12 @@ async def test_foreign_thread_and_loop_rejected_before_sdk_calls():
             await owner.shutdown()
         with pytest.raises(ComputerUseContractError, match="owner_mismatch"):
             await session.discover(
-                DiscoverRequest(
-                    authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                    scope=_scope(),
-                    run_session_id=run.run_session_id,
+                admit_discover(
+                    DiscoverRequest(
+                        authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                        scope=session._scope,
+                        run_session_id=run.run_session_id,
+                    )
                 )
             )
 
@@ -145,11 +191,11 @@ async def test_foreign_thread_and_loop_rejected_before_sdk_calls():
 async def test_subject_and_busy_rejections_do_not_create_sessions():
     owner, calls, _ = _owner()
     with pytest.raises(ComputerUseContractError, match="subject_mismatch"):
-        await owner.open_run_session(_open().model_copy(update={"agent_run_id": "arun_other"}))
-    run = await owner.open_run_session(_open())
+        await owner.open_run_session(_open(owner).model_copy(update={"agent_run_id": "arun_other"}))
+    run = await owner.open_run_session(_open(owner))
     before = len(calls)
     with pytest.raises(ComputerUseContractError, match="desktop_busy"):
-        await owner.open_run_session(_open(2))
+        await owner.open_run_session(_open(owner, 2))
     assert len(calls) == before
     await owner.close_run_session(_close(run))
     await owner.shutdown()
@@ -165,18 +211,18 @@ async def test_failed_start_quarantines_owner_and_redacts_native_exception():
         def close(self):
             pass
 
-    owner._session_factory = lambda driver, name: Broken()
+    owner._session_factory = lambda driver, name, settings: Broken()
     with pytest.raises(ComputerUseContractError, match="^driver_error$"):
-        await owner.open_run_session(_open())
+        await owner.open_run_session(_open(owner))
     with pytest.raises(ComputerUseContractError, match="driver_not_activated"):
-        await owner.open_run_session(_open(2))
+        await owner.open_run_session(_open(owner, 2))
     await owner.shutdown()
     assert [name for name, _, _ in calls].count("create") == 1
 
 
 async def test_shutdown_closes_active_session_before_native_shutdown():
     owner, calls, _ = _owner()
-    run = await owner.open_run_session(_open())
+    run = await owner.open_run_session(_open(owner))
     session = owner.session_for(run)
     await owner.shutdown()
     assert [name for name, _, _ in calls][-3:] == ["end", "close", "shutdown"]
@@ -195,7 +241,7 @@ async def test_shutdown_failure_can_be_settled_without_constructing_another_driv
     with pytest.raises(ComputerUseContractError, match="^driver_error$"):
         await owner.shutdown()
     with pytest.raises(ComputerUseContractError, match="driver_not_activated"):
-        await owner.open_run_session(_open())
+        await owner.open_run_session(_open(owner))
     owner._driver.shutdown = settled
     await owner.shutdown()
     assert [name for name, _, _ in calls].count("create") == 1
@@ -217,11 +263,11 @@ async def test_start_transition_rejects_concurrent_open_and_shutdown_without_sle
         def close(self):
             pass
 
-    owner._session_factory = lambda driver, name: Waiting()
-    opening = asyncio.create_task(owner.open_run_session(_open()))
+    owner._session_factory = lambda driver, name, settings: Waiting()
+    opening = asyncio.create_task(owner.open_run_session(_open(owner)))
     await entered.wait()
     with pytest.raises(ComputerUseContractError, match="desktop_busy"):
-        await owner.open_run_session(_open(2))
+        await owner.open_run_session(_open(owner, 2))
     stopping = asyncio.create_task(owner.shutdown())
     release.set()
     await opening
@@ -235,13 +281,14 @@ async def test_core_host_bus_owns_driver_lifecycle_and_foreign_direct_use_is_rej
         lambda: SimpleNamespace(
             supervisor=RunSupervisor(),
             approval_waiters=ApprovalWaiters(),
+            computer_use=None,
             close=lambda: None,
         )
     )
     host.start()
     try:
         owner, calls, _ = await host.execute_command(_owner)
-        run = await host.execute_command(lambda: owner.open_run_session(_open()))
+        run = await host.execute_command(lambda: owner.open_run_session(_open(owner)))
         before = len(calls)
         with pytest.raises(ComputerUseContractError, match="owner_mismatch"):
             owner.session_for(run)
@@ -256,7 +303,7 @@ async def test_core_host_bus_owns_driver_lifecycle_and_foreign_direct_use_is_rej
 async def test_cancelled_observation_holds_lease_until_native_finishes_and_close_settles():
     lease = _Lease()
     owner, calls, natives = _owner(lease)
-    run = await owner.open_run_session(_open())
+    run = await owner.open_run_session(_open(owner))
     session = owner.session_for(run)
     entered, release = asyncio.Event(), asyncio.Event()
     native_done = asyncio.Event()
@@ -272,10 +319,12 @@ async def test_cancelled_observation_holds_lease_until_native_finishes_and_close
     natives[0].list_apps = waiting
     waiter = asyncio.create_task(
         session.discover(
-            DiscoverRequest(
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                scope=_scope(),
-                run_session_id=run.run_session_id,
+            admit_discover(
+                DiscoverRequest(
+                    authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                    scope=session._scope,
+                    run_session_id=run.run_session_id,
+                )
             )
         )
     )
@@ -313,8 +362,8 @@ async def test_cancelled_session_start_is_not_replayed_or_disposed_before_settli
         def close(self):
             disposed.set()
 
-    owner._session_factory = lambda driver, name: Waiting()
-    opening = asyncio.create_task(owner.open_run_session(_open()))
+    owner._session_factory = lambda driver, name, settings: Waiting()
+    opening = asyncio.create_task(owner.open_run_session(_open(owner)))
     await entered.wait()
     opening.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -330,7 +379,7 @@ async def test_cancelled_session_start_is_not_replayed_or_disposed_before_settli
 async def test_cancelled_shutdown_keeps_the_same_native_shutdown_live():
     lease = _Lease()
     owner, _, _ = _owner(lease)
-    await owner.open_run_session(_open())
+    await owner.open_run_session(_open(owner))
     entered, release = asyncio.Event(), asyncio.Event()
     invocations = []
 
@@ -374,7 +423,7 @@ async def test_core_host_retains_owner_loop_on_desktop_shutdown_timeout():
     entered = threading.Event()
     try:
         owner, _, _ = await host.execute_command(_owner)
-        await host.execute_command(lambda: owner.open_run_session(_open()))
+        await host.execute_command(lambda: owner.open_run_session(_open(owner)))
 
         async def waiting():
             entered.set()
@@ -405,6 +454,7 @@ async def test_lazy_application_lifecycle_checks_gate_before_driver_construction
     def factory():
         owner, _, _ = _owner()
         constructed.append(owner)
+        _seed_notes(owner)
         return owner
 
     for reason in ["disabled", "sdk_missing", "tcc_missing", "native_unverified"]:
@@ -454,26 +504,30 @@ def test_pinned_session_factory_uses_immutable_named_standard_surface():
 
 
 async def test_timeout_reports_unknown_and_does_not_cancel_native_action_or_unlock():
-    from morrow.core.computer_use import ClickAction, ObserveWindowRequest, PreparedComputerAction
-
     lease = _Lease()
     owner, _, natives = _owner(lease)
-    run = await owner.open_run_session(_open())
+    run = await owner.open_run_session(_open(owner))
     session = owner.session_for(run)
+    scope = session._scope
     targets = await session.discover(
-        DiscoverRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
-            run_session_id=run.run_session_id,
+        admit_discover(
+            DiscoverRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=scope,
+                run_session_id=run.run_session_id,
+            )
         )
     )
     observed = await session.observe(
-        ObserveWindowRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
-            target=targets.targets[0],
-            delivery=_scope().delivery,
-            include_image=False,
+        admit_observe(
+            ObserveWindowRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=scope,
+                target=targets.targets[0],
+                delivery=scope.delivery,
+                include_image=False,
+            ),
+            settings=ComputerUseSettings(),
         )
     )
     entered, release = asyncio.Event(), asyncio.Event()
@@ -500,17 +554,20 @@ async def test_timeout_reports_unknown_and_does_not_cancel_native_action_or_unlo
     natives[0].click = waiting
     original_waiter = session._calls._waiter
     session._calls._waiter = expire
-    outcome = await session.execute(
-        PreparedComputerAction(
-            action=ClickAction(
-                type="click", element_ref=observed.observation.elements[0].element_ref
-            ),
-            window_point=None,
+    outcome = await session.execute_one(
+        admit_execute(
+            ExecuteRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=scope,
+                target=targets.targets[0],
+                observation=observed.observation,
+                action=ClickAction(
+                    type="click", element_ref=observed.observation.elements[0].element_ref
+                ),
+                delivery=scope.delivery,
+            )
         ),
-        window_identity=targets.targets[0].window_identity,
-        delivery=_scope().delivery,
-        agent_run_id="arun_1",
-        generation=1,
+        authority=lambda: None,
     )
     assert outcome.status == "unknown" and outcome.error_code == "driver_timeout"
     assert lease.held and session.pending and finished == []
@@ -534,7 +591,7 @@ async def test_runtime_status_reads_do_not_create_or_call_native_resources():
     assert owner.runtime_status.state == "idle"
     assert tuple(calls) == initial_calls
     assert [name for name, _, _ in calls] == ["create"]
-    run = await owner.open_run_session(_open())
+    run = await owner.open_run_session(_open(owner))
     before = len(calls)
     assert owner.runtime_status.state == "active"
     assert owner.runtime_status.native_pending is False

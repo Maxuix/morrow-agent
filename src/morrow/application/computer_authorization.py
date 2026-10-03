@@ -5,10 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 
 from morrow.core.computer_use import (
-    TRUSTED_COMPUTER_USE_AUTHORITY,
     ComputerUseContractError,
-    ComputerUseScope,
-    assert_computer_use_device_gate,
+    SelectedWindowScope,
     computer_use_intent,
 )
 from morrow.core.execution import EffectClass, ToolExecutionState, assert_handler_may_enter
@@ -20,9 +18,8 @@ def authorize_computer_execution(
     *,
     workspace_id: str,
     execution_id: str,
-    scope: ComputerUseScope,
+    scope: SelectedWindowScope,
     tool_name: str,
-    include_image: bool,
     now: datetime,
 ):
     execution = journal.get_execution(workspace_id, execution_id)
@@ -88,15 +85,4 @@ def authorize_computer_execution(
             "execution_cancelled" if execution.cancel_requested_at else "execution_not_authorized"
         )
         raise ComputerUseContractError(code) from None
-    assert_computer_use_device_gate(
-        authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-        tool_name=tool_name,
-        scope=scope,
-        workspace_id=workspace_id,
-        task_run_id=scope.task_run_id,
-        agent_run_id=scope.agent_run_id,
-        delivery=scope.delivery,
-        include_image=include_image,
-        grant_active=True,
-    )
     return execution

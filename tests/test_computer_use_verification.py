@@ -11,7 +11,7 @@ from morrow.core.computer_use import (
     ObservedWindow,
     parse_computer_action,
 )
-from morrow.core.runtime_policy import ComputerUseMode
+from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
 from morrow.services.computer_verification import evaluate_postcondition
 from test_computer_use_after_action import revoke, setup
 from test_computer_use_observer import environment as _observer_environment
@@ -134,7 +134,8 @@ async def polling_setup(environment, *, succeeds_at=None, complete=True):
     app._run._settings = app._settings
     reads, waits = [], []
 
-    async def read(request, *, settings):
+    async def read(admitted):
+        request = admitted.request
         reads.append(request)
         index = len(reads)
         observation = device.observation.model_copy(
@@ -285,17 +286,17 @@ async def test_poll_read_timeout_preserves_unknown_native_effect(environment):
     app, device, before, reads, waits, action = await polling_setup(environment)
     execute = device.execute_one
 
-    async def unknown(request, *, settings, authority):
-        result = await execute(request, settings=settings, authority=authority)
+    async def unknown(admitted, *, authority):
+        result = await execute(admitted, authority=authority)
         return result.model_copy(update={"status": "unknown", "error_code": "action_interrupted"})
 
     device.execute_one = unknown
     observe = device.observe
 
-    async def timeout(request, *, settings):
+    async def timeout(admitted):
         if reads:
             raise TimeoutError()
-        return await observe(request, settings=settings)
+        return await observe(admitted)
 
     device.observe = timeout
     result, references = await run(app, before, action)
@@ -309,8 +310,8 @@ async def test_predicate_success_never_upgrades_unknown_native_completion(enviro
     app, device, before, reads, waits, action = await polling_setup(environment, succeeds_at=2)
     execute = device.execute_one
 
-    async def unknown(request, *, settings, authority):
-        result = await execute(request, settings=settings, authority=authority)
+    async def unknown(admitted, *, authority):
+        result = await execute(admitted, authority=authority)
         return result.model_copy(update={"status": "unknown", "error_code": "action_interrupted"})
 
     device.execute_one = unknown
@@ -329,6 +330,7 @@ async def test_predicate_success_never_upgrades_unknown_native_completion(enviro
     ],
 )
 async def test_adapter_projects_only_typed_sdk_boolean(native_flag, expected):
+    from morrow.core.computer_admission import admit_observe
     from morrow.core.computer_use import ObserveWindowRequest
     from test_computer_use_actions import setup as adapter_setup
 
@@ -350,12 +352,15 @@ async def test_adapter_projects_only_typed_sdk_boolean(native_flag, expected):
 
     native.get_window_state = state
     after = await session.observe(
-        ObserveWindowRequest(
-            authority=execute_request.authority,
-            scope=execute_request.scope,
-            target=execute_request.target,
-            delivery=execute_request.delivery,
-            include_image=False,
+        admit_observe(
+            ObserveWindowRequest(
+                authority=execute_request.authority,
+                scope=execute_request.scope,
+                target=execute_request.target,
+                delivery=execute_request.delivery,
+                include_image=False,
+            ),
+            settings=ComputerUseSettings(),
         )
     )
     element = after.observation.elements[0]

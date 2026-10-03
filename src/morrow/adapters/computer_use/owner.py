@@ -9,15 +9,18 @@ from typing import Any
 
 from morrow.adapters.computer_use.calls import NativeCalls
 from morrow.adapters.computer_use.candidates import LocalCandidateRegistry, LocalWindowIdentity
+from morrow.adapters.computer_use.census import (
+    display_label,
+    running_app,
+    strict_window,
+    valid_pid,
+    window_geometry,
+)
 from morrow.adapters.computer_use.lease import DesktopLease, FileDesktopLease
 from morrow.adapters.computer_use.process_identity import ProcessBirth, read_process_birth
 from morrow.adapters.computer_use.registry import TrustedDesktopRegistry
 from morrow.adapters.computer_use.sdk_loader import construct_driver
-from morrow.adapters.computer_use.session import (
-    TypedComputerSession,
-    _display_label,
-    _window_geometry,
-)
+from morrow.adapters.computer_use.session import TypedComputerSession
 from morrow.core.computer_use import (
     MAX_DISCOVERED_TARGETS,
     TRUSTED_COMPUTER_USE_AUTHORITY,
@@ -44,9 +47,8 @@ class ComputerDriverOwner:
         ids: IdSource,
         clock: Clock,
         *,
-        session_factory: Callable[[Any, str], Any],
+        session_factory: Callable[[Any, str, ComputerUseSettings], Any],
         driver_factory: Callable[[Any], Any] = construct_driver,
-        configured_session_factory: Callable[[Any, str, ComputerUseSettings], Any] | None = None,
         lease: DesktopLease | None = None,
         call_timeout: float = 15,
         process_reader: Callable[[int], ProcessBirth] = read_process_birth,
@@ -55,7 +57,6 @@ class ComputerDriverOwner:
         self._thread = threading.get_ident()
         self._sdk, self._ids, self._clock = sdk, ids, clock
         self._session_factory = session_factory
-        self._configured_session_factory = configured_session_factory
         self._driver = driver_factory(sdk)
         self._lease = lease if lease is not None else FileDesktopLease()
         self._leased = False
@@ -144,22 +145,13 @@ class ComputerDriverOwner:
             listed = await calls.run(lambda: self._driver.list_apps(self._sdk.ListAppsInput()))
             # The SDK also lists installed applications. Only explicitly running
             # apps can supply local window candidates or consume their budget.
-            apps = tuple(
-                app
-                for app in (getattr(listed, "apps", ()) or ())
-                if getattr(app, "running", False) is True
-            )
+            apps = tuple(app for app in (getattr(listed, "apps", ()) or ()) if running_app(app))
             if len(apps) > MAX_DISCOVERED_TARGETS:
                 raise ComputerUseContractError("target_budget")
             candidates, seen = [], set()
             for app in apps:
                 bundle_id, pid = getattr(app, "bundle_id", None), getattr(app, "pid", None)
-                if (
-                    not isinstance(pid, int)
-                    or isinstance(pid, bool)
-                    or not 0 < pid <= 2**31 - 1
-                    or getattr(app, "running", True) is False
-                ):
+                if not valid_pid(pid) or not running_app(app):
                     continue
                 try:
                     ComputerUseAppIdentity(bundle_id=bundle_id)
@@ -177,27 +169,17 @@ class ComputerDriverOwner:
                 if len(items) > MAX_DISCOVERED_TARGETS:
                     raise ComputerUseContractError("target_budget")
                 for window in items:
-                    window_id = getattr(window, "window_id", None)
-                    owner_pid = getattr(window, "pid", None)
-                    if (
-                        not isinstance(window_id, int)
-                        or isinstance(window_id, bool)
-                        or not 0 < window_id <= 2**32 - 1
-                        or owner_pid != pid
-                        or isinstance(owner_pid, bool)
-                        or getattr(window, "minimized", False) is True
-                        or getattr(window, "is_on_screen", True) is False
-                    ):
+                    if not strict_window(window, pid):
                         continue
                     try:
-                        _window_geometry(window)
+                        window_geometry(window)
                     except ComputerUseContractError:
                         continue
-                    identity = LocalWindowIdentity(bundle_id, pid, birth, window_id)
+                    identity = LocalWindowIdentity(bundle_id, pid, birth, window.window_id)
                     if identity in seen:
                         continue
                     seen.add(identity)
-                    candidates.append((identity, _display_label(getattr(window, "title", None))))
+                    candidates.append((identity, display_label(getattr(window, "title", None))))
                     if len(candidates) > MAX_DISCOVERED_TARGETS:
                         raise ComputerUseContractError("target_budget")
             if self.quarantined or self._stopping or self._closed:
@@ -226,11 +208,7 @@ class ComputerDriverOwner:
         self._lease.acquire()
         self._leased = True
         try:
-            bindings = (
-                self._candidates.take_bindings(request.scope.windows, self._process_reader)
-                if request.scope.schema_version == 2
-                else {}
-            )
+            bindings = self._candidates.take_bindings(request.scope.windows, self._process_reader)
         except Exception:
             # Local selection failure preceded SDK admission; retry can select afresh.
             self._release()
@@ -240,11 +218,8 @@ class ComputerDriverOwner:
     async def _open(self, request: OpenRunSessionRequest, bindings) -> RunSession:
         try:
             name = self._ids.new_id(COMPUTER_RUN_ID_PREFIX)
-            native = (
-                self._configured_session_factory(self._driver, name, request.settings)
-                if self._configured_session_factory is not None and request.settings is not None
-                else self._session_factory(self._driver, name)
-            )
+            settings = request.settings or ComputerUseSettings()
+            native = self._session_factory(self._driver, name, settings)
             self._session = TypedComputerSession(
                 self._sdk,
                 native,
@@ -323,7 +298,7 @@ class ComputerDriverOwner:
     async def _shutdown(self) -> None:
         if self._session is not None:
             await self._session.settle()
-            name = self._session._reserved_name
+            name = self._session.session_name
             if name is not None:
                 try:
                     await self._session.close_run_session(

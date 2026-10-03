@@ -160,20 +160,30 @@ async def test_discovery_diagnostics_keep_selection_and_exclude_content():
     assert "secret" not in str(evidence)
 
 
-async def test_core_probe_constructs_reads_and_finishes_on_owner_loop(monkeypatch):
+@pytest.mark.parametrize("fails", [False, True])
+async def test_core_probe_constructs_reads_and_finishes_on_owner_loop(monkeypatch, fails):
     module = runpy.run_path("evals/computer_use/native_readonly.py")
     inspect = module["inspect_on_core_host"]
+    owner_threads = []
 
     async def fake_inspect(*, fixture_window, native_walk_limit):
         assert fixture_window == (2, 3)
         assert native_walk_limit is None
+        owner_threads.append(threading.current_thread())
+        if fails:
+            raise RuntimeError("probe_failed")
         return {"owner_main_thread": threading.current_thread() is threading.main_thread()}
 
     monkeypatch.setitem(inspect.__globals__, "inspect_fixture", fake_inspect)
-    assert await inspect(fixture_window=(2, 3)) == {
-        "owner_main_thread": False,
-        "host_mode": "core_owner_probe",
-    }
+    if fails:
+        with pytest.raises(RuntimeError, match="^probe_failed$"):
+            await inspect(fixture_window=(2, 3))
+    else:
+        assert await inspect(fixture_window=(2, 3)) == {
+            "owner_main_thread": False,
+            "host_mode": "core_owner_probe",
+        }
+    assert len(owner_threads) == 1 and not owner_threads[0].is_alive()
 
 
 async def test_native_walk_experiment_is_explicit_and_bounded():

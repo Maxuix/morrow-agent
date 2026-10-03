@@ -8,20 +8,19 @@ import pytest
 
 from morrow.adapters.computer_use import process_identity
 from morrow.adapters.computer_use.process_identity import ProcessBirth
-from morrow.adapters.computer_use.registry import TrustedDesktopRegistry
-from morrow.adapters.computer_use.session import TypedComputerSession
+from morrow.core.computer_admission import admit_discover, admit_execute, admit_observe
 from morrow.core.computer_use import (
     TRUSTED_COMPUTER_USE_AUTHORITY,
     ClickAction,
     ComputerUseContractError,
     ComputerUseDelivery,
     DiscoverRequest,
+    ExecuteRequest,
     ObserveWindowRequest,
     OpenRunSessionRequest,
-    PreparedComputerAction,
 )
-from morrow.testing import FixedClock, FixedIdSource
-from test_computer_use_driver import NOW, _Native, _scope, _sdk
+from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
+from test_computer_use_driver import _bound_session, _Native, _selected_scope
 
 
 @pytest.mark.parametrize("reply", ["short", "wrong_pid", "zero_start", "invalid_usec", "exception"])
@@ -67,60 +66,69 @@ def test_invalid_pid_never_calls_kernel(monkeypatch, pid):
         process_identity.read_process_birth(pid)
 
 
-async def _opened(native, reader):
-    ids = FixedIdSource()
-    session = TypedComputerSession(
-        _sdk(), native, TrustedDesktopRegistry(ids), ids, FixedClock(NOW), process_reader=reader
-    )
+_HYBRID = ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID)
+
+
+async def _opened(native, reader, birth=None):
+    scope = _selected_scope()
+    session = _bound_session(native, reader=reader, birth=birth)
     run = await session.open_run_session(
         OpenRunSessionRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY, agent_run_id="arun_1", scope=_scope()
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY, agent_run_id="arun_1", scope=scope
         )
     )
     request = DiscoverRequest(
-        authority=TRUSTED_COMPUTER_USE_AUTHORITY, scope=_scope(), run_session_id=run.run_session_id
+        authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+        scope=scope,
+        run_session_id=run.run_session_id,
     )
-    found = await session.discover(request)
+    found = await session.discover(admit_discover(request))
     return session, request, found.targets[0]
 
 
-def _observe(target):
-    return ObserveWindowRequest(
-        authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-        scope=_scope(),
-        target=target,
-        delivery=ComputerUseDelivery.FOREGROUND,
-        include_image=True,
+def _observe(target, **scope_changes):
+    scope = _selected_scope()
+    if scope_changes:
+        scope = scope.model_copy(update=scope_changes)
+    return admit_observe(
+        ObserveWindowRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+            scope=scope,
+            target=target,
+            delivery=ComputerUseDelivery.FOREGROUND,
+            include_image=True,
+        ),
+        settings=_HYBRID,
     )
 
 
 async def test_pid_reuse_mints_new_refs_and_old_refs_do_not_reach_sdk():
     birth = ProcessBirth(123, 0)
     native = _Native()
-    session, request, target = await _opened(native, lambda pid: birth)
+    session, request, target = await _opened(native, lambda pid: birth, birth)
     observed = await session.observe(_observe(target))
     birth = ProcessBirth(124, 0)
     before = len(native.calls)
     with pytest.raises(ComputerUseContractError, match="stale_observation"):
         await session.observe(_observe(target))
-    with pytest.raises(ComputerUseContractError, match="stale_observation"):
-        await session.execute(
-            PreparedComputerAction(
-                action=ClickAction(
-                    type="click", element_ref=observed.observation.elements[0].element_ref
-                ),
-                window_point=None,
+    with pytest.raises(ComputerUseContractError, match="unknown_element"):
+        await session.execute_one(
+            admit_execute(
+                ExecuteRequest(
+                    authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                    scope=request.scope,
+                    target=target,
+                    observation=observed.observation,
+                    action=ClickAction(
+                        type="click", element_ref=observed.observation.elements[0].element_ref
+                    ),
+                    delivery=ComputerUseDelivery.FOREGROUND,
+                )
             ),
-            window_identity=target.window_identity,
-            delivery=ComputerUseDelivery.FOREGROUND,
-            agent_run_id="arun_1",
-            generation=1,
+            authority=lambda: None,
         )
     assert len(native.calls) == before
-    replacement = (await session.discover(request)).targets[0]
-    assert replacement.process_identity != target.process_identity
-    assert replacement.target_ref != target.target_ref
-    assert replacement.window_identity != target.window_identity
+    assert (await session.discover(admit_discover(request))).targets == ()
 
 
 async def test_process_replaced_during_observe_never_returns_capture():
@@ -134,7 +142,7 @@ async def test_process_replaced_during_observe_never_returns_capture():
             return result
 
     native = ReplacedWindow()
-    session, _, target = await _opened(native, lambda pid: birth)
+    session, _, target = await _opened(native, lambda pid: birth, birth)
     with pytest.raises(ComputerUseContractError, match="stale_observation"):
         await session.observe(_observe(target))
     assert [name for name, _ in native.calls].count("get_window_state") == 1
@@ -145,7 +153,7 @@ async def test_process_replaced_during_discovery_returns_no_targets():
     births = iter([ProcessBirth(123, 0), ProcessBirth(124, 0)])
     native = _Native()
     with pytest.raises(ComputerUseContractError, match="stale_observation"):
-        await _opened(native, lambda pid: next(births))
+        await _opened(native, lambda pid: next(births), ProcessBirth(123, 0))
     assert not any(name == "get_window_state" for name, _ in native.calls)
 
 
@@ -159,25 +167,22 @@ async def test_discovery_rejects_wrong_owner_and_invalid_window_identity(pid, wi
             return result
 
     native = InvalidWindow()
-    ids = FixedIdSource()
-    session = TypedComputerSession(
-        _sdk(),
-        native,
-        TrustedDesktopRegistry(ids),
-        ids,
-        FixedClock(NOW),
-        process_reader=lambda pid: ProcessBirth(123, 0),
+    scope = _selected_scope()
+    session = _bound_session(
+        native, reader=lambda pid: ProcessBirth(123, 0), birth=ProcessBirth(123, 0)
     )
     run = await session.open_run_session(
         OpenRunSessionRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY, agent_run_id="arun_1", scope=_scope()
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY, agent_run_id="arun_1", scope=scope
         )
     )
     found = await session.discover(
-        DiscoverRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
-            run_session_id=run.run_session_id,
+        admit_discover(
+            DiscoverRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=scope,
+                run_session_id=run.run_session_id,
+            )
         )
     )
     assert found.targets == ()
@@ -207,7 +212,9 @@ async def test_live_target_changes_refuse_before_window_state(change):
             return result
 
     native = ChangedWindow()
-    session, _, target = await _opened(native, lambda pid: ProcessBirth(123, 0))
+    session, _, target = await _opened(
+        native, lambda pid: ProcessBirth(123, 0), ProcessBirth(123, 0)
+    )
     native.changed = True
     with pytest.raises(ComputerUseContractError):
         await session.observe(_observe(target))
@@ -230,7 +237,9 @@ async def test_geometry_changed_while_observing_rejects_the_capture():
             return result
 
     native = MovingWindow()
-    session, _, target = await _opened(native, lambda pid: ProcessBirth(123, 0))
+    session, _, target = await _opened(
+        native, lambda pid: ProcessBirth(123, 0), ProcessBirth(123, 0)
+    )
     with pytest.raises(ComputerUseContractError, match="stale_observation"):
         await session.observe(_observe(target))
     assert [name for name, _ in native.calls].count("get_window_state") == 1
@@ -245,26 +254,32 @@ async def test_sdk_capture_bounds_must_match_live_geometry():
             return result
 
     native = WrongFrame()
-    session, _, target = await _opened(native, lambda pid: ProcessBirth(123, 0))
+    session, _, target = await _opened(
+        native, lambda pid: ProcessBirth(123, 0), ProcessBirth(123, 0)
+    )
     with pytest.raises(ComputerUseContractError, match="stale_observation"):
         await session.observe(_observe(target))
 
 
 async def test_changed_frozen_scope_does_not_reach_sdk():
     native = _Native()
-    session, request, target = await _opened(native, lambda pid: ProcessBirth(123, 0))
+    session, request, target = await _opened(
+        native, lambda pid: ProcessBirth(123, 0), ProcessBirth(123, 0)
+    )
     before = len(native.calls)
     changed = request.scope.model_copy(update={"workspace_id": "ws_other"})
     with pytest.raises(ComputerUseContractError, match="subject_mismatch"):
-        await session.discover(request.model_copy(update={"scope": changed}))
+        await session.discover(admit_discover(request.model_copy(update={"scope": changed})))
     with pytest.raises(ComputerUseContractError, match="subject_mismatch"):
-        await session.observe(_observe(target).model_copy(update={"scope": changed}))
+        await session.observe(_observe(target, workspace_id="ws_other"))
     assert len(native.calls) == before
 
 
 async def test_new_read_retires_previous_window_element_tokens_even_on_failure():
     native = _Native()
-    session, _, target = await _opened(native, lambda pid: ProcessBirth(123, 0))
+    session, _, target = await _opened(
+        native, lambda pid: ProcessBirth(123, 0), ProcessBirth(123, 0)
+    )
     first = await session.observe(_observe(target))
     old_ref = first.observation.elements[0].element_ref
     assert session._registry.element(old_ref) is not None

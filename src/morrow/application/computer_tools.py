@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from morrow.application.computer_recovery import computer_refusal_message
+from morrow.application.computer_requests import ComputerObservationSurface
 from morrow.core.capabilities import (
     ComputerToolEvidence,
     ComputerToolFact,
@@ -66,14 +67,13 @@ def _computer_fact(context, **evidence):
 
 
 def _display_target(observations, observation_id, context):
-    resolver = getattr(observations, "display_target", None)
-    target = resolver(observation_id, context) if resolver is not None else None
+    target = observations.display_target(observation_id, context)
     return (
         {"target_label": target.display_label, "bundle_id": target.app.bundle_id} if target else {}
     )
 
 
-def make_computer_observe_tool(observations, visuals) -> RegisteredTool:
+def make_computer_observe_tool(observations: ComputerObservationSurface, visuals) -> RegisteredTool:
     async def handler(arguments: ComputerObserveArguments, context: ToolCallContext):
         try:
             execution_id = observations.execution_for_context(context)
@@ -148,7 +148,7 @@ class ComputerActionArguments(BaseModel):
         return validate_prefixed_id(value, COMPUTER_OBSERVATION_ID_PREFIX)
 
 
-def make_computer_action_tool(observations, visuals) -> RegisteredTool:
+def make_computer_action_tool(observations: ComputerObservationSurface, visuals) -> RegisteredTool:
     async def handler(arguments: ComputerActionArguments, context: ToolCallContext):
         try:
             execution_id = observations.execution_for_context(

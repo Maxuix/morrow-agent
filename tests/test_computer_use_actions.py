@@ -8,8 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from morrow.adapters.computer_use.action_inputs import NativeTextInput, invoke_fixed_action
-from morrow.adapters.computer_use.registry import TrustedDesktopRegistry
-from morrow.adapters.computer_use.session import TypedComputerSession
+from morrow.core.computer_admission import admit_discover, admit_execute, admit_observe
 from morrow.core.computer_use import (
     TRUSTED_COMPUTER_USE_AUTHORITY,
     ClickAction,
@@ -25,8 +24,8 @@ from morrow.core.computer_use import (
     TypeTextAction,
 )
 from morrow.core.runtime_policy import ComputerUseSettings
-from morrow.testing import FixedClock, FixedIdSource
-from test_computer_use_driver import NOW, _Enum, _Native, _process_birth, _scope, _sdk
+from morrow.testing import FixedClock
+from test_computer_use_driver import NOW, _bound_session, _Enum, _Native, _selected_scope
 
 
 class Native(_Native):
@@ -67,15 +66,8 @@ class Native(_Native):
 
 async def setup(delivery=ComputerUseDelivery.FOREGROUND):
     native, clock = Native(), FixedClock(NOW)
-    scope = _scope(delivery=delivery)
-    session = TypedComputerSession(
-        _sdk(),
-        native,
-        TrustedDesktopRegistry(FixedIdSource()),
-        FixedIdSource(),
-        clock,
-        process_reader=_process_birth,
-    )
+    scope = _selected_scope(delivery=delivery)
+    session = _bound_session(native, clock=clock)
     run = await session.open_run_session(
         OpenRunSessionRequest(
             authority=TRUSTED_COMPUTER_USE_AUTHORITY,
@@ -84,20 +76,25 @@ async def setup(delivery=ComputerUseDelivery.FOREGROUND):
         )
     )
     targets = await session.discover(
-        DiscoverRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=scope,
-            run_session_id=run.run_session_id,
+        admit_discover(
+            DiscoverRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=scope,
+                run_session_id=run.run_session_id,
+            )
         )
     )
     target = targets.targets[0]
     read = await session.observe(
-        ObserveWindowRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=scope,
-            target=target,
-            delivery=delivery,
-            include_image=False,
+        admit_observe(
+            ObserveWindowRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=scope,
+                target=target,
+                delivery=delivery,
+                include_image=False,
+            ),
+            settings=ComputerUseSettings(),
         )
     )
 
@@ -134,7 +131,8 @@ async def test_fixed_protocol_actions_bind_exact_token_window_and_delivery(deliv
         "scroll": lambda: ScrollAction(type="scroll", element_ref=ref, direction="down", amount=50),
     }[kind]()
     outcome = await session.execute_one(
-        request(action), settings=ComputerUseSettings(enabled=True), authority=lambda: None
+        admit_execute(request(action), settings=ComputerUseSettings(enabled=True)),
+        authority=lambda: None,
     )
     assert outcome.status == "completed" and outcome.delivery is delivery
     name, payload = effects(native)[0]
@@ -151,9 +149,10 @@ async def test_fixed_protocol_actions_bind_exact_token_window_and_delivery(deliv
     if kind == "scroll":
         assert "x" not in payload and "y" not in payload and payload["by"] == "line"
     assert "raw secret" not in outcome.model_dump_json()
-    with pytest.raises(ComputerUseContractError, match="stale_observation"):
+    with pytest.raises(ComputerUseContractError, match="unknown_element"):
         await session.execute_one(
-            request(action), settings=ComputerUseSettings(enabled=True), authority=lambda: None
+            admit_execute(request(action), settings=ComputerUseSettings(enabled=True)),
+            authority=lambda: None,
         )
     assert len(effects(native)) == 1
 
@@ -170,7 +169,8 @@ async def test_secure_keyboard_targets_use_the_same_sdk_path(kind):
     assert read.observation.elements[1].sensitive
     assert read.observation.elements[1].label is None
     outcome = await session.execute_one(
-        request(action), settings=ComputerUseSettings(enabled=True), authority=lambda: None
+        admit_execute(request(action), settings=ComputerUseSettings(enabled=True)),
+        authority=lambda: None,
     )
     assert outcome.status == "completed"
     assert len(effects(native)) == 1
@@ -184,12 +184,14 @@ async def test_geometry_change_rejects_action_and_consumes_the_old_observation()
     native.frame_change = True
     with pytest.raises(ComputerUseContractError, match="stale_observation"):
         await session.execute_one(
-            request(action), settings=ComputerUseSettings(enabled=True), authority=lambda: None
+            admit_execute(request(action), settings=ComputerUseSettings(enabled=True)),
+            authority=lambda: None,
         )
     native.frame_change = False
-    with pytest.raises(ComputerUseContractError, match="stale_observation"):
+    with pytest.raises(ComputerUseContractError, match="unknown_element"):
         await session.execute_one(
-            request(action), settings=ComputerUseSettings(enabled=True), authority=lambda: None
+            admit_execute(request(action), settings=ComputerUseSettings(enabled=True)),
+            authority=lambda: None,
         )
     assert effects(native) == []
 
@@ -201,10 +203,12 @@ async def test_expired_or_future_observation_is_rejected_before_any_sdk_read(age
     before = len(native.calls)
     with pytest.raises(ComputerUseContractError, match="stale_observation"):
         await session.execute_one(
-            request(
-                ClickAction(type="click", element_ref=read.observation.elements[0].element_ref)
+            admit_execute(
+                request(
+                    ClickAction(type="click", element_ref=read.observation.elements[0].element_ref)
+                ),
+                settings=ComputerUseSettings(enabled=True),
             ),
-            settings=ComputerUseSettings(enabled=True),
             authority=lambda: None,
         )
     assert len(native.calls) == before
@@ -222,10 +226,12 @@ async def test_revocation_in_retained_task_prevents_sdk_entry():
 
     with pytest.raises(ComputerUseContractError, match="grant_inactive"):
         await session.execute_one(
-            request(
-                ClickAction(type="click", element_ref=read.observation.elements[0].element_ref)
+            admit_execute(
+                request(
+                    ClickAction(type="click", element_ref=read.observation.elements[0].element_ref)
+                ),
+                settings=ComputerUseSettings(enabled=True),
             ),
-            settings=ComputerUseSettings(enabled=True),
             authority=authority,
         )
     assert calls == 3 and effects(native) == []
@@ -236,10 +242,12 @@ async def test_deadline_expiring_during_live_preflight_prevents_dispatch():
     native.after_windows = lambda: setattr(clock, "value", NOW + timedelta(seconds=30))
     with pytest.raises(ComputerUseContractError, match="stale_observation"):
         await session.execute_one(
-            request(
-                ClickAction(type="click", element_ref=read.observation.elements[0].element_ref)
+            admit_execute(
+                request(
+                    ClickAction(type="click", element_ref=read.observation.elements[0].element_ref)
+                ),
+                settings=ComputerUseSettings(enabled=True),
             ),
-            settings=ComputerUseSettings(enabled=True),
             authority=lambda: None,
         )
     assert effects(native) == []
@@ -255,13 +263,15 @@ async def test_opaque_failure_after_dispatch_is_unknown_and_cannot_repeat():
     native.click = broken
     action = ClickAction(type="click", element_ref=read.observation.elements[0].element_ref)
     outcome = await session.execute_one(
-        request(action), settings=ComputerUseSettings(enabled=True), authority=lambda: None
+        admit_execute(request(action), settings=ComputerUseSettings(enabled=True)),
+        authority=lambda: None,
     )
     assert outcome.status == "unknown" and outcome.error_code == "driver_error"
     assert "raw diagnostic" not in repr(outcome)
-    with pytest.raises(ComputerUseContractError, match="stale_observation"):
+    with pytest.raises(ComputerUseContractError, match="unknown_element"):
         await session.execute_one(
-            request(action), settings=ComputerUseSettings(enabled=True), authority=lambda: None
+            admit_execute(request(action), settings=ComputerUseSettings(enabled=True)),
+            authority=lambda: None,
         )
     assert len(effects(native)) == 1
 
@@ -300,7 +310,8 @@ async def test_click_keeps_exact_button_count_and_bound_token(button, count):
         element_ref=read.observation.elements[0].element_ref,
     )
     outcome = await session.execute_one(
-        request(action), settings=ComputerUseSettings(enabled=True), authority=lambda: None
+        admit_execute(request(action), settings=ComputerUseSettings(enabled=True)),
+        authority=lambda: None,
     )
     assert outcome.status == "completed"
     _, payload = effects(native)[0]
@@ -316,7 +327,8 @@ async def test_coordinates_are_delivered_image_pixels_without_second_retina_conv
     action = ClickAction(type="click", x=10, y=4)
     with pytest.raises(ComputerUseContractError, match="image_not_published"):
         await session.execute_one(
-            request(action), settings=ComputerUseSettings(enabled=True), authority=lambda: None
+            admit_execute(request(action), settings=ComputerUseSettings(enabled=True)),
+            authority=lambda: None,
         )
     observation = read.observation.model_copy(
         update={
@@ -333,7 +345,7 @@ async def test_coordinates_are_delivered_image_pixels_without_second_retina_conv
     )
     actual = request(action).model_copy(update={"observation": observation})
     outcome = await session.execute_one(
-        actual, settings=ComputerUseSettings(enabled=True), authority=lambda: None
+        admit_execute(actual, settings=ComputerUseSettings(enabled=True)), authority=lambda: None
     )
     assert outcome.status == "completed"
     _, payload = effects(native)[0]
@@ -344,15 +356,17 @@ async def test_rediscovery_invalidates_previous_action_snapshot():
     session, native, _, read, request = await setup()
     req = request(ClickAction(type="click", element_ref=read.observation.elements[0].element_ref))
     await session.discover(
-        DiscoverRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=req.scope,
-            run_session_id=session._require_session(),
+        admit_discover(
+            DiscoverRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=req.scope,
+                run_session_id=session._require_session(),
+            )
         )
     )
-    with pytest.raises(ComputerUseContractError, match="stale_observation"):
+    with pytest.raises(ComputerUseContractError, match="unknown_element"):
         await session.execute_one(
-            req, settings=ComputerUseSettings(enabled=True), authority=lambda: None
+            admit_execute(req, settings=ComputerUseSettings(enabled=True)), authority=lambda: None
         )
     assert effects(native) == []
 
@@ -375,8 +389,12 @@ async def test_interruption_preserves_native_completion_without_retry(completion
 
     native.click = interrupted
     outcome = await session.execute_one(
-        request(ClickAction(type="click", element_ref=read.observation.elements[0].element_ref)),
-        settings=ComputerUseSettings(enabled=True),
+        admit_execute(
+            request(
+                ClickAction(type="click", element_ref=read.observation.elements[0].element_ref)
+            ),
+            settings=ComputerUseSettings(enabled=True),
+        ),
         authority=lambda: None,
     )
     assert outcome.status == expected and outcome.error_code == "action_interrupted"

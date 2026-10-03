@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -13,9 +14,9 @@ from morrow.core.computer_use import (
     ComputerUseDelivery,
     ComputerUseImageShare,
     ComputerUseOperation,
-    ComputerUseScope,
     ComputerUseWindowBoundary,
     ComputerUseWindowIdentity,
+    SelectedWindowScope,
 )
 
 
@@ -51,12 +52,13 @@ class ComputerUseSelection(BaseModel):
         return self
 
     def bind(self, *, workspace_id, task_run_id, agent_run_id, generation):
-        return ComputerUseScope(
+        if not self.windows:
+            raise ComputerUseContractError("window_scope_required")
+        scope = SelectedWindowScope(
             workspace_id=workspace_id,
             task_run_id=task_run_id,
             agent_run_id=agent_run_id,
             generation=generation,
-            schema_version=2 if self.windows else 1,
             apps=self.apps,
             windows=tuple(sorted(self.windows, key=lambda item: item.window_identity)),
             operations=self.operations,
@@ -64,6 +66,36 @@ class ComputerUseSelection(BaseModel):
             delivery=self.delivery,
             image_share=self.image_share,
         )
+        return scope
+
+
+class ComputerObservationSurface(Protocol):
+    """Stable object frozen tools hold, then bind once to a run service."""
+
+    def display_target(self, observation_id: str, context: object): ...
+
+    def action_preview(self, observation_id: str, action: object, context: object): ...
+
+    def execution_for_context(self, context: object, **kwargs: object) -> str: ...
+
+    async def discover(self, execution_id: str, *, bundle_id: str | None = None): ...
+
+    async def observe_published(
+        self,
+        execution_id: str,
+        target_ref: str,
+        *,
+        visuals: object,
+        include_image: bool | None = None,
+    ): ...
+
+    async def execute_published(
+        self, execution_id: str, observation_id: str, action: object, *, visuals: object
+    ): ...
+
+    def stop_admission(self) -> None: ...
+
+    async def close(self) -> None: ...
 
 
 @dataclass(frozen=True, slots=True, repr=False)

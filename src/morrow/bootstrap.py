@@ -1540,10 +1540,7 @@ def build_computer_use_lifecycle(application, settings=None):
             sdk,
             application.id_source,
             SystemStoreClock(),
-            session_factory=lambda driver, name: construct_run_session(
-                sdk, driver, name, lifetime_seconds=resolved.max_run_seconds
-            ),
-            configured_session_factory=lambda driver, name, current: construct_run_session(
+            session_factory=lambda driver, name, current: construct_run_session(
                 sdk, driver, name, lifetime_seconds=current.max_run_seconds
             ),
             call_timeout=resolved.max_call_seconds,

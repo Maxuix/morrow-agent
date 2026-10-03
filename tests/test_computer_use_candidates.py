@@ -26,7 +26,7 @@ SETTINGS = ComputerUseSettings(enabled=True)
 def owner_for(driver, *, process_reader=lambda pid: ProcessBirth(1, 0)):
     lease, clock, sessions = _Lease(), FixedClock(NOW), []
 
-    def session_factory(_driver, name):
+    def session_factory(_driver, name, settings):
         sessions.append(name)
         return _Native()
 
@@ -117,7 +117,7 @@ async def test_local_discovery_hides_native_identity_and_shares_owner_with_runs(
         clock.value = fresh.expires_at
         with pytest.raises(ComputerUseContractError, match="stale_observation"):
             owner._candidates.resolve(fresh.candidates[0].candidate_id)
-        run = await owner.open_run_session(_open())
+        run = await owner.open_run_session(_open(owner))
         with pytest.raises(ComputerUseContractError, match="desktop_busy"):
             await owner.discover_local_candidates(SETTINGS, authority=AUTH)
         assert len(sessions) == 1 and lease.held
@@ -189,7 +189,7 @@ async def test_cancelled_candidate_read_retains_lease_until_the_driver_settles()
         await discovery
     assert owner.quarantined and lease.held and sessions == []
     with pytest.raises(ComputerUseContractError, match="driver_not_activated"):
-        await owner.open_run_session(_open())
+        await owner.open_run_session(_open(owner))
     closing = asyncio.create_task(owner.shutdown())
     assert not closing.done()
     assert not any(name == "shutdown" for name, _ in driver.calls)
@@ -232,7 +232,7 @@ async def test_local_read_and_agent_run_use_the_same_lifecycle_owner():
     try:
         result = await lifecycle.discover_local_candidates(SETTINGS, authority=AUTH)
         assert result.candidates and created == [True] and sessions == []
-        run = await lifecycle.open_run_session(_open())
+        run = await lifecycle.open_run_session(_open(owner))
         assert created == [True] and len(sessions) == 1 and lease.held
         await lifecycle.close_run_session(_close(run))
     finally:

@@ -4,6 +4,7 @@ from morrow.core.computer_use import (
     ComputerUseAction,
     ComputerUseRuntimeStatus,
     ComputerUseScope,
+    SelectedWindowScope,
     TargetRef,
 )
 from morrow.core.execution import ToolExecutionDisposition
@@ -12,8 +13,10 @@ from morrow.core.execution import ToolExecutionDisposition
 def computer_scope_summary(scope: ComputerUseScope) -> dict[str, object]:
     return {
         "apps": [app.bundle_id for app in scope.apps],
-        "window_scope": "selected_windows" if scope.schema_version == 2 else "legacy_app_windows",
-        "window_count": len(scope.windows) if scope.schema_version == 2 else None,
+        "window_scope": "selected_windows"
+        if isinstance(scope, SelectedWindowScope)
+        else "legacy_app_windows",
+        "window_count": len(scope.windows) if isinstance(scope, SelectedWindowScope) else None,
         "operations": [operation.value for operation in scope.operations],
         "delivery": scope.delivery.value,
         "image_share": scope.image_share.value,

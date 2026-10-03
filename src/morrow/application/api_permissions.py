@@ -17,7 +17,7 @@ from morrow.core.application import (
     ApplicationErrorCode,
 )
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
-from morrow.core.computer_use import ComputerUseScope
+from morrow.core.computer_use import SelectedWindowScope
 from morrow.core.domain import canonical_json_bytes, sha256_digest
 from morrow.core.execution import (
     DurableApproval,
@@ -122,7 +122,7 @@ class PermissionApplicationService:
         grant_id: str | None = None,
         command_id: str | None = None,
         computer_use_enabled: bool = False,
-        computer_use_scope: ComputerUseScope | None = None,
+        computer_use_scope: SelectedWindowScope | None = None,
     ) -> ApplicationCommandResult[CapabilityGrant]:
         api = self.context
         try:
@@ -453,7 +453,7 @@ def grant_create_command_payload(
     preview_digest: str,
     expires_at: datetime | None,
     grant_id: str | None,
-    computer_use_scope: ComputerUseScope | None,
+    computer_use_scope: SelectedWindowScope | None,
 ) -> dict[str, object]:
     """Build the grant command digest payload.
 

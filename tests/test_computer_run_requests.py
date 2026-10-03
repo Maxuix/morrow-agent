@@ -12,6 +12,7 @@ from morrow.core.computer_use import (
     ComputerUseAppIdentity,
     ComputerUseContractError,
     ComputerUseOperation,
+    ComputerUseWindowIdentity,
 )
 from morrow.core.permissions import CapabilityName
 from morrow.core.runtime_policy import ComputerUseSettings, RuntimePolicyOverrides
@@ -57,9 +58,11 @@ def products(tmp_path):
 
 
 def request(products, *, operations=(ComputerUseOperation.OBSERVE, ComputerUseOperation.ACTION)):
+    app = ComputerUseAppIdentity(bundle_id="com.example.Controlled")
     return products.orchestrator.preparation.computer_factory.select(
         ComputerUseSelection(
-            apps=(ComputerUseAppIdentity(bundle_id="com.example.Controlled"),),
+            apps=(app,),
+            windows=(ComputerUseWindowIdentity(app=app, window_identity="cwin_req"),),
             operations=operations,
         ),
         products.session,

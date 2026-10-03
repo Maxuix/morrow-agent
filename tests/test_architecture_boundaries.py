@@ -410,9 +410,10 @@ def test_computer_use_does_not_import_the_native_driver():
         imported = _imports(path)
         assert "cua_driver" not in imported
         assert not any(name.startswith("cua_driver.") for name in imported), path
-    core = (SOURCE_ROOT / "core" / "computer_use.py").read_text(encoding="utf-8")
-    assert "cua_driver" not in core
-    assert "cua-driver" not in core
+    for name in ("computer_use.py", "computer_actions.py", "computer_admission.py"):
+        core = (SOURCE_ROOT / "core" / name).read_text(encoding="utf-8")
+        assert "cua_driver" not in core
+        assert "cua-driver" not in core
     adapter = (SOURCE_ROOT / "adapters" / "computer_use" / "__init__.py").read_text(
         encoding="utf-8"
     )

@@ -7,14 +7,17 @@ from pydantic import ValidationError
 
 from morrow.adapters.computer_use.process_identity import ProcessBirth
 from morrow.application.computer_requests import ComputerUseSelection
+from morrow.core.computer_admission import admit_discover, admit_observe
 from morrow.core.computer_use import (
+    AppWindowScope,
     ComputerUseContractError,
-    ComputerUseScope,
     ComputerUseWindowIdentity,
     DiscoverRequest,
+    ExecuteRequest,
     ObserveWindowRequest,
     OpenRunSessionRequest,
-    observe_window_if_admitted,
+    SelectedWindowScope,
+    decode_computer_use_scope,
     prepare_execute_request,
 )
 from morrow.core.domain import canonical_json_bytes
@@ -39,6 +42,7 @@ def window_scope(windows):
 
 def test_window_scope_roundtrip_and_legacy_scope_bytes_are_preserved():
     legacy = _scope()
+    assert isinstance(legacy, AppWindowScope)
     payload = legacy.model_dump(mode="json")
     assert "windows" not in payload and payload["schema_version"] == 1
     original_bytes = (
@@ -49,12 +53,13 @@ def test_window_scope_roundtrip_and_legacy_scope_bytes_are_preserved():
     )
     assert canonical_json_bytes(payload) == original_bytes
     assert canonical_json_bytes(
-        ComputerUseScope.model_validate(payload).model_dump(mode="json")
+        decode_computer_use_scope(payload).model_dump(mode="json")
     ) == canonical_json_bytes(payload)
     windows = (ComputerUseWindowIdentity(app=legacy.apps[0], window_identity="cwin_selected"),)
     scope = window_scope(windows)
+    assert isinstance(scope, SelectedWindowScope)
     assert scope.schema_version == 2 and scope.windows == windows
-    assert ComputerUseScope.model_validate_json(scope.model_dump_json()) == scope
+    assert decode_computer_use_scope(scope.model_dump(mode="json")) == scope
     encoded = encode_capability_payload(
         schema_version=10,
         capabilities=(CapabilityName.COMPUTER_USE_HOST,),
@@ -69,7 +74,27 @@ def test_window_scope_roundtrip_and_legacy_scope_bytes_are_preserved():
         scope.model_dump(mode="json") | {"windows": [windows[0].model_dump(mode="json")] * 2},
     ]:
         with pytest.raises(ValidationError):
-            ComputerUseScope.model_validate(invalid)
+            decode_computer_use_scope(invalid)
+
+
+@pytest.mark.parametrize("serialized", [False, True])
+@pytest.mark.parametrize("request_type", ["open", "discover", "observe", "execute"])
+def test_legacy_evidence_cannot_construct_any_device_request(serialized, request_type):
+    legacy = _scope()
+    scope = legacy.model_dump(mode="json") if serialized else legacy
+    action = _execute({"type": "click", "element_ref": "celem_1"})
+    requests = {
+        "open": (OpenRunSessionRequest, {"authority": AUTH, "agent_run_id": "arun_1"}),
+        "discover": (DiscoverRequest, {"authority": AUTH, "run_session_id": "crun_1"}),
+        "observe": (
+            ObserveWindowRequest,
+            {"authority": AUTH, "target": action.target, "delivery": legacy.delivery},
+        ),
+        "execute": (ExecuteRequest, action.model_dump(mode="python", exclude={"scope"})),
+    }
+    model, fields = requests[request_type]
+    with pytest.raises(ValidationError):
+        model.model_validate({**fields, "scope": scope})
 
 
 async def test_selected_native_window_is_the_only_discovered_window_of_the_app():
@@ -93,7 +118,7 @@ async def test_selected_native_window_is_the_only_discovered_window_of_the_app()
         pass
 
     owner, lease, _, sessions = owner_for(LocalDriver())
-    owner._session_factory = lambda driver, name: TwoWindows()
+    owner._session_factory = lambda driver, name, settings: TwoWindows()
     try:
         candidates = await owner.discover_local_candidates(SETTINGS, authority=AUTH)
         assert [item.display_label for item in candidates.candidates] == ["First", "Second"]
@@ -106,7 +131,9 @@ async def test_selected_native_window_is_the_only_discovered_window_of_the_app()
         )
         session = owner.session_for(run)
         result = await session.discover(
-            DiscoverRequest(authority=AUTH, scope=scope, run_session_id=run.run_session_id)
+            admit_discover(
+                DiscoverRequest(authority=AUTH, scope=scope, run_session_id=run.run_session_id)
+            )
         )
         assert len(result.targets) == 1
         target = result.targets[0]
@@ -169,13 +196,8 @@ def test_unselected_window_is_rejected_by_observe_and_action_contracts():
         ),
     )
 
-    class Port:
-        def observe_window(self, request):
-            raise AssertionError("device should never be reached")
-
     with pytest.raises(ComputerUseContractError, match="window_not_granted"):
-        observe_window_if_admitted(
-            Port(),
+        admit_observe(
             ObserveWindowRequest(
                 authority=AUTH, scope=scope, target=request.target, delivery=scope.delivery
             ),

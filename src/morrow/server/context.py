@@ -6,6 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from morrow.core.computer_use import ComputerUseLifecyclePort
+
 
 @dataclass
 class ServerContext:
@@ -29,5 +31,5 @@ class ServerContext:
     management_jobs: Any = None
     store_handle: Any = None
     workspaces: Any = None
-    computer_use: Any = None
+    computer_use: ComputerUseLifecyclePort | None = None
     close: Callable[[], None] = lambda: None

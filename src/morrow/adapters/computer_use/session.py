@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import math
-import re
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -19,62 +16,57 @@ from morrow.adapters.computer_use.action_inputs import (
     native_key,
 )
 from morrow.adapters.computer_use.calls import NativeActionInterrupted, NativeCalls
+from morrow.adapters.computer_use.census import (
+    display_label,
+    running_app,
+    strict_window,
+    valid_pid,
+    window_geometry,
+)
 from morrow.adapters.computer_use.process_identity import ProcessBirth, read_process_birth
+from morrow.adapters.computer_use.projection import (
+    outcome_from_action,
+    outcome_from_tool,
+    project_capture,
+    project_elements,
+    project_frame,
+    project_sensitive_regions,
+    reported_window_geometry,
+)
 from morrow.adapters.computer_use.registry import TrustedDesktopRegistry, WindowGeometry
+from morrow.core.computer_admission import AdmittedDiscover, AdmittedExecute, AdmittedObserve
 from morrow.core.computer_use import (
     MAX_AX_DEPTH,
-    MAX_AX_ELEMENTS,
-    MAX_AX_TEXT_BYTES,
     MAX_DISCOVERED_TARGETS,
-    MAX_IMAGE_BYTES,
     MAX_IMAGE_LONG_EDGE_PX,
-    MAX_IMAGE_PIXELS,
     MAX_OBSERVATION_AGE_SECONDS,
     ActionOutcome,
-    AxElement,
     CloseRunSessionRequest,
     ComputerUseAppIdentity,
     ComputerUseContractError,
     ComputerUseDelivery,
-    ComputerUseOperation,
-    ComputerUseScope,
-    CoordinateFrame,
     DiscoverRequest,
     DiscoverResult,
-    ExecuteRequest,
     Observation,
     ObservedWindow,
     ObserveWindowRequest,
     OpenRunSessionRequest,
-    PreparedComputerAction,
     RunSession,
-    SensitiveCaptureRegion,
+    SelectedWindowScope,
     TargetRef,
-    TransientCapture,
-    prepare_execute_request,
     reject_untrusted_computer_use_authority,
 )
 from morrow.core.domain import (
     COMPUTER_OBSERVATION_ID_PREFIX,
     COMPUTER_RUN_ID_PREFIX,
     canonical_json_bytes,
-    refuse_secret_material,
     sha256_digest,
 )
 from morrow.core.ports import Clock, IdSource
-from morrow.core.runtime_policy import ComputerUseSettings
 
-_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 # The pinned SDK counts every traversed node, including collapsed layout containers.
 # Bound native work separately from the unchanged 200-element model projection.
 MAX_NATIVE_AX_NODES = 400
-
-_MIME = {
-    "image/png": "image/png",
-    "image/jpeg": "image/jpeg",
-    "image/jpg": "image/jpeg",
-    "image/webp": "image/webp",
-}
 
 
 class TypedComputerSession:
@@ -106,8 +98,7 @@ class TypedComputerSession:
         self._session_name: str | None = None
         self._agent_run_id: str | None = None
         self._generation: int | None = None
-        self._scope: ComputerUseScope | None = None
-        self._observations: dict[str, Observation] = {}
+        self._scope: SelectedWindowScope | None = None
         self._calls = NativeCalls(self.invalidate, timeout=call_timeout)
         self._process_reader = process_reader
         self._window_bindings = dict(window_bindings or {})
@@ -174,19 +165,20 @@ class TypedComputerSession:
         if failure is not None:
             raise failure
 
-    async def discover(self, request: DiscoverRequest) -> DiscoverResult:
-        reject_untrusted_computer_use_authority(request.authority)
+    @property
+    def session_name(self) -> str | None:
+        """Name reserved at start, including a start that has not returned yet."""
+
+        return self._session_name or self._reserved_name
+
+    async def discover(self, admitted: AdmittedDiscover) -> DiscoverResult:
+        request = admitted.request
         self._require_scope(request.scope)
-        if ComputerUseOperation.OBSERVE not in request.scope.operations:
-            raise ComputerUseContractError("operation_not_granted")
         if request.run_session_id != self._require_session():
             raise ComputerUseContractError("subject_mismatch")
         granted = {item.bundle_id for item in request.scope.apps}
-        if request.bundle_id is not None and request.bundle_id not in granted:
-            raise ComputerUseContractError("app_not_granted")
         if request.bundle_id is not None:
             granted = {request.bundle_id}
-        self._observations.clear()
         self._registry.retire_all_observations()
         listed = await self._call("list_apps", self._sdk.ListAppsInput())
         targets: list[TargetRef] = []
@@ -195,9 +187,7 @@ class TypedComputerSession:
             pid = getattr(app, "pid", None)
             if not isinstance(bundle_id, str) or bundle_id not in granted:
                 continue
-            if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
-                continue
-            if getattr(app, "running", True) is False:
+            if not valid_pid(pid) or not running_app(app):
                 continue
             try:
                 ComputerUseAppIdentity(bundle_id=bundle_id)
@@ -217,13 +207,8 @@ class TypedComputerSession:
                         raise ComputerUseContractError("target_budget")
         return DiscoverResult(targets=tuple(targets))
 
-    async def observe(
-        self,
-        request: ObserveWindowRequest,
-        *,
-        settings: ComputerUseSettings | None = None,
-    ) -> ObservedWindow:
-        reject_untrusted_computer_use_authority(request.authority)
+    async def observe(self, admitted: AdmittedObserve) -> ObservedWindow:
+        request = admitted.request
         self._require_scope(request.scope)
         window = self._registry.window(request.target.window_identity)
         if (
@@ -234,9 +219,8 @@ class TypedComputerSession:
             or window.target_ref != request.target.target_ref
         ):
             raise ComputerUseContractError("stale_observation")
-        self._observations.pop(window.window_identity, None)
         self._registry.retire_window_observations(window.window_identity)
-        resolved = settings or ComputerUseSettings()
+        resolved = admitted.settings
         geometry = await self._validate_live_target(window)
         state = await self._call(
             "get_window_state",
@@ -263,56 +247,41 @@ class TypedComputerSession:
 
     async def execute_one(
         self,
-        request: ExecuteRequest,
+        admitted: AdmittedExecute,
         *,
-        settings: ComputerUseSettings,
         authority: Callable[[], None],
     ) -> ActionOutcome:
+        """Dispatch one admitted action. Authority, process, and age are rechecked."""
+
         authority()
-        reject_untrusted_computer_use_authority(request.authority)
+        request = admitted.request
+        prepared = admitted.prepared
         self._require_scope(request.scope)
-        prepared = prepare_execute_request(request, settings=settings)
+        observation = request.observation
+        self._require_fresh(observation.captured_at)
         window = self._registry.window(request.target.window_identity)
-        current = self._observations.get(window.window_identity)
-        if current is None or request.observation.model_copy(update={"image": None}) != current:
-            raise ComputerUseContractError("stale_observation")
-        age = (self._clock.now() - current.captured_at).total_seconds()
-        if not 0 <= age < MAX_OBSERVATION_AGE_SECONDS:
-            raise ComputerUseContractError("stale_observation")
-        if getattr(prepared.action, "x", None) is not None and request.observation.image is None:
-            raise ComputerUseContractError("image_not_published")
-        # Retire before any await, including preflight failures. SDK tokens remain
-        # available only to this admitted request until the call settles.
-        self._observations.pop(window.window_identity)
+        action = prepared.action
+        element = self._registry.element(action.element_ref) if action.element_ref else None
+        # Drop the registry token before any await so cancellation cannot dispatch twice.
+        self._registry.retire_window_observations(window.window_identity)
         try:
+            if element is not None and (
+                element.window_identity != window.window_identity or not element.token
+            ):
+                raise ComputerUseContractError("unknown_element")
+            if action.type in {"type_text", "press_key", "hotkey"} and (
+                element is None or not element.token
+            ):
+                raise ComputerUseContractError("unknown_element")
             if await self._validate_live_target(window) != window.geometry:
                 raise ComputerUseContractError("stale_observation")
             authority()
             self._require_scope(request.scope)
             self._validate_process(window)
-            action = prepared.action
-            element_ref = getattr(action, "element_ref", None)
-            element = self._registry.element(element_ref) if element_ref else None
-            if element is not None and (
-                element.window_identity != window.window_identity or not element.token
-            ):
-                raise ComputerUseContractError("unknown_element")
-            if action.type in {"type_text", "press_key", "hotkey"}:
-                if element is None:
-                    raise ComputerUseContractError("element_required")
-                if action.type == "type_text" and element.role not in {
-                    "axtextfield",
-                    "axtextarea",
-                    "axcombobox",
-                    "axsearchfield",
-                    "axsecuretextfield",
-                    "axpasswordfield",
-                }:
-                    raise ComputerUseContractError("not_editable")
             if action.type == "click":
                 payload = self._sdk.ClickInput(
                     target=self._sdk.ActionTarget.WINDOW(window.pid, window.window_id),
-                    position=self._click_position(action, prepared.window_point),
+                    position=self._click_position(action, prepared.window_point, element),
                     delivery_mode=_input_delivery(self._sdk, request.delivery),
                     session=self._require_session(),
                     button=_click_button(self._sdk, action.button),
@@ -324,6 +293,7 @@ class TypedComputerSession:
 
                 normalize = outcome_from_action
             else:
+                token = element.token if element is not None else None
                 common = dict(
                     pid=window.pid,
                     window_id=window.window_id,
@@ -332,18 +302,16 @@ class TypedComputerSession:
                 )
                 try:
                     if action.type == "type_text":
-                        payload = NativeTextInput(
-                            **common, element_token=element.token, text=action.text
-                        )
+                        payload = NativeTextInput(**common, element_token=token, text=action.text)
                     elif action.type == "press_key":
                         payload = NativeKeyInput(
-                            **common, element_token=element.token, key=native_key(action.key)
+                            **common, element_token=token, key=native_key(action.key)
                         )
                     elif action.type == "hotkey":
                         payload = NativeHotkeyInput(
                             **common,
-                            element_token=element.token,
-                            keys=tuple(native_key(k) for k in action.keys),
+                            element_token=token,
+                            keys=tuple(native_key(key) for key in action.keys),
                         )
                     elif action.type == "scroll":
                         point = prepared.window_point
@@ -351,7 +319,7 @@ class TypedComputerSession:
                             **common,
                             direction=action.direction,
                             amount=action.amount,
-                            element_token=element.token if element else None,
+                            element_token=token,
                             x=point[0] if point else None,
                             y=point[1] if point else None,
                         )
@@ -366,13 +334,11 @@ class TypedComputerSession:
                 normalize = outcome_from_tool
 
             async def admitted_call():
-                # Run inside the retained native task, immediately before SDK entry.
+                # Retained native task, immediately before SDK entry.
                 authority()
                 self._require_scope(request.scope)
                 self._validate_process(window)
-                age = (self._clock.now() - current.captured_at).total_seconds()
-                if not 0 <= age < MAX_OBSERVATION_AGE_SECONDS:
-                    raise ComputerUseContractError("stale_observation")
+                self._require_fresh(observation.captured_at)
                 return await dispatch()
 
             try:
@@ -393,91 +359,42 @@ class TypedComputerSession:
                     raise
             if outcome.delivery is not None and outcome.delivery is not request.delivery:
                 outcome = outcome.model_copy(
-                    update={
-                        "status": "unknown",
-                        "error_code": "unexpected_delivery",
-                    }
+                    update={"status": "unknown", "error_code": "unexpected_delivery"}
                 )
-            return outcome.model_copy(update={"before_observation_id": current.observation_id})
+            return outcome.model_copy(update={"before_observation_id": observation.observation_id})
         finally:
             self._registry.retire_window_observations(window.window_identity)
 
-    async def execute(
-        self,
-        prepared: PreparedComputerAction,
-        *,
-        window_identity: str,
-        delivery: ComputerUseDelivery,
-        agent_run_id: str,
-        generation: int,
-    ) -> ActionOutcome:
-        """Compatibility delegate; production uses the authorized execute_one port."""
-        self._require_subject(agent_run_id, generation)
-        window = self._registry.window(window_identity)
-        self._validate_process(window)
-        current = self._observations.get(window_identity)
-        if current is None or self._scope is None:
+    def _require_fresh(self, captured_at) -> None:
+        age = (self._clock.now() - captured_at).total_seconds()
+        if not 0 <= age < MAX_OBSERVATION_AGE_SECONDS:
             raise ComputerUseContractError("stale_observation")
-        target = TargetRef(
-            target_ref=window.target_ref,
-            agent_run_id=agent_run_id,
-            generation=generation,
-            app=ComputerUseAppIdentity(bundle_id=window.bundle_id),
-            process_identity=window.process_identity,
-            window_identity=window_identity,
-        )
-        return await self.execute_one(
-            ExecuteRequest(
-                authority="local_interface_command",
-                scope=self._scope,
-                target=target,
-                observation=current,
-                action=prepared.action,
-                delivery=delivery,
-            ),
-            settings=ComputerUseSettings(enabled=True),
-            authority=lambda: None,
-        )
 
     def _window_target(
         self, request: DiscoverRequest, bundle_id: str, pid: int, window: Any, birth: ProcessBirth
     ) -> TargetRef | None:
-        window_id = getattr(window, "window_id", None)
-        if (
-            not isinstance(window_id, int)
-            or isinstance(window_id, bool)
-            or not 0 < window_id <= 2**32 - 1
-        ):
-            return None
-        owner_pid = getattr(window, "pid", None)
-        if owner_pid is not None and (
-            isinstance(owner_pid, bool) or not isinstance(owner_pid, int) or owner_pid != pid
-        ):
+        if not strict_window(window, pid):
             return None
         try:
-            geometry = _window_geometry(window)
+            geometry = window_geometry(window)
         except ComputerUseContractError:
             return None
-        minimized = getattr(window, "minimized", False) is True
-        on_screen = getattr(window, "is_on_screen", True) is not False
-        if minimized or not on_screen:
-            return None
+        window_id = window.window_id
         selected_identity = None
-        if request.scope.schema_version == 2:
-            for selected in request.scope.windows:
-                native = self._window_bindings.get(selected.window_identity)
-                if (
-                    native is not None
-                    and selected.app.bundle_id == bundle_id
-                    and native.bundle_id == bundle_id
-                    and native.pid == pid
-                    and native.window_id == window_id
-                    and native.process_birth == birth
-                ):
-                    selected_identity = selected.window_identity
-                    break
-            if selected_identity is None:
-                return None
+        for selected in request.scope.windows:
+            native = self._window_bindings.get(selected.window_identity)
+            if (
+                native is not None
+                and selected.app.bundle_id == bundle_id
+                and native.bundle_id == bundle_id
+                and native.pid == pid
+                and native.window_id == window_id
+                and native.process_birth == birth
+            ):
+                selected_identity = selected.window_identity
+                break
+        if selected_identity is None:
+            return None
         return self._registry.remember_window(
             window_identity=selected_identity,
             agent_run_id=request.scope.agent_run_id,
@@ -485,7 +402,7 @@ class TypedComputerSession:
             bundle_id=bundle_id,
             pid=pid,
             window_id=window_id,
-            display_label=_display_label(getattr(window, "title", None)),
+            display_label=display_label(getattr(window, "title", None)),
             process_birth=birth,
             geometry=geometry,
         )
@@ -504,7 +421,7 @@ class TypedComputerSession:
         if not any(
             getattr(app, "pid", None) == window.pid
             and getattr(app, "bundle_id", None) == window.bundle_id
-            and getattr(app, "running", True) is not False
+            and running_app(app)
             for app in getattr(apps, "apps", ()) or ()
         ):
             raise ComputerUseContractError("stale_observation")
@@ -515,14 +432,12 @@ class TypedComputerSession:
             native
             for native in getattr(listed, "windows", ()) or ()
             if getattr(native, "window_id", None) == window.window_id
-            and getattr(native, "pid", None) in {None, window.pid}
-            and getattr(native, "is_on_screen", True) is not False
-            and getattr(native, "minimized", False) is not True
+            and strict_window(native, window.pid)
         ]
         self._validate_process(window)
         if len(candidates) != 1:
             raise ComputerUseContractError("stale_observation")
-        return _window_geometry(candidates[0])
+        return window_geometry(candidates[0])
 
     async def _observation(
         self,
@@ -533,7 +448,7 @@ class TypedComputerSession:
         *,
         geometry: WindowGeometry,
     ) -> ObservedWindow:
-        elements, omitted, truncated = _elements(state, self._registry, window_identity)
+        elements, omitted, truncated = project_elements(state, self._registry, window_identity)
         degraded = bool(getattr(state, "degraded", False))
         degraded_reason = None
         if degraded:
@@ -554,9 +469,9 @@ class TypedComputerSession:
         )
         capture, image_error = (None, None)
         if request.include_image:
-            capture, image_error = _capture(state)
+            capture, image_error = project_capture(state)
         if capture is not None:
-            reported = _bounds_geometry(getattr(state, "window_bounds", None))
+            reported = reported_window_geometry(state)
             if reported != geometry:
                 raise ComputerUseContractError("stale_observation")
         digest_source = (
@@ -581,7 +496,7 @@ class TypedComputerSession:
                 window_identity=window_identity,
                 capture_digest=sha256_digest(digest_source),
                 captured_at=self._clock.now(),
-                frame=_frame(state, geometry=geometry),
+                frame=project_frame(state, geometry=geometry),
                 elements=tuple(elements),
                 complete=complete,
                 degraded=degraded,
@@ -598,11 +513,10 @@ class TypedComputerSession:
             try:
                 if degraded or truncated or omitted:
                     raise ComputerUseContractError("image_safety_unconfirmed")
-                regions = _sensitive_regions(state, elements, geometry, capture)
+                regions = project_sensitive_regions(state, elements, geometry, capture)
             except ComputerUseContractError:
                 image_error = "image_safety_unconfirmed"
         self._registry.window(window_identity).geometry = geometry
-        self._observations[window_identity] = observation
         return ObservedWindow(
             observation=observation,
             capture=capture,
@@ -610,10 +524,11 @@ class TypedComputerSession:
             sensitive_regions=regions,
         )
 
-    def _click_position(self, action: Any, window_point: tuple[float, float] | None) -> Any:
+    def _click_position(
+        self, action: Any, window_point: tuple[float, float] | None, element: Any
+    ) -> Any:
         if action.element_ref is not None:
-            element = self._registry.element(action.element_ref)
-            if element.token is None:
+            if element is None or element.token is None:
                 raise ComputerUseContractError("unknown_element")
             return self._sdk.ClickPosition.ELEMENT(element.token)
         if window_point is None:
@@ -631,7 +546,6 @@ class TypedComputerSession:
     def invalidate(self) -> None:
         self._closed = True
         self._registry.clear()
-        self._observations.clear()
         self._calls.stop()
 
     async def settle(self) -> None:
@@ -668,201 +582,10 @@ class TypedComputerSession:
         if self._agent_run_id != agent_run_id or self._generation != generation:
             raise ComputerUseContractError("subject_mismatch")
 
-    def _require_scope(self, scope: ComputerUseScope) -> None:
+    def _require_scope(self, scope: SelectedWindowScope) -> None:
         self._require_subject(scope.agent_run_id, scope.generation)
         if scope != self._scope:
             raise ComputerUseContractError("subject_mismatch")
-
-
-def outcome_from_action(result: Any) -> ActionOutcome:
-    effect = _enum_name(getattr(result, "effect", None))
-    delivery = _actual_delivery(getattr(result, "delivery", None))
-    if effect == "REFUSED":
-        code = _stable_code(getattr(getattr(result, "error", None), "code", None), "refused")
-        return ActionOutcome(status="not_started", error_code=code)
-    if effect == "CONFIRMED" and delivery is not None:
-        return ActionOutcome(status="completed", delivery=delivery)
-    if effect == "PARTIAL" and delivery is not None:
-        return ActionOutcome(status="completed", delivery=delivery, error_code="partial_effect")
-    if effect == "SUSPECTED_NOOP":
-        return ActionOutcome(status="unknown", delivery=delivery, error_code="suspected_noop")
-    if effect in {"CONFIRMED", "PARTIAL", "UNVERIFIABLE"}:
-        code = "unknown_delivery" if delivery is None else "unverified_action"
-        return ActionOutcome(status="unknown", delivery=delivery, error_code=code)
-    return ActionOutcome(status="unknown", error_code="driver_error")
-
-
-def outcome_from_tool(result: Any) -> ActionOutcome:
-    action = getattr(result, "action", None)
-    if action is not None:
-        return outcome_from_action(action)
-    if bool(getattr(result, "degraded", False)):
-        return ActionOutcome(status="unknown", error_code="degraded_result")
-    if bool(getattr(result, "is_error", False)):
-        return ActionOutcome(
-            status="not_started",
-            error_code=_stable_code(getattr(result, "error_code", None), "tool_error"),
-        )
-    return ActionOutcome(status="unknown", error_code="unverified_action")
-
-
-def _interrupted_outcome(exc: BaseException) -> ActionOutcome:
-    name = _enum_name(getattr(exc, "completion", None))
-    if name == "NOT_STARTED":
-        status = "not_started"
-    elif name == "COMPLETED":
-        status = "completed"
-    else:
-        status = "unknown"
-    return ActionOutcome(status=status, error_code="action_interrupted")
-
-
-def _elements(
-    state: Any,
-    registry: TrustedDesktopRegistry,
-    window_identity: str,
-) -> tuple[list[AxElement], int, bool]:
-    raw_elements = getattr(state, "elements", None) or ()
-    total = getattr(state, "total_element_count", None)
-    returned = getattr(state, "returned_element_count", None)
-    omitted = 0
-    if isinstance(total, int) and isinstance(returned, int) and not isinstance(total, bool):
-        omitted = max(0, total - returned)
-    truncated = bool(getattr(state, "truncated", False))
-    kept: list[AxElement] = []
-    text_bytes = 0
-    for raw in raw_elements:
-        if len(kept) >= MAX_AX_ELEMENTS:
-            omitted += 1
-            truncated = True
-            continue
-        depth = getattr(raw, "depth", None)
-        if (
-            isinstance(depth, bool)
-            or not isinstance(depth, int)
-            or depth < 0
-            or depth > MAX_AX_DEPTH
-        ):
-            omitted += 1
-            truncated = True
-            continue
-        role = _role(getattr(raw, "role", ""))
-        label, sensitive = _element_label(raw, role)
-        addition = len(role.encode()) + len((label or "").encode())
-        if text_bytes + addition > MAX_AX_TEXT_BYTES:
-            omitted += 1
-            truncated = True
-            continue
-        text_bytes += addition
-        token = getattr(raw, "element_token", None)
-        element_ref = registry.remember_element(
-            window_identity=window_identity,
-            token=token if isinstance(token, str) and token else None,
-            center=_center(getattr(raw, "frame", None)),
-            role=role,
-            sensitive=sensitive,
-        )
-        kept.append(
-            AxElement(
-                element_ref=element_ref,
-                depth=depth,
-                role=role,
-                label=label,
-                sensitive=sensitive,
-                enabled=(
-                    getattr(raw, "enabled", None)
-                    if type(getattr(raw, "enabled", None)) is bool and not sensitive
-                    else None
-                ),
-            )
-        )
-    return kept, omitted, truncated
-
-
-def _window_geometry(window: Any) -> WindowGeometry:
-    return _bounds_geometry(getattr(window, "bounds", None))
-
-
-def _bounds_geometry(bounds: Any) -> WindowGeometry:
-    values = tuple(getattr(bounds, name, None) for name in ("x", "y", "width", "height"))
-    if any(
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-        or abs(value) > 2**31 - 1
-        for value in values
-    ):
-        raise ComputerUseContractError("unknown_scale")
-    if values[2] <= 0 or values[3] <= 0:
-        raise ComputerUseContractError("unknown_scale")
-    return WindowGeometry(*values)
-
-
-def _frame(state: Any, *, geometry: WindowGeometry) -> CoordinateFrame:
-    width = _positive_int(getattr(state, "screenshot_width", None))
-    height = _positive_int(getattr(state, "screenshot_height", None))
-    scale = _positive_float(getattr(state, "screenshot_scale", None))
-    crop_width = None
-    crop_height = None
-    if width is None or height is None:
-        width = math.ceil(geometry.width)
-        height = math.ceil(geometry.height)
-        scale = None
-    elif getattr(state, "screenshot_frame_valid", None) is True and scale is not None:
-        # The pinned SDK accepts pixels of its delivered (possibly resized)
-        # window screenshot. Its session cache undoes resizing and the native
-        # backend applies backing scale. Do not divide by Retina scale here.
-        scale = 1.0
-        crop_width = width
-        crop_height = height
-    else:
-        scale = None
-    if width is None or height is None:
-        raise ComputerUseContractError("unknown_scale")
-    try:
-        return CoordinateFrame(
-            width=width,
-            height=height,
-            scale_x=scale,
-            scale_y=scale,
-            crop_width=crop_width,
-            crop_height=crop_height,
-        )
-    except ValueError:
-        raise ComputerUseContractError("unknown_scale") from None
-
-
-def _capture(state: Any) -> tuple[TransientCapture | None, str | None]:
-    images = getattr(state, "images", ()) or ()
-    if not images:
-        return None, "image_missing"
-    if getattr(state, "screenshot_frame_valid", None) is not True:
-        return None, "unknown_scale"
-    image = images[0]
-    mime = _MIME.get(str(getattr(image, "mime_type", "")).casefold())
-    if mime is None:
-        return None, "image_mime"
-    encoded = getattr(image, "data_base64", "")
-    if not isinstance(encoded, str) or not encoded:
-        return None, "image_decode"
-    if len(images) != 1 or len(encoded) > ((MAX_IMAGE_BYTES + 2) // 3) * 4:
-        return None, "image_bounds"
-    try:
-        content = base64.b64decode(encoded, validate=True)
-    except Exception:
-        return None, "image_decode"
-    width = _positive_int(getattr(state, "screenshot_width", None))
-    height = _positive_int(getattr(state, "screenshot_height", None))
-    if width is None or height is None:
-        return None, "unknown_scale"
-    if (
-        not content
-        or len(content) > MAX_IMAGE_BYTES
-        or width * height > MAX_IMAGE_PIXELS
-        or max(width, height) > MAX_IMAGE_LONG_EDGE_PX
-    ):
-        return None, "image_bounds"
-    return TransientCapture(content=content, mime=mime, width=width, height=height), None
 
 
 def _input_delivery(sdk: Any, delivery: ComputerUseDelivery) -> Any:
@@ -874,142 +597,7 @@ def _click_button(sdk: Any, button: str) -> Any:
     return getattr(sdk.ClickButton, "RIGHT" if button == "right" else "LEFT")
 
 
-def _actual_delivery(delivery: Any) -> ComputerUseDelivery | None:
-    name = _enum_name(getattr(delivery, "mode", None))
-    if name == "FOREGROUND":
-        return ComputerUseDelivery.FOREGROUND
-    if name == "BACKGROUND":
-        return ComputerUseDelivery.BACKGROUND
-    return None
-
-
-def _enum_name(value: Any) -> str | None:
-    name = getattr(value, "name", None)
-    return name if isinstance(name, str) else None
-
-
-def _stable_code(value: object, fallback: str) -> str:
-    if isinstance(value, str) and _CODE.fullmatch(value):
-        return value
-    return fallback
-
-
-def _role(value: object) -> str:
-    text = value if isinstance(value, str) else ""
-    pieces = [char if char.isalnum() else "_" for char in text.casefold()]
-    token = "_".join(part for part in "".join(pieces).split("_") if part)
-    if not token or not token[0].isalpha():
-        token = f"ax_{token}" if token else "ax_element"
-    return token[:64]
-
-
-def _element_label(raw: Any, role: str) -> tuple[str | None, bool]:
-    if "secure" in role or "password" in role:
-        return None, True
-    # Inspect transient values only for known secret material; never project them.
-    for name in ("value", "value_description", "label"):
-        value = getattr(raw, name, None)
-        if isinstance(value, str):
-            try:
-                refuse_secret_material(value, label="computer use element")
-            except ValueError:
-                return None, True
-    label = getattr(raw, "label", None)
-    if not isinstance(label, str):
-        return None, False
-    cleaned = " ".join(label.split())
-    if not cleaned or len(cleaned) > 200:
-        return None, False
-    return cleaned, False
-
-
-def _sensitive_regions(
-    state: Any,
-    elements: list[AxElement],
-    geometry: WindowGeometry,
-    capture: TransientCapture,
-) -> tuple[SensitiveCaptureRegion, ...]:
-    """Pinned AX frames are top-left screen points, unlike SDK action pixels.
-
-    Only a full, uncropped window image with matching live bounds is accepted.
-    Round outward so downscaling never leaves an edge of a secret visible.
-    """
-    raw = iter(getattr(state, "elements", None) or ())
-    regions = []
-    for element in elements:
-        native = next(raw, None)
-        if not element.sensitive:
-            continue
-        frame = getattr(native, "frame", None)
-        numbers = tuple(getattr(frame, name, None) for name in ("x", "y", "w", "h"))
-        if any(
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-            for value in numbers
-        ):
-            raise ComputerUseContractError("image_safety_unconfirmed")
-        x, y, width, height = numbers
-        if width <= 0 or height <= 0:
-            raise ComputerUseContractError("image_safety_unconfirmed")
-        # AX may include a tooltip/panel outside the captured window. Only its
-        # intersection with this window can appear in a window-scoped image.
-        right = min(x + width, geometry.x + geometry.width)
-        bottom = min(y + height, geometry.y + geometry.height)
-        x, y = max(x, geometry.x), max(y, geometry.y)
-        if right <= x or bottom <= y:
-            continue
-        sx, sy = capture.width / geometry.width, capture.height / geometry.height
-        regions.append(
-            SensitiveCaptureRegion(
-                element_ref=element.element_ref,
-                left=math.floor((x - geometry.x) * sx),
-                top=math.floor((y - geometry.y) * sy),
-                right=math.ceil((right - geometry.x) * sx),
-                bottom=math.ceil((bottom - geometry.y) * sy),
-            )
-        )
-    return tuple(regions)
-
-
-def _display_label(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    cleaned = " ".join(value.split())
-    if not cleaned or len(cleaned) > 120:
-        return None
-    try:
-        refuse_secret_material(cleaned, label="computer use label")
-    except ValueError:
-        return None
-    return cleaned
-
-
-def _center(frame: Any) -> tuple[float, float] | None:
-    if frame is None:
-        return None
-    numbers = [getattr(frame, name, None) for name in ("x", "y", "w", "h")]
-    if any(isinstance(item, bool) or not isinstance(item, (int, float)) for item in numbers):
-        return None
-    x, y, width, height = (float(item) for item in numbers)
-    if width <= 0 or height <= 0 or not math.isfinite(x + y + width + height):
-        return None
-    return x + width / 2, y + height / 2
-
-
-def _positive_int(value: object) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    if isinstance(value, float) and not value.is_integer():
-        return None
-    number = int(value)
-    return number if number >= 1 else None
-
-
-def _positive_float(value: object) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    number = float(value)
-    if not math.isfinite(number) or number <= 0:
-        return None
-    return number
+# Names kept for adapter tests that project scripted SDK state.
+_capture = project_capture
+_frame = project_frame
+_elements = project_elements

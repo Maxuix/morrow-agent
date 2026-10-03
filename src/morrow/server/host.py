@@ -262,7 +262,7 @@ class CoreHost:
         if registry is not None:
             contexts.extend(getattr(registry, "contexts", {}).values())
         return any(
-            bool(getattr(getattr(item, "computer_use", None), "shutdown_pending", False))
+            item.computer_use is not None and item.computer_use.shutdown_pending
             for item in contexts
         )
 
@@ -491,7 +491,7 @@ class CoreHost:
             if self._consumer is not None:
                 await self._consumer
             if context is not None:
-                desktop = getattr(context, "computer_use", None)
+                desktop = context.computer_use
                 if desktop is not None:
                     desktop.stop_admission()
                 if getattr(context, "workspaces", None) is not None:

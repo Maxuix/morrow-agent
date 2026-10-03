@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from morrow.core.application import ApplicationErrorCode
-from morrow.core.computer_use import ComputerUseScope
+from morrow.core.computer_use import SelectedWindowScope
 from morrow.core.journal import CapabilityGrantJournalPort
 from morrow.core.permissions import CapabilityGrant, CapabilityName, GrantSource
 
@@ -116,7 +116,7 @@ def validate_capability_subset(
     capabilities: tuple[CapabilityName, ...],
     *,
     computer_use_enabled: bool = False,
-    computer_use_scope: ComputerUseScope | None = None,
+    computer_use_scope: SelectedWindowScope | None = None,
 ) -> tuple[CapabilityName, ...]:
     """Keep the requested subset explicit. Shell and desktop do not imply each other."""
 
@@ -144,6 +144,8 @@ def validate_capability_subset(
         return (CapabilityName.UNCONFINED_HOST_PROCESS,)
     if computer_use_scope is None:
         raise CapabilityGrantError("computer-use grant requires a scope")
+    if not isinstance(computer_use_scope, SelectedWindowScope):
+        raise CapabilityGrantError("computer-use grant requires selected windows")
     return tuple(
         item
         for item in (

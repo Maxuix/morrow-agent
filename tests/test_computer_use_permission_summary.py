@@ -5,7 +5,7 @@ import json
 import pytest
 
 from morrow.application.computer_permissions import computer_scope_lines, computer_scope_summary
-from morrow.core.computer_use import ComputerUseScope, ComputerUseWindowIdentity
+from morrow.core.computer_use import ComputerUseWindowIdentity, decode_computer_use_scope
 from test_computer_use_driver import _scope
 
 
@@ -14,7 +14,7 @@ def test_scope_summary_preserves_scope_and_excludes_internal_binding(version):
     legacy = _scope()
     scope = legacy
     if version == 2:
-        scope = ComputerUseScope.model_validate(
+        scope = decode_computer_use_scope(
             legacy.model_dump()
             | {
                 "schema_version": 2,

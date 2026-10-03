@@ -19,8 +19,9 @@ async def setup(environment, status="completed"):
     app, lifecycle, before = await app_ready(environment)
     device = lifecycle.device
 
-    async def execute(request, *, settings, authority):
+    async def execute(admitted, *, authority):
         authority()
+        request = admitted.request
         device.actions.append(request)
         device.observation = device.observation.model_copy(
             update={
@@ -78,19 +79,23 @@ async def test_not_started_action_does_not_read_or_publish(environment):
 async def test_fresh_read_failure_preserves_completed_effect(environment, failure):
     app, device, before = await setup(environment)
 
-    async def fail(request, *, settings):
-        device.calls.append(request)
+    async def fail(admitted):
+        device.calls.append(admitted.request)
         if failure == "opaque":
             raise RuntimeError("private native traceback")
         raise ComputerUseContractError("target_gone")
 
     device.observe = fail
+    if failure == "opaque":
+        with pytest.raises(RuntimeError, match="private native traceback"):
+            await call(app, before, None)
+        assert len(device.actions) == 1
+        return
     result, references = await call(app, before, None)
     assert result.outcome.status == "completed" and result.outcome.error_code is None
     assert result.outcome.after_observation_id is None and result.observation is None
-    assert result.observation_error == ("observation_failed" if failure == "opaque" else failure)
+    assert result.observation_error == failure
     assert references == () and len(device.actions) == 1
-    assert "private" not in result.model_dump_json()
 
 
 @pytest.mark.parametrize("opaque", [False, True])
@@ -102,21 +107,25 @@ async def test_publication_failure_keeps_semantic_observation_and_effect(environ
             raise RuntimeError("private pixels")
         raise ComputerUseContractError("image_budget")
 
+    if opaque:
+        with pytest.raises(RuntimeError, match="private pixels"):
+            await call(app, before, SimpleNamespace(publish_observed=fail))
+        assert len(device.actions) == 1
+        return
     result, references = await call(app, before, SimpleNamespace(publish_observed=fail))
     assert result.outcome.status == "completed"
     assert result.outcome.after_observation_id == "cobs_after"
     assert result.observation.observation_id == "cobs_after" and result.observation.image is None
-    assert result.observation_error == ("image_publish_failed" if opaque else "image_budget")
+    assert result.observation_error == "image_budget"
     assert references == () and len(device.actions) == 1
-    assert "private" not in result.model_dump_json()
 
 
 async def test_reused_observation_id_is_not_a_fresh_observation(environment):
     app, device, before = await setup(environment)
 
-    async def reuse(request, *, settings, authority):
-        device.actions.append(request)
-        return ActionOutcome(status="completed", delivery=request.delivery)
+    async def reuse(admitted, *, authority):
+        device.actions.append(admitted.request)
+        return ActionOutcome(status="completed", delivery=admitted.request.delivery)
 
     device.execute_one = reuse
     result, references = await call(app, before, None)
@@ -187,7 +196,7 @@ async def test_followup_cancellation_stops_admission_without_repeating_effect(en
     app, device, before = await setup(environment)
     entered, release = asyncio.Event(), asyncio.Event()
 
-    async def pending_read(request, *, settings):
+    async def pending_read(request):
         entered.set()
         await release.wait()
 

@@ -6,9 +6,11 @@ import pytest
 from pydantic import ValidationError
 
 from morrow.application.computer_tools import ComputerActionArguments, make_computer_action_tool
+from morrow.core.artifacts import ArtifactError, ArtifactErrorCode
 from morrow.core.capabilities import OperationKind, ToolRunContext
 from morrow.core.execution import EffectClass, MissingCompletionPolicy
 from morrow.core.models import ToolEffect
+from morrow.core.store import StorageError, StorageErrorCode
 from morrow.runtime.policy import ToolApproval
 from morrow.runtime.tools import ToolExecutionError, ToolRegistry
 from test_computer_use_after_action import setup
@@ -246,6 +248,167 @@ async def test_executor_and_journal_preserve_completion_even_when_output_is_too_
         skip_approval=True,
     )
     assert not again.ok and len(device.actions) == 1
+
+
+@pytest.mark.parametrize("status", ["completed", "unknown"])
+@pytest.mark.parametrize("failure", ["storage", "storage_budget", "artifact", "artifact_budget"])
+async def test_executor_and_journal_preserve_completion_on_image_publication_failure(
+    environment, monkeypatch, status, failure
+):
+    import json
+
+    from morrow.application.recovery import RecoveryService
+    from morrow.application.tool_persistence import DurableToolExecutionCoordinator
+    from morrow.core.execution import (
+        RecoveryClassification,
+        ToolExecutionDisposition,
+        ToolExecutionState,
+    )
+    from morrow.core.faults import NoOpFaultInjector
+    from morrow.core.models import AssistantMessage, FunctionToolCall, UserMessage
+    from morrow.core.recovery import RecoveryResolution
+    from morrow.runtime.conversation import ConversationLog
+    from morrow.runtime.tools import ToolExecutor
+    from morrow.testing import FixedIdSource, make_run_policy
+
+    app, device, before = await setup(environment, status)
+    visuals, journal = environment[:2]
+
+    def fail_publish(*args, **kwargs):
+        if failure == "storage":
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "artifact unavailable")
+        if failure == "storage_budget":
+            raise StorageError(StorageErrorCode.BUDGET_EXHAUSTED, "artifact budget exhausted")
+        if failure == "artifact":
+            raise ArtifactError(ArtifactErrorCode.UNAVAILABLE, "artifact unavailable")
+        raise ArtifactError(ArtifactErrorCode.BUDGET, "artifact budget exhausted")
+
+    monkeypatch.setattr(visuals.artifacts.filesystem, "publish", fail_publish)
+    registry = ToolRegistry()
+    registry.register(make_computer_action_tool(app, visuals))
+    executor = ToolExecutor(registry.snapshot(), make_run_policy())
+    call = FunctionToolCall(
+        id="action_call",
+        name="computer_action",
+        arguments=json.dumps(
+            {
+                "observation_id": before.observation.observation_id,
+                "action": {"type": "click", "element_ref": "celem_1"},
+            }
+        ),
+    )
+    outcome = await executor.execute_with_context(
+        call, run_context=action_context().run, ordinal=3, total=3, skip_approval=True
+    )
+    assert outcome.ok and len(device.actions) == 1
+    payload = json.loads(outcome.envelope)["result"]
+    assert payload["outcome"]["status"] == status
+    assert payload["outcome"]["after_observation_id"] == "cobs_after"
+    assert payload["observation"]["observation_id"] == "cobs_after"
+    assert payload["observation"]["image"] is None
+    assert payload["observation_error"] == "image_publish_failed"
+    assert outcome.visual_refs == () and outcome.artifact_refs == ()
+    assert "artifact unavailable" not in outcome.envelope
+    assert "artifact integrity unavailable" not in outcome.envelope
+    assert len(outcome.facts) == 1
+    assert outcome.facts[0].evidence.completion == status
+    assert outcome.facts[0].evidence.observation_error == "image_publish_failed"
+
+    coordinator = DurableToolExecutionCoordinator(
+        journal,
+        workspace_id="ws_a",
+        id_source=FixedIdSource(),
+        permissions=None,
+        faults=NoOpFaultInjector(),
+        clock=app._clock.now,
+    )
+    recorded = coordinator.record_handler_completed(
+        journal.get_execution("ws_a", "tex_action"), outcome
+    )
+    assert recorded.state is ToolExecutionState.HANDLER_COMPLETED
+    assert recorded.disposition is (
+        ToolExecutionDisposition.UNKNOWN
+        if status == "unknown"
+        else ToolExecutionDisposition.SUCCEEDED
+    )
+    assert recorded.facts.computer.completion == status
+    assert recorded.facts.computer.observation_error == "image_publish_failed"
+    assert recorded.result_envelope.visual_refs == () and recorded.artifact_refs == ()
+
+    log = ConversationLog()
+    log.begin_turn(UserMessage(content="controlled fixture action"))
+    log.append_assistant(AssistantMessage(tool_calls=(call,)))
+    report = RecoveryService(journal, workspace_id="ws_a", id_source=FixedIdSource()).discover(
+        "ses_1", log
+    )
+    item = next(item for item in report.items if item.tool_execution_id == "tex_action")
+    assert item.classification is (
+        RecoveryClassification.OUTCOME_UNKNOWN
+        if status == "unknown"
+        else RecoveryClassification.COMPLETED
+    )
+    assert RecoveryResolution.RETRY not in item.allowed_resolutions
+    repeated = await executor.execute_with_context(
+        call, run_context=action_context().run, ordinal=3, total=3, skip_approval=True
+    )
+    assert not repeated.ok and len(device.actions) == 1
+
+
+async def test_image_publisher_programming_error_still_propagates(environment, monkeypatch):
+    from morrow.core.computer_use import ClickAction
+
+    app, device, before = await setup(environment)
+    visuals = environment[0]
+
+    def fail_publish(*args, **kwargs):
+        raise RuntimeError("publisher_bug")
+
+    monkeypatch.setattr(visuals.artifacts.filesystem, "publish", fail_publish)
+    with pytest.raises(RuntimeError, match="^publisher_bug$"):
+        await app.execute_published(
+            "tex_action",
+            before.observation.observation_id,
+            ClickAction(type="click", element_ref="celem_1"),
+            visuals=visuals,
+        )
+    assert len(device.actions) == 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ArtifactError(code, "artifact contract failure")
+        for code in ArtifactErrorCode
+        if code not in {ArtifactErrorCode.BUDGET, ArtifactErrorCode.UNAVAILABLE}
+    ]
+    + [
+        StorageError(code, "store contract failure")
+        for code in StorageErrorCode
+        if code not in {StorageErrorCode.BUDGET_EXHAUSTED, StorageErrorCode.UNAVAILABLE}
+    ],
+    ids=lambda error: error.code.value,
+)
+async def test_publication_contract_failures_propagate_after_dispatch(
+    environment, monkeypatch, error
+):
+    from morrow.core.computer_use import ClickAction
+
+    app, device, before = await setup(environment)
+    visuals = environment[0]
+
+    def fail_publish(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(visuals.artifacts.filesystem, "publish", fail_publish)
+    with pytest.raises(type(error)) as failure:
+        await app.execute_published(
+            "tex_action",
+            before.observation.observation_id,
+            ClickAction(type="click", element_ref="celem_1"),
+            visuals=visuals,
+        )
+    assert failure.value is error
+    assert len(device.actions) == 1
 
 
 async def test_trusted_executor_flag_cannot_bypass_actual_missing_consumed_approval(environment):

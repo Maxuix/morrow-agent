@@ -8,20 +8,13 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Literal
 
-from pydantic import (
-    Field,
-    TypeAdapter,
-    ValidationError,
-    field_validator,
-    model_serializer,
-    model_validator,
-)
+from pydantic import Field, TypeAdapter, field_validator, model_serializer, model_validator
 
 from morrow.core.capabilities import LocalCapabilityModel
 from morrow.core.domain import (
@@ -42,7 +35,6 @@ from morrow.core.domain import (
 from morrow.core.models import ToolEffect
 from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
 
-COMPUTER_USE_SCOPE_SCHEMA_VERSION = 1
 COMPUTER_OBSERVE_TOOL = "computer_observe"
 COMPUTER_ACTION_TOOL = "computer_action"
 SHELL_TOOL_NAMES = frozenset({"run_command", "bash"})
@@ -66,41 +58,6 @@ MAX_DISCOVERED_TARGETS = 100
 _BUNDLE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]{0,127}$")
 _ROLE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
-_MODIFIERS = ("ctrl", "alt", "shift", "meta")
-_KEYS = frozenset(
-    _MODIFIERS
-    + tuple("abcdefghijklmnopqrstuvwxyz")
-    + tuple("0123456789")
-    + (
-        "enter",
-        "tab",
-        "escape",
-        "space",
-        "backspace",
-        "delete",
-        "up",
-        "down",
-        "left",
-        "right",
-        "home",
-        "end",
-        "pageup",
-        "pagedown",
-    )
-)
-_FORBIDDEN_ACTION_KEYS = frozenset(
-    {
-        "sdk_tool",
-        "path",
-        "grant",
-        "grant_id",
-        "session",
-        "session_id",
-        "actions",
-        "script",
-        "policy",
-    }
-)
 
 
 class ComputerUseContractError(ValueError):
@@ -217,10 +174,10 @@ class ComputerUseWindowIdentity(ComputerUseModel):
         return validate_prefixed_id(value, COMPUTER_WINDOW_ID_PREFIX)
 
 
-class ComputerUseScope(ComputerUseModel):
-    """Frozen subject, generation, and allowed desktop range."""
+class _ComputerUseScope(ComputerUseModel):
+    """Shared fields for historical evidence and selected-window runtime scopes."""
 
-    schema_version: Literal[1, 2] = COMPUTER_USE_SCOPE_SCHEMA_VERSION
+    schema_version: int
     generation: int = Field(ge=1)
     workspace_id: str
     task_run_id: str
@@ -304,41 +261,70 @@ class ComputerUseScope(ComputerUseModel):
             return ComputerUseImageShare(value)
         return value
 
-    @model_serializer(mode="wrap")
-    def serialize_scope(self, handler):
-        payload = handler(self)
-        if self.schema_version == 1:
-            # Preserve existing scope JSON and permission digests byte-for-byte.
-            payload.pop("windows", None)
-        return payload
-
     @model_validator(mode="after")
-    def enforce_range(self) -> ComputerUseScope:
+    def enforce_range(self) -> _ComputerUseScope:
         if not 1 <= len(self.apps) <= MAX_APPS:
             raise ValueError("app_bounds")
         if len({item.bundle_id for item in self.apps}) != len(self.apps):
             raise ValueError("duplicate_app")
-        if self.schema_version == 1 and self.windows:
-            raise ValueError("legacy_window_scope")
-        if self.schema_version == 2:
-            if (
-                not 1 <= len(self.windows) <= MAX_DISCOVERED_TARGETS
-                or self.window_boundary is not ComputerUseWindowBoundary.WINDOW
-                or {item.app.bundle_id for item in self.windows}
-                != {item.bundle_id for item in self.apps}
-                or len({item.window_identity for item in self.windows}) != len(self.windows)
-            ):
-                raise ValueError("invalid_window_scope")
-            if tuple(sorted(self.windows, key=lambda item: item.window_identity)) != self.windows:
-                raise ValueError("noncanonical_window_scope")
         if not self.operations:
             raise ValueError("empty_operations")
+        return self
+
+
+class AppWindowScope(_ComputerUseScope):
+    """Historical app-wide evidence. Device requests cannot contain this type."""
+
+    schema_version: Literal[1] = 1
+    windows: tuple[()] = ()
+
+    @model_serializer(mode="wrap")
+    def serialize_scope(self, handler):
+        payload = handler(self)
+        # Preserve historical scope JSON and permission digests byte-for-byte.
+        payload.pop("windows", None)
+        return payload
+
+    @model_validator(mode="after")
+    def reject_desktop_actions(self) -> AppWindowScope:
         if (
             self.window_boundary is ComputerUseWindowBoundary.EXPLICIT_DESKTOP_DIAGNOSTIC
             and ComputerUseOperation.ACTION in self.operations
         ):
             raise ValueError("desktop_action_rejected")
         return self
+
+
+class SelectedWindowScope(_ComputerUseScope):
+    """The only runtime scope: a nonempty, canonical set of concrete windows."""
+
+    schema_version: Literal[2] = 2
+    windows: tuple[ComputerUseWindowIdentity, ...] = Field(
+        min_length=1, max_length=MAX_DISCOVERED_TARGETS
+    )
+    window_boundary: Literal[ComputerUseWindowBoundary.WINDOW] = ComputerUseWindowBoundary.WINDOW
+
+    @model_validator(mode="after")
+    def enforce_windows(self) -> SelectedWindowScope:
+        if {item.app.bundle_id for item in self.windows} != {
+            item.bundle_id for item in self.apps
+        } or len({item.window_identity for item in self.windows}) != len(self.windows):
+            raise ValueError("invalid_window_scope")
+        if tuple(sorted(self.windows, key=lambda item: item.window_identity)) != self.windows:
+            raise ValueError("noncanonical_window_scope")
+        return self
+
+
+ComputerUseScope = Annotated[
+    AppWindowScope | SelectedWindowScope, Field(discriminator="schema_version")
+]
+_SCOPE_EVIDENCE = TypeAdapter(ComputerUseScope)
+
+
+def decode_computer_use_scope(payload: object) -> ComputerUseScope:
+    """Decode persisted evidence; callers must narrow before preparing a new run."""
+
+    return _SCOPE_EVIDENCE.validate_python(payload)
 
 
 def restrict_scope(
@@ -364,7 +350,7 @@ def restrict_scope(
     payload["operations"] = [item.value for item in selected]
     if image_share is not None:
         payload["image_share"] = image_share.value
-    return ComputerUseScope.model_validate(payload)
+    return type(scope).model_validate(payload)
 
 
 def reject_scope_expansion(current: ComputerUseScope, proposed: ComputerUseScope) -> None:
@@ -393,6 +379,27 @@ def reject_scope_expansion(current: ComputerUseScope, proposed: ComputerUseScope
         and proposed.window_boundary is not ComputerUseWindowBoundary.WINDOW
     ):
         raise ComputerUseContractError("scope_expansion")
+    # A selected-window grant is not an app-wide grant. Downgrade and any window
+    # outside the current set are expansion; dropping windows is a restriction.
+    if isinstance(current, SelectedWindowScope) and isinstance(proposed, AppWindowScope):
+        raise ComputerUseContractError("scope_expansion")
+    if isinstance(current, SelectedWindowScope) and isinstance(proposed, SelectedWindowScope):
+        allowed_windows = {(item.app.bundle_id, item.window_identity) for item in current.windows}
+        if any(
+            (item.app.bundle_id, item.window_identity) not in allowed_windows
+            for item in proposed.windows
+        ):
+            raise ComputerUseContractError("scope_expansion")
+
+
+def scope_grants_window(
+    scope: SelectedWindowScope, app: ComputerUseAppIdentity, window_identity: str
+) -> bool:
+    """Window membership is independent of merely having a non-empty selection."""
+
+    return any(
+        item.app == app and item.window_identity == window_identity for item in scope.windows
+    )
 
 
 def images_allowed(settings: ComputerUseSettings, scope: ComputerUseScope) -> bool:
@@ -787,364 +794,10 @@ class ObservedWindow:
         )
 
 
-class PostconditionSelector(ComputerUseModel):
-    """Exact safe labels/roles in a fresh tree, never an old snapshot token."""
-
-    role: str | None = None
-    label: str | None = None
-
-    @field_validator("role")
-    @classmethod
-    def valid_role(cls, value):
-        return None if value is None else AxElement.valid_role(value)
-
-    @field_validator("label")
-    @classmethod
-    def valid_label(cls, value):
-        return AxElement.valid_label(value)
-
-    @model_validator(mode="after")
-    def bounded_selector(self):
-        if self.role is None and self.label is None:
-            raise ValueError("rejected_action")
-        return self
-
-
-class ElementPostconditionTarget(ComputerUseModel):
-    element_ref: str | None = None
-    selector: PostconditionSelector | None = None
-
-    @field_validator("element_ref")
-    @classmethod
-    def valid_element(cls, value: str | None) -> str | None:
-        return None if value is None else validate_prefixed_id(value, COMPUTER_ELEMENT_ID_PREFIX)
-
-    @model_validator(mode="after")
-    def exact_target(self):
-        if (self.element_ref is None) == (self.selector is None):
-            raise ValueError("mixed_target")
-        return self
-
-
-class ElementExistsPostcondition(ElementPostconditionTarget):
-    type: Literal["element_exists"]
-
-
-class AttributeEqualsPostcondition(ElementPostconditionTarget):
-    type: Literal["attribute_equals"]
-    attribute: Literal["enabled", "focused", "checked", "expanded"]
-    value: Literal["true", "false"]
-
-
-class TextAppearsPostcondition(ComputerUseModel):
-    type: Literal["text_appears"]
-    text: str = Field(min_length=1, max_length=MAX_TEXT_CHARS)
-
-    @field_validator("text")
-    @classmethod
-    def safe_text(cls, value: str) -> str:
-        refuse_secret_material(value, label="computer use postcondition")
-        return value
-
-
-Postcondition = Annotated[
-    ElementExistsPostcondition | AttributeEqualsPostcondition | TextAppearsPostcondition,
-    Field(discriminator="type"),
-]
-
-
-def _exclusive_target(
-    element_ref: str | None, x: int | None, y: int | None, *, require_one: bool
-) -> None:
-    has_ref = element_ref is not None
-    has_x = x is not None
-    has_y = y is not None
-    if has_x != has_y or (has_ref and (has_x or has_y)):
-        raise ValueError("mixed_target")
-    if require_one and not has_ref and not has_x:
-        raise ValueError("rejected_action")
-
-
-class ClickAction(ComputerUseModel):
-    type: Literal["click"]
-    element_ref: str | None = None
-    x: int | None = None
-    y: int | None = None
-    button: Literal["left", "right"] = "left"
-    count: Literal[1, 2] = 1
-    postcondition: Postcondition | None = None
-
-    @field_validator("element_ref")
-    @classmethod
-    def valid_element(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        return validate_prefixed_id(value, COMPUTER_ELEMENT_ID_PREFIX)
-
-    @model_validator(mode="after")
-    def one_target(self) -> ClickAction:
-        _exclusive_target(self.element_ref, self.x, self.y, require_one=True)
-        return self
-
-
-class TypeTextAction(ComputerUseModel):
-    type: Literal["type_text"]
-    text: str = Field(min_length=1, max_length=MAX_TEXT_CHARS, repr=False)
-    element_ref: str | None = None
-    postcondition: Postcondition | None = None
-
-    @field_validator("element_ref")
-    @classmethod
-    def valid_element(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        return validate_prefixed_id(value, COMPUTER_ELEMENT_ID_PREFIX)
-
-
-class ScrollAction(ComputerUseModel):
-    type: Literal["scroll"]
-    direction: Literal["up", "down", "left", "right"]
-    amount: int = Field(ge=1, le=MAX_SCROLL_UNITS)
-    element_ref: str | None = None
-    x: int | None = None
-    y: int | None = None
-    postcondition: Postcondition | None = None
-
-    @field_validator("element_ref")
-    @classmethod
-    def valid_element(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        return validate_prefixed_id(value, COMPUTER_ELEMENT_ID_PREFIX)
-
-    @model_validator(mode="after")
-    def optional_target(self) -> ScrollAction:
-        _exclusive_target(self.element_ref, self.x, self.y, require_one=False)
-        return self
-
-
-class PressKeyAction(ComputerUseModel):
-    type: Literal["press_key"]
-    element_ref: str | None = None
-    key: str
-    postcondition: Postcondition | None = None
-
-    @field_validator("element_ref")
-    @classmethod
-    def valid_element(cls, value: str | None) -> str | None:
-        return None if value is None else validate_prefixed_id(value, COMPUTER_ELEMENT_ID_PREFIX)
-
-    @field_validator("key")
-    @classmethod
-    def canonical_key(cls, value: str) -> str:
-        if value not in _KEYS or value in _MODIFIERS:
-            raise ValueError("rejected_action")
-        return value
-
-
-class HotkeyAction(ComputerUseModel):
-    type: Literal["hotkey"]
-    element_ref: str | None = None
-    keys: tuple[str, ...]
-    postcondition: Postcondition | None = None
-
-    @field_validator("element_ref")
-    @classmethod
-    def valid_element(cls, value: str | None) -> str | None:
-        return None if value is None else validate_prefixed_id(value, COMPUTER_ELEMENT_ID_PREFIX)
-
-    @field_validator("keys", mode="before")
-    @classmethod
-    def tuple_keys(cls, value: object) -> object:
-        return _as_tuple(value)
-
-    @field_validator("keys")
-    @classmethod
-    def canonical_keys(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if not 2 <= len(value) <= MAX_HOTKEY_KEYS or len(set(value)) != len(value):
-            raise ValueError("rejected_action")
-        if any(item not in _KEYS for item in value):
-            raise ValueError("rejected_action")
-        modifiers = tuple(item for item in _MODIFIERS if item in value)
-        rest = tuple(sorted(item for item in value if item not in _MODIFIERS))
-        if len(rest) != 1:
-            raise ValueError("rejected_action")
-        return modifiers + rest
-
-
-ComputerUseAction = Annotated[
-    ClickAction | TypeTextAction | ScrollAction | PressKeyAction | HotkeyAction,
-    Field(discriminator="type"),
-]
-
-
-def parse_computer_action(payload: object) -> ComputerUseAction:
-    """Reject model-supplied action payloads before any device call."""
-
-    if not isinstance(payload, dict) or _FORBIDDEN_ACTION_KEYS.intersection(payload):
-        raise ComputerUseContractError("rejected_action")
-    if isinstance(payload.get("action"), list) or isinstance(payload.get("actions"), list):
-        raise ComputerUseContractError("rejected_action")
-    try:
-        return TypeAdapter(ComputerUseAction).validate_python(payload)
-    except ValidationError:
-        raise ComputerUseContractError("rejected_action") from None
-
-
-class ActionOutcome(ComputerUseModel):
-    status: Literal["not_started", "completed", "unknown"]
-    delivery: ComputerUseDelivery | None = None
-    before_observation_id: str | None = None
-    after_observation_id: str | None = None
-    error_code: str | None = None
-    postcondition: Literal["not_checked", "passed", "failed"] = "not_checked"
-
-    @field_validator("error_code")
-    @classmethod
-    def valid_code(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        if not _CODE.fullmatch(value):
-            raise ValueError("rejected_action")
-        return value
-
-
-class ComputerActionResult(ComputerUseModel):
-    """Device completion and the independent fresh-observation result."""
-
-    outcome: ActionOutcome
-    observation: Observation | None = None
-    observation_error: str | None = None
-    verification_error: Literal["verification_failed", "verification_unavailable"] | None = None
-
-    @field_validator("observation_error")
-    @classmethod
-    def valid_error(cls, value: str | None) -> str | None:
-        return ActionOutcome.valid_code(value)
-
-    @model_validator(mode="after")
-    def paired_observation(self):
-        if self.observation is not None and (
-            self.outcome.status == "not_started"
-            or self.outcome.after_observation_id != self.observation.observation_id
-            or self.outcome.before_observation_id == self.observation.observation_id
-        ):
-            raise ValueError("stale_observation")
-        return self
-
-
-def outcome_for_rejection(code: str) -> ActionOutcome:
-    if not _CODE.fullmatch(code):
-        code = "rejected_action"
-    return ActionOutcome(status="not_started", error_code=code, postcondition="not_checked")
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedComputerAction:
-    action: ComputerUseAction
-    window_point: tuple[float, float] | None
-
-
-class ExecuteRequest(ComputerUseModel):
-    authority: str
-    scope: ComputerUseScope
-    target: TargetRef
-    observation: Observation
-    action: ComputerUseAction
-    delivery: ComputerUseDelivery
-    include_image: bool = False
-
-
-def _matching_element(observation: Observation, element_ref: str | None) -> AxElement | None:
-    if element_ref is None:
-        return None
-    for item in observation.elements:
-        if item.element_ref == element_ref:
-            return item
-    raise ComputerUseContractError("unknown_element")
-
-
-def prepare_execute_request(
-    request: ExecuteRequest,
-    *,
-    settings: ComputerUseSettings | None = None,
-) -> PreparedComputerAction:
-    """Validate one action against the frozen scope. This never calls a port."""
-
-    resolved = settings or ComputerUseSettings()
-    reject_untrusted_computer_use_authority(request.authority)
-    scope = request.scope
-    target = request.target
-    observation = request.observation
-    if target.agent_run_id != scope.agent_run_id or observation.agent_run_id != scope.agent_run_id:
-        raise ComputerUseContractError("subject_mismatch")
-    if target.app.bundle_id not in {item.bundle_id for item in scope.apps}:
-        raise ComputerUseContractError("app_not_granted")
-    if scope.schema_version == 2 and not any(
-        item.app == target.app and item.window_identity == target.window_identity
-        for item in scope.windows
-    ):
-        raise ComputerUseContractError("window_not_granted")
-    if observation.bundle_id != target.app.bundle_id:
-        raise ComputerUseContractError("app_not_granted")
-    if (
-        observation.target_ref != target.target_ref
-        or observation.generation != target.generation
-        or target.generation != scope.generation
-        or observation.process_identity != target.process_identity
-        or observation.window_identity != target.window_identity
-    ):
-        raise ComputerUseContractError("stale_observation")
-    if request.delivery is not scope.delivery:
-        raise ComputerUseContractError("delivery_not_granted")
-    if ComputerUseOperation.ACTION not in scope.operations:
-        raise ComputerUseContractError("operation_not_granted")
-    if scope.window_boundary is ComputerUseWindowBoundary.EXPLICIT_DESKTOP_DIAGNOSTIC:
-        raise ComputerUseContractError("desktop_action_rejected")
-    if request.include_image and not images_allowed(resolved, scope):
-        if scope.image_share is not ComputerUseImageShare.CONTROLLED_WINDOW:
-            raise ComputerUseContractError("image_share_not_granted")
-        raise ComputerUseContractError("images_not_allowed")
-    if request.include_image and observation.image is not None:
-        long_edge = max(observation.image.width, observation.image.height)
-        if long_edge > resolved.image_long_edge_px:
-            raise ComputerUseContractError("image_budget")
-    action = request.action
-    element_ref = getattr(action, "element_ref", None)
-    element = _matching_element(observation, element_ref)
-    if isinstance(action, (TypeTextAction, PressKeyAction, HotkeyAction)):
-        if element is None:
-            raise ComputerUseContractError("element_required")
-        if isinstance(action, TypeTextAction) and element.role not in {
-            "axtextfield",
-            "axtextarea",
-            "axcombobox",
-            "axsearchfield",
-            "axsecuretextfield",
-            "axpasswordfield",
-        }:
-            raise ComputerUseContractError("not_editable")
-    if isinstance(action, ScrollAction) and element is None and action.x is None:
-        raise ComputerUseContractError("element_required")
-    point = None
-    x = getattr(action, "x", None)
-    y = getattr(action, "y", None)
-    if x is not None or y is not None:
-        if x is None or y is None:
-            raise ComputerUseContractError("mixed_target")
-        if observation.frame.target_space != "window":
-            raise ComputerUseContractError("desktop_coordinates")
-        point = map_image_point(observation.frame, x, y)
-    postcondition = getattr(action, "postcondition", None)
-    if postcondition is not None and getattr(postcondition, "element_ref", None) is not None:
-        _matching_element(observation, postcondition.element_ref)
-    return PreparedComputerAction(action=action, window_point=point)
-
-
 class OpenRunSessionRequest(ComputerUseModel):
     authority: str
     agent_run_id: str
-    scope: ComputerUseScope
+    scope: SelectedWindowScope
     settings: ComputerUseSettings | None = None
 
     @field_validator("agent_run_id")
@@ -1181,7 +834,7 @@ class CloseRunSessionRequest(ComputerUseModel):
 
 class DiscoverRequest(ComputerUseModel):
     authority: str
-    scope: ComputerUseScope
+    scope: SelectedWindowScope
     run_session_id: str
     bundle_id: str | None = None
 
@@ -1209,146 +862,10 @@ class DiscoverResult(ComputerUseModel):
 
 class ObserveWindowRequest(ComputerUseModel):
     authority: str
-    scope: ComputerUseScope
+    scope: SelectedWindowScope
     target: TargetRef
     delivery: ComputerUseDelivery
     include_image: bool = False
-
-
-class ShutdownRequest(ComputerUseModel):
-    authority: str
-    run_session_id: str
-
-    @field_validator("run_session_id")
-    @classmethod
-    def valid_run(cls, value: str) -> str:
-        return validate_prefixed_id(value, COMPUTER_RUN_ID_PREFIX)
-
-
-class ComputerUsePort(Protocol):
-    def preflight(self) -> ComputerUsePreflight: ...
-
-    def open_run_session(self, request: OpenRunSessionRequest) -> RunSession: ...
-
-    def close_run_session(self, request: CloseRunSessionRequest) -> None: ...
-
-    def discover(self, request: DiscoverRequest) -> DiscoverResult: ...
-
-    def observe_window(self, request: ObserveWindowRequest) -> Observation: ...
-
-    def execute_one(self, request: PreparedComputerAction) -> ActionOutcome: ...
-
-    def shutdown(self, request: ShutdownRequest) -> None: ...
-
-
-def open_run_session_if_admitted(
-    port: ComputerUsePort, request: OpenRunSessionRequest
-) -> RunSession:
-    reject_untrusted_computer_use_authority(request.authority)
-    if request.scope.agent_run_id != request.agent_run_id:
-        raise ComputerUseContractError("subject_mismatch")
-    return port.open_run_session(request)
-
-
-def close_run_session_if_admitted(port: ComputerUsePort, request: CloseRunSessionRequest) -> None:
-    reject_untrusted_computer_use_authority(request.authority)
-    port.close_run_session(request)
-
-
-def discover_if_admitted(port: ComputerUsePort, request: DiscoverRequest) -> DiscoverResult:
-    reject_untrusted_computer_use_authority(request.authority)
-    if request.bundle_id is not None and request.bundle_id not in {
-        item.bundle_id for item in request.scope.apps
-    }:
-        raise ComputerUseContractError("app_not_granted")
-    return port.discover(request)
-
-
-def observe_window_if_admitted(
-    port: ComputerUsePort,
-    request: ObserveWindowRequest,
-    *,
-    settings: ComputerUseSettings | None = None,
-) -> Observation:
-    resolved = settings or ComputerUseSettings()
-    reject_untrusted_computer_use_authority(request.authority)
-    if request.target.agent_run_id != request.scope.agent_run_id:
-        raise ComputerUseContractError("subject_mismatch")
-    if request.target.generation != request.scope.generation:
-        raise ComputerUseContractError("stale_observation")
-    if request.target.app.bundle_id not in {item.bundle_id for item in request.scope.apps}:
-        raise ComputerUseContractError("app_not_granted")
-    if request.scope.schema_version == 2 and not any(
-        item.app == request.target.app and item.window_identity == request.target.window_identity
-        for item in request.scope.windows
-    ):
-        raise ComputerUseContractError("window_not_granted")
-    if ComputerUseOperation.OBSERVE not in request.scope.operations:
-        raise ComputerUseContractError("operation_not_granted")
-    if request.delivery is not request.scope.delivery:
-        raise ComputerUseContractError("delivery_not_granted")
-    if request.include_image and not images_allowed(resolved, request.scope):
-        if request.scope.image_share is not ComputerUseImageShare.CONTROLLED_WINDOW:
-            raise ComputerUseContractError("image_share_not_granted")
-        raise ComputerUseContractError("images_not_allowed")
-    return port.observe_window(request)
-
-
-def execute_one_if_admitted(
-    port: ComputerUsePort,
-    request: ExecuteRequest,
-    *,
-    settings: ComputerUseSettings | None = None,
-) -> ActionOutcome:
-    prepared = prepare_execute_request(request, settings=settings)
-    return port.execute_one(prepared)
-
-
-def shutdown_if_admitted(port: ComputerUsePort, request: ShutdownRequest) -> None:
-    reject_untrusted_computer_use_authority(request.authority)
-    port.shutdown(request)
-
-
-def assert_computer_use_device_gate(
-    *,
-    tool_name: str,
-    authority: str,
-    scope: ComputerUseScope | None,
-    workspace_id: str,
-    task_run_id: str,
-    agent_run_id: str,
-    delivery: ComputerUseDelivery,
-    include_image: bool,
-    grant_active: bool,
-) -> None:
-    """Re-check frozen scope after approval and before any device call."""
-
-    reject_untrusted_computer_use_authority(authority)
-    if not grant_active:
-        raise ComputerUseContractError("grant_inactive")
-    if scope is None:
-        raise ComputerUseContractError("computer_use_scope_required")
-    if (
-        scope.workspace_id != workspace_id
-        or scope.task_run_id != task_run_id
-        or scope.agent_run_id != agent_run_id
-    ):
-        raise ComputerUseContractError("subject_mismatch")
-    if delivery is not scope.delivery:
-        raise ComputerUseContractError("delivery_not_granted")
-    if include_image and scope.image_share is not ComputerUseImageShare.CONTROLLED_WINDOW:
-        raise ComputerUseContractError("image_share_not_granted")
-    if tool_name == COMPUTER_OBSERVE_TOOL:
-        if ComputerUseOperation.OBSERVE not in scope.operations:
-            raise ComputerUseContractError("operation_not_granted")
-        return
-    if tool_name == COMPUTER_ACTION_TOOL:
-        if ComputerUseOperation.ACTION not in scope.operations:
-            raise ComputerUseContractError("operation_not_granted")
-        if scope.window_boundary is ComputerUseWindowBoundary.EXPLICIT_DESKTOP_DIAGNOSTIC:
-            raise ComputerUseContractError("desktop_action_rejected")
-        return
-    raise ComputerUseContractError("unknown_computer_use_tool")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1383,49 +900,44 @@ def computer_use_intent(tool_name: str) -> ComputerUseIntentSpec:
     raise ComputerUseContractError("unknown_computer_use_tool")
 
 
-class ComputerUseSessionPort(Protocol):
-    """Run-bound asynchronous device surface, with no SDK objects or native ids."""
+_LAZY_EXPORTS = {
+    "PostconditionSelector": "morrow.core.computer_actions",
+    "ElementPostconditionTarget": "morrow.core.computer_actions",
+    "ElementExistsPostcondition": "morrow.core.computer_actions",
+    "AttributeEqualsPostcondition": "morrow.core.computer_actions",
+    "TextAppearsPostcondition": "morrow.core.computer_actions",
+    "Postcondition": "morrow.core.computer_actions",
+    "ClickAction": "morrow.core.computer_actions",
+    "TypeTextAction": "morrow.core.computer_actions",
+    "ScrollAction": "morrow.core.computer_actions",
+    "PressKeyAction": "morrow.core.computer_actions",
+    "HotkeyAction": "morrow.core.computer_actions",
+    "ComputerUseAction": "morrow.core.computer_actions",
+    "parse_computer_action": "morrow.core.computer_actions",
+    "ActionOutcome": "morrow.core.computer_actions",
+    "ComputerActionResult": "morrow.core.computer_actions",
+    "outcome_for_rejection": "morrow.core.computer_actions",
+    "PreparedComputerAction": "morrow.core.computer_actions",
+    "ExecuteRequest": "morrow.core.computer_actions",
+    "prepare_execute_request": "morrow.core.computer_actions",
+    "EDITABLE_ROLES": "morrow.core.computer_actions",
+    "AdmittedDiscover": "morrow.core.computer_admission",
+    "AdmittedObserve": "morrow.core.computer_admission",
+    "AdmittedExecute": "morrow.core.computer_admission",
+    "admit_discover": "morrow.core.computer_admission",
+    "admit_observe": "morrow.core.computer_admission",
+    "admit_execute": "morrow.core.computer_admission",
+    "ComputerUseSessionPort": "morrow.core.computer_admission",
+    "ComputerUseLifecyclePort": "morrow.core.computer_admission",
+}
 
-    async def discover(self, request: DiscoverRequest) -> DiscoverResult: ...
 
-    async def observe(
-        self, request: ObserveWindowRequest, *, settings: ComputerUseSettings
-    ) -> ObservedWindow: ...
+def __getattr__(name: str):
+    module_name = _LAZY_EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
 
-    async def execute_one(
-        self,
-        request: ExecuteRequest,
-        *,
-        settings: ComputerUseSettings,
-        authority: Callable[[], None],
-    ) -> ActionOutcome: ...
-
-    def invalidate(self) -> None: ...
-
-
-class ComputerUseLifecyclePort(Protocol):
-    """Async lifecycle on the runtime owner; no native handle crosses this port."""
-
-    @property
-    def runtime_status(self) -> ComputerUseRuntimeStatus: ...
-
-    @property
-    def shutdown_pending(self) -> bool: ...
-
-    def stop_admission(self) -> None: ...
-
-    async def discover_local_candidates(
-        self, settings: ComputerUseSettings, *, authority: str
-    ) -> LocalComputerUseCandidates: ...
-
-    def select_local_candidates(
-        self, candidate_ids: tuple[str, ...], *, authority: str
-    ) -> tuple[ComputerUseWindowIdentity, ...]: ...
-
-    async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession: ...
-
-    async def close_run_session(self, request: CloseRunSessionRequest) -> None: ...
-
-    def session_for(self, run: RunSession) -> ComputerUseSessionPort: ...
-
-    async def shutdown(self) -> None: ...
+    value = getattr(importlib.import_module(module_name), name)
+    globals()[name] = value
+    return value

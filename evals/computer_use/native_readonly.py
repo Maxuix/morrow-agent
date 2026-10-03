@@ -28,6 +28,7 @@ from morrow.adapters.computer_use.sdk_loader import (
     load_sdk,
 )
 from morrow.adapters.state.operational import SystemStoreClock
+from morrow.core.computer_admission import admit_discover, admit_observe
 from morrow.core.computer_use import (
     TRUSTED_COMPUTER_USE_AUTHORITY,
     CloseRunSessionRequest,
@@ -36,11 +37,11 @@ from morrow.core.computer_use import (
     ComputerUseDelivery,
     ComputerUseImageShare,
     ComputerUseOperation,
-    ComputerUseScope,
     ComputerUseWindowBoundary,
     DiscoverRequest,
     ObserveWindowRequest,
     OpenRunSessionRequest,
+    SelectedWindowScope,
 )
 from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
 from morrow.runtime.ids import RandomIdSource
@@ -70,6 +71,36 @@ def read_fixture_window(path: Path | None) -> tuple[int, int] | None:
     except (OSError, ValueError, TypeError, KeyError):
         raise ComputerUseContractError("fixture_state_invalid") from None
     return pid, window_id
+
+
+async def open_fixture_run(owner, settings, fixture_window, **scope_fields):
+    """Select one strict fixture window, then open that v2 scope."""
+
+    catalog = await owner.discover_local_candidates(
+        settings, authority=TRUSTED_COMPUTER_USE_AUTHORITY
+    )
+    matches = []
+    for item in catalog.candidates:
+        if item.app.bundle_id != FIXTURE_BUNDLE_ID:
+            continue
+        record = owner._candidates.resolve(item.candidate_id)
+        if fixture_window is not None and (record.pid, record.window_id) != tuple(fixture_window):
+            continue
+        matches.append(item)
+    if len(matches) != 1:
+        raise ComputerUseContractError("fixture_window_required")
+    windows = owner.select_local_candidates(
+        (matches[0].candidate_id,), authority=TRUSTED_COMPUTER_USE_AUTHORITY
+    )
+    scope = SelectedWindowScope(windows=windows, **scope_fields)
+    run = await owner.open_run_session(
+        OpenRunSessionRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+            agent_run_id=scope.agent_run_id,
+            scope=scope,
+        )
+    )
+    return run, scope
 
 
 def select_fixture_targets(session, targets, fixture_window):
@@ -187,38 +218,36 @@ async def inspect_fixture(*, fixture_window=None, native_walk_limit=None) -> dic
         sdk,
         RandomIdSource(),
         SystemStoreClock(),
-        session_factory=lambda driver, name: _DiagnosedSession(
+        session_factory=lambda driver, name, settings: _DiagnosedSession(
             construct_run_session(sdk, driver, name), result, native_walk_limit=native_walk_limit
         ),
     )
-    scope = ComputerUseScope(
-        generation=1,
-        workspace_id="ws_native_fixture",
-        task_run_id="task_native_fixture",
-        agent_run_id="arun_native_fixture",
-        apps=(ComputerUseAppIdentity(bundle_id=FIXTURE_BUNDLE_ID),),
-        window_boundary=ComputerUseWindowBoundary.WINDOW,
-        operations=(ComputerUseOperation.OBSERVE,),
-        delivery=ComputerUseDelivery.BACKGROUND,
-        image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
-    )
     phase = "open_session"
     try:
-        run = await owner.open_run_session(
-            OpenRunSessionRequest(
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                agent_run_id=scope.agent_run_id,
-                scope=scope,
-            )
+        run, scope = await open_fixture_run(
+            owner,
+            settings,
+            fixture_window,
+            generation=1,
+            workspace_id="ws_native_fixture",
+            task_run_id="task_native_fixture",
+            agent_run_id="arun_native_fixture",
+            apps=(ComputerUseAppIdentity(bundle_id=FIXTURE_BUNDLE_ID),),
+            window_boundary=ComputerUseWindowBoundary.WINDOW,
+            operations=(ComputerUseOperation.OBSERVE,),
+            delivery=ComputerUseDelivery.BACKGROUND,
+            image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
         )
         session = owner.session_for(run)
         phase = "discover"
         found = await session.discover(
-            DiscoverRequest(
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                scope=scope,
-                run_session_id=run.run_session_id,
-                bundle_id=FIXTURE_BUNDLE_ID,
+            admit_discover(
+                DiscoverRequest(
+                    authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                    scope=scope,
+                    run_session_id=run.run_session_id,
+                    bundle_id=FIXTURE_BUNDLE_ID,
+                )
             )
         )
         result.setdefault("discovery", {})["target_count"] = len(found.targets)
@@ -228,14 +257,16 @@ async def inspect_fixture(*, fixture_window=None, native_walk_limit=None) -> dic
             raise ComputerUseContractError("fixture_window_required")
         phase = "observe"
         observed = await session.observe(
-            ObserveWindowRequest(
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                scope=scope,
-                target=selected[0],
-                delivery=scope.delivery,
-                include_image=True,
+            admit_observe(
+                ObserveWindowRequest(
+                    authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                    scope=scope,
+                    target=selected[0],
+                    delivery=scope.delivery,
+                    include_image=True,
+                ),
+                settings=settings,
             ),
-            settings=settings,
         )
         if observed.capture is None:
             raise ComputerUseContractError(observed.image_error or "image_missing")
@@ -325,7 +356,10 @@ async def inspect_on_core_host(*, fixture_window=None, native_walk_limit=None) -
 
     host = CoreHost(
         lambda: SimpleNamespace(
-            supervisor=RunSupervisor(), approval_waiters=ApprovalWaiters(), close=lambda: None
+            supervisor=RunSupervisor(),
+            approval_waiters=ApprovalWaiters(),
+            computer_use=None,
+            close=lambda: None,
         )
     )
     host.start()

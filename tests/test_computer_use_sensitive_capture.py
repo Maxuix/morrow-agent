@@ -4,8 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from morrow.adapters.computer_use.registry import TrustedDesktopRegistry
-from morrow.adapters.computer_use.session import TypedComputerSession
+from morrow.core.computer_admission import admit_discover, admit_observe
 from morrow.core.computer_use import (
     TRUSTED_COMPUTER_USE_AUTHORITY,
     ComputerUseDelivery,
@@ -13,9 +12,9 @@ from morrow.core.computer_use import (
     ObserveWindowRequest,
     OpenRunSessionRequest,
 )
-from morrow.core.runtime_policy import ComputerUseSettings
-from morrow.testing import FixedClock, FixedIdSource
-from test_computer_use_driver import NOW, _Native, _process_birth, _scope, _sdk
+from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
+from morrow.testing import FixedClock
+from test_computer_use_driver import NOW, _bound_session, _Native, _selected_scope
 
 
 class Native(_Native):
@@ -43,37 +42,36 @@ class Native(_Native):
 
 
 async def read(native):
-    session = TypedComputerSession(
-        _sdk(),
-        native,
-        TrustedDesktopRegistry(FixedIdSource()),
-        FixedIdSource(),
-        FixedClock(NOW),
-        process_reader=_process_birth,
-    )
+    scope = _selected_scope()
+    session = _bound_session(native, clock=FixedClock(NOW))
     run = await session.open_run_session(
         OpenRunSessionRequest(
             authority=TRUSTED_COMPUTER_USE_AUTHORITY,
             agent_run_id="arun_1",
-            scope=_scope(),
+            scope=scope,
         )
     )
     found = await session.discover(
-        DiscoverRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
-            run_session_id=run.run_session_id,
+        admit_discover(
+            DiscoverRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=scope,
+                run_session_id=run.run_session_id,
+            )
         )
     )
+    settings = ComputerUseSettings(enabled=True, mode=ComputerUseMode.HYBRID)
     return await session.observe(
-        ObserveWindowRequest(
-            authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-            scope=_scope(),
-            target=found.targets[0],
-            delivery=ComputerUseDelivery.FOREGROUND,
-            include_image=True,
+        admit_observe(
+            ObserveWindowRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=scope,
+                target=found.targets[0],
+                delivery=ComputerUseDelivery.FOREGROUND,
+                include_image=True,
+            ),
+            settings=settings,
         ),
-        settings=ComputerUseSettings(enabled=True),
     )
 
 

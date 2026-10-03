@@ -61,7 +61,6 @@ def _authorize(journal, scope):
         execution_id="tex_observe",
         scope=scope,
         tool_name="computer_observe",
-        include_image=False,
         now=NOW,
     )
 
@@ -81,11 +80,13 @@ class _Device:
             window_identity=observation.window_identity,
         )
 
-    async def discover(self, request):
+    async def discover(self, admitted):
+        request = admitted.request
         self.calls.append(request)
         return DiscoverResult(targets=(self.target,))
 
-    async def observe(self, request, *, settings):
+    async def observe(self, admitted):
+        request = admitted.request
         self.calls.append(request)
         self.after_read()
         return ObservedWindow(self.observation, self.capture if request.include_image else None)
@@ -214,10 +215,10 @@ async def test_concurrent_observe_is_refused_without_queue_or_second_call(enviro
     entered, release = asyncio.Event(), asyncio.Event()
     original = device.observe
 
-    async def held(request, *, settings):
+    async def held(request):
         entered.set()
         await release.wait()
-        return await original(request, settings=settings)
+        return await original(request)
 
     device.observe = held
     first = asyncio.create_task(service.observe(device.target.target_ref, authority=authority))
@@ -332,7 +333,7 @@ async def test_cancelled_observation_invalidates_run_and_never_retries(environme
     await service.discover(authority=authority)
     entered = asyncio.Event()
 
-    async def held(request, *, settings):
+    async def held(request):
         entered.set()
         await asyncio.Event().wait()
 
@@ -402,7 +403,7 @@ async def test_semantic_mode_refuses_unrequested_capture_from_port(environment):
     service, device, _, authority = _service(environment, mode=ComputerUseMode.SEMANTIC)
     await service.discover(authority=authority)
 
-    async def unexpected(request, *, settings):
+    async def unexpected(request):
         return ObservedWindow(device.observation, device.capture)
 
     device.observe = unexpected
@@ -468,7 +469,7 @@ async def test_application_masks_known_sensitive_pixels_before_persistence(envir
         }
     )
 
-    async def sensitive_read(request, *, settings):
+    async def sensitive_read(request):
         return ObservedWindow(
             lifecycle.device.observation,
             lifecycle.device.capture,
@@ -499,7 +500,7 @@ async def test_application_masks_known_sensitive_pixels_before_persistence(envir
 async def test_unconfirmed_capture_does_not_create_artifact(environment, image_error):
     application, lifecycle = _application(environment)
 
-    async def unsafe_read(request, *, settings):
+    async def unsafe_read(request):
         return ObservedWindow(
             lifecycle.device.observation, lifecycle.device.capture, image_error=image_error
         )

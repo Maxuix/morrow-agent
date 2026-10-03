@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from morrow.adapters.computer_use.images import CaptureMask, prepare_capture
 from morrow.application.timeline_index import TimelineIndexService
 from morrow.core.artifacts import (
+    ArtifactError,
+    ArtifactErrorCode,
     ArtifactKind,
     ArtifactProvenanceKind,
     ArtifactProvenanceRef,
@@ -17,10 +19,9 @@ from morrow.core.computer_use import (
     ComputerUseContractError,
     ComputerUseImageShare,
     ComputerUseOperation,
-    ComputerUseScope,
-    ComputerUseWindowBoundary,
     Observation,
     ObservedWindow,
+    SelectedWindowScope,
     TransientCapture,
     images_allowed,
 )
@@ -29,6 +30,7 @@ from morrow.core.execution import ToolExecutionState
 from morrow.core.models import ToolVisualRef
 from morrow.core.permissions import CapabilityName, assert_grant_snapshot_matches
 from morrow.core.runtime_policy import ComputerUseSettings
+from morrow.core.store import StorageError, StorageErrorCode
 
 
 def validate_visual_source(journal, workspace_id: str, reference: ToolVisualRef):
@@ -88,7 +90,7 @@ class ComputerVisualService:
         read: ObservedWindow,
         *,
         tool_execution_id: str,
-        scope: ComputerUseScope,
+        scope: SelectedWindowScope,
         settings: ComputerUseSettings,
     ) -> ToolVisualRef:
         """Only trusted adapter regions may flow from an observation to masks."""
@@ -125,7 +127,7 @@ class ComputerVisualService:
         observation: Observation,
         *,
         tool_execution_id: str,
-        scope: ComputerUseScope,
+        scope: SelectedWindowScope,
         masks: Mapping[str, CaptureMask] | None = None,
         settings: ComputerUseSettings | None = None,
     ) -> ToolVisualRef:
@@ -142,7 +144,6 @@ class ComputerVisualService:
             or observation.agent_run_id != scope.agent_run_id
             or observation.generation != scope.generation
             or observation.bundle_id not in {app.bundle_id for app in scope.apps}
-            or scope.window_boundary is not ComputerUseWindowBoundary.WINDOW
             or ComputerUseOperation.OBSERVE not in scope.operations
             or scope.image_share is not ComputerUseImageShare.CONTROLLED_WINDOW
             or not images_allowed(settings, scope)
@@ -202,25 +203,34 @@ class ComputerVisualService:
         )
         if current + len(processed.content) > settings.max_observation_bytes:
             raise ComputerUseContractError("image_budget")
-        metadata = self.artifacts.publish_bytes(
-            processed.content,
-            kind=ArtifactKind.COMPUTER_OBSERVATION,
-            session_id=execution.session_id,
-            task_run_id=execution.task_run_id,
-            sensitivity=ArtifactSensitivity.REDACTED
-            if masks
-            else ArtifactSensitivity.NON_SENSITIVE,
-            excerpt="Controlled window observation",
-            provenance_refs=(
-                ArtifactProvenanceRef(
-                    kind=ArtifactProvenanceKind.TOOL_EXECUTION,
-                    reference_id=execution.tool_execution_id,
+        try:
+            metadata = self.artifacts.publish_bytes(
+                processed.content,
+                kind=ArtifactKind.COMPUTER_OBSERVATION,
+                session_id=execution.session_id,
+                task_run_id=execution.task_run_id,
+                sensitivity=ArtifactSensitivity.REDACTED
+                if masks
+                else ArtifactSensitivity.NON_SENSITIVE,
+                excerpt="Controlled window observation",
+                provenance_refs=(
+                    ArtifactProvenanceRef(
+                        kind=ArtifactProvenanceKind.TOOL_EXECUTION,
+                        reference_id=execution.tool_execution_id,
+                    ),
+                    ArtifactProvenanceRef(
+                        kind=ArtifactProvenanceKind.AGENT_RUN, reference_id=execution.agent_run_id
+                    ),
                 ),
-                ArtifactProvenanceRef(
-                    kind=ArtifactProvenanceKind.AGENT_RUN, reference_id=execution.agent_run_id
-                ),
-            ),
-        )
+            )
+        except ArtifactError as exc:
+            if exc.code not in {ArtifactErrorCode.UNAVAILABLE, ArtifactErrorCode.BUDGET}:
+                raise
+            raise ComputerUseContractError("image_publish_failed") from None
+        except StorageError as exc:
+            if exc.code not in {StorageErrorCode.UNAVAILABLE, StorageErrorCode.BUDGET_EXHAUSTED}:
+                raise
+            raise ComputerUseContractError("image_publish_failed") from None
         return ToolVisualRef(
             artifact_id=metadata.artifact_id,
             sha256=metadata.sha256,

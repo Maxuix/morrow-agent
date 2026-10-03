@@ -19,7 +19,6 @@ from morrow.core.computer_use import (
     ComputerUseLifecyclePort,
     ComputerUsePreflight,
     ComputerUseRuntimeStatus,
-    ComputerUseScope,
     ComputerUseSessionPort,
     DiscoverResult,
     LocalComputerUseCandidates,
@@ -28,6 +27,7 @@ from morrow.core.computer_use import (
     ObservedWindow,
     OpenRunSessionRequest,
     RunSession,
+    SelectedWindowScope,
     outcome_for_rejection,
     reject_untrusted_computer_use_authority,
 )
@@ -36,7 +36,7 @@ from morrow.core.ports import Clock
 from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
 from morrow.runtime.durable_log import durable_call_id
 from morrow.services.computer_use import ComputerUseRunService
-from morrow.services.computer_verification import evaluate_postcondition
+from morrow.services.computer_verification import collect_verified_observation
 
 
 class ComputerUseLifecycle:
@@ -64,12 +64,7 @@ class ComputerUseLifecycle:
             return ComputerUseRuntimeStatus(
                 state="closed" if self._stopping else "not_activated", native_pending=False
             )
-        status = getattr(self._owner, "runtime_status", None)
-        return (
-            status
-            if isinstance(status, ComputerUseRuntimeStatus)
-            else ComputerUseRuntimeStatus(state="unknown", native_pending=None)
-        )
+        return self._owner.runtime_status
 
     @property
     def shutdown_pending(self) -> bool:
@@ -161,7 +156,7 @@ class ComputerUseObservationService:
         self,
         lifecycle: ComputerUseLifecyclePort,
         journal,
-        scope: ComputerUseScope,
+        scope: SelectedWindowScope,
         settings: ComputerUseSettings,
         clock: Clock,
         *,
@@ -175,9 +170,7 @@ class ComputerUseObservationService:
         self._closed = False
         self._action_executions: set[str] = set()
 
-    def _authority(
-        self, execution_id: str, *, include_image: bool, tool_name: str = COMPUTER_OBSERVE_TOOL
-    ):
+    def _authority(self, execution_id: str, *, tool_name: str = COMPUTER_OBSERVE_TOOL):
         try:
             if self._closed:
                 raise ComputerUseContractError("driver_not_activated")
@@ -187,7 +180,6 @@ class ComputerUseObservationService:
                 execution_id=execution_id,
                 scope=self._scope,
                 tool_name=tool_name,
-                include_image=include_image,
                 now=self._clock.now(),
             )
         except ComputerUseContractError:
@@ -273,12 +265,12 @@ class ComputerUseObservationService:
         ):
             raise ComputerUseContractError("execution_not_authorized")
         execution_id = candidates[0].tool_execution_id
-        self._authority(execution_id, include_image=False, tool_name=tool_name)
+        self._authority(execution_id, tool_name=tool_name)
         return execution_id
 
     async def discover(self, execution_id: str, *, bundle_id: str | None = None) -> DiscoverResult:
         def authority():
-            self._authority(execution_id, include_image=False)
+            self._authority(execution_id)
 
         allowed = {app.bundle_id for app in self._scope.apps}
         if bundle_id is not None and bundle_id not in allowed:
@@ -297,7 +289,7 @@ class ComputerUseObservationService:
         )
 
         def authority():
-            self._authority(execution_id, include_image=include_image)
+            self._authority(execution_id)
 
         authority()
         if self._run is None:
@@ -316,7 +308,7 @@ class ComputerUseObservationService:
         read = await self.observe(execution_id, target_ref, include_image=include_image)
         if read.capture is None:
             return read.observation, ()
-        self._authority(execution_id, include_image=True)
+        self._authority(execution_id)
         reference = visuals.publish_observed(
             read,
             tool_execution_id=execution_id,
@@ -335,7 +327,7 @@ class ComputerUseObservationService:
         self, execution_id: str, observation_id: str, action: ComputerUseAction
     ) -> ActionOutcome:
         def authority():
-            self._authority(execution_id, include_image=False, tool_name=COMPUTER_ACTION_TOOL)
+            self._authority(execution_id, tool_name=COMPUTER_ACTION_TOOL)
 
         try:
             authority()
@@ -357,7 +349,7 @@ class ComputerUseObservationService:
         visuals,
     ) -> tuple[ComputerActionResult, tuple[ToolVisualRef, ...]]:
         try:
-            self._authority(execution_id, include_image=False, tool_name=COMPUTER_ACTION_TOOL)
+            self._authority(execution_id, tool_name=COMPUTER_ACTION_TOOL)
             if self._run is None:
                 raise ComputerUseContractError("stale_observation")
             with self._run.observation_sequence():
@@ -388,48 +380,27 @@ class ComputerUseObservationService:
         include_image = self._settings.mode is ComputerUseMode.HYBRID
 
         def authority():
-            self._authority(
-                execution_id, include_image=include_image, tool_name=COMPUTER_ACTION_TOOL
-            )
+            self._authority(execution_id, tool_name=COMPUTER_ACTION_TOOL)
 
         try:
-            authority()
             if self._run is None or target_ref is None:
                 raise ComputerUseContractError("stale_observation")
-            read = await self._run.observe(
-                target_ref, authority=authority, include_image=include_image
+
+            async def observe():
+                assert self._run is not None and target_ref is not None
+                return await self._run.observe(
+                    target_ref, authority=authority, include_image=include_image
+                )
+
+            read, verification = await collect_verified_observation(
+                observe=observe,
+                clock=self._clock,
+                wait=self._verification_wait,
+                authority=authority,
+                predicate=action.postcondition,
+                before_observation_id=observation_id,
+                stop=self._run.stop,
             )
-            if read.observation.observation_id == observation_id:
-                self._run.stop()
-                raise ComputerUseContractError("stale_observation")
-            predicate = action.postcondition
-            verification = "not_checked"
-            if predicate is not None:
-                verification = evaluate_postcondition(read.observation, predicate)
-                started = self._clock.now()
-                seen = {observation_id, read.observation.observation_id}
-                for _ in range(9):
-                    if verification in {"passed", "not_checked"}:
-                        break
-                    elapsed = (self._clock.now() - started).total_seconds()
-                    if elapsed < 0 or elapsed >= 5:
-                        break
-                    authority()
-                    await self._verification_wait(min(0.5, 5 - elapsed))
-                    authority()
-                    remaining = 5 - (self._clock.now() - started).total_seconds()
-                    if not 0 < remaining <= 5:
-                        break
-                    async with asyncio.timeout(remaining):
-                        read = await self._run.observe(
-                            target_ref, authority=authority, include_image=include_image
-                        )
-                    if read.observation.observation_id in seen:
-                        self._run.stop()
-                        raise ComputerUseContractError("stale_observation")
-                    seen.add(read.observation.observation_id)
-                    verification = evaluate_postcondition(read.observation, predicate)
-            verification = "not_checked" if verification == "pending" else verification
             outcome = outcome.model_copy(update={"postcondition": verification})
         except TimeoutError:
             self._run.stop()
@@ -444,8 +415,6 @@ class ComputerUseObservationService:
             if self._run is not None:
                 self._run.stop()
             raise
-        except Exception:
-            return ComputerActionResult(outcome=outcome, observation_error="observation_failed"), ()
         observation = read.observation
         verification_error = (
             "verification_failed"
@@ -492,14 +461,6 @@ class ComputerUseObservationService:
                 outcome=outcome,
                 observation=safe_observation,
                 observation_error=exc.code,
-                verification_error=verification_error,
-            ), ()
-        except Exception:
-            # Opaque publisher errors are independent of an already dispatched action.
-            return ComputerActionResult(
-                outcome=outcome,
-                observation=read.observation,
-                observation_error="image_publish_failed",
                 verification_error=verification_error,
             ), ()
 

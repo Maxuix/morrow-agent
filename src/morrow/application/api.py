@@ -35,7 +35,7 @@ from morrow.core.application import (
     QueryPage,
 )
 from morrow.core.artifacts import ArtifactMetadata
-from morrow.core.computer_use import ComputerUseScope
+from morrow.core.computer_use import SelectedWindowScope
 from morrow.core.domain import (
     WORKSPACE_ID_PREFIX,
     DurableSession,
@@ -972,7 +972,7 @@ class OperationalApplicationService:
         grant_id: str | None = None,
         command_id: str | None = None,
         computer_use_enabled: bool = False,
-        computer_use_scope: ComputerUseScope | None = None,
+        computer_use_scope: SelectedWindowScope | None = None,
     ) -> ApplicationCommandResult[CapabilityGrant]:
         return self._permission_commands.create_grant(
             task_run_id=task_run_id,

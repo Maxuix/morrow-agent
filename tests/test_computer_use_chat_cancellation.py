@@ -86,7 +86,7 @@ async def test_http_control_retains_native_lease_until_effect_settles(tmp_path, 
                 FixedIdSource(),
                 clock,
                 driver_factory=lambda _: driver,
-                session_factory=lambda _driver, name: driver,
+                session_factory=lambda _driver, name, settings: driver,
                 lease=lease,
                 process_reader=lambda pid: ProcessBirth(1, 0),
             )

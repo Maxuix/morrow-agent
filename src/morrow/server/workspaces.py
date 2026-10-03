@@ -201,7 +201,7 @@ class WorkspaceRuntimeRegistry:
     def busy(self, workspace_id, *, pending=False, subscriptions=True):
         context = self.contexts.get(workspace_id)
         if context is not None and (
-            bool(getattr(getattr(context, "computer_use", None), "shutdown_pending", False))
+            bool(context.computer_use is not None and context.computer_use.shutdown_pending)
             or context.chat.drivers
             or context.chat.attachments.jobs
             or context.journal._backend.read_one(
@@ -249,7 +249,7 @@ class WorkspaceRuntimeRegistry:
 
             await asyncio.shield(self.maintenance_task)
         for context in tuple(self.contexts.values()):
-            desktop = getattr(context, "computer_use", None)
+            desktop = context.computer_use
             if desktop is not None:
                 desktop.stop_admission()
             await context.chat.shutdown()

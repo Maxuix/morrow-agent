@@ -4,7 +4,6 @@ import asyncio
 
 import pytest
 
-from morrow.application.computer_requests import ComputerUseSelection
 from morrow.application.computer_settings import ComputerUseSettingsService
 from morrow.application.workflows.start import StartWorkflowCommand
 from morrow.bootstrap import build_session_application
@@ -13,9 +12,7 @@ from morrow.core.agent_runs import AgentDefinitionRef, ProviderCapabilities
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.core.computer_use import (
     TRUSTED_COMPUTER_USE_AUTHORITY,
-    ComputerUseAppIdentity,
     ComputerUseContractError,
-    ComputerUseImageShare,
 )
 from morrow.core.execution import ToolExecutionDisposition, ToolExecutionState
 from morrow.core.permissions import IsolationLabel
@@ -28,7 +25,7 @@ from morrow.core.workflows.definitions import (
 )
 from morrow.core.workflows.runs import WorkflowStatus
 from test_agent_run_preparation import _app, _configure_active, _dispatch_prepared
-from test_computer_use_loop import Approval, ImageProvider, Lifecycle
+from test_computer_use_loop import Approval, ImageProvider, Lifecycle, controlled_selection
 
 
 class BlockingApproval(Approval):
@@ -146,10 +143,7 @@ async def test_workflow_desktop_requires_its_own_local_selection(tmp_path, selec
             command_id="cmd_workflow",
             active_model=app.global_store.load().value.active_model,
         )
-        selection = ComputerUseSelection(
-            apps=(ComputerUseAppIdentity(bundle_id="com.example.Controlled"),),
-            image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
-        )
+        selection = controlled_selection()
         if selected == "root_only":
             request = factory.select(
                 selection, products.session, authority=TRUSTED_COMPUTER_USE_AUTHORITY
@@ -178,10 +172,7 @@ async def test_workflow_desktop_requires_its_own_local_selection(tmp_path, selec
             )
         )
         node = journal.workflows.list_nodes(ws, started.run.workflow_run_id)[0]
-        selection = ComputerUseSelection(
-            apps=(ComputerUseAppIdentity(bundle_id="com.example.Controlled"),),
-            image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
-        )
+        selection = controlled_selection()
         with pytest.raises(ComputerUseContractError):
             factory.select_workflow_leaf(selection, node_run_id=node.node_run_id, authority="model")
         with pytest.raises(ComputerUseContractError):

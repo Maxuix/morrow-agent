@@ -31,7 +31,6 @@ from morrow.core.capabilities import (
     WorkspaceCapability,
 )
 from morrow.core.computer_use import (
-    TRUSTED_COMPUTER_USE_AUTHORITY,
     ComputerUseAppIdentity,
     ComputerUseContractError,
     ComputerUseDelivery,
@@ -40,6 +39,7 @@ from morrow.core.computer_use import (
     ComputerUseScope,
     ComputerUseWindowBoundary,
     ComputerUseWindowIdentity,
+    decode_computer_use_scope,
 )
 from morrow.core.domain import (
     AgentRunSnapshot,
@@ -97,7 +97,7 @@ def _scope(**overrides) -> ComputerUseScope:
         "image_share": ComputerUseImageShare.NONE,
     }
     values.update(overrides)
-    return ComputerUseScope(**values)
+    return decode_computer_use_scope({"schema_version": 1, **values})
 
 
 def _grant(**overrides) -> CapabilityGrant:
@@ -287,10 +287,19 @@ def test_v9_bytes_and_digest_stay_stable_when_schema10_changes():
         validate_capability_subset(("network",))
     with pytest.raises(CapabilityGrantError, match="requires a scope"):
         validate_capability_subset((CapabilityName.COMPUTER_USE_HOST,), computer_use_enabled=True)
+    selected = _scope(
+        schema_version=2,
+        windows=(
+            ComputerUseWindowIdentity(
+                app=ComputerUseAppIdentity(bundle_id="com.example.Notes"),
+                window_identity="cwin_selected",
+            ),
+        ),
+    )
     ordered = validate_capability_subset(
         (CapabilityName.COMPUTER_USE_HOST, CapabilityName.UNCONFINED_HOST_PROCESS),
         computer_use_enabled=True,
-        computer_use_scope=_scope(),
+        computer_use_scope=selected,
     )
     assert ordered == (
         CapabilityName.UNCONFINED_HOST_PROCESS,
@@ -345,6 +354,26 @@ def test_create_grant_rejects_disabled_wrong_digest_and_a_second_grant(tmp_path)
                 preview_digest=COMPUTER_USE_HOST_WARNING_DIGEST,
                 command_id="cmd_disabled",
             )
+        selected = _scope(
+            schema_version=2,
+            windows=(
+                ComputerUseWindowIdentity(
+                    app=ComputerUseAppIdentity(bundle_id="com.example.Notes"),
+                    window_identity="cwin_selected",
+                ),
+            ),
+        )
+        with pytest.raises(ApplicationError, match="selected windows"):
+            api.create_grant(
+                task_run_id="task_1",
+                agent_run_id="arun_1",
+                capabilities=(CapabilityName.COMPUTER_USE_HOST,),
+                reason="Observe the named notes window",
+                preview_digest=COMPUTER_USE_HOST_WARNING_DIGEST,
+                command_id="cmd_legacy",
+                computer_use_enabled=True,
+                computer_use_scope=_scope(),
+            )
         with pytest.raises(ApplicationError, match="warning digest"):
             api.create_grant(
                 task_run_id="task_1",
@@ -354,7 +383,7 @@ def test_create_grant_rejects_disabled_wrong_digest_and_a_second_grant(tmp_path)
                 preview_digest=sha256_digest("preview"),
                 command_id="cmd_digest",
                 computer_use_enabled=True,
-                computer_use_scope=_scope(),
+                computer_use_scope=selected,
             )
         created = api.create_grant(
             task_run_id="task_1",
@@ -364,7 +393,7 @@ def test_create_grant_rejects_disabled_wrong_digest_and_a_second_grant(tmp_path)
             preview_digest=COMPUTER_USE_HOST_WARNING_DIGEST,
             command_id="cmd_computer",
             computer_use_enabled=True,
-            computer_use_scope=_scope(),
+            computer_use_scope=selected,
         )
         with pytest.raises(ApplicationError) as conflict:
             api.create_grant(
@@ -375,29 +404,42 @@ def test_create_grant_rejects_disabled_wrong_digest_and_a_second_grant(tmp_path)
                 preview_digest=COMPUTER_USE_HOST_WARNING_DIGEST,
                 command_id="cmd_second",
                 computer_use_enabled=True,
-                computer_use_scope=_scope(generation=2),
+                computer_use_scope=selected.model_copy(update={"generation": 2}),
             )
         assert conflict.value.code.value == "conflict"
-        assert created.value.computer_use_scope == _scope()
+        assert created.value.computer_use_scope == selected
     finally:
         handle.close()
 
 
-@pytest.mark.parametrize("scope_version", [1, 2])
-def test_computer_grant_roundtrip_isolation_and_revocation(tmp_path, scope_version):
+def test_legacy_app_scope_cannot_create_a_new_grant(tmp_path):
+    _store, handle, _journal, api = _open(tmp_path)
+    try:
+        with pytest.raises(ApplicationError, match="selected windows"):
+            api.create_grant(
+                task_run_id="task_1",
+                agent_run_id="arun_1",
+                capabilities=(CapabilityName.COMPUTER_USE_HOST,),
+                reason="Observe the named notes window",
+                preview_digest=COMPUTER_USE_HOST_WARNING_DIGEST,
+                command_id="cmd_legacy",
+                computer_use_enabled=True,
+                computer_use_scope=_scope(),
+            )
+    finally:
+        handle.close()
+
+
+def test_computer_grant_roundtrip_isolation_and_revocation(tmp_path):
     _store, handle, journal, api = _open(tmp_path)
-    scope = (
-        _scope()
-        if scope_version == 1
-        else _scope(
-            schema_version=2,
-            windows=(
-                ComputerUseWindowIdentity(
-                    app=ComputerUseAppIdentity(bundle_id="com.example.Notes"),
-                    window_identity="cwin_selected",
-                ),
+    scope = _scope(
+        schema_version=2,
+        windows=(
+            ComputerUseWindowIdentity(
+                app=ComputerUseAppIdentity(bundle_id="com.example.Notes"),
+                window_identity="cwin_selected",
             ),
-        )
+        ),
     )
     try:
         created = api.create_grant(
@@ -414,7 +456,7 @@ def test_computer_grant_roundtrip_isolation_and_revocation(tmp_path, scope_versi
             lambda executor: executor.execute("SELECT capabilities_json FROM capability_grants")
         )
         assert '"computer_use_host"' in raw[0][0]
-        assert ('"windows"' in raw[0][0]) is (scope_version == 2)
+        assert '"windows"' in raw[0][0]
         session = Session(
             session_id="ses_1",
             permission_profile=PermissionProfile.from_preset(PermissionPreset.FULL_ACCESS_MANUAL),
@@ -513,13 +555,7 @@ def test_computer_grant_roundtrip_isolation_and_revocation(tmp_path, scope_versi
 
         port = Port()
         with pytest.raises(PermissionEvidenceError):
-            coordinator.assert_computer_use_before_device(
-                stored,
-                now=NOW,
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                delivery=ComputerUseDelivery.FOREGROUND,
-                include_image=False,
-            )
+            coordinator.assert_handler_may_enter(stored, now=NOW)
             port.observe_window(None)
         assert port.calls == 0
     finally:

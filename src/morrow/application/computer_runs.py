@@ -19,6 +19,7 @@ from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.computer_use import (
     ComputerUseContractError,
     ComputerUseOperation,
+    SelectedWindowScope,
     reject_untrusted_computer_use_authority,
 )
 from morrow.core.permissions import (
@@ -290,7 +291,7 @@ class ComputerUseRunFactory:
         run = self.journal.get_agent_run(self.workspace_id, agent_run_id)
         grant = self.journal.get_capability_grant(self.workspace_id, snapshot.grant_id)
         if (
-            scope is None
+            not isinstance(scope, SelectedWindowScope)
             or run is None
             or grant is None
             or scope.workspace_id != self.workspace_id

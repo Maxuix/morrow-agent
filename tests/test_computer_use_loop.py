@@ -25,6 +25,7 @@ from morrow.core.computer_use import (
     ComputerUseAppIdentity,
     ComputerUseContractError,
     ComputerUseImageShare,
+    ComputerUseWindowIdentity,
     CoordinateFrame,
     DiscoverResult,
     Observation,
@@ -41,6 +42,15 @@ from morrow.core.permissions import IsolationLabel
 from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings, RuntimePolicyOverrides
 from morrow.testing import ScriptedModelProvider
 from test_agent_run_preparation import _app, _configure_active, _dispatch_prepared
+
+
+def controlled_selection():
+    app = ComputerUseAppIdentity(bundle_id="com.example.Controlled")
+    return ComputerUseSelection(
+        apps=(app,),
+        windows=(ComputerUseWindowIdentity(app=app, window_identity="cwin_loop"),),
+        image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
+    )
 
 
 def tool(call_id, name, arguments):
@@ -63,11 +73,13 @@ class Device:
             window_identity="cwin_loop",
         )
 
-    async def discover(self, request):
+    async def discover(self, admitted):
+        request = admitted.request
         assert request.scope == self.scope
         return DiscoverResult(targets=(self.target,))
 
-    async def observe(self, request, *, settings):
+    async def observe(self, admitted):
+        request = admitted.request
         self.reads.append(request)
         after = bool(self.actions)
         buffer = io.BytesIO()
@@ -99,7 +111,8 @@ class Device:
             image_error="image_missing" if after and self.status == "image_failed" else None,
         )
 
-    async def execute_one(self, request, *, settings, authority):
+    async def execute_one(self, admitted, *, authority):
+        request = admitted.request
         authority()
         assert request.observation.observation_id == "cobs_before"
         assert request.action.element_ref == "celem_before"
@@ -223,10 +236,7 @@ async def test_real_loop_observes_approves_actions_and_hydrates_fresh_png(tmp_pa
         preparation = products.orchestrator.preparation
         factory = preparation.computer_factory
         selected = factory.select(
-            ComputerUseSelection(
-                apps=(ComputerUseAppIdentity(bundle_id="com.example.Controlled"),),
-                image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
-            ),
+            controlled_selection(),
             products.session,
             authority=TRUSTED_COMPUTER_USE_AUTHORITY,
         )
@@ -466,10 +476,7 @@ async def test_desktop_action_without_interactive_approval_is_not_dispatched(
         preparation = products.orchestrator.preparation
         factory = preparation.computer_factory
         selected = factory.select(
-            ComputerUseSelection(
-                apps=(ComputerUseAppIdentity(bundle_id="com.example.Controlled"),),
-                image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
-            ),
+            controlled_selection(),
             products.session,
             authority=TRUSTED_COMPUTER_USE_AUTHORITY,
         )

@@ -23,6 +23,7 @@ from morrow.adapters.computer_use.sdk_loader import (
     load_sdk,
 )
 from morrow.adapters.state.operational import SystemStoreClock
+from morrow.core.computer_admission import admit_discover, admit_execute, admit_observe
 from morrow.core.computer_use import (
     TRUSTED_COMPUTER_USE_AUTHORITY,
     ClickAction,
@@ -32,12 +33,10 @@ from morrow.core.computer_use import (
     ComputerUseDelivery,
     ComputerUseImageShare,
     ComputerUseOperation,
-    ComputerUseScope,
     ComputerUseWindowBoundary,
     DiscoverRequest,
     ExecuteRequest,
     ObserveWindowRequest,
-    OpenRunSessionRequest,
 )
 from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
 from morrow.runtime.ids import RandomIdSource
@@ -114,36 +113,34 @@ async def increment_once(path: Path, *, delivery: ComputerUseDelivery) -> dict:
         sdk,
         RandomIdSource(),
         SystemStoreClock(),
-        session_factory=lambda driver, name: Native(
+        session_factory=lambda driver, name, settings: Native(
             construct_run_session(sdk, driver, name), result
         ),
     )
-    scope = ComputerUseScope(
-        generation=1,
-        workspace_id="ws_native_counter",
-        task_run_id="task_native_counter",
-        agent_run_id="arun_native_counter",
-        apps=(ComputerUseAppIdentity(bundle_id=FIXTURE_BUNDLE_ID),),
-        window_boundary=ComputerUseWindowBoundary.WINDOW,
-        operations=(ComputerUseOperation.OBSERVE, ComputerUseOperation.ACTION),
-        delivery=delivery,
-        image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
-    )
     try:
-        run = await owner.open_run_session(
-            OpenRunSessionRequest(
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                agent_run_id=scope.agent_run_id,
-                scope=scope,
-            )
+        run, scope = await read["open_fixture_run"](
+            owner,
+            settings,
+            (baseline["pid"], baseline["window_id"]),
+            generation=1,
+            workspace_id="ws_native_counter",
+            task_run_id="task_native_counter",
+            agent_run_id="arun_native_counter",
+            apps=(ComputerUseAppIdentity(bundle_id=FIXTURE_BUNDLE_ID),),
+            window_boundary=ComputerUseWindowBoundary.WINDOW,
+            operations=(ComputerUseOperation.OBSERVE, ComputerUseOperation.ACTION),
+            delivery=delivery,
+            image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
         )
         session = owner.session_for(run)
         found = await session.discover(
-            DiscoverRequest(
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                scope=scope,
-                run_session_id=run.run_session_id,
-                bundle_id=FIXTURE_BUNDLE_ID,
+            admit_discover(
+                DiscoverRequest(
+                    authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                    scope=scope,
+                    run_session_id=run.run_session_id,
+                    bundle_id=FIXTURE_BUNDLE_ID,
+                )
             )
         )
         targets = read["select_fixture_targets"](
@@ -159,7 +156,7 @@ async def increment_once(path: Path, *, delivery: ComputerUseDelivery) -> dict:
             include_image=True,
         )
         result["phase"] = "observe_before"
-        before = await session.observe(request, settings=settings)
+        before = await session.observe(admit_observe(request, settings=settings))
         if before.capture is None or before.image_error is not None or before.observation.truncated:
             raise ComputerUseContractError("fixture_image_unconfirmed")
         masked = prepare_capture(
@@ -184,15 +181,17 @@ async def increment_once(path: Path, *, delivery: ComputerUseDelivery) -> dict:
 
         result["phase"] = "click"
         outcome = await session.execute_one(
-            ExecuteRequest(
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                scope=scope,
-                target=targets[0],
-                observation=before.observation,
-                action=ClickAction(type="click", element_ref=buttons[0].element_ref),
-                delivery=delivery,
+            admit_execute(
+                ExecuteRequest(
+                    authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                    scope=scope,
+                    target=targets[0],
+                    observation=before.observation,
+                    action=ClickAction(type="click", element_ref=buttons[0].element_ref),
+                    delivery=delivery,
+                ),
+                settings=settings,
             ),
-            settings=settings,
             authority=authority,
         )
         result["action"] = {
@@ -201,7 +200,7 @@ async def increment_once(path: Path, *, delivery: ComputerUseDelivery) -> dict:
             "delivery": outcome.delivery.value if outcome.delivery else None,
         }
         result["phase"] = "observe_after"
-        after = await session.observe(request, settings=settings)
+        after = await session.observe(admit_observe(request, settings=settings))
         final = counter_oracle(path)
         validate_counter_identity(baseline, final, unchanged=False)
         result.update(

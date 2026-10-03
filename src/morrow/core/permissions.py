@@ -26,6 +26,7 @@ from morrow.core.computer_use import (
     COMPUTER_TOOL_NAMES,
     SHELL_TOOL_NAMES,
     ComputerUseScope,
+    decode_computer_use_scope,
 )
 from morrow.core.domain import (
     AGENT_RUN_ID_PREFIX,
@@ -618,7 +619,7 @@ def decode_capability_payload(
         scope_raw = parsed["computer_use_scope"]
         if not isinstance(names, list) or not isinstance(scope_raw, Mapping):
             raise ValueError("computer-use scope is missing")
-        return tuple(CapabilityName(str(item)) for item in names), ComputerUseScope.model_validate(
+        return tuple(CapabilityName(str(item)) for item in names), decode_computer_use_scope(
             scope_raw
         )
     raise ValueError("unsupported permission evidence schema version")

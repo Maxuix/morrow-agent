@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from morrow.adapters.computer_use import DRIVER_CONSTRUCTION_COUNT, preflight, sdk_spec_present
+from morrow.core.computer_admission import admit_discover, admit_execute, admit_observe
 from morrow.core.computer_use import (
     OBSERVATION_TOOL_EXECUTION_PREFIX,
     TRUSTED_COMPUTER_USE_AUTHORITY,
@@ -22,6 +23,7 @@ from morrow.core.computer_use import (
     ComputerUseOperation,
     ComputerUseScope,
     ComputerUseWindowBoundary,
+    ComputerUseWindowIdentity,
     CoordinateFrame,
     DiscoverRequest,
     ExecuteRequest,
@@ -29,11 +31,9 @@ from morrow.core.computer_use import (
     ObserveWindowRequest,
     TargetRef,
     TransientCapture,
-    discover_if_admitted,
-    execute_one_if_admitted,
+    decode_computer_use_scope,
     images_allowed,
     map_image_point,
-    observe_window_if_admitted,
     parse_computer_action,
     preflight_computer_use,
     prepare_execute_request,
@@ -56,36 +56,6 @@ NOW = datetime(2026, 1, 1, tzinfo=UTC)
 DIGEST = sha256_digest("frame")
 
 
-class CountingPort:
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def _touch(self):
-        self.calls += 1
-        raise AssertionError("device call")
-
-    def preflight(self):
-        return self._touch()
-
-    def open_run_session(self, request):
-        return self._touch()
-
-    def close_run_session(self, request):
-        return self._touch()
-
-    def discover(self, request):
-        return self._touch()
-
-    def observe_window(self, request):
-        return self._touch()
-
-    def execute_one(self, request):
-        return self._touch()
-
-    def shutdown(self, request):
-        return self._touch()
-
-
 def _scope(**overrides) -> ComputerUseScope:
     values = {
         "generation": 1,
@@ -102,7 +72,29 @@ def _scope(**overrides) -> ComputerUseScope:
         "image_share": ComputerUseImageShare.NONE,
     }
     values.update(overrides)
-    return ComputerUseScope(**values)
+    return decode_computer_use_scope({"schema_version": 1, **values})
+
+
+def _selected_windows(*identities: tuple[str, str]) -> tuple[ComputerUseWindowIdentity, ...]:
+    windows = tuple(
+        ComputerUseWindowIdentity(
+            app=ComputerUseAppIdentity(bundle_id=bundle_id),
+            window_identity=window_identity,
+        )
+        for bundle_id, window_identity in identities
+    )
+    return tuple(sorted(windows, key=lambda item: item.window_identity))
+
+
+def _selected_scope(**overrides) -> ComputerUseScope:
+    windows = overrides.pop(
+        "windows",
+        _selected_windows(
+            ("com.example.Calendar", "cwin_cal"),
+            ("com.example.Notes", "cwin_1"),
+        ),
+    )
+    return _scope(schema_version=2, windows=windows, **overrides)
 
 
 def _target(**overrides) -> TargetRef:
@@ -157,7 +149,7 @@ def _observation(**overrides) -> Observation:
 def _execute(action: dict, **overrides) -> ExecuteRequest:
     values = {
         "authority": TRUSTED_COMPUTER_USE_AUTHORITY,
-        "scope": _scope(),
+        "scope": _selected_scope(),
         "target": _target(),
         "observation": _observation(),
         "action": parse_computer_action(action),
@@ -205,7 +197,7 @@ def test_scope_canonicalizes_and_refuses_expansion():
         "com.example.Notes",
     )
     assert scope.operations == (ComputerUseOperation.OBSERVE, ComputerUseOperation.ACTION)
-    reloaded = ComputerUseScope.model_validate(scope.model_dump(mode="json"))
+    reloaded = decode_computer_use_scope(scope.model_dump(mode="json"))
     assert reloaded == scope
     narrowed = restrict_scope(scope, operations=(ComputerUseOperation.OBSERVE,))
     assert narrowed.operations == (ComputerUseOperation.OBSERVE,)
@@ -231,8 +223,57 @@ def test_scope_canonicalizes_and_refuses_expansion():
     )
 
 
+def test_selected_window_replacement_and_version_downgrade_are_expansion():
+    notes = "com.example.Notes"
+    calendar = "com.example.Calendar"
+    current = _selected_scope(
+        windows=_selected_windows((notes, "cwin_1"), (notes, "cwin_2"), (calendar, "cwin_cal"))
+    )
+    replaced = decode_computer_use_scope(
+        {
+            **current.model_dump(mode="json"),
+            "windows": [
+                {"app": {"bundle_id": notes}, "window_identity": "cwin_9"},
+                {"app": {"bundle_id": calendar}, "window_identity": "cwin_cal"},
+            ],
+        }
+    )
+    with pytest.raises(ComputerUseContractError) as replacement:
+        reject_scope_expansion(current, replaced)
+    assert replacement.value.code == "scope_expansion"
+    downgraded_payload = current.model_dump(mode="json")
+    downgraded_payload["schema_version"] = 1
+    downgraded_payload.pop("windows", None)
+    downgraded = decode_computer_use_scope(downgraded_payload)
+    with pytest.raises(ComputerUseContractError) as downgrade:
+        reject_scope_expansion(current, downgraded)
+    assert downgrade.value.code == "scope_expansion"
+    subset = decode_computer_use_scope(
+        {
+            **current.model_dump(mode="json"),
+            "windows": [
+                {"app": {"bundle_id": notes}, "window_identity": "cwin_1"},
+                {"app": {"bundle_id": calendar}, "window_identity": "cwin_cal"},
+            ],
+        }
+    )
+    reject_scope_expansion(current, subset)
+    legacy = _scope()
+    promoted = decode_computer_use_scope(
+        {
+            **legacy.model_dump(mode="json"),
+            "schema_version": 2,
+            "windows": [
+                {"app": {"bundle_id": notes}, "window_identity": "cwin_1"},
+                {"app": {"bundle_id": calendar}, "window_identity": "cwin_cal"},
+            ],
+        }
+    )
+    reject_scope_expansion(legacy, promoted)
+    reject_scope_expansion(current, current)
+
+
 def test_targets_observations_and_actions_reject_before_the_device():
-    port = CountingPort()
     target = _target()
     labeled = target.model_copy(update={"display_label": "Renamed"})
     assert target_authority_key(target) == target_authority_key(labeled)
@@ -242,53 +283,58 @@ def test_targets_observations_and_actions_reject_before_the_device():
     assert "secret-bytes-marker" not in repr(capture)
     assert "secret-bytes-marker" not in str(capture)
     assert map_image_point(_frame(), 10, 4) == (5.0, 2.0)
-    scope = _scope()
+    scope = _selected_scope()
     with pytest.raises(ComputerUseContractError) as forged_app:
-        discover_if_admitted(
-            port,
+        admit_discover(
             DiscoverRequest(
                 authority=TRUSTED_COMPUTER_USE_AUTHORITY,
                 scope=scope,
                 run_session_id="crun_1",
                 bundle_id="com.example.Other",
-            ),
+            )
         )
     assert forged_app.value.code == "app_not_granted"
+    granted_pair = _selected_scope(
+        windows=_selected_windows(
+            ("com.example.Notes", "cwin_1"),
+            ("com.example.Notes", "cwin_2"),
+            ("com.example.Calendar", "cwin_cal"),
+        )
+    )
     with pytest.raises(ComputerUseContractError) as wrong_window:
-        execute_one_if_admitted(
-            port,
+        admit_execute(
             _execute(
                 {"type": "click", "element_ref": "celem_1"},
                 target=_target(window_identity="cwin_2"),
-            ),
+                scope=granted_pair,
+            )
         )
     assert wrong_window.value.code == "stale_observation"
     with pytest.raises(ComputerUseContractError) as other_run:
-        observe_window_if_admitted(
-            port,
+        admit_observe(
             ObserveWindowRequest(
                 authority=TRUSTED_COMPUTER_USE_AUTHORITY,
                 scope=scope,
                 target=_target(agent_run_id="arun_2"),
                 delivery=ComputerUseDelivery.FOREGROUND,
             ),
+            settings=ComputerUseSettings(),
         )
     assert other_run.value.code == "subject_mismatch"
     with pytest.raises(ComputerUseContractError) as screenshot:
-        observe_window_if_admitted(
-            port,
+        admit_observe(
             ObserveWindowRequest(
                 authority="screenshot",
                 scope=scope,
                 target=target,
                 delivery=ComputerUseDelivery.FOREGROUND,
             ),
+            settings=ComputerUseSettings(),
         )
     assert screenshot.value.code == "untrusted_authority"
-    shared = _scope(image_share=ComputerUseImageShare.CONTROLLED_WINDOW)
+    shared = _selected_scope(image_share=ComputerUseImageShare.CONTROLLED_WINDOW)
     with pytest.raises(ComputerUseContractError) as semantic:
-        observe_window_if_admitted(
-            port,
+        admit_observe(
             ObserveWindowRequest(
                 authority=TRUSTED_COMPUTER_USE_AUTHORITY,
                 scope=shared,
@@ -316,13 +362,11 @@ def test_targets_observations_and_actions_reject_before_the_device():
         assert error.value.code == code
         assert "password" not in str(error.value)
     with pytest.raises(ComputerUseContractError) as bounds:
-        execute_one_if_admitted(port, _execute({"type": "click", "x": 100, "y": 1}))
+        admit_execute(_execute({"type": "click", "x": 100, "y": 1}))
     assert bounds.value.code == "out_of_bounds"
     missing_scale = _observation(frame=CoordinateFrame(width=100, height=80))
     with pytest.raises(ComputerUseContractError) as unknown:
-        execute_one_if_admitted(
-            port, _execute({"type": "click", "x": 1, "y": 1}, observation=missing_scale)
-        )
+        admit_execute(_execute({"type": "click", "x": 1, "y": 1}, observation=missing_scale))
     assert unknown.value.code == "unknown_scale"
     prepared = prepare_execute_request(
         _execute({"type": "type_text", "text": "my password value", "element_ref": "celem_2"})
@@ -336,7 +380,6 @@ def test_targets_observations_and_actions_reject_before_the_device():
             )
         )
     assert stale_ref.value.code == "unknown_element"
-    assert port.calls == 0
 
 
 def test_default_startup_does_not_construct_driver_with_computer_contracts_available(tmp_path):

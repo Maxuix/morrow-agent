@@ -20,6 +20,7 @@ from morrow.adapters.computer_use.images import CaptureMask, prepare_capture
 from morrow.adapters.computer_use.owner import ComputerDriverOwner
 from morrow.adapters.computer_use.sdk_loader import construct_run_session, load_sdk
 from morrow.adapters.state.operational import SystemStoreClock
+from morrow.core.computer_admission import admit_discover, admit_execute, admit_observe
 from morrow.core.computer_use import (
     TRUSTED_COMPUTER_USE_AUTHORITY,
     CloseRunSessionRequest,
@@ -28,13 +29,11 @@ from morrow.core.computer_use import (
     ComputerUseDelivery,
     ComputerUseImageShare,
     ComputerUseOperation,
-    ComputerUseScope,
     ComputerUseWindowBoundary,
     DiscoverRequest,
     ExecuteRequest,
     HotkeyAction,
     ObserveWindowRequest,
-    OpenRunSessionRequest,
     PressKeyAction,
     TypeTextAction,
 )
@@ -208,36 +207,34 @@ async def insert_once(
         sdk,
         RandomIdSource(),
         SystemStoreClock(),
-        session_factory=lambda driver, name: Native(
+        session_factory=lambda driver, name, settings: Native(
             construct_run_session(sdk, driver, name), result
         ),
     )
-    scope = ComputerUseScope(
-        generation=1,
-        workspace_id="ws_native_text",
-        task_run_id="task_native_text",
-        agent_run_id="arun_native_text",
-        apps=(ComputerUseAppIdentity(bundle_id=FIXTURE_BUNDLE_ID),),
-        window_boundary=ComputerUseWindowBoundary.WINDOW,
-        operations=(ComputerUseOperation.OBSERVE, ComputerUseOperation.ACTION),
-        delivery=delivery,
-        image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
-    )
     try:
-        run = await owner.open_run_session(
-            OpenRunSessionRequest(
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                agent_run_id=scope.agent_run_id,
-                scope=scope,
-            )
+        run, scope = await readonly["open_fixture_run"](
+            owner,
+            settings,
+            (before["pid"], before["window_id"]),
+            generation=1,
+            workspace_id="ws_native_text",
+            task_run_id="task_native_text",
+            agent_run_id="arun_native_text",
+            apps=(ComputerUseAppIdentity(bundle_id=FIXTURE_BUNDLE_ID),),
+            window_boundary=ComputerUseWindowBoundary.WINDOW,
+            operations=(ComputerUseOperation.OBSERVE, ComputerUseOperation.ACTION),
+            delivery=delivery,
+            image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
         )
         session = owner.session_for(run)
         found = await session.discover(
-            DiscoverRequest(
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                scope=scope,
-                run_session_id=run.run_session_id,
-                bundle_id=FIXTURE_BUNDLE_ID,
+            admit_discover(
+                DiscoverRequest(
+                    authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                    scope=scope,
+                    run_session_id=run.run_session_id,
+                    bundle_id=FIXTURE_BUNDLE_ID,
+                )
             )
         )
         targets = readonly["select_fixture_targets"](
@@ -253,7 +250,7 @@ async def insert_once(
             include_image=True,
         )
         result["phase"] = "observe_before"
-        observed = await session.observe(observation_request, settings=settings)
+        observed = await session.observe(admit_observe(observation_request, settings=settings))
         result["before_masked_capture"] = masked_capture(observed)
         fields = [
             element
@@ -275,20 +272,22 @@ async def insert_once(
 
         result["phase"] = action_type
         outcome = await session.execute_one(
-            ExecuteRequest(
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                scope=scope,
-                target=targets[0],
-                observation=observed.observation,
-                action=keyboard_action(
-                    action_type,
-                    fields[0 if field == "normal" else 1].element_ref,
-                    text,
-                    keyboard_marker_set,
+            admit_execute(
+                ExecuteRequest(
+                    authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                    scope=scope,
+                    target=targets[0],
+                    observation=observed.observation,
+                    action=keyboard_action(
+                        action_type,
+                        fields[0 if field == "normal" else 1].element_ref,
+                        text,
+                        keyboard_marker_set,
+                    ),
+                    delivery=scope.delivery,
                 ),
-                delivery=scope.delivery,
+                settings=settings,
             ),
-            settings=settings,
             authority=authority,
         )
         result["action"] = {
@@ -297,7 +296,9 @@ async def insert_once(
             "delivery": outcome.delivery.value if outcome.delivery else None,
         }
         result["phase"] = "observe_after"
-        after_observation = await session.observe(observation_request, settings=settings)
+        after_observation = await session.observe(
+            admit_observe(observation_request, settings=settings)
+        )
         result["after_masked_capture"] = masked_capture(after_observation)
         after = text_oracle(path, counter["counter_oracle"])
         result.update(

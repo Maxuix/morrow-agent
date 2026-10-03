@@ -19,7 +19,10 @@ from morrow.server.host import (
 def host():
     owner = CoreHost(
         lambda: SimpleNamespace(
-            supervisor=RunSupervisor(), approval_waiters=ApprovalWaiters(), close=lambda: None
+            supervisor=RunSupervisor(),
+            approval_waiters=ApprovalWaiters(),
+            computer_use=None,
+            close=lambda: None,
         )
     )
     owner.start()
@@ -54,7 +57,10 @@ async def test_blocking_query_runs_off_core_loop_and_loop_stays_responsive(host)
 async def test_blocking_query_requires_running_host():
     host = CoreHost(
         lambda: SimpleNamespace(
-            supervisor=RunSupervisor(), approval_waiters=ApprovalWaiters(), close=lambda: None
+            supervisor=RunSupervisor(),
+            approval_waiters=ApprovalWaiters(),
+            computer_use=None,
+            close=lambda: None,
         )
     )
     with pytest.raises(CoreHostUnavailableError, match="not running"):
@@ -202,6 +208,7 @@ def _context(workspaces, closed):
         workspaces=workspaces,
         supervisor=RunSupervisor(),
         approval_waiters=ApprovalWaiters(),
+        computer_use=None,
         close=closed.set,
     )
 

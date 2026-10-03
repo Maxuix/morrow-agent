@@ -25,10 +25,10 @@ async def ready(environment, **settings):
     read = await service.observe(device.target.target_ref, authority=authority, include_image=False)
     device.actions = []
 
-    async def execute(request, *, settings, authority):
+    async def execute(admitted, *, authority):
         authority()
-        device.actions.append(request)
-        return ActionOutcome(status="completed", delivery=request.delivery)
+        device.actions.append(admitted.request)
+        return ActionOutcome(status="completed", delivery=admitted.request.delivery)
 
     device.execute_one = execute
     return service, device, clock, authority, read
@@ -92,12 +92,12 @@ async def test_concurrent_action_is_busy_and_never_queued(environment):
     read = await service.observe(device.target.target_ref, authority=authority, include_image=False)
     entered, release = asyncio.Event(), asyncio.Event()
 
-    async def waiting(request, *, settings, authority):
+    async def waiting(admitted, *, authority):
         authority()
-        device.actions.append(request)
+        device.actions.append(admitted.request)
         entered.set()
         await release.wait()
-        return ActionOutcome(status="completed", delivery=request.delivery)
+        return ActionOutcome(status="completed", delivery=admitted.request.delivery)
 
     device.execute_one = waiting
     action = ClickAction(type="click", element_ref="celem_1")
@@ -161,10 +161,10 @@ async def app_ready(environment):
     )
     lifecycle.device.actions = []
 
-    async def execute(request, *, settings, authority):
+    async def execute(admitted, *, authority):
         authority()
-        lifecycle.device.actions.append(request)
-        return ActionOutcome(status="completed", delivery=request.delivery)
+        lifecycle.device.actions.append(admitted.request)
+        return ActionOutcome(status="completed", delivery=admitted.request.delivery)
 
     lifecycle.device.execute_one = execute
     return application, lifecycle, read
@@ -205,9 +205,9 @@ async def test_revocation_after_dispatch_preserves_effect_and_stops_new_entry(en
     journal = environment[1]
     grant = journal.get_capability_grant("ws_a", environment[-1].grant_id)
 
-    async def revoke(request, *, settings, authority):
+    async def revoke(admitted, *, authority):
         authority()
-        lifecycle.device.actions.append(request)
+        lifecycle.device.actions.append(admitted.request)
         journal.save_capability_grant(
             "ws_a",
             grant.model_copy(
@@ -219,7 +219,7 @@ async def test_revocation_after_dispatch_preserves_effect_and_stops_new_entry(en
             ),
             expected_row_version=1,
         )
-        return ActionOutcome(status="completed", delivery=request.delivery)
+        return ActionOutcome(status="completed", delivery=admitted.request.delivery)
 
     lifecycle.device.execute_one = revoke
     result = await app.execute_one(

@@ -6,6 +6,11 @@ import asyncio
 from collections.abc import Callable
 from contextlib import contextmanager
 
+from morrow.core.computer_admission import (
+    admit_discover,
+    admit_execute,
+    admit_observe,
+)
 from morrow.core.computer_use import (
     MAX_DISCOVERED_TARGETS,
     MAX_OBSERVATION_AGE_SECONDS,
@@ -13,8 +18,6 @@ from morrow.core.computer_use import (
     ActionOutcome,
     ComputerUseAction,
     ComputerUseContractError,
-    ComputerUseOperation,
-    ComputerUseScope,
     ComputerUseSessionPort,
     DiscoverRequest,
     DiscoverResult,
@@ -23,10 +26,10 @@ from morrow.core.computer_use import (
     ObservedWindow,
     ObserveWindowRequest,
     RunSession,
+    SelectedWindowScope,
     TargetRef,
-    images_allowed,
     outcome_for_rejection,
-    prepare_execute_request,
+    scope_grants_window,
 )
 from morrow.core.ports import Clock
 from morrow.core.runtime_policy import ComputerUseMode, ComputerUseSettings
@@ -39,7 +42,7 @@ class ComputerUseRunService:
         self,
         session: ComputerUseSessionPort,
         run: RunSession,
-        scope: ComputerUseScope,
+        scope: SelectedWindowScope,
         settings: ComputerUseSettings,
         clock: Clock,
     ) -> None:
@@ -67,7 +70,7 @@ class ComputerUseRunService:
         return self._run
 
     @property
-    def scope(self) -> ComputerUseScope:
+    def scope(self) -> SelectedWindowScope:
         return self._scope
 
     @property
@@ -83,7 +86,7 @@ class ComputerUseRunService:
         self._observations.clear()
         self.session.invalidate()
 
-    def _admit(self, authority: Callable[[], None], *, include_image: bool = False) -> None:
+    def _admit(self, authority: Callable[[], None]) -> None:
         authority()
         if self._stopped:
             raise ComputerUseContractError("driver_not_activated")
@@ -98,10 +101,6 @@ class ComputerUseRunService:
         if self._operations >= self.settings.max_operations:
             self.stop()
             raise ComputerUseContractError("operation_budget")
-        if ComputerUseOperation.OBSERVE not in self.scope.operations:
-            raise ComputerUseContractError("operation_not_granted")
-        if include_image and not images_allowed(self.settings, self.scope):
-            raise ComputerUseContractError("images_not_allowed")
 
     @contextmanager
     def observation_sequence(self):
@@ -134,21 +133,20 @@ class ComputerUseRunService:
     ) -> DiscoverResult:
         self._admit(authority)
         allowed = {app.bundle_id for app in self.scope.apps}
-        if bundle_id is not None and bundle_id not in allowed:
-            raise ComputerUseContractError("app_not_granted")
+        admitted = admit_discover(
+            DiscoverRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=self.scope,
+                run_session_id=self.run.run_session_id,
+                bundle_id=bundle_id,
+            )
+        )
         self._begin()
         # Discovery retires previous observations, even if the read then fails.
         self._targets.clear()
         self._observations.clear()
         try:
-            result = await self.session.discover(
-                DiscoverRequest(
-                    authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                    scope=self.scope,
-                    run_session_id=self.run.run_session_id,
-                    bundle_id=bundle_id,
-                )
-            )
+            result = await self.session.discover(admitted)
             self._finish(authority)
             if len(result.targets) > MAX_DISCOVERED_TARGETS:
                 raise ComputerUseContractError("target_budget")
@@ -160,14 +158,7 @@ class ComputerUseRunService:
                     or target.app.bundle_id not in allowed
                     or (bundle_id is not None and target.app.bundle_id != bundle_id)
                     or target.target_ref in targets
-                    or (
-                        self.scope.schema_version == 2
-                        and not any(
-                            item.app == target.app
-                            and item.window_identity == target.window_identity
-                            for item in self.scope.windows
-                        )
-                    )
+                    or not scope_grants_window(self.scope, target.app, target.window_identity)
                 ):
                     raise ComputerUseContractError("subject_mismatch")
                 targets[target.target_ref] = target
@@ -185,23 +176,24 @@ class ComputerUseRunService:
         include_image = (
             self.settings.mode is ComputerUseMode.HYBRID if include_image is None else include_image
         )
-        self._admit(authority, include_image=include_image)
+        self._admit(authority)
         target = self._targets.get(target_ref)
         if target is None:
             raise ComputerUseContractError("unknown_target")
+        admitted = admit_observe(
+            ObserveWindowRequest(
+                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                scope=self.scope,
+                target=target,
+                delivery=self.scope.delivery,
+                include_image=include_image,
+            ),
+            settings=self.settings,
+        )
         self._begin()
         self._observations.pop(target_ref, None)
         try:
-            read = await self.session.observe(
-                ObserveWindowRequest(
-                    authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                    scope=self.scope,
-                    target=target,
-                    delivery=self.scope.delivery,
-                    include_image=include_image,
-                ),
-                settings=self.settings,
-            )
+            read = await self.session.observe(admitted)
             self._finish(authority)
             observation = read.observation
             if (
@@ -282,33 +274,24 @@ class ComputerUseRunService:
                 self._observations.pop(observation.target_ref, None)
                 raise ComputerUseContractError("stale_observation")
             target = self._targets[observation.target_ref]
-            request = ExecuteRequest(
-                authority=TRUSTED_COMPUTER_USE_AUTHORITY,
-                scope=self.scope,
-                target=target,
-                observation=observation,
-                action=action,
-                delivery=self.scope.delivery,
+            admitted = admit_execute(
+                ExecuteRequest(
+                    authority=TRUSTED_COMPUTER_USE_AUTHORITY,
+                    scope=self.scope,
+                    target=target,
+                    observation=observation,
+                    action=action,
+                    delivery=self.scope.delivery,
+                ),
+                settings=self.settings,
             )
-            prepare_execute_request(request, settings=self.settings)
-            if getattr(action, "x", None) is not None and observation.image is None:
-                raise ComputerUseContractError("image_not_published")
         except ComputerUseContractError as exc:
             return outcome_for_rejection(str(exc))
         self._begin()
         # Consumption precedes native preflight/await, including refusal and cancellation.
         self._observations.pop(observation.target_ref, None)
         try:
-            outcome = await self.session.execute_one(
-                request, settings=self.settings, authority=authority
-            )
-            if outcome.delivery is not None and outcome.delivery is not self.scope.delivery:
-                outcome = outcome.model_copy(
-                    update={
-                        "status": "unknown",
-                        "error_code": "unexpected_delivery",
-                    }
-                )
+            outcome = await self.session.execute_one(admitted, authority=authority)
             try:
                 self._finish(authority)
             except ComputerUseContractError as exc:

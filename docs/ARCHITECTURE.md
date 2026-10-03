@@ -101,11 +101,20 @@ list_apps/list_windows，不创建 AgentRun 或 SDK run Session、不捕获 AX/�
 shutdown 即失效；本地 DTO 只含应用、清洗标签与编号，不作为模型 target 或授权证据。
 取消/超时沿 NativeCalls quarantine 保留租约，等读取停稳后才允许 shutdown 释放。
 原生验收门槛同样约束候选入口，生产仍 unavailable。本地候选选择产生 opaque cwin 身份，
-新 window scope v2 将应用与这些窗口身份冻结到既有 grant/snapshot JSON；旧 scope v1
-序列化不增加字段，保持原证据摘要。owner 开启 run 前消费尚未过期的选择并重验 process birth，
+运行期 SelectedWindowScope 将应用与这些窗口身份冻结到既有 grant/snapshot JSON；历史
+AppWindowScope 仅用于旧证据解码，序列化不增加 windows 字段，保持原证据摘要。
+设备请求与新 grant 只接受 SelectedWindowScope，运行路径不靠版本分支选择范围。
+owner 开启 run 前消费尚未过期的选择并重验 process birth，
 将原生绑定复制给该 Session；discover 只注册选中窗口，Core observe/action 与服务返回目标
 也验证窗口范围。刷新/过期/重用选择在 SDK Session 前拒绝，不扩展到同应用其他窗口。
-CLI/GUI 的明确窗口选择已接入该 v2 链路；旧 v1 仅保持协议兼容。生产原生验收尚未通过，
+CLI/GUI 的明确窗口选择已接入该 v2 链路。新的本地选择、新 grant 和设备开启都拒绝旧的应用级
+v1 范围；已存储的 v1 JSON 仍可解码，授权摘要仍用 legacy_app_windows 描述旧应用范围。
+journal 授权后，admit_discover/admit_observe/admit_execute 产生设备 port 接受的准入结果。
+AdmittedObserve 携带唯一的冻结观察设置，Session 不再另收 settings 或重算静态授权规则；
+派发前保留会话归属、实时几何、process birth、观察年龄、token 退役与授权回调复查。
+图像发布只把存储不可用与预算耗尽映射为 image_publish_failed，保留已经派发的动作结果；
+完整性、schema、身份与程序错误继续抛出。
+生产原生验收尚未通过，
 不能把离线和受控假SDK产品流程视为实机窗口授权已验收。
 ComputerUseSelectionService 管理最多八个会话的本地候选与一次性选择标识，scope 始终由
 owner 解析候选生成 v2，不接受客户端自造原生身份或授权。Core API 的显式 POST candidates

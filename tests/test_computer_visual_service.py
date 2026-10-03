@@ -13,8 +13,10 @@ from morrow.application.computer_visuals import ComputerVisualService
 from morrow.core.artifacts import ArtifactKind
 from morrow.core.capabilities import AccessScope, ComputerToolEvidence
 from morrow.core.computer_use import (
+    ComputerUseAppIdentity,
     ComputerUseContractError,
     ComputerUseImageShare,
+    ComputerUseWindowIdentity,
     CoordinateFrame,
     Observation,
     TransientCapture,
@@ -49,7 +51,17 @@ from test_stage4_tool_journal import _execution, _intent, _open_journal, _seed_r
 def environment(tmp_path):
     store, handle, journal = _open_journal(tmp_path)
     _seed_run(journal)
-    scope = _scope(workspace_id="ws_a", image_share=ComputerUseImageShare.CONTROLLED_WINDOW)
+    scope = _scope(
+        workspace_id="ws_a",
+        schema_version=2,
+        image_share=ComputerUseImageShare.CONTROLLED_WINDOW,
+        windows=(
+            ComputerUseWindowIdentity(
+                app=ComputerUseAppIdentity(bundle_id="com.example.Notes"),
+                window_identity="cwin_1",
+            ),
+        ),
+    )
     grant = _grant(workspace_id="ws_a", computer_use_scope=scope)
     journal.put_capability_grant("ws_a", grant)
     snapshot = _snapshot(

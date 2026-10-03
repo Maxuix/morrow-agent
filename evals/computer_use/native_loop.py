@@ -206,7 +206,7 @@ async def run_fixture(path: Path, sdk, root: Path) -> dict:
         sdk,
         app.id_source,
         SystemStoreClock(),
-        session_factory=lambda driver, name: Native(
+        session_factory=lambda driver, name, settings: Native(
             construct_run_session(sdk, driver, name), result
         ),
     )

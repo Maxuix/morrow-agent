@@ -7,11 +7,6 @@ from datetime import datetime
 
 from morrow.core.computer_use import (
     COMPUTER_TOOL_NAMES,
-    ComputerUseContractError,
-    ComputerUseDelivery,
-    ComputerUseScope,
-    assert_computer_use_device_gate,
-    reject_scope_expansion,
 )
 from morrow.core.domain import AgentRunSnapshot, sha256_digest
 from morrow.core.execution import (
@@ -267,43 +262,6 @@ class RunPermissionCoordinator:
             now=now,
             permission_snapshot=snapshot,
             grant=grant,
-        )
-        return current
-
-    def assert_computer_use_before_device(
-        self,
-        execution: DurableToolExecution,
-        *,
-        now: datetime,
-        authority: str,
-        delivery: ComputerUseDelivery,
-        include_image: bool,
-        proposed_scope: ComputerUseScope | None = None,
-    ) -> DurableToolExecution:
-        """Reload handler evidence, then recheck scope before any device call."""
-
-        current = self.assert_handler_may_enter(execution, now=now)
-        grant = (
-            self.journal.get_capability_grant(self.workspace_id, current.grant_id)
-            if current.grant_id is not None
-            else None
-        )
-        scope = None if grant is None else grant.computer_use_scope
-        if proposed_scope is not None:
-            if scope is None:
-                raise ComputerUseContractError("computer_use_scope_required")
-            reject_scope_expansion(scope, proposed_scope)
-            scope = proposed_scope
-        assert_computer_use_device_gate(
-            tool_name=current.tool_name,
-            authority=authority,
-            scope=scope,
-            workspace_id=current.workspace_id,
-            task_run_id=current.task_run_id,
-            agent_run_id=current.agent_run_id,
-            delivery=delivery,
-            include_image=include_image,
-            grant_active=grant is not None and grant.is_active(now),
         )
         return current
 
