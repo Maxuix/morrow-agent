@@ -1,6 +1,7 @@
 """Local recovery guidance for bounded device codes, without raw native diagnostics."""
 
 _GUIDANCE = {
+    "unsupported_double_click_delivery": "官方 SDK 0.30.4 的后台双击无法可靠投递，动作未执行；如需双击，请由用户明确为新运行选择前台投递。",
     "element_geometry_unavailable": "控件缺少可核验几何，未投递鼠标手势；请使用新图中的精确坐标。",
     "unsupported_scroll_target": "所选控件不是可观察的滚动容器；请在新图中定位实际滚动区域。",
     "unsupported_attribute": "官方 SDK 当前仅公开 enabled 属性；该属性不支持，动作未投递。",

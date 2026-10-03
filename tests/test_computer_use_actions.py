@@ -34,6 +34,11 @@ class Native(_Native):
         self.frame_change = False
         self.after_windows = lambda: None
 
+    async def click(self, payload):
+        result = await super().click(payload)
+        result.delivery.mode = _Enum(payload.delivery_mode.name)
+        return result
+
     async def list_windows(self, payload):
         result = await super().list_windows(payload)
         if self.frame_change:
@@ -315,8 +320,9 @@ async def test_native_inputs_refuse_open_ended_arguments_and_do_not_echo_text_or
 
 
 @pytest.mark.parametrize("button,count", [("left", 1), ("right", 1), ("left", 2), ("right", 2)])
-async def test_click_keeps_exact_button_count_and_bound_token(button, count):
-    session, native, _, read, request = await setup(ComputerUseDelivery.BACKGROUND)
+@pytest.mark.parametrize("delivery", list(ComputerUseDelivery))
+async def test_click_keeps_exact_button_count_and_bound_token(button, count, delivery):
+    session, native, _, read, request = await setup(delivery)
     action = ClickAction(
         type="click",
         button=button,
@@ -324,6 +330,12 @@ async def test_click_keeps_exact_button_count_and_bound_token(button, count):
         element_ref=read.observation.elements[0].element_ref,
     )
     from morrow.core.computer_use import ObservationImageRef
+
+    if count == 2 and delivery is ComputerUseDelivery.BACKGROUND:
+        with pytest.raises(ComputerUseContractError, match="unsupported_double_click_delivery"):
+            admit_execute(request(action), settings=ComputerUseSettings(enabled=True))
+        assert effects(native) == []
+        return
 
     observation = read.observation
     if count == 2 or button == "right":
@@ -485,5 +497,40 @@ async def test_physical_gestures_without_exact_geometry_never_enter_sdk(center, 
                 settings=ComputerUseSettings(enabled=True),
             ),
             authority=lambda: None,
+        )
+    assert effects(native) == []
+
+
+@pytest.mark.parametrize("target", ["element", "coordinate"])
+async def test_background_double_click_is_refused_before_native_delivery(target):
+    from morrow.core.computer_use import ObservationImageRef
+
+    _, native, _, read, request = await setup(ComputerUseDelivery.BACKGROUND)
+    observation = read.observation.model_copy(
+        update={
+            "image": ObservationImageRef(
+                artifact_id="art_1",
+                sha256="a" * 64,
+                mime="image/png",
+                byte_size=8,
+                width=20,
+                height=10,
+                tool_execution_id="tex_1",
+            )
+        }
+    )
+    action = ClickAction(
+        type="click",
+        count=2,
+        **(
+            {"element_ref": read.observation.elements[0].element_ref}
+            if target == "element"
+            else {"x": 1, "y": 1}
+        ),
+    )
+    with pytest.raises(ComputerUseContractError, match="unsupported_double_click_delivery"):
+        admit_execute(
+            request(action).model_copy(update={"observation": observation}),
+            settings=ComputerUseSettings(enabled=True),
         )
     assert effects(native) == []

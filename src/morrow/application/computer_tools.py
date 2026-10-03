@@ -198,6 +198,8 @@ def make_computer_action_tool(observations: ComputerObservationSurface, visuals)
             "Apply exactly one action bound to a fresh observation_id and local approval. "
             "A left count=1 element click is semantic activation. Double-click and physical right-click "
             "require a fresh published image and exact element geometry, and use pixel gestures. "
+            "Double-click supports foreground delivery only in SDK 0.30.4; background is "
+            "unsupported and never silently switches delivery. "
             "Coordinates use pixels in the published observation image. "
             "Token scroll requires an observed scroll container; SDK 0.30.4 may omit it. "
             "Use an image point inside the real scroll area when tokens are unavailable. "
