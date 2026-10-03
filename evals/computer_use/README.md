@@ -13,7 +13,7 @@ background or foreground token click on the running fixture's Increment button:
 
 It binds the independent fixture PID/window/instance, rejects concurrent counter
 changes before SDK admission, consumes the observation once, reads a fresh SDK
-snapshot and masked capture, and checks the independent count. It never retries
+snapshot and normalized capture, and checks the independent count. It never retries
 or falls back to another delivery mode. An independently observed increment
 does not upgrade the SDK's unknown outcome: the gate fails unless the normalized
 native outcome is completed. The pinned macOS SDK reports generic AX presses as
@@ -59,13 +59,13 @@ the actual CoreHost owner loop. Its minimal host context proves owner-thread
 compatibility but does not attest full GUI composition or responsible-host
 authorization. `owner_main_thread` records the actual thread. Both modes report
 tree truncation and image-sharing rejection separately: passing capture/decode
-can still have `image_share_error=image_safety_unconfirmed`. Neither mode opens
+can still have bounded decoding/geometry image errors. Neither mode opens
 production gates.
 
 The adapter bounds SDK traversal at 400 nodes, while model output remains capped
 at 200 elements, depth 8 and 32 KiB of text. The pinned SDK counts collapsed
-layout containers against traversal; those are not exported elements. Any
-native truncation or projection omission still blocks image sharing. For bounded
+layout containers against traversal; those are not exported elements. Native truncation or projection omission affects absence/uniqueness claims,
+but does not block a geometrically valid screenshot. No content masking or classification runs. For bounded
 acceptance comparisons only, `--native-walk-limit 200` or `400` overrides the
 SDK traversal request, leaving production and model projection limits unchanged.
 
@@ -135,7 +135,9 @@ uv run python evals/computer_use/build_fixture.py \
 Once that exact app is running, `state.json` is its independent effect oracle.
 The snapshot records instance UUID, PID, revision, counter, controlled Unicode
 text, scroll offset, native window number/frame/backing scale, and whether the
-synthetic secure field is populated. Secure-field bytes are never exported.
+synthetic secure field is populated. Schema v2 also exports live ordinary/secure
+synthetic strings, field identity and native event counts. Only Enter commits
+the text binding; losing focus preserves live input without counting as commit.
 The window frame uses AppKit screen points; it is not an SDK screenshot pixel
 frame. Verify the snapshot PID/window belongs to the selected fixture instance.
 The app displays `State output: ready`, `failed`, or `disabled`; a failed writer
@@ -178,7 +180,7 @@ CoreHost, full chat/workflow service context, and ASGI GUI composition:
 
 It allocates its own temporary workspace/state root and memory-only synthetic
 Provider credential. The scripted Provider makes no model/network request.
-The SDK read/decode/masking/close runs on that full host's owner loop before its
+The SDK read/decode/normalization/close runs on that full host's owner loop before its
 local GUI serves. Output includes only bounded evidence and the actual loopback
 URL. A held OS-assigned socket prevents conflicts and port-selection races.
 Open that URL in an isolated test tab; normal scripted chat can verify that the
@@ -187,8 +189,8 @@ host/listener and remove its temporary state.
 
 The host's ordinary computer-use lifecycle remains not_activated;
 the probe does not create an active desktop run. This observes the fixed fixture via the opt-in
-probe, not through a model grant. A partial/degraded image, missing two-field
-mask proof, minimal service context or active production desktop fails the
+probe, not through a model grant. Invalid capture geometry/bytes, minimal
+service context or active production desktop fails the
 probe; it never opens a diagnostic SDK endpoint to HTTP clients. This verifies
 responsible-host/read coexistence, not the native action/Provider-image/product
 end-to-end acceptance gates.
@@ -197,8 +199,8 @@ end-to-end acceptance gates.
 
 Use the official pinned SDK in a disposable environment. No custom package,
 security-classification query or field-specific input guard is needed. Password
-fields use the same authorized keyboard path as ordinary fields; existing AX
-values and screenshots still receive content protection.
+fields use the same authorized keyboard path as ordinary fields. Public SDK
+values and screenshot pixels receive no tool-side content classification or masking.
 
 ```sh
 /path/to/isolated/python evals/computer_use/native_text.py \
@@ -231,8 +233,8 @@ are retired by the 2026-10-03 user scope correction. Historical evidence remains
 in Git/local acceptance archives and is not a current implementation requirement.
 
 `native_text.py --field secure --delivery foreground` explicitly tests the empty
-synthetic secure field. Its independent oracle reads only the population boolean,
-never secure bytes; it refuses an already populated test field. A hidden-field
+synthetic secure field. This component gate uses the population boolean,
+which does not prove exact insertion; it refuses an already populated test field. A hidden-field
 write may take effect while the official SDK reports unknown. That evidence is
 retained without retry or upgrading completion.
 
@@ -241,11 +243,12 @@ retained without retry or upgrading completion.
 `live_provider.py` exercises the ordinary AgentLoop with the production
 OpenAI-compatible streaming adapter, DeepSeek `deepseek-flash`, and the real
 pinned native SDK. Launch a fresh controlled Swift fixture with independent
-state first. Explicit desktop and Provider-network opt-ins are required:
+state directory. Explicit desktop and Provider-network opt-ins are required:
 
 ```sh
 PYTHONPATH=src /path/to/sdk-environment/bin/python evals/computer_use/live_provider.py \
   --allow-desktop --allow-real-provider \
+  --fixture-app /path/to/MorrowComputerUseFixture.app \
   --fixture-state-file /path/to/fixture/state.json \
   --evidence-file /path/to/semantic-background.json \
   --mode semantic --delivery background
@@ -255,6 +258,11 @@ The key comes from `DEEPSEEK_API_KEY` or a hidden interactive prompt. Automated
 callers can explicitly use `--credential-stdin` with an echo-disabled input
 channel. Never put a key in command-line arguments or evidence files. Credentials
 stay in the temporary composition's memory credential store.
+
+Add `--matrix` to run semantic foreground/background cases, hybrid observation,
+coordinate click/scroll and mouse gestures, plus 640-pixel resized and moved-window
+coordinate checks. Every case starts a separate process and fixture instance;
+this also avoids native workspace caches retaining previous process identities.
 
 The default cases cover observation, token click, Unicode text, single key,
 hotkey, scroll and synthetic secure input. Repeat with `--delivery foreground`.
@@ -270,8 +278,38 @@ workspace/store, advertises only the two computer tools, limits model requests,
 and admits at most one native action. The model chooses its own tool arguments;
 responses are not scripted. Temporary journals and image artifacts are removed
 on exit; exported JSON contains metadata, hashes, normalized outcomes and
-independent state deltas. `status=tested` means evidence was collected, **not**
-that the feature passed. Compare action status, requested variant, independent
+independent state deltas. `raw_status=tested` means evidence was collected, **not**
+that the feature passed. `status` is the strict verdict. Compare action status, requested variant, independent
 effect and verification errors. Unknown outcomes remain unknown, with no action
 retry or delivery fallback. Polling/cancellation/revocation, GUI interaction and
 other applications need separate coverage.
+
+
+The v2 AppKit fixture records `liveText`/`liveSecureText`, committed `text`/population,
+change counts and field identity separately. Key events record characters, target
+field and key-up count; q/Y acceptance requires exact insertion and one event pair.
+NSWindow update sampling observes edits that bypass NSControlTextDidChange, without
+inventing change-notification counts. Use synthetic values only. Mouse events record
+`mouseClickCounts` and `rightMouseEvents`; business button count is a separate oracle.
+`live_provider.py --fixture-app /path/to/MorrowComputerUseFixture.app` launches and closes
+a fresh instance for each case. Multiple cases require this flag. Verdicts are
+`passed/failed/blocked/unsupported` and non-passing campaigns exit nonzero. Native unknown
+is preserved even when an independent fixture effect or task condition passes.
+
+SDK 0.30.4 does not publicly read an old token's exact native object attributes. `enabled`
+selector verification still requires a complete unique tree; macOS reports partial trees.
+Exact-object enabled acceptance remains unsupported until the official SDK adds this API.
+
+Fixture pointer events independently record window coordinates and wheel deltas. The scroll region
+exports its AppKit window-space frame, so wheel acceptance proves the received
+point was inside the real NSScrollView region as well as observing offset. Selected-node/frame metadata is
+captured from the current trusted registry before dispatch, including pixel-routed gestures.
+
+SDK 0.30.4 background double-clicks misdeliver AppKit window-local coordinates on the tested host.
+Morrow refuses this variant before native entry; use an explicitly granted foreground run.
+The matrix deliberately attempts the unsupported background variant to verify the bounded refusal.
+
+Foreground cases explicitly start their owned fixture as key/active and record those facts.
+SDK 0.30.4 foreground pixel wheel delivery still receives no fixture wheel events on this host.
+Morrow refuses it before native entry; background image scroll requires a new explicit grant.
+The 640-pixel moved-window scroll variant uses background delivery to exercise the working path.

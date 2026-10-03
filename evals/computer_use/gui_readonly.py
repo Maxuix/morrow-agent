@@ -101,12 +101,12 @@ async def inspect_gui_owner(host, *, fixture_window, inspect):
         if not result["full_service_context"] or result["production_desktop_active"]:
             result.update(status="failed", reason="gui_context_incomplete")
         elif result["status"] == "passed":
-            masked = result.get("masked_capture") or {}
+            prepared = result.get("prepared_capture") or {}
             if (
                 result.get("image_share_error") is not None
-                or type(masked.get("mask_count")) is not int
-                or masked["mask_count"] < 0
-                or masked.get("mask_pixels_verified") is not True
+                or type(prepared.get("byte_size")) is not int
+                or prepared["byte_size"] < 1
+                or not prepared.get("sha256")
             ):
                 result.update(status="failed", reason="gui_fixture_image_unverified")
         return result

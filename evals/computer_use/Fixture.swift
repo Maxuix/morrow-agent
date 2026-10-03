@@ -11,10 +11,20 @@ struct WindowFacts: Codable, Equatable {
     let width: Double
     let height: Double
     let backingScale: Double
+    let contentHeight: Double
+    let isKey: Bool
+    let appActive: Bool
+}
+
+struct RegionFacts: Codable, Equatable {
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
 }
 
 struct FixtureSnapshot: Encodable {
-    let schemaVersion = 1
+    let schemaVersion = 2
     let instanceId: String
     let pid: Int32
     let revision: Int
@@ -23,13 +33,97 @@ struct FixtureSnapshot: Encodable {
     let secureFieldPopulated: Bool
     let scrollOffset: Double
     let window: WindowFacts?
+    let liveText: String
+    let liveSecureText: String
+    let textChangeEvents: Int
+    let secureChangeEvents: Int
+    let lastEditedField: String?
+    let mouseClickCounts: [Int]
+    let rightMouseEvents: Int
+    let menuActions: Int
+    let keyDownCharacters: [String]
+    let keyDownFields: [String]
+    let keyUpEvents: Int
+    let pointerEvents: [PointerEvent]
+    let scrollRegion: RegionFacts?
+}
+
+struct PointerEvent: Codable {
+    let kind: String
+    let clickCount: Int
+    let windowX: Double
+    let windowY: Double
+    let deltaY: Double
 }
 
 // This file is independent of AX, screenshots, the SDK and model responses.
-// Secure-field bytes never enter the snapshot, error messages or console.
+// Only synthetic test input belongs in this isolated fixture.
 final class FixtureStateWriter {
     let instanceId = UUID().uuidString
     private var revision = 0
+    var liveText = ""
+    var liveSecureText = ""
+    var textChangeEvents = 0
+    var secureChangeEvents = 0
+    var lastEditedField: String? = nil
+    var mouseClickCounts: [Int] = []
+    var rightMouseEvents = 0
+    var menuActions = 0
+    var keyDownCharacters: [String] = []
+    var keyDownFields: [String] = []
+    var keyUpEvents = 0
+    var pointerEvents: [PointerEvent] = []
+    var scrollRegion: RegionFacts? = nil
+    private var eventMonitor: Any?
+    init() {
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .leftMouseDown, .rightMouseDown, .scrollWheel]) { [weak self] event in
+            guard let self else { return event }
+            if event.type == .leftMouseDown || event.type == .rightMouseDown || event.type == .scrollWheel {
+                pointerEvents.append(PointerEvent(
+                    kind: event.type == .scrollWheel ? "wheel" : event.type == .rightMouseDown ? "right" : "left",
+                    clickCount: event.type == .scrollWheel ? 0 : event.clickCount,
+                    windowX: event.locationInWindow.x, windowY: event.locationInWindow.y,
+                    deltaY: event.type == .scrollWheel ? event.scrollingDeltaY : 0))
+                publish?()
+                return event
+            }
+            let field: String
+            if normalControl?.currentEditor() != nil { field = "fixture-text" }
+            else if secureControl?.currentEditor() != nil { field = "fixture-secure" }
+            else { field = "other" }
+            if event.type == .keyDown {
+                keyDownCharacters.append(event.characters ?? "")
+                keyDownFields.append(field)
+            } else { keyUpEvents += 1 }
+            publish?()
+            return event
+        }
+    }
+    deinit { if let eventMonitor { NSEvent.removeMonitor(eventMonitor) } }
+    var publish: (() -> Void)?
+    weak var normalControl: NSTextField?
+    weak var secureControl: NSTextField?
+    func sampleEditors() {
+        // AX/SDK edits may bypass NSControlTextDidChange. Window update is an
+        // independent AppKit observation of the actual focused field editor.
+        for (control, secure) in [(normalControl, false), (secureControl, true)] {
+            guard let control else { continue }
+            let actual = (control.currentEditor() as? NSTextView)?.string ?? control.stringValue
+            let previous = secure ? liveSecureText : liveText
+            if actual != previous {
+                if secure { liveSecureText = actual } else { liveText = actual }
+                lastEditedField = secure ? "fixture-secure" : "fixture-text"
+                publish?()
+            }
+        }
+    }
+
+    func edit(_ value: String, secure: Bool) {
+        if secure { liveSecureText = value; secureChangeEvents += 1 }
+        else { liveText = value; textChangeEvents += 1 }
+        lastEditedField = secure ? "fixture-secure" : "fixture-text"
+        publish?()
+    }
 
     func write(count: Int, text: String, secure: Bool, scroll: Double,
                window: WindowFacts?) -> String {
@@ -39,7 +133,13 @@ final class FixtureStateWriter {
         let snapshot = FixtureSnapshot(instanceId: instanceId,
             pid: ProcessInfo.processInfo.processIdentifier, revision: revision,
             count: count, text: text, secureFieldPopulated: secure,
-            scrollOffset: scroll, window: window)
+            scrollOffset: scroll, window: window, liveText: liveText,
+            liveSecureText: liveSecureText, textChangeEvents: textChangeEvents,
+            secureChangeEvents: secureChangeEvents, lastEditedField: lastEditedField,
+            mouseClickCounts: mouseClickCounts, rightMouseEvents: rightMouseEvents,
+            menuActions: menuActions, keyDownCharacters: keyDownCharacters,
+            keyDownFields: keyDownFields, keyUpEvents: keyUpEvents, pointerEvents: pointerEvents,
+            scrollRegion: scrollRegion)
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
@@ -75,6 +175,7 @@ struct ScrollObservation: ViewModifier {
 
 final class WindowProbeView: NSView {
     var onFacts: ((WindowFacts) -> Void)?
+    var writer: FixtureStateWriter?
     private var observers: [NSObjectProtocol] = []
 
     override func viewDidMoveToWindow() {
@@ -82,33 +183,161 @@ final class WindowProbeView: NSView {
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers.removeAll()
         guard let window else { return }
+        if ProcessInfo.processInfo.environment["MORROW_FIXTURE_SHIFTED"] == "1" {
+            window.setFrameOrigin(NSPoint(x: 100, y: 120))
+        }
         for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification,
-                     NSWindow.didBecomeKeyNotification, NSWindow.didChangeBackingPropertiesNotification] {
+                     NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
+                     NSWindow.didChangeBackingPropertiesNotification,
+                     NSWindow.didUpdateNotification] {
             observers.append(NotificationCenter.default.addObserver(
                 forName: name, object: window, queue: .main) { [weak self] _ in self?.publish() })
         }
-        DispatchQueue.main.async { [weak self] in self?.publish() }
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
+            observers.append(NotificationCenter.default.addObserver(
+                forName: name, object: NSApp, queue: .main) { [weak self] _ in self?.publish() })
+        }
+        DispatchQueue.main.async { [weak self] in
+            if ProcessInfo.processInfo.environment["MORROW_FIXTURE_FOREGROUND"] == "1" {
+                self?.window?.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            if let self, let seed = ProcessInfo.processInfo.environment["MORROW_FIXTURE_EDIT_SEED"], !seed.isEmpty,
+               let control = self.writer?.normalControl {
+                control.stringValue = seed
+                self.window?.makeFirstResponder(control)
+                (control.currentEditor() as? NSTextView)?.string = seed
+                self.writer?.sampleEditors()
+            }
+            self?.publish()
+        }
     }
 
     private func publish() {
         guard let window else { return }
+        if let content = window.contentView {
+            let region = scrollRegion(in: content)
+            if writer?.scrollRegion != region {
+                writer?.scrollRegion = region
+                writer?.publish?()
+            }
+        }
+        writer?.sampleEditors()
         let frame = window.frame
         onFacts?(WindowFacts(number: window.windowNumber, x: frame.origin.x, y: frame.origin.y,
                             width: frame.width, height: frame.height,
-                            backingScale: window.backingScaleFactor))
+                            backingScale: window.backingScaleFactor,
+                            contentHeight: Double(window.contentView?.bounds.height ?? 0),
+                            isKey: window.isKeyWindow, appActive: NSApp.isActive))
+    }
+
+    private func scrollRegion(in view: NSView) -> RegionFacts? {
+        // Same AppKit window coordinates as NSEvent.locationInWindow, independent of AX/SDK.
+        if let scroll = view as? NSScrollView, scroll.bounds.height >= 150,
+           scroll.bounds.height <= 250 {
+            let frame = scroll.convert(scroll.bounds, to: nil)
+            return RegionFacts(x: frame.minX, y: frame.minY,
+                               width: frame.width, height: frame.height)
+        }
+        for child in view.subviews {
+            if let region = scrollRegion(in: child) { return region }
+        }
+        return nil
     }
 
     deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
 }
 
 struct WindowProbe: NSViewRepresentable {
+    let writer: FixtureStateWriter
     let onFacts: (WindowFacts) -> Void
     func makeNSView(context: Context) -> WindowProbeView {
         let view = WindowProbeView()
+        view.writer = writer
         view.onFacts = onFacts
         return view
     }
     func updateNSView(_ view: WindowProbeView, context: Context) { view.onFacts = onFacts }
+}
+
+// AppKit reports live editor changes independently from committed binding values.
+struct OracleTextField: NSViewRepresentable {
+    @Binding var value: String
+    let secure: Bool
+    let writer: FixtureStateWriter
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeNSView(context: Context) -> NSTextField {
+        let field = secure ? NSSecureTextField() : NSTextField()
+        field.placeholderString = secure ? "Synthetic secure field" : "Unicode text"
+        field.setAccessibilityIdentifier(secure ? "fixture-secure" : "fixture-text")
+        if secure { writer.secureControl = field } else { writer.normalControl = field }
+        field.delegate = context.coordinator
+        return field
+    }
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        // Live edits survive focus changes; committed binding is a separate oracle.
+        if field.currentEditor() == nil {
+            field.stringValue = secure ? writer.liveSecureText : writer.liveText
+        }
+    }
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: OracleTextField
+        init(_ parent: OracleTextField) { self.parent = parent }
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            parent.writer.edit(field.stringValue, secure: parent.secure)
+        }
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            if notification.userInfo?["NSTextMovement"] as? Int == NSReturnTextMovement {
+                parent.value = field.stringValue
+            }
+        }
+    }
+}
+
+final class OracleButton: NSButton {
+    var writer: FixtureStateWriter?
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) {
+        writer?.mouseClickCounts.append(event.clickCount)
+        writer?.publish?()
+        super.mouseDown(with: event)
+    }
+    override func rightMouseDown(with event: NSEvent) {
+        writer?.rightMouseEvents += 1
+        writer?.publish?()
+        let menu = NSMenu()
+        let item = NSMenuItem(title: "Fixture menu action", action: #selector(menuAction), keyEquivalent: "")
+        item.target = self
+        menu.addItem(item)
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+    @objc func menuAction() {
+        writer?.menuActions += 1
+        writer?.publish?()
+    }
+}
+
+struct OracleIncrement: NSViewRepresentable {
+    let writer: FixtureStateWriter
+    let increment: () -> Void
+    func makeCoordinator() -> Coordinator { Coordinator(increment) }
+    func makeNSView(context: Context) -> OracleButton {
+        let button = OracleButton(title: "Increment", target: context.coordinator,
+                                  action: #selector(Coordinator.press))
+        button.bezelStyle = .rounded
+        button.setAccessibilityIdentifier("fixture-increment")
+        button.writer = writer
+        return button
+    }
+    func updateNSView(_ button: OracleButton, context: Context) { context.coordinator.increment = increment }
+    final class Coordinator: NSObject {
+        var increment: () -> Void
+        init(_ increment: @escaping () -> Void) { self.increment = increment }
+        @objc func press() { increment() }
+    }
 }
 
 @main
@@ -139,27 +368,27 @@ struct FixtureView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Controlled local fixture — no network or account")
             Text("Count: \(count)").accessibilityIdentifier("fixture-count")
-            Button("Increment") { count += 1 }
-                .accessibilityIdentifier("fixture-increment")
-            TextField("Unicode text", text: $text)
-                .accessibilityIdentifier("fixture-text")
+            OracleIncrement(writer: writer) { count += 1 }.frame(width: 120, height: 28)
+            OracleTextField(value: $text, secure: false, writer: writer).frame(height: 24)
             Text("Echo: \(text)").accessibilityIdentifier("fixture-echo")
-            SecureField("Synthetic secure field", text: $password)
-                .accessibilityIdentifier("fixture-secure")
+            OracleTextField(value: $password, secure: true, writer: writer).frame(height: 24)
             Text("State output: \(exportStatus)").accessibilityIdentifier("fixture-state-output")
             ScrollView {
                 VStack(alignment: .leading) {
                     ForEach(0..<40) { index in Text("Fixture row \(index)") }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(GeometryReader { proxy in
                     Color.clear.preference(key: ScrollOffset.self,
                         value: -proxy.frame(in: .named("fixture-scroll")).minY)
                 })
-            }.coordinateSpace(name: "fixture-scroll").frame(height: 200)
+            }.coordinateSpace(name: "fixture-scroll").frame(width: 480, height: 200)
+                .background(Color.gray.opacity(0.08))
+                .accessibilityIdentifier("fixture-scroll")
                 .modifier(ScrollObservation(offset: $scrollOffset))
         }.padding(20)
-            .background(WindowProbe { windowFacts = $0 })
-            .onAppear { publish() }
+            .background(WindowProbe(writer: writer) { windowFacts = $0 })
+            .onAppear { writer.publish = { publish() }; publish() }
             .onChange(of: count) { _, _ in publish() }
             .onChange(of: text) { _, _ in publish() }
             .onChange(of: password.isEmpty) { _, _ in publish() }

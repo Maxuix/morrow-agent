@@ -15,7 +15,7 @@ from pathlib import Path
 from uuid import UUID
 
 from morrow.adapters.computer_use.diagnostics import diagnose_host
-from morrow.adapters.computer_use.images import CaptureMask, prepare_capture
+from morrow.adapters.computer_use.images import prepare_capture
 from morrow.adapters.computer_use.owner import ComputerDriverOwner
 from morrow.adapters.computer_use.sdk_loader import (
     collect_host_probe,
@@ -55,7 +55,7 @@ def counter_oracle(path: Path) -> dict:
         instance = str(UUID(state["instanceId"]))
         if (
             type(state["schemaVersion"]) is not int
-            or state["schemaVersion"] != 1
+            or state["schemaVersion"] not in (1, 2)
             or type(pid) is not int
             or not 0 < pid < 2**31
             or type(number) is not int
@@ -159,19 +159,13 @@ async def increment_once(path: Path, *, delivery: ComputerUseDelivery) -> dict:
         before = await session.observe(admit_observe(request, settings=settings))
         if before.capture is None or before.image_error is not None or before.observation.truncated:
             raise ComputerUseContractError("fixture_image_unconfirmed")
-        masked = prepare_capture(
-            before.capture,
-            masks=tuple(
-                CaptureMask(region.left, region.top, region.right, region.bottom)
-                for region in before.sensitive_regions
-            ),
-        )
+        masked = prepare_capture(before.capture)
         result["before_masked_sha256"] = hashlib.sha256(masked.content).hexdigest()
         # Select one positively observed token; do not claim whole-tree uniqueness/completeness.
         buttons = [
             element
             for element in before.observation.elements
-            if element.role == "axbutton" and element.label == "Increment" and not element.sensitive
+            if element.role == "axbutton" and element.label == "Increment"
         ]
         if len(buttons) != 1:
             raise ComputerUseContractError("fixture_counter_target_required")
@@ -214,13 +208,7 @@ async def increment_once(path: Path, *, delivery: ComputerUseDelivery) -> dict:
         )
         if after.capture is None or after.image_error is not None:
             raise ComputerUseContractError("fixture_after_image_unconfirmed")
-        masked_after = prepare_capture(
-            after.capture,
-            masks=tuple(
-                CaptureMask(region.left, region.top, region.right, region.bottom)
-                for region in after.sensitive_regions
-            ),
-        )
+        masked_after = prepare_capture(after.capture)
         result["after_masked_sha256"] = hashlib.sha256(masked_after.content).hexdigest()
         if (
             outcome.status != "completed"

@@ -9,14 +9,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
-import io
 import json
 import math
 import runpy
 from pathlib import Path
 from uuid import uuid4
 
-from morrow.adapters.computer_use.images import CaptureMask, prepare_capture
+from morrow.adapters.computer_use.images import prepare_capture
 from morrow.adapters.computer_use.owner import ComputerDriverOwner
 from morrow.adapters.computer_use.sdk_loader import construct_run_session, load_sdk
 from morrow.adapters.state.operational import SystemStoreClock
@@ -62,13 +61,19 @@ def text_oracle(path: Path, counter) -> dict:
             raise ValueError
     except (OSError, ValueError, TypeError, KeyError):
         raise ComputerUseContractError("fixture_text_state_invalid") from None
-    return {**identity, "text": text, "secure": secure, "scroll": scroll}
+    return {
+        **identity,
+        "text": state.get("liveText", text),
+        "committed_text": text,
+        "secure": bool(state.get("liveSecureText", "")) or secure,
+        "scroll": scroll,
+    }
 
 
 def independent_insert(before: dict, after: dict, text: str, validate_identity) -> bool:
     validate_identity(before, after, unchanged=True)
     return (
-        after["text"] != before["text"]
+        after["text"] == before["text"] + text
         and text not in before["text"]
         and after["text"].count(text) == 1
         and before["secure"] == after["secure"]
@@ -86,28 +91,13 @@ def independent_secure_input(before: dict, after: dict, validate_identity) -> bo
     )
 
 
-def masked_capture(observed) -> dict:
-    from PIL import Image
-
+def prepared_capture(observed) -> dict:
     if observed.capture is None or observed.image_error is not None:
         raise ComputerUseContractError("fixture_image_unconfirmed")
-    masks = tuple(
-        CaptureMask(region.left, region.top, region.right, region.bottom)
-        for region in observed.sensitive_regions
-    )
-    masked = prepare_capture(observed.capture, masks=masks)
-    with Image.open(io.BytesIO(masked.content)) as image:
-        for mask in masks:
-            if image.crop((mask.left, mask.top, mask.right, mask.bottom)).getextrema() != (
-                (0, 0),
-                (0, 0),
-                (0, 0),
-            ):
-                raise ComputerUseContractError("fixture_mask_invalid")
+    prepared = prepare_capture(observed.capture)
     return {
-        "sha256": hashlib.sha256(masked.content).hexdigest(),
-        "mask_count": len(masks),
-        "mask_pixels_verified": True,
+        "sha256": hashlib.sha256(prepared.content).hexdigest(),
+        "content_classified": False,
     }
 
 
@@ -251,7 +241,7 @@ async def insert_once(
         )
         result["phase"] = "observe_before"
         observed = await session.observe(admit_observe(observation_request, settings=settings))
-        result["before_masked_capture"] = masked_capture(observed)
+        result["before_capture"] = prepared_capture(observed)
         fields = [
             element
             for element in observed.observation.elements
@@ -299,7 +289,7 @@ async def insert_once(
         after_observation = await session.observe(
             admit_observe(observation_request, settings=settings)
         )
-        result["after_masked_capture"] = masked_capture(after_observation)
+        result["after_capture"] = prepared_capture(after_observation)
         after = text_oracle(path, counter["counter_oracle"])
         result.update(
             independent_insert=(

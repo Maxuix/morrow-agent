@@ -20,7 +20,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from morrow.adapters.computer_use.diagnostics import diagnose_host
-from morrow.adapters.computer_use.images import CaptureMask, prepare_capture
+from morrow.adapters.computer_use.images import prepare_capture
 from morrow.adapters.computer_use.owner import ComputerDriverOwner
 from morrow.adapters.computer_use.sdk_loader import (
     collect_host_probe,
@@ -61,7 +61,7 @@ def read_fixture_window(path: Path | None) -> tuple[int, int] | None:
         pid, window_id = state["pid"], state["window"]["number"]
         if (
             type(state["schemaVersion"]) is not int
-            or state["schemaVersion"] != 1
+            or state["schemaVersion"] not in (1, 2)
             or type(pid) is not int
             or not 0 < pid < 2**31
             or type(window_id) is not int
@@ -297,34 +297,16 @@ async def inspect_fixture(*, fixture_window=None, native_walk_limit=None) -> dic
                 },
             }
         )
-        editable = [
-            element
-            for element in observed.observation.elements
-            if element.role in {"axtextfield", "axtextarea", "axcombobox", "axsearchfield"}
-        ]
-        result["editable_classification"] = {
-            "non_sensitive": sum(not element.sensitive for element in editable),
-            "sensitive": sum(element.sensitive for element in editable),
-        }
         if observed.image_error is None:
-            phase = "mask_capture"
-            masks = tuple(
-                CaptureMask(region.left, region.top, region.right, region.bottom)
-                for region in observed.sensitive_regions
-            )
-            masked = prepare_capture(observed.capture, masks=masks)
-            with Image.open(io.BytesIO(masked.content)) as image:
-                for mask in masks:
-                    pixels = image.crop((mask.left, mask.top, mask.right, mask.bottom))
-                    if pixels.getextrema() != ((0, 0), (0, 0), (0, 0)):
-                        raise ComputerUseContractError("fixture_mask_invalid")
+            phase = "prepare_capture"
+            prepared = prepare_capture(observed.capture)
+            with Image.open(io.BytesIO(prepared.content)) as image:
                 if image.info:
                     raise ComputerUseContractError("fixture_metadata_retained")
-            result["masked_capture"] = {
-                "mask_count": len(masks),
-                "byte_size": len(masked.content),
-                "sha256": hashlib.sha256(masked.content).hexdigest(),
-                "mask_pixels_verified": True,
+            result["prepared_capture"] = {
+                "byte_size": len(prepared.content),
+                "sha256": hashlib.sha256(prepared.content).hexdigest(),
+                "content_classified": False,
             }
         phase = "close_session"
         await owner.close_run_session(
