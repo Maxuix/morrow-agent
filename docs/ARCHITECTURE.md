@@ -74,10 +74,16 @@ application 中的组合、跨域事务、配置生命周期、诊断和备份�
 
 Computer-use 使用官方固定 cua-driver 0.30.4；2026-10-03 用户纠正后移除密码框输入
 禁令、逐字段安全证明和自编 guarded SDK。type_text/key/hotkey 对普通及 secure 字段
-共用已授权路径，sensitive 标志仅用于内容展示/已知截图区域处理，不决定输入资格。
+共用已授权路径。2026-10-04 用户进一步要求移除完整工具内容分类链：不检测屏幕内容的关键词、
+凭据样式或 secure 角色，不清空可读属性、不遮罩截图。LLM 根据用户意图和上下文判断内容与动作安全；
+Provider 配置凭据依旧遵循独立 CredentialStore 契约。截图发布只校验几何、解码、资源及所属执行授权。
 macOS arm64 基础观察、普通输入和带实际图像的 ordinary loop 实测后允许显式激活；
 其他平台保留 unavailable。隐藏字段输入可能产生效果但由 SDK 返回 unknown，仍按
-原副作用恢复语义处理，不重新投递，也不读取密码来追加验证。
+原副作用恢复语义处理，不重新投递。SDK/OS 不可读的值仍返回 unavailable；Morrow 不增加字段内容禁读规则。
+元素左键单击为语义激活，双击/物理右键在投递前选择同一新图的像素路径；无图或几何则未投递。官方 0.30.4 后台双击 AppKit 窗口坐标不正确，Morrow 提前返回
+unsupported_double_click_delivery，不替换模式或手势。前台坐标滚动在本机未收到轮事件，提前返回
+unsupported_foreground_scroll_delivery；已验证的后台图像滚动要求独立明确授权。
+属性验证只公开 enabled，0.30.4 没有跨快照同一对象的公开读回；部分树/旧引用不伪造属性成功。
 
 可选 computer-use 默认关闭，原生验收未通过时不激活 Driver。bootstrap 为运行准备器与
 CoreHost 关闭路径传递同一 lifecycle；每个已授权 AgentRun 的 facade 持有独立 Session 与观察引用。

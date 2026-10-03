@@ -224,9 +224,9 @@ uv sync --locked --extra computer-use
 
 The extra pins the official `cua-driver==0.30.4`. Morrow uses its direct Python SDK;
 no custom SDK build or field-security query is required. Authorized text, key and
-hotkey actions use the same path for ordinary and password fields. Sensitive
-labels/values remain hidden in observations and known screenshot regions are masked;
-that display protection does not prevent input.
+hotkey actions use the same path for ordinary and password fields. Screen labels and SDK-readable values are returned without content classification,
+redaction or screenshot masking. The LLM judges content and action safety from user intent
+and context. SDK/OS-unavailable values remain unavailable.
 The official SDK has passed controlled macOS arm64 capture, Unicode input and an
 ordinary AgentLoop with approved input and real before/after Provider images.
 A synthetic password-field input also took effect; the SDK reported `unknown`
@@ -239,9 +239,16 @@ window capture works. Use the opt-in controlled fixture gate in
 
 The exact selected model needs OpenAI function-tool support. Hybrid mode also requires
 image input and explicit permission to share the selected window; semantic mode uses AX
-without images. Known sensitive regions are masked and uncertain captures are refused;
-this is not comprehensive secret detection. Choose the window you intend to share. Input permission does not grant permission to
-read back hidden values.
+without images. Choose the window you intend to share. Valid screenshots are independent
+of AX tree completeness; decoding, geometry, ownership and image budgets still apply.
+Double-click and physical right-click require a fresh published image and use pixel gestures.
+SDK 0.30.4 background double-click misdelivers AppKit coordinates; Morrow refuses it before input.
+Double-click needs an explicitly granted foreground run.
+Token scroll requires an observed scroll container; use image coordinates when the SDK omits it.
+SDK 0.30.4 foreground pixel-wheel delivery is unreliable on the tested host; image-coordinate
+scroll requires an explicitly granted background run.
+Only enabled is exposed for attribute verification. SDK 0.30.4 lacks exact-token property
+readback, so partial-tree selectors and old element references cannot prove it.
 
 Default per-run budgets are 100 operations, 600 seconds and 64 MiB of observation bytes;
 each call defaults to 15 seconds and image long edges to 1920 pixels. Configuration can
