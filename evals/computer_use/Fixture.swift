@@ -22,7 +22,7 @@ struct RegionFacts: Codable, Equatable {
 }
 
 struct FixtureSnapshot: Encodable {
-    let schemaVersion = 2
+    let schemaVersion = 3
     let instanceId: String
     let pid: Int32
     let revision: Int
@@ -37,6 +37,7 @@ struct FixtureSnapshot: Encodable {
     let secureChangeEvents: Int
     let lastEditedField: String?
     let mouseClickCounts: [Int]
+    let buttonActionCallbacks: Int
     let rightMouseEvents: Int
     let menuActions: Int
     let keyDownCharacters: [String]
@@ -67,6 +68,7 @@ final class FixtureStateWriter {
     var secureChangeEvents = 0
     var lastEditedField: String? = nil
     var mouseClickCounts: [Int] = []
+    var buttonActionCallbacks = 0
     var rightMouseEvents = 0
     var menuActions = 0
     var keyDownCharacters: [String] = []
@@ -138,7 +140,8 @@ final class FixtureStateWriter {
             scrollOffset: scroll, window: window, liveText: liveText,
             liveSecureText: liveSecureText, textChangeEvents: textChangeEvents,
             secureChangeEvents: secureChangeEvents, lastEditedField: lastEditedField,
-            mouseClickCounts: mouseClickCounts, rightMouseEvents: rightMouseEvents,
+            mouseClickCounts: mouseClickCounts, buttonActionCallbacks: buttonActionCallbacks,
+            rightMouseEvents: rightMouseEvents,
             menuActions: menuActions, keyDownCharacters: keyDownCharacters,
             keyDownFields: keyDownFields, keyUpEvents: keyUpEvents, pointerEvents: pointerEvents,
             scrollRegion: scrollRegion, windowIsKey: windowIsKey, appActive: appActive)
@@ -330,7 +333,7 @@ final class OracleButton: NSButton {
 struct OracleIncrement: NSViewRepresentable {
     let writer: FixtureStateWriter
     let increment: () -> Void
-    func makeCoordinator() -> Coordinator { Coordinator(increment) }
+    func makeCoordinator() -> Coordinator { Coordinator(increment, writer) }
     func makeNSView(context: Context) -> OracleButton {
         let button = OracleButton(title: "Increment", target: context.coordinator,
                                   action: #selector(Coordinator.press))
@@ -339,11 +342,22 @@ struct OracleIncrement: NSViewRepresentable {
         button.writer = writer
         return button
     }
-    func updateNSView(_ button: OracleButton, context: Context) { context.coordinator.increment = increment }
+    func updateNSView(_ button: OracleButton, context: Context) {
+        context.coordinator.increment = increment
+        context.coordinator.writer = writer
+    }
     final class Coordinator: NSObject {
         var increment: () -> Void
-        init(_ increment: @escaping () -> Void) { self.increment = increment }
-        @objc func press() { increment() }
+        var writer: FixtureStateWriter
+        init(_ increment: @escaping () -> Void, _ writer: FixtureStateWriter) {
+            self.increment = increment
+            self.writer = writer
+        }
+        @objc func press() {
+            writer.buttonActionCallbacks += 1
+            writer.publish?()
+            increment()
+        }
     }
 }
 

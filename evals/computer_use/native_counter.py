@@ -53,15 +53,21 @@ def counter_oracle(path: Path) -> dict:
         state = json.loads(content)
         pid, number, count = state["pid"], state["window"]["number"], state["count"]
         instance = str(UUID(state["instanceId"]))
+        action_callbacks = state.get("buttonActionCallbacks")
         if (
             type(state["schemaVersion"]) is not int
-            or state["schemaVersion"] not in (1, 2)
+            or state["schemaVersion"] not in (1, 2, 3)
             or type(pid) is not int
             or not 0 < pid < 2**31
             or type(number) is not int
             or not 0 < number < 2**32
             or type(count) is not int
             or not 0 <= count < 2**31
+            or (state["schemaVersion"] == 3 and type(action_callbacks) is not int)
+            or (
+                action_callbacks is not None
+                and (type(action_callbacks) is not int or not 0 <= action_callbacks < 2**31)
+            )
         ):
             raise ValueError
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
@@ -71,6 +77,7 @@ def counter_oracle(path: Path) -> dict:
         "window_id": number,
         "instance": instance,
         "count": count,
+        "button_action_callbacks": action_callbacks,
         "sha256": hashlib.sha256(content).hexdigest(),
     }
 
@@ -148,6 +155,16 @@ async def increment_once(path: Path, *, delivery: ComputerUseDelivery) -> dict:
         )
         if len(targets) != 1:
             raise ComputerUseContractError("fixture_window_required")
+        selected_window = session._registry.window(targets[0].window_identity)
+        result["selected_window"] = {
+            "pid": selected_window.pid,
+            "window_id": selected_window.window_id,
+        }
+        if (selected_window.pid, selected_window.window_id) != (
+            baseline["pid"],
+            baseline["window_id"],
+        ):
+            raise ComputerUseContractError("fixture_window_identity")
         request = ObserveWindowRequest(
             authority=TRUSTED_COMPUTER_USE_AUTHORITY,
             scope=scope,
@@ -169,6 +186,12 @@ async def increment_once(path: Path, *, delivery: ComputerUseDelivery) -> dict:
         ]
         if len(buttons) != 1:
             raise ComputerUseContractError("fixture_counter_target_required")
+        selected_record = session._registry.element(buttons[0].element_ref)
+        result["selected_element"] = {
+            "role": buttons[0].role,
+            "label": buttons[0].label,
+            "window_center": selected_record.center,
+        }
 
         def authority():
             validate_counter_identity(baseline, counter_oracle(path), unchanged=True)
@@ -200,6 +223,14 @@ async def increment_once(path: Path, *, delivery: ComputerUseDelivery) -> dict:
         result.update(
             before_count=baseline["count"],
             after_count=final["count"],
+            before_button_action_callbacks=baseline.get("button_action_callbacks"),
+            after_button_action_callbacks=final.get("button_action_callbacks"),
+            button_action_callback_delta=(
+                final.get("button_action_callbacks") - baseline.get("button_action_callbacks")
+                if final.get("button_action_callbacks") is not None
+                and baseline.get("button_action_callbacks") is not None
+                else None
+            ),
             before_state_sha256=baseline["sha256"],
             after_state_sha256=final["sha256"],
             fresh_observation=after.observation.observation_id != before.observation.observation_id,

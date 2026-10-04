@@ -59,13 +59,18 @@ def read_fixture_window(path: Path | None) -> tuple[int, int] | None:
             raise ValueError
         state = json.loads(content)
         pid, window_id = state["pid"], state["window"]["number"]
+        action_callbacks = state.get("buttonActionCallbacks")
         if (
             type(state["schemaVersion"]) is not int
-            or state["schemaVersion"] not in (1, 2)
+            or state["schemaVersion"] not in (1, 2, 3)
             or type(pid) is not int
             or not 0 < pid < 2**31
             or type(window_id) is not int
             or not 0 < window_id < 2**32
+            or (
+                state["schemaVersion"] == 3
+                and (type(action_callbacks) is not int or not 0 <= action_callbacks < 2**31)
+            )
         ):
             raise ValueError
     except (OSError, ValueError, TypeError, KeyError):

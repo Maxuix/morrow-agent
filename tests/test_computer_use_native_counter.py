@@ -117,6 +117,7 @@ def test_counter_oracle_validates_identity_without_exporting_input(tmp_path):
     path.write_text(json.dumps(state))
     before = module["counter_oracle"](path)
     assert before["count"] == 4 and "private" not in json.dumps(before)
+    assert before["button_action_callbacks"] is None
     for field in ("pid", "count"):
         changed = dict(state, **{field: True})
         path.write_text(json.dumps(changed))
@@ -124,3 +125,44 @@ def test_counter_oracle_validates_identity_without_exporting_input(tmp_path):
             module["counter_oracle"](path)
     with pytest.raises(ComputerUseContractError, match="fixture_instance_changed"):
         module["validate_counter_identity"](before, dict(before, instance="new"), unchanged=False)
+
+
+@pytest.mark.parametrize(("callbacks", "valid"), [(0, True), (1, True), (True, False), (-1, False)])
+def test_counter_oracle_validates_native_button_action_callbacks(tmp_path, callbacks, valid):
+    module = runpy.run_path("evals/computer_use/native_counter.py")
+    path = tmp_path / "state.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 3,
+                "instanceId": "894e9406-4f2e-45f9-b735-69dcf87232a1",
+                "pid": 2,
+                "window": {"number": 3},
+                "count": 0,
+                "buttonActionCallbacks": callbacks,
+            }
+        )
+    )
+    if valid:
+        assert module["counter_oracle"](path)["button_action_callbacks"] == callbacks
+    else:
+        with pytest.raises(ComputerUseContractError, match="fixture_state_invalid"):
+            module["counter_oracle"](path)
+
+
+def test_counter_oracle_requires_native_button_action_callbacks_in_schema_three(tmp_path):
+    module = runpy.run_path("evals/computer_use/native_counter.py")
+    path = tmp_path / "state.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 3,
+                "instanceId": "894e9406-4f2e-45f9-b735-69dcf87232a1",
+                "pid": 2,
+                "window": {"number": 3},
+                "count": 0,
+            }
+        )
+    )
+    with pytest.raises(ComputerUseContractError, match="fixture_state_invalid"):
+        module["counter_oracle"](path)

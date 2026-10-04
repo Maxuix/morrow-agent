@@ -60,6 +60,7 @@ async def test_native_gate_records_only_bounded_metadata(reason):
         {"schemaVersion": True, "pid": 2, "window": {"number": 3}},
         {"schemaVersion": 1, "pid": 2, "window": {"number": -1}},
         {"schemaVersion": 1, "pid": 2**31, "window": {"number": 3}},
+        {"schemaVersion": 3, "pid": 2, "window": {"number": 3}},
     ],
 )
 def test_fixture_identity_rejects_invalid_state(tmp_path, state):
@@ -76,6 +77,17 @@ def test_fixture_identity_bounded_and_exact(tmp_path):
     assert read(None) is None
     path = tmp_path / "state.json"
     path.write_text(json.dumps({"schemaVersion": 1, "pid": 2, "window": {"number": 3}}))
+    assert read(path) == (2, 3)
+    path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 3,
+                "pid": 2,
+                "window": {"number": 3},
+                "buttonActionCallbacks": 0,
+            }
+        )
+    )
     assert read(path) == (2, 3)
     path.write_bytes(b" " * (64 * 1024 + 1))
     with pytest.raises(module["ComputerUseContractError"], match="fixture_state_invalid"):
