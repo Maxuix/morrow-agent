@@ -285,7 +285,7 @@ retry or delivery fallback. Polling/cancellation/revocation, GUI interaction and
 other applications need separate coverage.
 
 
-The v2 AppKit fixture records `liveText`/`liveSecureText`, committed `text`/population,
+The AppKit fixture records `liveText`/`liveSecureText`, committed `text`/population,
 change counts and field identity separately. Key events record characters, target
 field and key-up count; q/Y acceptance requires exact insertion and one event pair.
 NSWindow update sampling observes edits that bypass NSControlTextDidChange, without
@@ -313,3 +313,41 @@ Foreground cases explicitly start their owned fixture as key/active and record t
 SDK 0.30.4 foreground pixel wheel delivery still receives no fixture wheel events on this host.
 Morrow refuses it before native entry; background image scroll requires a new explicit grant.
 The 640-pixel moved-window scroll variant uses background delivery to exercise the working path.
+
+The current fixture schema is v4. Non-finite pointer coordinates are explicit `null` with
+`positionKnown=false`; they cannot block independent count/callback export and cannot prove
+wheel-region delivery. New campaigns require healthy exports, valid effect fields and an advanced
+snapshot revision for an action effect. Historical v1–v3 component records remain readable but
+are not upgraded into new v4 acceptance evidence.
+
+Confirmed picker selections outlive the candidate list's 30-second deadline. They are consumed
+once and validated against process birth; current window identity/geometry is still checked before
+observations and actions. Action observation lifetime is independently configurable with
+`morrow computer configure --max-observation-age-seconds 5 --expected-revision REV` (1–30 seconds,
+default30). Tool replies include `expires_at`. Long values include an actual bounded `value_tail`
+within the shared text budget, so a suffix may be read back without pretending the middle is visible.
+
+The verdict permits fresh-observation recovery only for a same-call-ID proven
+`stale_observation/not_started` attempt; native entry count must still be exactly one.
+Unknown/completed actions never retry. The collector approves at most three such attempts and
+records public reference/native token hash correspondence without `scripted_target`.
+
+`run_live_controller.py` offers a receipt-only alternative to `live_provider.py`:
+
+```bash
+uv run python evals/computer_use/run_live_controller.py --allow-desktop \
+  --fixture-app /path/to/MorrowComputerUseFixture.app \
+  --fixture-state-file /path/to/state/state.json \
+  --controller-directory /path/to/new-empty-bridge \
+  --evidence-file /path/to/new-evidence.json \
+  --case postcondition_text --seed-length 4097 --mode hybrid --delivery foreground
+```
+
+The runner launches only the explicitly supplied fixture and removes that process on exit.
+The external controller reads `pending.json`, actual Morrow messages/tool schemas/images, then
+atomically writes the requested decision path with `request_sha256`, `decision_basis`, and either
+`tool={name, arguments}` or `content`. Use `live_bridge.atomic_json` to write receipts. It never
+chooses tools/targets/coordinates, constructs no HTTP adapter, and reads no real credentials.
+Per-turn `receipt-NNN-status.json` records received/accepted, both hashes, cancellation and bounded
+error categories. Acceptance is a model decision, not SDK input. New requests never overwrite
+old campaign files; use a fresh directory. Historical bridge copies remain unchanged.
