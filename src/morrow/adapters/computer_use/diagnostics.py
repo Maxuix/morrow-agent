@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from morrow.adapters.computer_use.action_inputs import FUNCTIONAL_SDK_VERSION
 from morrow.core.computer_use import ComputerUsePreflight
 from morrow.core.runtime_policy import ComputerUseSettings
 
-PINNED_SDK_VERSION = "0.30.4"
-DIAGNOSTIC_SDK_VERSIONS = (PINNED_SDK_VERSION, "0.30.4+morrow.2")
+OFFICIAL_SDK_VERSION = "0.30.4"
+DIAGNOSTIC_SDK_VERSIONS = (OFFICIAL_SDK_VERSION, FUNCTIONAL_SDK_VERSION)
 MINIMUM_MACOS = (14, 0, 0)
 
 

@@ -1,6 +1,6 @@
 # Cua Driver functional patch
 
-`0.30.4+morrow.2` is the exact official `cua-driver-rs-v0.30.4` source plus
+`0.30.4+morrow.3` is the exact official `cua-driver-rs-v0.30.4` source plus
 `functional.patch`. `manifest.json` binds the upstream commit and patch SHA256.
 This patch provides retained-object `enabled` readback, real scroll-container
 tokens, a foreground window wheel stream, and native background element double-click.

@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from morrow.core.computer_use import ComputerUseContractError
 from morrow.core.domain import canonical_json_bytes
 
-FUNCTIONAL_SDK_VERSION = "0.30.4+morrow.2"
+FUNCTIONAL_SDK_VERSION = "0.30.4+morrow.3"
 
 
 class NativeAttributeInput(BaseModel):

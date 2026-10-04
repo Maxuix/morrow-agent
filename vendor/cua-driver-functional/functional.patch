@@ -1,5 +1,5 @@
 diff --git a/libs/cua-driver/python/pyproject.toml b/libs/cua-driver/python/pyproject.toml
-index b022581..a09b83d 100644
+index b022581..b90886f 100644
 --- a/libs/cua-driver/python/pyproject.toml
 +++ b/libs/cua-driver/python/pyproject.toml
 @@ -4,7 +4,7 @@ build-backend = "hatchling.build"
@@ -7,12 +7,12 @@ index b022581..a09b83d 100644
  [project]
  name = "cua-driver"
 -version = "0.30.4"
-+version = "0.30.4+morrow.2"
++version = "0.30.4+morrow.3"
  description = "Rust-backed Cua Driver SDK and bundled executable for client applications"
  readme = "README.md"
  license = { text = "MIT" }
 diff --git a/libs/cua-driver/python/src/cua_driver/__init__.py b/libs/cua-driver/python/src/cua_driver/__init__.py
-index 27edd2e..08819cb 100644
+index 27edd2e..93e8a43 100644
 --- a/libs/cua-driver/python/src/cua_driver/__init__.py
 +++ b/libs/cua-driver/python/src/cua_driver/__init__.py
 @@ -4,7 +4,7 @@ Agents should configure the bundled ``cua-driver mcp`` executable directly
@@ -20,7 +20,7 @@ index 27edd2e..08819cb 100644
  """
  
 -__version__ = "0.30.4"  # x-release-please-version
-+__version__ = "0.30.4+morrow.2"  # x-release-please-version
++__version__ = "0.30.4+morrow.3"  # x-release-please-version
  
  from ._native import (
      ActionCompletion,
@@ -264,7 +264,7 @@ index f79faf9..994670a 100644
          std::thread::sleep(std::time::Duration::from_millis(30));
      }
 diff --git a/libs/cua-driver/rust/crates/platform-macos/src/tools/double_click.rs b/libs/cua-driver/rust/crates/platform-macos/src/tools/double_click.rs
-index 4e8bf84..d4caaff 100644
+index 4e8bf84..05a045d 100644
 --- a/libs/cua-driver/rust/crates/platform-macos/src/tools/double_click.rs
 +++ b/libs/cua-driver/rust/crates/platform-macos/src/tools/double_click.rs
 @@ -56,6 +56,7 @@ fn def() -> &'static ToolDef {
@@ -320,7 +320,7 @@ index 4e8bf84..d4caaff 100644
              return match result {
 +                Ok(Ok(msg)) if physical_gesture => {
 +                    ToolResult::text(msg).with_structured(serde_json::json!({
-+                        "path": if delivery_mode.is_foreground() { "cg_fg" } else { "cg" },
++                        "path": if delivery_mode.is_foreground() { "cgevent_fg" } else { "cgevent" },
 +                        "verified": false, "effect": "unverifiable"
 +                    }))
 +                }

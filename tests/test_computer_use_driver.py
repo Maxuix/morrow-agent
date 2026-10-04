@@ -16,6 +16,7 @@ from morrow.adapters.computer_use import diagnose_host, preflight
 from morrow.adapters.computer_use.candidates import LocalWindowIdentity
 from morrow.adapters.computer_use.diagnostics import HostProbe
 from morrow.adapters.computer_use.process_identity import ProcessBirth
+from morrow.adapters.computer_use.projection import outcome_from_tool
 from morrow.adapters.computer_use.registry import TrustedDesktopRegistry
 from morrow.adapters.computer_use.sdk_loader import collect_host_probe, construct_driver
 from morrow.adapters.computer_use.session import TypedComputerSession
@@ -190,7 +191,7 @@ def test_collect_host_probe_does_not_construct_or_echo_loader_errors():
     assert old.accessibility is None
 
 
-@pytest.mark.parametrize("version", ("0.30.4",))
+@pytest.mark.parametrize("version", ("0.30.4", "0.30.4+morrow.3"))
 def test_known_sdk_diagnostics_read_permissions_but_never_enable_native(version):
     calls = []
 
@@ -1061,3 +1062,18 @@ async def test_long_text_display_preserves_actionable_refs_and_shared_byte_budge
     finally:
         service.stop()
         await session.settle()
+
+
+@pytest.mark.parametrize("code", ("action_outcome_mismatch", "typed_output_mismatch"))
+def test_sdk_error_after_native_execution_cannot_prove_not_started(code):
+    result = SimpleNamespace(
+        action=None,
+        degraded=False,
+        is_error=True,
+        error_code=code,
+        structured_json=json.dumps({"code": code, "execution_state": "unknown"}),
+    )
+    outcome = outcome_from_tool(result)
+    assert outcome.status == "unknown"
+    assert outcome.error_code == code
+    assert outcome.delivery is None

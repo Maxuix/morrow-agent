@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import math
 import re
 from typing import Any
@@ -59,6 +60,18 @@ def outcome_from_tool(result: Any) -> ActionOutcome:
     if bool(getattr(result, "degraded", False)):
         return ActionOutcome(status="unknown", error_code="degraded_result")
     if bool(getattr(result, "is_error", False)):
+        # SDK publication can fail after native input. Its explicit unknown
+        # execution state must never become a retryable not_started result.
+        data = getattr(result, "structured_json", None)
+        if isinstance(data, str) and len(data) <= 2048:
+            try:
+                body = json.loads(data)
+            except ValueError:
+                body = None
+            if isinstance(body, dict) and body.get("execution_state") == "unknown":
+                return ActionOutcome(
+                    status="unknown", error_code=_stable_code(body.get("code"), "tool_error")
+                )
         return ActionOutcome(
             status="not_started",
             error_code=_stable_code(getattr(result, "error_code", None), "tool_error"),

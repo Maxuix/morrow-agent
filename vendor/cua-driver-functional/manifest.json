@@ -2,8 +2,8 @@
   "schema_version": 1,
   "upstream_commit": "bf6c76786d938070f4ecf1e44004752f69f518b8",
   "upstream_tag": "cua-driver-rs-v0.30.4",
-  "distribution_version": "0.30.4+morrow.2",
-  "patch_sha256": "7f2279f184accd454d721f289eb1cabf6513345b8a6ac461d1615304168aed79",
+  "distribution_version": "0.30.4+morrow.3",
+  "patch_sha256": "d269b57ed44653e515855e359899c73d9e7ccd40070d412e2816f0cc8ac733bf",
   "scope": [
     "exact retained-object enabled readback",
     "real AXScrollArea tokens",
