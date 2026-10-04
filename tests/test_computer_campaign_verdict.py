@@ -9,6 +9,97 @@ verdict = runpy.run_path(str(Path(__file__).parents[1] / "evals/computer_use/cam
 ]
 
 
+def recovering_result():
+    r = result()
+    final = dict(r["provider_calls"][0], call_id="fresh", observation_id="cobs_fresh")
+    stale = dict(final, call_id="stale", observation_id="cobs_stale")
+    r["provider_calls"] = [stale, final]
+    r["tool_diagnostics"] = [
+        {
+            "call_id": "stale",
+            "result": {"outcome": {"status": "not_started", "error_code": "stale_observation"}},
+        }
+    ]
+    r["action_outcomes"] = [
+        {"status": "not_started", "error_code": "stale_observation"},
+        {"status": "unknown"},
+    ]
+    return r
+
+
+def test_proven_stale_recovery_counts_attempts_separately_from_native_effect():
+    r = recovering_result()
+    v = verdict(r)
+    assert v["status"] == "passed"
+    assert v["action_attempts"] == 2 and v["sdk_input_entries"] == 1
+    assert v["recovered_not_started"] == 1
+    assert v["native_completion"] == ["not_started", "unknown"]
+    r["tool_diagnostics"][0] = {
+        "call_id": "stale",
+        "envelope": {
+            "ok": False,
+            "error": {"code": "preflight_failed", "details": [{"reason": "stale_observation"}]},
+        },
+    }
+    assert verdict(r)["status"] == "passed"
+
+
+def test_unknown_completed_uncorrelated_or_reused_observation_cannot_recover():
+    for completion in ("unknown", "completed", None):
+        r = recovering_result()
+        r["tool_diagnostics"][0]["result"]["outcome"]["status"] = completion
+        assert verdict(r)["verdict_reason"] == "action_count"
+        assert verdict(r)["recovered_not_started"] == 0
+    for mutation in ("missing", "other_call", "old_observation", "two_native", "wrong_variant"):
+        r = recovering_result()
+        if mutation == "missing":
+            r["tool_diagnostics"] = []
+        elif mutation == "other_call":
+            r["tool_diagnostics"][0]["call_id"] = "other"
+        elif mutation == "old_observation":
+            r["provider_calls"][1]["observation_id"] = "cobs_stale"
+        elif mutation == "two_native":
+            r["sdk_input_entries"] = 2
+        else:
+            r["provider_calls"][0]["count"] = 2
+        assert verdict(r)["status"] != "passed"
+
+
+def test_export_health_revision_and_unknown_coordinates_are_independent():
+    module = runpy.run_path("evals/computer_use/campaign_verdict.py")
+    region = dict(x=1, y=2, width=10, height=10)
+    assert module["wheel_inside_region"](region, [{"windowX": 2, "windowY": 3}])
+    for coordinate in (None, "NaN", float("nan"), float("inf"), True):
+        assert not module["wheel_inside_region"](region, [{"windowX": coordinate, "windowY": 3}])
+    before = dict(
+        schemaVersion=4,
+        exportHealthy=True,
+        revision=1,
+        count=0,
+        buttonActionCallbacks=0,
+        rightMouseEvents=0,
+        scrollOffset=0,
+        text="",
+        liveText="",
+        liveSecureText="",
+    )
+    after = dict(before, revision=2, count=1)
+    snapshot = module["fixture_snapshot_evidence"]
+    r = result()
+    r["fixture_snapshot_required"] = True
+    assert verdict(r)["verdict_reason"] == "fixture_snapshot_invalid"
+    r["fixture_snapshot"] = snapshot(before, after)
+    assert verdict(r)["status"] == "passed"
+    for changed in (
+        dict(after, revision=1),
+        dict(after, exportHealthy=False),
+        dict(after, count=True),
+        dict(after, scrollOffset=float("nan")),
+    ):
+        r["fixture_snapshot"] = snapshot(before, changed)
+        assert verdict(r)["verdict_reason"] == "fixture_snapshot_invalid"
+
+
 def result(case="coordinate_click", **changes):
     return dict(
         case=case,

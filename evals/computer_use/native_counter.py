@@ -56,14 +56,22 @@ def counter_oracle(path: Path) -> dict:
         action_callbacks = state.get("buttonActionCallbacks")
         if (
             type(state["schemaVersion"]) is not int
-            or state["schemaVersion"] not in (1, 2, 3)
+            or state["schemaVersion"] not in (1, 2, 3, 4)
             or type(pid) is not int
             or not 0 < pid < 2**31
             or type(number) is not int
             or not 0 < number < 2**32
             or type(count) is not int
             or not 0 <= count < 2**31
-            or (state["schemaVersion"] == 3 and type(action_callbacks) is not int)
+            or (state["schemaVersion"] >= 3 and type(action_callbacks) is not int)
+            or (
+                state["schemaVersion"] == 4
+                and (
+                    state.get("exportHealthy") is not True
+                    or type(state.get("revision")) is not int
+                    or state["revision"] <= 0
+                )
+            )
             or (
                 action_callbacks is not None
                 and (type(action_callbacks) is not int or not 0 <= action_callbacks < 2**31)
@@ -77,6 +85,7 @@ def counter_oracle(path: Path) -> dict:
         "window_id": number,
         "instance": instance,
         "count": count,
+        "revision": state.get("revision"),
         "button_action_callbacks": action_callbacks,
         "sha256": hashlib.sha256(content).hexdigest(),
     }

@@ -2,6 +2,80 @@
 
 from __future__ import annotations
 
+import math
+
+
+def wheel_inside_region(region, wheels):
+    if not isinstance(region, dict) or not wheels:
+        return False
+    values = [region.get(k) for k in ("x", "y", "width", "height")]
+    if any(type(v) not in (int, float) or not math.isfinite(v) for v in values):
+        return False
+    x, y, width, height = values
+    if width <= 0 or height <= 0:
+        return False
+    for event in wheels:
+        px, py = event.get("windowX"), event.get("windowY")
+        if (
+            event.get("positionKnown") is False
+            or type(px) not in (int, float)
+            or type(py) not in (int, float)
+            or not math.isfinite(px)
+            or not math.isfinite(py)
+            or not (x <= px < x + width and y <= py < y + height)
+        ):
+            return False
+    return True
+
+
+def fixture_snapshot_evidence(before, after):
+    """A changed counter in an unhealthy or stale export cannot establish an effect."""
+    revisions = [s.get("revision") for s in (before, after)]
+    healthy = all(
+        s.get("schemaVersion") == 4 and s.get("exportHealthy") is True for s in (before, after)
+    )
+    valid = all(type(r) is int and r > 0 for r in revisions)
+    for state in (before, after):
+        valid = valid and all(
+            type(state.get(k)) is int and state[k] >= 0
+            for k in ("count", "buttonActionCallbacks", "rightMouseEvents")
+        )
+        offset = state.get("scrollOffset")
+        valid = valid and type(offset) in (int, float) and math.isfinite(offset)
+        valid = valid and all(
+            isinstance(state.get(k), str) for k in ("text", "liveText", "liveSecureText")
+        )
+    return {
+        "healthy": healthy,
+        "fields_valid": bool(valid),
+        "revision_before": revisions[0],
+        "revision_after": revisions[1],
+        "revision_advanced": bool(valid and revisions[1] > revisions[0]),
+    }
+
+
+def recoverable_stale_attempt(call, diagnostics):
+    call_id = call.get("call_id")
+    matching = [d for d in diagnostics if call_id and d.get("call_id") == call_id]
+    if not matching:
+        return False
+    for diagnostic in matching:
+        envelope, result = diagnostic.get("envelope", {}), diagnostic.get("result", {})
+        outcome = result.get("outcome", {})
+        error = envelope.get("error", {})
+        refused = (
+            envelope.get("ok") is False
+            and error.get("code") == "preflight_failed"
+            and error.get("details") == [{"reason": "stale_observation"}]
+        )
+        not_started = (
+            outcome.get("status") == "not_started"
+            and outcome.get("error_code") == "stale_observation"
+        )
+        if outcome.get("status") in {"unknown", "completed"} or not (refused or not_started):
+            return False
+    return True
+
 
 def campaign_verdict(result: dict) -> dict:
     case = result["case"]
@@ -24,7 +98,8 @@ def campaign_verdict(result: dict) -> dict:
         "hotkey": ("hotkey", "element", None, None),
         "scroll": ("scroll", "element", None, None),
     }
-    actual = actions[0] if len(actions) == 1 else None
+    actual = actions[-1] if actions else None
+    recovered = 0
 
     def verdict(status, reason):
         return {
@@ -32,10 +107,22 @@ def campaign_verdict(result: dict) -> dict:
             "verdict_reason": reason,
             "expected_variant": expected.get(case),
             "actual_variant": actual,
+            "action_attempts": len(actions),
+            "sdk_input_entries": result.get("sdk_input_entries"),
+            "recovered_not_started": recovered,
+            "native_completion": [o.get("status") for o in result.get("action_outcomes", ())],
         }
 
     if not result.get("fixture_identity_unchanged") or result.get("provider_failures"):
         return verdict("failed", "identity_or_provider_failed")
+    if result.get("fixture_snapshot_required") or "fixture_snapshot" in result:
+        snapshot = result.get("fixture_snapshot", {})
+        if not (
+            snapshot.get("healthy") is True
+            and snapshot.get("fields_valid") is True
+            and (case == "observe" or case == "denied" or snapshot.get("revision_advanced") is True)
+        ):
+            return verdict("failed", "fixture_snapshot_invalid")
     if case == "observe":
         good = not actions and bool(result.get("observation_meta"))
         if result.get("mode") == "hybrid":
@@ -48,14 +135,29 @@ def campaign_verdict(result: dict) -> dict:
     if not actions:
         return verdict("blocked", "action_not_attempted")
     if len(actions) != 1:
-        return verdict("failed", "action_count")
+        call_ids = [a.get("call_id") for a in actions]
+        observations = [a.get("observation_id") for a in actions]
+        if (
+            case == "denied"
+            or not all(call_ids)
+            or len(set(call_ids)) != len(actions)
+            or not all(observations)
+            or len(set(observations)) != len(actions)
+            or not all(
+                recoverable_stale_attempt(a, result.get("tool_diagnostics", ()))
+                for a in actions[:-1]
+            )
+        ):
+            return verdict("failed", "action_count")
+        recovered = len(actions) - 1
     kind, target, button, count = expected[case]
-    if (
-        actual.get("action") != kind
-        or not actual.get(target + "_target")
-        or actual.get("element_target") == actual.get("coordinate_target")
-        or (button is not None and actual.get("button", "left") != button)
-        or (count is not None and actual.get("count", 1) != count)
+    if any(
+        a.get("action") != kind
+        or not a.get(target + "_target")
+        or a.get("element_target") == a.get("coordinate_target")
+        or (button is not None and a.get("button", "left") != button)
+        or (count is not None and a.get("count", 1) != count)
+        for a in actions
     ):
         return verdict("failed", "wrong_variant")
     conditions = {

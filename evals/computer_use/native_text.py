@@ -53,7 +53,7 @@ def text_oracle(path: Path, counter) -> dict:
             len(content) > 64 * 1024
             or hashlib.sha256(content).hexdigest() != identity["sha256"]
             or not isinstance(text, str)
-            or len(text) > 4096
+            or len(text) > 64 * 1024
             or type(secure) is not bool
             or type(scroll) not in (int, float)
             or not math.isfinite(scroll)
