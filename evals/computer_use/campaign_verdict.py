@@ -115,12 +115,16 @@ def campaign_verdict(result: dict) -> dict:
 
     if not result.get("fixture_identity_unchanged") or result.get("provider_failures"):
         return verdict("failed", "identity_or_provider_failed")
-    if result.get("fixture_snapshot_required") or "fixture_snapshot" in result:
-        snapshot = result.get("fixture_snapshot", {})
+    snapshot_required = result.get("fixture_snapshot_required") or "fixture_snapshot" in result
+    snapshot = result.get("fixture_snapshot", {})
+    if snapshot_required:
+        before, after = snapshot.get("revision_before"), snapshot.get("revision_after")
         if not (
             snapshot.get("healthy") is True
             and snapshot.get("fields_valid") is True
-            and (case == "observe" or case == "denied" or snapshot.get("revision_advanced") is True)
+            and type(before) is int
+            and type(after) is int
+            and 0 < before <= after
         ):
             return verdict("failed", "fixture_snapshot_invalid")
     if case == "observe":
@@ -187,7 +191,12 @@ def campaign_verdict(result: dict) -> dict:
             )
         )
         return verdict("passed" if good else "failed", "denial_effect")
-    if result.get("sdk_input_entries") != 1:
+    native_entries = result.get("sdk_input_entries")
+    if type(native_entries) is not int or native_entries < 0:
+        return verdict("failed", "native_entry_count_invalid")
+    if native_entries > 1:
+        return verdict("failed", "native_entry_count")
+    if native_entries == 0:
         outcomes = result.get("action_outcomes", ())
         codes = {o.get("error_code") for o in outcomes}
         for diagnostic in result.get("tool_diagnostics", ()):
@@ -204,6 +213,13 @@ def campaign_verdict(result: dict) -> dict:
             }
         )
         return verdict("unsupported" if unsupported else "blocked", "native_not_entered")
+    # An unexecuted attempt has no new effect to export. Only an entered action
+    # needs a fresh snapshot before its independent effects can be credited.
+    if snapshot_required and (
+        snapshot.get("revision_advanced") is not True
+        or snapshot["revision_after"] <= snapshot["revision_before"]
+    ):
+        return verdict("failed", "fixture_snapshot_invalid")
     if result.get("mode") == "hybrid" and result.get("image_hashes_match") is not True:
         return verdict("failed", "image_hash_mismatch")
     good = False

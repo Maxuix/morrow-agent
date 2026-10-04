@@ -1,0 +1,149 @@
+{
+  "method": "Offline rescore only; original evidence bytes unchanged; no new native input or model calls.",
+  "base_commit": "4845b4c38a2ea86c16496611d27cc28e055591e1",
+  "verdict_source": "evals/computer_use/campaign_verdict.py",
+  "verdict_sha256": "e132d39edafec963576deb6b477561071d9145187f8e8c29e8d75a6d9eee58dc",
+  "counts": {
+    "unsupported": 4,
+    "passed": 3,
+    "blocked": 1
+  },
+  "cases": [
+    {
+      "case_directory": "background-double",
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/background-double/evidence.json",
+      "source_sha256": "1c1a6301144bbca660ff8668dcea91e4c8e9aa2d2692de9a403d52dcfd68c26b",
+      "original_status": "failed",
+      "original_reason": "fixture_snapshot_invalid",
+      "current_status": "unsupported",
+      "current_reason": "native_not_entered",
+      "sdk_input_entries": 0,
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 5,
+        "revision_after": 5,
+        "revision_advanced": false
+      }
+    },
+    {
+      "case_directory": "delayed-selection",
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/delayed-selection/evidence.json",
+      "source_sha256": "689d65927630e7daab1dbc738af92864161496009d0106ccddd7b3539f438ce1",
+      "original_status": "passed",
+      "original_reason": "observation_evidence",
+      "current_status": "passed",
+      "current_reason": "observation_evidence",
+      "sdk_input_entries": 0,
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 5,
+        "revision_after": 5,
+        "revision_advanced": false
+      }
+    },
+    {
+      "case_directory": "enabled-background",
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/enabled-background/evidence.json",
+      "source_sha256": "0b3c8177c4c91e2af950e84f35b5f2d2ecc5b6a61f6f306877808823db52fdee",
+      "original_status": "unsupported",
+      "original_reason": "sdk_exact_attribute_readback_unavailable",
+      "current_status": "unsupported",
+      "current_reason": "sdk_exact_attribute_readback_unavailable",
+      "sdk_input_entries": 1,
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 5,
+        "revision_after": 7,
+        "revision_advanced": true
+      }
+    },
+    {
+      "case_directory": "enabled-foreground",
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/enabled-foreground/evidence.json",
+      "source_sha256": "47942ffe9560c84ef8c2fb069da6cfa3ef474c6961948f55eafb2a6d3bd783df",
+      "original_status": "unsupported",
+      "original_reason": "sdk_exact_attribute_readback_unavailable",
+      "current_status": "unsupported",
+      "current_reason": "sdk_exact_attribute_readback_unavailable",
+      "sdk_input_entries": 1,
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 5,
+        "revision_after": 8,
+        "revision_advanced": true
+      }
+    },
+    {
+      "case_directory": "fixture-semantic-click",
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/fixture-semantic-click/evidence.json",
+      "source_sha256": "897723ffbca3fccc149b898c13c0bb15a0e6a47c94d5c65b604aa80a095051db",
+      "original_status": "passed",
+      "original_reason": "independent_effect",
+      "current_status": "passed",
+      "current_reason": "independent_effect",
+      "sdk_input_entries": 1,
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 5,
+        "revision_after": 8,
+        "revision_advanced": true
+      }
+    },
+    {
+      "case_directory": "foreground-wheel",
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/foreground-wheel/evidence.json",
+      "source_sha256": "58d3dab8b7f9eba7d0b89b5d3dd8dc4337aac875845767454263d872c18b1f00",
+      "original_status": "failed",
+      "original_reason": "fixture_snapshot_invalid",
+      "current_status": "unsupported",
+      "current_reason": "native_not_entered",
+      "sdk_input_entries": 0,
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 5,
+        "revision_after": 5,
+        "revision_advanced": false
+      }
+    },
+    {
+      "case_directory": "long-text-tail",
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/long-text-tail/evidence.json",
+      "source_sha256": "ee29bdf4b1643331482e0f7444968f29bb51c0bbdca4ed1840e680b028f419db",
+      "original_status": "passed",
+      "original_reason": "independent_effect",
+      "current_status": "passed",
+      "current_reason": "independent_effect",
+      "sdk_input_entries": 1,
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 6,
+        "revision_after": 7,
+        "revision_advanced": true
+      }
+    },
+    {
+      "case_directory": "semantic-container",
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/semantic-container/evidence.json",
+      "source_sha256": "b973815df196f6593c9be532b61164abbad851fff7dd84f100f5e6236df9ac9d",
+      "original_status": "failed",
+      "original_reason": "fixture_snapshot_invalid",
+      "current_status": "blocked",
+      "current_reason": "action_not_attempted",
+      "sdk_input_entries": 0,
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 5,
+        "revision_after": 5,
+        "revision_advanced": false
+      }
+    }
+  ]
+}

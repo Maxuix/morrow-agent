@@ -4,6 +4,8 @@ import runpy
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 verdict = runpy.run_path(str(Path(__file__).parents[1] / "evals/computer_use/campaign_verdict.py"))[
     "campaign_verdict"
 ]
@@ -98,6 +100,89 @@ def test_export_health_revision_and_unknown_coordinates_are_independent():
     ):
         r["fixture_snapshot"] = snapshot(before, changed)
         assert verdict(r)["verdict_reason"] == "fixture_snapshot_invalid"
+
+
+def unchanged_healthy_snapshot():
+    return dict(
+        healthy=True,
+        fields_valid=True,
+        revision_before=5,
+        revision_after=5,
+        revision_advanced=False,
+    )
+
+
+@pytest.mark.parametrize("case", ["no_action", "stale", "foreground_scroll", "background_double"])
+def test_zero_native_entry_preserves_blocker_with_unchanged_healthy_snapshot(case):
+    r = result("double_click" if case == "background_double" else "coordinate_scroll")
+    r["sdk_input_entries"] = 0
+    r["fixture_snapshot_required"] = True
+    r["fixture_snapshot"] = unchanged_healthy_snapshot()
+    if case == "no_action":
+        r["provider_calls"] = []
+        expected = ("blocked", "action_not_attempted")
+    else:
+        action = r["provider_calls"][0]
+        if case == "background_double":
+            action.update(element_target=True, coordinate_target=False, count=2)
+            code = "unsupported_double_click_delivery"
+        else:
+            action.update(action="scroll", direction="down", amount=3)
+            code = (
+                "stale_observation" if case == "stale" else "unsupported_foreground_scroll_delivery"
+            )
+        r["action_outcomes"] = [{"status": "not_started", "error_code": code}]
+        expected = ("blocked" if case == "stale" else "unsupported", "native_not_entered")
+    v = verdict(r)
+    assert (v["status"], v["verdict_reason"]) == expected
+
+
+@pytest.mark.parametrize("fault", ["unhealthy", "fields", "missing", "regressed", "bool_revision"])
+def test_zero_input_does_not_bypass_snapshot_health_or_revision_integrity(fault):
+    r = result()
+    r["sdk_input_entries"] = 0
+    r["provider_calls"] = []
+    r["fixture_snapshot_required"] = True
+    r["fixture_snapshot"] = unchanged_healthy_snapshot()
+    snapshot = r["fixture_snapshot"]
+    if fault == "unhealthy":
+        snapshot["healthy"] = False
+    elif fault == "fields":
+        snapshot["fields_valid"] = False
+    elif fault == "missing":
+        r.pop("fixture_snapshot")
+    elif fault == "regressed":
+        snapshot["revision_after"] = 4
+    else:
+        snapshot["revision_before"] = True
+    assert verdict(r)["verdict_reason"] == "fixture_snapshot_invalid"
+
+
+@pytest.mark.parametrize("completion", ["unknown", "completed"])
+def test_entered_action_cannot_claim_effect_from_unchanged_snapshot(completion):
+    r = result()
+    r["action_outcomes"] = [{"status": completion}]
+    r["fixture_snapshot"] = unchanged_healthy_snapshot()
+    assert verdict(r)["verdict_reason"] == "fixture_snapshot_invalid"
+    r["fixture_snapshot"]["revision_advanced"] = True
+    assert verdict(r)["verdict_reason"] == "fixture_snapshot_invalid"
+
+
+def test_multiple_native_entries_cannot_be_hidden_by_unsupported_error():
+    r = result()
+    r["sdk_input_entries"] = 2
+    r["action_outcomes"] = [{"error_code": "unsupported_double_click_delivery"}]
+    r["fixture_snapshot"] = unchanged_healthy_snapshot()
+    assert verdict(r)["status"] == "failed"
+    assert verdict(r)["verdict_reason"] == "native_entry_count"
+
+
+def test_stale_recovery_still_needs_fresh_final_effect_snapshot():
+    r = recovering_result()
+    r["fixture_snapshot"] = unchanged_healthy_snapshot()
+    assert verdict(r)["verdict_reason"] == "fixture_snapshot_invalid"
+    r["fixture_snapshot"].update(revision_after=6, revision_advanced=True)
+    assert verdict(r)["status"] == "passed"
 
 
 def result(case="coordinate_click", **changes):

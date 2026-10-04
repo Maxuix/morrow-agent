@@ -1,0 +1,93 @@
+{
+  "method": "Static audit of official tag source; no SDK installation/import/native execution. Wheel download not completed; not a wheel validation.",
+  "tag": "cua-driver-rs-v0.32.0",
+  "contract_fields": {
+    "ElementSelector": [
+      "role",
+      "label_contains"
+    ],
+    "ElementPredicate": [
+      "selector",
+      "exists",
+      "value_equals",
+      "enabled",
+      "selected"
+    ],
+    "GetWindowStateInput": [
+      "pid",
+      "window_id",
+      "session",
+      "query",
+      "include_accessibility_tree",
+      "include_screenshot",
+      "screenshot_out_file",
+      "max_elements",
+      "max_depth",
+      "max_dimension",
+      "max_image_dimension",
+      "timeout_ms"
+    ],
+    "ScrollInput": [
+      "x",
+      "y",
+      "direction",
+      "target",
+      "scope",
+      "session",
+      "by",
+      "amount"
+    ],
+    "WindowElement": [
+      "element_index",
+      "role",
+      "depth",
+      "element_token",
+      "label",
+      "value",
+      "value_description",
+      "enabled",
+      "selected",
+      "in_web_content",
+      "actions",
+      "parent_index",
+      "frame",
+      "min",
+      "max"
+    ]
+  },
+  "source_files": {
+    "contract.py": {
+      "sha256": "1929b72021188e20a7e8faab4949db9c8ce4762cd9742edf5ce0785ac0627297",
+      "bytes": 280567
+    },
+    "native.py": {
+      "sha256": "a208d36cc8737aab614284caff8d228ba2375fffd7f8a843152c470dc4313e76",
+      "bytes": 382275
+    },
+    "ax-tree.rs": {
+      "sha256": "621533eb0856d72ab602d740543dc6fe480997757d7057eb39c2693132bd74f4",
+      "bytes": 31407
+    },
+    "tools-scroll.rs": {
+      "sha256": "bfea5c16d4c2bafebbb2009771179d96442502c5fb2565418e4e3ddc622d95f9",
+      "bytes": 33074
+    },
+    "tools-double_click.rs": {
+      "sha256": "d9559ab5b83b9cbc08a2fce805d353b945834e54a04633908b72ef26d961bd67",
+      "bytes": 16152
+    }
+  },
+  "tree_collapse": {
+    "file": "libs/cua-driver/rust/crates/platform-macos/src/ax/tree.rs",
+    "line": 433,
+    "roles": [
+      "AXScrollArea",
+      "AXGroup"
+    ]
+  },
+  "notes": [
+    "ElementSelector and ElementPredicate do not accept an old element_token.",
+    "ScrollInput does not carry element_token or delivery_mode; generic call_tool exists, as already used by Morrow.",
+    "Scroll and double_click source changes from 0.30.4 include snapshot resolution/schema changes; those diffs alone do not prove native delivery recovered."
+  ]
+}
