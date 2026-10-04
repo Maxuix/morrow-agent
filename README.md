@@ -222,8 +222,11 @@ Install the pinned optional SDK separately; ordinary coding tasks do not need it
 uv sync --locked --extra computer-use
 ```
 
-The extra pins the official `cua-driver==0.30.4`. Morrow uses its direct Python SDK;
-no custom SDK build or field-security query is required. Authorized text, key and
+On macOS arm64 the extra pins `cua-driver==0.30.4+morrow.3`, built from the exact official
+0.30.4 source with the [tracked functional patch](vendor/cua-driver-functional/README.md).
+The [SDK release](https://github.com/Maxuix/morrow-agent/releases/tag/cua-driver-morrow-v0.30.4.3)
+includes source, build provenance and checksums; local compilation is optional.
+Morrow uses the direct Python SDK. Authorized text, key and
 hotkey actions use the same path for ordinary and password fields. Screen labels and SDK-readable values are returned without content classification,
 redaction or screenshot masking. The LLM judges content and action safety from user intent
 and context. SDK/OS-unavailable values remain unavailable.
@@ -241,14 +244,14 @@ The exact selected model needs OpenAI function-tool support. Hybrid mode also re
 image input and explicit permission to share the selected window; semantic mode uses AX
 without images. Choose the window you intend to share. Valid screenshots are independent
 of AX tree completeness; decoding, geometry, ownership and image budgets still apply.
-Double-click and physical right-click require a fresh published image and use pixel gestures.
-SDK 0.30.4 background double-click misdelivers AppKit coordinates; Morrow refuses it before input.
-Double-click needs an explicitly granted foreground run.
-Token scroll requires an observed scroll container; use image coordinates when the SDK omits it.
-SDK 0.30.4 foreground pixel-wheel delivery is unreliable on the tested host; image-coordinate
-scroll requires an explicitly granted background run.
-Only enabled is exposed for attribute verification. SDK 0.30.4 lacks exact-token property
-readback, so partial-tree selectors and old element references cannot prove it.
+Double-click and physical right-click require a fresh published image and use physical gestures.
+The functional SDK supports background left double-click on an observed native element,
+foreground coordinate wheel input, and token scroll on a real AX scroll container.
+Background coordinate double-click and right double-click remain unsupported.
+Only enabled is exposed for attribute verification. An exact element-reference predicate
+reads the original retained object before refreshing the observation; if that object becomes
+unavailable, verification stays unavailable. Official 0.30.4 retains its existing bounded
+refusals for these unsupported variants. See the [five-gate evidence](docs/acceptance/computer-use-capabilities-2026-10-05.md).
 
 Default per-run budgets are 100 operations, 600 seconds and 64 MiB of observation bytes;
 each call defaults to 15 seconds and image long edges to 1920 pixels. Configuration can

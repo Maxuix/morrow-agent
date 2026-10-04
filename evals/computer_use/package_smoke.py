@@ -115,7 +115,9 @@ async def ordinary_task(root: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expect-sdk", choices=("absent", "present"), required=True)
-    parser.add_argument("--sdk-version", choices=("0.30.4",), default="0.30.4")
+    parser.add_argument(
+        "--sdk-version", choices=("0.30.4", "0.30.4+morrow.3"), default="0.30.4+morrow.3"
+    )
     parser.add_argument("--require-wheel", action="store_true")
     parser.add_argument("--gui-source", type=Path, required=True)
     parser.add_argument("--wheel", type=Path)

@@ -72,7 +72,8 @@ application 中的组合、跨域事务、配置生命周期、诊断和备份�
 
 ## 桌面运行的准备边界
 
-Computer-use 使用官方固定 cua-driver 0.30.4；2026-10-03 用户纠正后移除密码框输入
+Computer-use 在 macOS arm64 使用基于官方 0.30.4 的功能补丁版 0.30.4+morrow.3；
+补丁、上游 commit、SHA256、复现脚本位于 vendor/cua-driver-functional。2026-10-03 用户纠正后移除密码框输入
 禁令、逐字段安全证明和自编 guarded SDK。type_text/key/hotkey 对普通及 secure 字段
 共用已授权路径。2026-10-04 用户进一步要求移除完整工具内容分类链：不检测屏幕内容的关键词、
 凭据样式或 secure 角色，不清空可读属性、不遮罩截图。LLM 根据用户意图和上下文判断内容与动作安全；
@@ -80,10 +81,13 @@ Provider 配置凭据依旧遵循独立 CredentialStore 契约。截图发布只
 macOS arm64 基础观察、普通输入和带实际图像的 ordinary loop 实测后允许显式激活；
 其他平台保留 unavailable。隐藏字段输入可能产生效果但由 SDK 返回 unknown，仍按
 原副作用恢复语义处理，不重新投递。SDK/OS 不可读的值仍返回 unavailable；Morrow 不增加字段内容禁读规则。
-元素左键单击为语义激活，双击/物理右键在投递前选择同一新图的像素路径；无图或几何则未投递。官方 0.30.4 后台双击 AppKit 窗口坐标不正确，Morrow 提前返回
-unsupported_double_click_delivery，不替换模式或手势。前台坐标滚动在本机未收到轮事件，提前返回
-unsupported_foreground_scroll_delivery；已验证的后台图像滚动要求独立明确授权。
-属性验证只公开 enabled，0.30.4 没有跨快照同一对象的公开读回；部分树/旧引用不伪造属性成功。
+元素左键单击为语义激活，双击/物理右键要求同一新图及有效几何。功能 SDK 的后台元素左键双击
+保留旧 token，使用实际窗口局部坐标、单个 PID 投递流；前台坐标滚轮先证明选定窗口置前，再向该窗口
+投递单个轮事件流。AXScrollArea/AXScrollView 保留实际对象及 token，语义模式可引用滚动容器。
+背景坐标双击及右键双击仍明确 unsupported；官方 0.30.4 保留旧投递门禁，不自动切换模式或手势。
+属性验证只公开 enabled；read_element_attribute 在新快照前从缓存原 token 保留的同一 AX 对象读回，
+核对 PID/窗口归属。对象失效时不可用，不重查同名节点。Application 保留该精确判定并继续采集新观察。
+五项合成 fixture 门禁于2026-10-05通过，SDK unknown 完成仍保留；证据不替代真实模型 API 验收。
 
 可选 computer-use 默认关闭，原生验收未通过时不激活 Driver。bootstrap 为运行准备器与
 CoreHost 关闭路径传递同一 lifecycle；每个已授权 AgentRun 的 facade 持有独立 Session 与观察引用。

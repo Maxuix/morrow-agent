@@ -103,7 +103,7 @@ uv pip install --python "$package_gate_root/extra/bin/python" --no-deps --reinst
   --expect-sdk absent --require-wheel --gui-source src/morrow/gui_static \
   --wheel dist/morrow_agent-0.1.0-py3-none-any.whl --sdist dist/morrow_agent-0.1.0.tar.gz
 "$package_gate_root/extra/bin/python" -I evals/computer_use/package_smoke.py \
-  --expect-sdk present --sdk-version 0.30.4 --require-wheel --gui-source src/morrow/gui_static \
+  --expect-sdk present --sdk-version 0.30.4+morrow.3 --require-wheel --gui-source src/morrow/gui_static \
   --wheel dist/morrow_agent-0.1.0-py3-none-any.whl --sdist dist/morrow_agent-0.1.0.tar.gz
 "$package_gate_root/no-extra/bin/morrow" --help
 "$package_gate_root/extra/bin/morrow" --help
@@ -119,7 +119,8 @@ the real completed turn and tool result, and confirms the desktop owner stayed
 inactive. Output contains only fixed check codes, versions, counts and hashes.
 This proves packaging and default-off behavior; it does not prove native device
 access or model quality. No desktop authorization is needed for this gate.
-The verifier expects the official pinned SDK version 0.30.4.
+On macOS arm64 the verifier expects the functional SDK version `0.30.4+morrow.3`;
+other hosts install official 0.30.4 and require the explicit `--sdk-version 0.30.4`.
 
 ## Independent fixture state
 
@@ -197,8 +198,10 @@ end-to-end acceptance gates.
 
 ## Basic native input and ordinary loop
 
-Use the official pinned SDK in a disposable environment. No custom package,
-security-classification query or field-specific input guard is needed. Password
+Install the `computer-use` optional extra in a disposable environment. On macOS
+arm64 it selects the reproducible functional SDK; its exact upstream source and
+patch are tracked under `vendor/cua-driver-functional`. No security-classification
+query or field-specific input guard is needed. Password
 fields use the same authorized keyboard path as ordinary fields. Public SDK
 values and screenshot pixels receive no tool-side content classification or masking.
 
@@ -296,22 +299,25 @@ a fresh instance for each case. Multiple cases require this flag. Verdicts are
 `passed/failed/blocked/unsupported` and non-passing campaigns exit nonzero. Native unknown
 is preserved even when an independent fixture effect or task condition passes.
 
-SDK 0.30.4 does not publicly read an old token's exact native object attributes. `enabled`
-selector verification still requires a complete unique tree; macOS reports partial trees.
-Exact-object enabled acceptance remains unsupported until the official SDK adds this API.
+Official SDK 0.30.4 cannot read an old token's exact native object attributes. The
+functional SDK adds `read_element_attribute` for the retained object's Boolean
+`enabled`, before refreshing the tree. Expired or mismatched objects stay
+unavailable. Selector verification still requires a complete unique tree.
 
 Fixture pointer events independently record window coordinates and wheel deltas. The scroll region
 exports its AppKit window-space frame, so wheel acceptance proves the received
 point was inside the real NSScrollView region as well as observing offset. Selected-node/frame metadata is
 captured from the current trusted registry before dispatch, including pixel-routed gestures.
 
-SDK 0.30.4 background double-clicks misdeliver AppKit window-local coordinates on the tested host.
-Morrow refuses this variant before native entry; use an explicitly granted foreground run.
-The matrix deliberately attempts the unsupported background variant to verify the bounded refusal.
+Official SDK 0.30.4 background double-clicks misdeliver AppKit window-local coordinates
+on the tested host. The functional build supports left double-click on an observed
+native element through one PID stream, with native click counts [1,2]. Official
+builds and background coordinate/right double-click retain bounded refusals.
 
 Foreground cases explicitly start their owned fixture as key/active and record those facts.
-SDK 0.30.4 foreground pixel wheel delivery still receives no fixture wheel events on this host.
-Morrow refuses it before native entry; background image scroll requires a new explicit grant.
+Official SDK 0.30.4 foreground pixel wheel delivery receives no fixture wheel events
+on this host and remains refused. The functional build activates the selected
+window and sends one exact-window PID wheel stream, retaining foreground delivery.
 The 640-pixel moved-window scroll variant uses background delivery to exercise the working path.
 
 The current fixture schema is v4. Non-finite pointer coordinates are explicit `null` with
@@ -351,3 +357,30 @@ chooses tools/targets/coordinates, constructs no HTTP adapter, and reads no real
 Per-turn `receipt-NNN-status.json` records received/accepted, both hashes, cancellation and bounded
 error categories. Acceptance is a model decision, not SDK input. New requests never overwrite
 old campaign files; use a fresh directory. Historical bridge copies remain unchanged.
+
+## Five functional SDK gates
+
+Build an independent fixture and install the default macOS arm64 extra:
+
+```sh
+uv run python evals/computer_use/build_fixture.py \
+  --output-directory /tmp/morrow-five-fixture \
+  --state-directory /tmp/morrow-five-state
+UV_PROJECT_ENVIRONMENT=/tmp/morrow-five-env uv sync --locked --extra computer-use
+PYTHONPATH=src /tmp/morrow-five-env/bin/python evals/computer_use/run_capabilities_fixture.py \
+  --allow-desktop --fixture-app /tmp/morrow-five-fixture/MorrowComputerUseFixture.app \
+  --fixture-state-file /tmp/morrow-five-state/state.json \
+  --output-directory /tmp/morrow-five-evidence
+```
+
+This opt-in gate starts a fresh Python host and fixture instance for each case:
+foreground/background exact enabled readback, foreground coordinate wheel,
+background native element double-click and semantic AXScrollArea scroll. The
+scripted controller selects published references and images through ordinary
+AgentLoop; the independent fixture proves the actual native effects. It performs
+one input per case and never retries unknown. The SDK completion must remain
+unknown even when the independent effect passes. This is a reproducible native
+regression, separate from Luna/API-model quality acceptance.
+
+See [the functional build](../../vendor/cua-driver-functional/README.md) and
+[acceptance evidence](../../docs/acceptance/computer-use-capabilities-2026-10-05.md).

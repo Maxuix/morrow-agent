@@ -217,6 +217,10 @@ wheels = [
 name = "cua-driver"
 version = "0.30.4"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "(python_full_version >= '3.14' and platform_machine != 'arm64') or (python_full_version >= '3.14' and sys_platform != 'darwin')",
+    "(python_full_version < '3.14' and platform_machine != 'arm64') or (python_full_version < '3.14' and sys_platform != 'darwin')",
+]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2c/1f/3c2e7d792e7e9141326bbea385c6505596a5114eb9ac88897ccb79730e8c/cua_driver-0.30.4-py3-none-macosx_13_0_universal2.whl", hash = "sha256:18fb6eb786eda51d027da9cf209a93b10d2f06a480ab9abfc892dc30e331fc03", size = 43518466, upload-time = "2026-09-28T21:41:42.927Z" },
     { url = "https://files.pythonhosted.org/packages/93/7c/e50cb74829066b64077f70f171c9a62757b54f04108466825944df33d6ff/cua_driver-0.30.4-py3-none-manylinux_2_31_aarch64.whl", hash = "sha256:9d7c9bb3eb6df2b52a93f711aa375bdf2c7fbc02fa925f15599b2986e7183f08", size = 32611972, upload-time = "2026-09-28T21:41:45.947Z" },
@@ -224,6 +228,22 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/e4/ce/324d409cfe31d9b84275765996c869eb4324838b423b94111b087a868627/cua_driver-0.30.4-py3-none-win_amd64.whl", hash = "sha256:199efee24c2f0c1e6c925f712e74478a24a4605e931b7ec23181a5ec78e80f64", size = 28377116, upload-time = "2026-09-28T21:41:51.218Z" },
     { url = "https://files.pythonhosted.org/packages/76/bb/7ebea434f2a84967e3bc7f50db8831f9de3724176dc6ab6c67147d29de34/cua_driver-0.30.4-py3-none-win_arm64.whl", hash = "sha256:3de51de33d78fb354e7fef89d1697c3b783b7c953ede0fdf5bc1ba2fe951423e", size = 26558544, upload-time = "2026-09-28T21:41:53.635Z" },
 ]
+
+[[package]]
+name = "cua-driver"
+version = "0.30.4+morrow.3"
+source = { url = "https://github.com/Maxuix/morrow-agent/releases/download/cua-driver-morrow-v0.30.4.3/cua_driver-0.30.4%2Bmorrow.3-py3-none-macosx_14_0_arm64.whl" }
+resolution-markers = [
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin'",
+    "python_full_version < '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin'",
+]
+wheels = [
+    { url = "https://github.com/Maxuix/morrow-agent/releases/download/cua-driver-morrow-v0.30.4.3/cua_driver-0.30.4%2Bmorrow.3-py3-none-macosx_14_0_arm64.whl", hash = "sha256:f0b544a1ec4eed63085cfa3226c6436494f4705441c7abf97f564e555d5d9f7e" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pytest", marker = "extra == 'test'" }]
+provides-extras = ["test"]
 
 [[package]]
 name = "distro"
@@ -583,7 +603,8 @@ dependencies = [
 
 [package.optional-dependencies]
 computer-use = [
-    { name = "cua-driver" },
+    { name = "cua-driver", version = "0.30.4", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'arm64' or sys_platform != 'darwin'" },
+    { name = "cua-driver", version = "0.30.4+morrow.3", source = { url = "https://github.com/Maxuix/morrow-agent/releases/download/cua-driver-morrow-v0.30.4.3/cua_driver-0.30.4%2Bmorrow.3-py3-none-macosx_14_0_arm64.whl" }, marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
 
 [package.dev-dependencies]
@@ -595,7 +616,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cua-driver", marker = "extra == 'computer-use'", specifier = "==0.30.4" },
+    { name = "cua-driver", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'computer-use'", url = "https://github.com/Maxuix/morrow-agent/releases/download/cua-driver-morrow-v0.30.4.3/cua_driver-0.30.4%2Bmorrow.3-py3-none-macosx_14_0_arm64.whl" },
+    { name = "cua-driver", marker = "(platform_machine != 'arm64' and extra == 'computer-use') or (sys_platform != 'darwin' and extra == 'computer-use')", specifier = "==0.30.4" },
     { name = "filelock", specifier = ">=3.16,<4" },
     { name = "jsonschema", specifier = ">=4.20,<5" },
     { name = "keyring", specifier = ">=25,<26" },
