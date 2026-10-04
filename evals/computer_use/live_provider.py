@@ -17,6 +17,7 @@ import json
 import os
 import plistlib
 import runpy
+import signal
 import subprocess
 import sys
 import tempfile
@@ -31,8 +32,10 @@ from campaign_verdict import (
     wheel_inside_region,
 )
 
+from morrow.adapters.computer_use.action_inputs import FUNCTIONAL_SDK_VERSION
 from morrow.adapters.computer_use.diagnostics import diagnose_host
 from morrow.adapters.computer_use.owner import ComputerDriverOwner
+from morrow.adapters.computer_use.process_identity import read_process_birth
 from morrow.adapters.computer_use.sdk_loader import (
     collect_host_probe,
     construct_run_session,
@@ -212,8 +215,14 @@ async def run_fixture(
     require(marker not in before["text"], "fixture_marker_present")
     result = {
         "schema_version": 2,
-        "scripted_provider": False,
-        "provider_model": "external_live_controller" if controller_provider else "deepseek-flash",
+        "scripted_provider": bool(getattr(controller_provider, "scripted_provider", False)),
+        "provider_model": (
+            "scripted_fixture_transport"
+            if getattr(controller_provider, "scripted_provider", False)
+            else "external_live_controller"
+            if controller_provider
+            else "deepseek-flash"
+        ),
         "case": case,
         "mode": mode,
         "delivery": delivery,
@@ -293,6 +302,30 @@ async def run_fixture(
             return state
 
         async def call_tool(self, name, content):
+            if name == "read_element_attribute":
+                result["sdk_attribute_reads"] = result.get("sdk_attribute_reads", 0) + 1
+                payload = json.loads(content)
+                proof = result.get("approved_reference", {})
+                returned = await self._native.call_tool(name, content)
+                try:
+                    body = json.loads(returned.structured_json)
+                except (ValueError, TypeError):
+                    body = {}
+                result.setdefault("attribute_read_proofs", []).append(
+                    {
+                        "native_token_matches_observed_sdk_token": proof.get(
+                            "observed_token_sha256"
+                        )
+                        == hashlib.sha256(payload["element_token"].encode()).hexdigest(),
+                        "attribute": payload["attribute"],
+                        "identity": body.get("identity"),
+                        "status": body.get("status"),
+                        "value": body.get("value"),
+                        "is_error": returned.is_error,
+                        "degraded": returned.degraded,
+                    }
+                )
+                return returned
             result["sdk_input_entries"] += 1
             if result["sdk_input_entries"] > 1:
                 raise ComputerUseContractError("fixture_action_repeated")
@@ -489,14 +522,18 @@ async def run_fixture(
             + (
                 " This deliberately tests unsupported foreground wheel delivery: call once "
                 "to collect the bounded refusal. Do not change delivery, direction or amount."
-                if case == "coordinate_scroll" and delivery == "foreground"
+                if case == "coordinate_scroll"
+                and delivery == "foreground"
+                and sdk.__version__ != FUNCTIONAL_SDK_VERSION
                 else ""
             )
             + (
                 " This deliberately tests the unsupported background double-click boundary: "
                 "attempt it once to collect the bounded refusal. Do not change delivery, "
                 "button or count."
-                if case == "double_click" and delivery == "background"
+                if case == "double_click"
+                and delivery == "background"
+                and sdk.__version__ != FUNCTIONAL_SDK_VERSION
                 else ""
             )
             + " Use only computer tools. Deliver at most ONE native action. Never retry unknown "
@@ -621,11 +658,35 @@ async def run_fixture(
         finally:
             products.persistence.close()
     result.pop("baseline_json", None)
-    if controller_provider is not None:
+    if controller_provider is not None and hasattr(controller_provider, "decisions"):
         result["controller_decisions"] = controller_provider.decisions
     if client := getattr(provider.real, "_client", None):
         await client.close()
     return result
+
+
+class FixtureProcess:
+    """A LaunchServices child, bound to the actual fixture PID and its kernel birth."""
+
+    def __init__(self, launcher, pid: int):
+        self.launcher = launcher
+        self.pid = pid
+        self.birth = read_process_birth(pid)
+
+    def poll(self):
+        try:
+            if read_process_birth(self.pid) != self.birth:
+                return 0
+        except ComputerUseContractError:
+            return 0
+        return None
+
+    def terminate(self):
+        if self.poll() is None:
+            os.kill(self.pid, signal.SIGTERM)
+
+    def wait(self, *, timeout: float):
+        return self.launcher.wait(timeout=timeout)
 
 
 async def start_fixture(
@@ -640,23 +701,39 @@ async def start_fixture(
     )
     state_file.unlink(missing_ok=True)
     binary = app / "Contents/MacOS" / metadata["CFBundleExecutable"]
-    process = subprocess.Popen(
-        [str(binary)],
-        env={
-            **os.environ,
-            "MORROW_FIXTURE_EDIT_SEED": edit_seed,
-            "MORROW_FIXTURE_FOREGROUND": "1" if foreground else "0",
-        },
+    command = ["/usr/bin/open", "-W", "-n", "-a", str(app)]
+    if not foreground:
+        command.append("-g")
+    command.extend(
+        [
+            "--env",
+            f"MORROW_FIXTURE_EDIT_SEED={edit_seed}",
+            "--env",
+            f"MORROW_FIXTURE_FOREGROUND={'1' if foreground else '0'}",
+        ]
+    )
+    launcher = subprocess.Popen(
+        command,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+    process = None
     try:
         async with asyncio.timeout(15):
-            while process.poll() is None:
+            while launcher.poll() is None:
                 try:
                     state = json.loads(state_file.read_bytes())
+                    if process is None and type(state.get("pid")) is int and state["pid"] > 0:
+                        executable = subprocess.check_output(
+                            ["ps", "-p", str(state["pid"]), "-o", "comm="], text=True
+                        ).strip()
+                        require(
+                            Path(executable).resolve() == binary.resolve(), "fixture_pid_invalid"
+                        )
+                        process = FixtureProcess(launcher, state["pid"])
                     if (
-                        state["pid"] == process.pid
+                        process is not None
+                        and state["pid"] == process.pid
                         and state.get("window")
                         and state["revision"] > 0
                         and state.get("scrollRegion")
@@ -669,9 +746,11 @@ async def start_fixture(
                 await asyncio.sleep(0.05)
         raise ComputerUseContractError("fixture_launch_failed")
     except BaseException:
-        if process.poll() is None:
+        if process is not None and process.poll() is None:
             process.terminate()
-        await asyncio.to_thread(process.wait, timeout=10)
+        elif process is None and launcher.poll() is None:
+            launcher.terminate()
+        await asyncio.to_thread(launcher.wait, timeout=10)
         raise
 
 

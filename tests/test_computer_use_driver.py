@@ -254,7 +254,7 @@ def test_construct_driver_uses_the_same_process_runtime():
     assert created[0].authorization.max_idle_ttl_seconds == 600
 
 
-def test_sdk_protocol_bridge_has_only_four_fixed_action_calls():
+def test_sdk_protocol_bridge_has_only_fixed_action_and_attribute_calls():
     root = __import__("pathlib").Path(SOURCE)
     fixed_names = []
     for path in root.rglob("*.py"):
@@ -267,8 +267,10 @@ def test_sdk_protocol_bridge_has_only_four_fixed_action_calls():
                 assert isinstance(node.args[0], ast.Constant)
                 fixed_names.append((path.name, node.args[0].value))
     assert sorted(fixed_names) == [
+        ("action_inputs.py", "double_click"),
         ("action_inputs.py", "hotkey"),
         ("action_inputs.py", "press_key"),
+        ("action_inputs.py", "read_element_attribute"),
         ("action_inputs.py", "scroll"),
         ("action_inputs.py", "type_text"),
     ]

@@ -1,17 +1,57 @@
 """Closed adapters for fields absent from the pinned generated action inputs.
 
-These four fixed SDK calls stay in the same Session/owner/runtime. Native IDs,
+These fixed SDK calls stay in the same Session/owner/runtime. Native IDs,
 tokens and text are transient. No caller supplies a tool name or argument dict.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from morrow.core.computer_use import ComputerUseContractError
 from morrow.core.domain import canonical_json_bytes
+
+FUNCTIONAL_SDK_VERSION = "0.30.4+morrow.2"
+
+
+class NativeAttributeInput(BaseModel):
+    """Read the retained object addressed by a consumed observation's token."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    pid: int = Field(gt=0, le=2**31 - 1, repr=False)
+    window_id: int = Field(gt=0, le=2**32 - 1, repr=False)
+    session: str = Field(min_length=1, max_length=128, repr=False)
+    element_token: str = Field(min_length=1, max_length=1024, repr=False)
+    attribute: Literal["enabled"] = "enabled"
+
+
+async def read_exact_enabled(session, payload: NativeAttributeInput) -> bool | None:
+    arguments = canonical_json_bytes(payload.model_dump(mode="json")).decode()
+    result = await session.call_tool("read_element_attribute", arguments)
+    data = getattr(result, "structured_json", None)
+    if (
+        getattr(result, "is_error", True) is not False
+        or getattr(result, "degraded", True) is not False
+        or not isinstance(data, str)
+        or len(data) > 2048
+    ):
+        return None
+    try:
+        body = json.loads(data)
+    except (ValueError, TypeError):
+        return None
+    if (
+        not isinstance(body, dict)
+        or body.get("identity") != "exact"
+        or body.get("attribute") != "enabled"
+        or body.get("status") != "readable"
+        or type(body.get("value")) is not bool
+    ):
+        return None
+    return body["value"]
 
 
 class _WindowInput(BaseModel):
@@ -26,6 +66,11 @@ class _WindowInput(BaseModel):
 class NativeTextInput(_WindowInput):
     element_token: str = Field(min_length=1, max_length=1024, repr=False)
     text: str = Field(min_length=1, max_length=4096, repr=False)
+
+
+class NativeDoubleClickInput(_WindowInput):
+    element_token: str = Field(min_length=1, max_length=1024, repr=False)
+    physical_gesture: Literal[True] = True
 
 
 NativeKey = Literal[
@@ -127,9 +172,17 @@ def native_key(key: str) -> str:
 
 
 async def invoke_fixed_action(session, payload):
-    if type(payload) not in {NativeTextInput, NativeKeyInput, NativeHotkeyInput, NativeScrollInput}:
+    if type(payload) not in {
+        NativeTextInput,
+        NativeKeyInput,
+        NativeHotkeyInput,
+        NativeScrollInput,
+        NativeDoubleClickInput,
+    }:
         raise ComputerUseContractError("rejected_action")
     arguments = canonical_json_bytes(payload.model_dump(mode="json", exclude_none=True)).decode()
+    if type(payload) is NativeDoubleClickInput:
+        return await session.call_tool("double_click", arguments)
     if type(payload) is NativeTextInput:
         return await session.call_tool("type_text", arguments)
     if type(payload) is NativeKeyInput:

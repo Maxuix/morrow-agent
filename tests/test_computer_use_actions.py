@@ -348,12 +348,6 @@ async def test_click_keeps_exact_button_count_and_bound_token(button, count, del
     )
     from morrow.core.computer_use import ObservationImageRef
 
-    if count == 2 and delivery is ComputerUseDelivery.BACKGROUND:
-        with pytest.raises(ComputerUseContractError, match="unsupported_double_click_delivery"):
-            admit_execute(request(action), settings=ComputerUseSettings(enabled=True))
-        assert effects(native) == []
-        return
-
     observation = read.observation
     if count == 2 or button == "right":
         with pytest.raises(ComputerUseContractError, match="image_not_published"):
@@ -371,11 +365,17 @@ async def test_click_keeps_exact_button_count_and_bound_token(button, count, del
                 )
             }
         )
+    admitted = admit_execute(
+        request(action).model_copy(update={"observation": observation}),
+        settings=ComputerUseSettings(enabled=True),
+    )
+    if count == 2 and delivery is ComputerUseDelivery.BACKGROUND:
+        with pytest.raises(ComputerUseContractError, match="unsupported_double_click_delivery"):
+            await session.execute_one(admitted, authority=lambda: None)
+        assert effects(native) == []
+        return
     outcome = await session.execute_one(
-        admit_execute(
-            request(action).model_copy(update={"observation": observation}),
-            settings=ComputerUseSettings(enabled=True),
-        ),
+        admitted,
         authority=lambda: None,
     )
     assert outcome.status == "completed"
@@ -522,7 +522,7 @@ async def test_physical_gestures_without_exact_geometry_never_enter_sdk(center, 
 async def test_background_double_click_is_refused_before_native_delivery(target):
     from morrow.core.computer_use import ObservationImageRef
 
-    _, native, _, read, request = await setup(ComputerUseDelivery.BACKGROUND)
+    session, native, _, read, request = await setup(ComputerUseDelivery.BACKGROUND)
     observation = read.observation.model_copy(
         update={
             "image": ObservationImageRef(
@@ -546,17 +546,18 @@ async def test_background_double_click_is_refused_before_native_delivery(target)
         ),
     )
     with pytest.raises(ComputerUseContractError, match="unsupported_double_click_delivery"):
-        admit_execute(
+        admitted = admit_execute(
             request(action).model_copy(update={"observation": observation}),
             settings=ComputerUseSettings(enabled=True),
         )
+        await session.execute_one(admitted, authority=lambda: None)
     assert effects(native) == []
 
 
 async def test_foreground_coordinate_scroll_is_refused_before_sdk_entry():
     from morrow.core.computer_use import ObservationImageRef
 
-    _, native, _, read, request = await setup(ComputerUseDelivery.FOREGROUND)
+    session, native, _, read, request = await setup(ComputerUseDelivery.FOREGROUND)
     observation = read.observation.model_copy(
         update={
             "image": ObservationImageRef(
@@ -572,8 +573,9 @@ async def test_foreground_coordinate_scroll_is_refused_before_sdk_entry():
     )
     action = ScrollAction(type="scroll", x=1, y=1, direction="down", amount=3)
     with pytest.raises(ComputerUseContractError, match="unsupported_foreground_scroll_delivery"):
-        admit_execute(
+        admitted = admit_execute(
             request(action).model_copy(update={"observation": observation}),
             settings=ComputerUseSettings(enabled=True),
         )
+        await session.execute_one(admitted, authority=lambda: None)
     assert effects(native) == []

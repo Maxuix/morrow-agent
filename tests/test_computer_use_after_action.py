@@ -208,3 +208,40 @@ async def test_followup_cancellation_stops_admission_without_repeating_effect(en
     with pytest.raises(asyncio.CancelledError):
         await task
     assert device.invalidated and len(device.actions) == 1
+
+
+@pytest.mark.parametrize("verified", ["passed", "failed"])
+async def test_exact_attribute_result_survives_new_partial_observation(environment, verified):
+    from morrow.core.computer_use import parse_computer_action
+
+    app, device, before = await setup(environment)
+    original = device.execute_one
+
+    async def execute(admitted, *, authority):
+        outcome = await original(admitted, authority=authority)
+        device.observation = device.observation.model_copy(update={"complete": False})
+        return outcome.model_copy(update={"postcondition": verified})
+
+    device.execute_one = execute
+    action = parse_computer_action(
+        {
+            "type": "click",
+            "element_ref": "celem_1",
+            "postcondition": {
+                "type": "attribute_equals",
+                "element_ref": "celem_1",
+                "attribute": "enabled",
+                "value": "true",
+            },
+        }
+    )
+    result, _ = await app.execute_published(
+        "tex_action",
+        before.observation.observation_id,
+        action,
+        visuals=environment[0],
+    )
+    assert result.outcome.postcondition == verified
+    assert result.observation.complete is False
+    assert result.observation.observation_id == "cobs_after"
+    assert len(device.actions) == 1

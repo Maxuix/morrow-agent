@@ -8,12 +8,16 @@ from collections.abc import Callable
 from typing import Any
 
 from morrow.adapters.computer_use.action_inputs import (
+    FUNCTIONAL_SDK_VERSION,
+    NativeAttributeInput,
+    NativeDoubleClickInput,
     NativeHotkeyInput,
     NativeKeyInput,
     NativeScrollInput,
     NativeTextInput,
     invoke_fixed_action,
     native_key,
+    read_exact_enabled,
 )
 from morrow.adapters.computer_use.calls import NativeActionInterrupted, NativeCalls
 from morrow.adapters.computer_use.census import (
@@ -68,7 +72,7 @@ MAX_NATIVE_AX_NODES = 400
 
 
 class TypedComputerSession:
-    """One run's typed SDK session. It never calls a generic tool method."""
+    """One run's SDK session; JSON bridging uses only closed fixed input adapters."""
 
     def __init__(
         self,
@@ -265,6 +269,30 @@ class TypedComputerSession:
         window = self._registry.window(request.target.window_identity)
         action = prepared.action
         element = self._registry.element(action.element_ref) if action.element_ref else None
+        predicate = action.postcondition
+        attribute_element = (
+            self._registry.element(predicate.element_ref)
+            if predicate is not None
+            and predicate.type == "attribute_equals"
+            and predicate.element_ref is not None
+            else None
+        )
+        functional_sdk = getattr(self._sdk, "__version__", None) == FUNCTIONAL_SDK_VERSION
+        if not functional_sdk or (
+            action.type == "click" and (action.element_ref is None or action.button != "left")
+        ):
+            if (
+                action.type == "click"
+                and action.count == 2
+                and request.delivery is ComputerUseDelivery.BACKGROUND
+            ):
+                raise ComputerUseContractError("unsupported_double_click_delivery")
+            if (
+                action.type == "scroll"
+                and prepared.window_point is not None
+                and request.delivery is ComputerUseDelivery.FOREGROUND
+            ):
+                raise ComputerUseContractError("unsupported_foreground_scroll_delivery")
         # Drop the registry token before any await so cancellation cannot dispatch twice.
         self._registry.retire_window_observations(window.window_identity)
         try:
@@ -282,11 +310,12 @@ class TypedComputerSession:
             self._require_scope(request.scope)
             self._validate_process(window)
             if action.type == "click":
+                position = self._click_position(
+                    action, prepared.window_point, element, observation, window.geometry
+                )
                 payload = self._sdk.ClickInput(
                     target=self._sdk.ActionTarget.WINDOW(window.pid, window.window_id),
-                    position=self._click_position(
-                        action, prepared.window_point, element, observation, window.geometry
-                    ),
+                    position=position,
                     delivery_mode=_input_delivery(self._sdk, request.delivery),
                     session=self._require_session(),
                     button=_click_button(self._sdk, action.button),
@@ -297,6 +326,23 @@ class TypedComputerSession:
                     return await self._require("click")(payload)
 
                 normalize = outcome_from_action
+                if (
+                    functional_sdk
+                    and action.count == 2
+                    and request.delivery is ComputerUseDelivery.BACKGROUND
+                ):
+                    payload = NativeDoubleClickInput(
+                        pid=window.pid,
+                        window_id=window.window_id,
+                        session=self._require_session(),
+                        delivery_mode=request.delivery.value,
+                        element_token=element.token,
+                    )
+
+                    async def dispatch():
+                        return await invoke_fixed_action(self._native, payload)
+
+                    normalize = outcome_from_tool
             else:
                 token = element.token if element is not None else None
                 common = dict(
@@ -366,6 +412,43 @@ class TypedComputerSession:
                 outcome = outcome.model_copy(
                     update={"status": "unknown", "error_code": "unexpected_delivery"}
                 )
+            if (
+                outcome.status != "not_started"
+                and attribute_element is not None
+                and attribute_element.window_identity == window.window_identity
+                and attribute_element.token
+                and getattr(self._sdk, "__version__", None) == FUNCTIONAL_SDK_VERSION
+            ):
+                # Read the retained SDK object before any new window snapshot.
+                # A failed read must preserve the already-dispatched action.
+                async def verify():
+                    authority()
+                    self._require_scope(request.scope)
+                    self._validate_process(window)
+                    return await read_exact_enabled(
+                        self._native,
+                        NativeAttributeInput(
+                            pid=window.pid,
+                            window_id=window.window_id,
+                            session=self._require_session(),
+                            element_token=attribute_element.token,
+                        ),
+                    )
+
+                try:
+                    enabled = await self._calls.run(verify)
+                    authority()
+                    self._validate_process(window)
+                    if enabled is not None:
+                        outcome = outcome.model_copy(
+                            update={
+                                "postcondition": "passed"
+                                if enabled == (predicate.value == "true")
+                                else "failed"
+                            }
+                        )
+                except ComputerUseContractError:
+                    pass
             return outcome.model_copy(update={"before_observation_id": observation.observation_id})
         finally:
             self._registry.retire_window_observations(window.window_identity)

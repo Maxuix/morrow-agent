@@ -403,14 +403,6 @@ def prepare_execute_request(
             raise ComputerUseContractError("image_budget")
     action = request.action
     if (
-        isinstance(action, ClickAction)
-        and action.count == 2
-        and request.delivery is ComputerUseDelivery.BACKGROUND
-    ):
-        # Official 0.30.4 misdelivers AppKit background pixel double-clicks.
-        # Do not switch delivery or collapse the gesture into semantic AXPress.
-        raise ComputerUseContractError("unsupported_double_click_delivery")
-    if (
         action.postcondition is not None
         and action.postcondition.type == "attribute_equals"
         and action.postcondition.attribute != "enabled"
@@ -448,14 +440,6 @@ def prepare_execute_request(
         if observation.frame.target_space != "window":
             raise ComputerUseContractError("desktop_coordinates")
         point = map_image_point(observation.frame, action.x, action.y)
-        if (
-            isinstance(action, ScrollAction)
-            and observation.image is not None
-            and request.delivery is ComputerUseDelivery.FOREGROUND
-        ):
-            # 0.30.4's foreground assist + PID wheel route loses AppKit events.
-            # A background grant must be explicit, never an automatic fallback.
-            raise ComputerUseContractError("unsupported_foreground_scroll_delivery")
     postcondition = action.postcondition
     if (
         isinstance(postcondition, ElementPostconditionTarget)

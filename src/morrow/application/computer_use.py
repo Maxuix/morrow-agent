@@ -392,15 +392,23 @@ class ComputerUseObservationService:
                     target_ref, authority=authority, include_image=include_image
                 )
 
+            exact_attribute = (
+                action.postcondition is not None
+                and action.postcondition.type == "attribute_equals"
+                and action.postcondition.element_ref is not None
+                and outcome.postcondition in {"passed", "failed"}
+            )
             read, verification = await collect_verified_observation(
                 observe=observe,
                 clock=self._clock,
                 wait=self._verification_wait,
                 authority=authority,
-                predicate=action.postcondition,
+                predicate=None if exact_attribute else action.postcondition,
                 before_observation_id=observation_id,
                 stop=self._run.stop,
             )
+            if exact_attribute:
+                verification = outcome.postcondition
             outcome = outcome.model_copy(update={"postcondition": verification})
         except TimeoutError:
             self._run.stop()

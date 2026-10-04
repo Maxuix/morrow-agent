@@ -8,7 +8,7 @@ from morrow.core.computer_use import ComputerUsePreflight
 from morrow.core.runtime_policy import ComputerUseSettings
 
 PINNED_SDK_VERSION = "0.30.4"
-DIAGNOSTIC_SDK_VERSIONS = (PINNED_SDK_VERSION,)
+DIAGNOSTIC_SDK_VERSIONS = (PINNED_SDK_VERSION, "0.30.4+morrow.2")
 MINIMUM_MACOS = (14, 0, 0)
 
 

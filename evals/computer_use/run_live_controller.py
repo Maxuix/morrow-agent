@@ -77,6 +77,7 @@ def main():
             "secure",
             "coordinate_click",
             "coordinate_scroll",
+            "scroll",
             "double_click",
             "right_click",
             "postcondition_text",
