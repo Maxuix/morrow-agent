@@ -10,7 +10,7 @@ Morrow 可实施的内容链、截图、手势、能力描述和 fixture 判定�
 | --- | --- |
 | CU-01/CU-02 内容与截图 | 删除关键词/凭据样式/secure role 分类、属性隐藏、遮罩和部分树图片拒绝。SDK-readable label/value/value_description、typed enabled 直接投影；公开 SDK 没提供的值保持 None。图片只作解码、几何、像素/字节预算和所属执行授权校验，AX 不完整不阻止有效图片。 |
 | 下游重现旧策略 | computer intent、execution、approval、journal 重载、ComputerToolFacts、窗口 scope 与 observation Artifact 都使用内容透明契约；其他工具和 Provider CredentialStore 保留自身契约。默认 intent 的序列化不增加新字段，保持旧 hash，兼容项目最低 Pydantic 2.9。 |
-| CU-03 fixture/键盘 | v2 fixture 独立导出 live 普通/secure 合成字符串、Enter committed 值、字段身份、NSControl 通知数、原生 key-down 字符/字段与 key-up 数。SDK 编辑可能绕过 NSControl 通知，NSWindow 更新从真实 field editor 采样，不伪造通知次数。失焦不再擦除或冒充 Enter 提交。 |
+| CU-03 fixture/键盘 | v2/v3 fixture 独立导出 live 普通/secure 合成字符串、Enter committed 值、字段身份、NSControl 通知数、原生 key-down 字符/字段与 key-up 数。SDK 编辑可能绕过 NSControl 通知，NSWindow 更新从真实 field editor 采样，不伪造通知次数。失焦不再擦除或冒充 Enter 提交；v3 增加按钮 action callback 计数。 |
 | CU-04 滚动 | token 必须是实际观察到的 axscrollarea/axscrollview；任意文本框/窗口 token 返回 unsupported_scroll_target，投递数 0。有效图像允许在真实滚动区域内选坐标。前台 pixel wheel 在 key/active fixture 上仍无接收事件，因此返回 unsupported_foreground_scroll_delivery；后台坐标路径可用，必须由用户明确授予后台投递，不能自动 fallback。SDK 省略容器的能力边界写入工具说明。 |
 | CU-05 unknown | native completion 与 postcondition 分开；不重试、不改成 completed。GUI 显示“SDK 已确认”/“SDK 效果未知”，unknown+passed 保持两个事实，不推导任务完成。 |
 | CU-06 双击/右键 | 元素 left/count=1 保持语义激活；前台 count=2 或 right/count=1 在投递前映射精确元素中心到同一新鲜已发布图片，走像素路径。缺图、缺几何、越界、过期/迁移均未投递。AppKit 独立记录 clickCount 和右键事件，业务 counter 不再代替手势证明。0.30.4 在本机后台双击传入正确图片点仍生成错误 AppKit 窗口坐标，因此后台 count=2 提前返回 unsupported_double_click_delivery，0 native entries；不变更投递模式。 |
@@ -30,7 +30,7 @@ Morrow 可实施的内容链、截图、手势、能力描述和 fixture 判定�
 | 命令/范围 | 实际结果 |
 | --- | --- |
 | uv run pytest -q tests/test_computer* | 465 passed；随后新增无帧元数据回归包含在最终全套中，最新 harness/counter/text 定向 24 passed |
-| uv run pytest -m 'not live' -q | 3081 passed，2 deselected，215.14s |
+| uv run pytest -m 'not live' -q | Luna 诊断改动后的最终复跑 3087 passed，2 deselected，212.93s；之前生产版本3081 passed。首次新增回归全套有一项既有 sandbox 1秒timeout，单独复查通过，原失败日志保留。 |
 | uv run ruff check . | passed |
 | uv run ruff format --check src tests evals/computer_use | 755 files already formatted |
 | uv run ruff format --check . | 未通过；仅用户已有 evals/benchmarks/run_tb2.py 格式差异。未改动、未提交该文件。 |
@@ -58,15 +58,33 @@ Morrow 可实施的内容链、截图、手势、能力描述和 fixture 判定�
 
 最新矩阵（生产 `d953cb39`、harness `11a67402`）**36 场景，1 passed / 35 failed**，其中 33 个场景含 Provider invalid_response，1 个 fixture startup timeout，另 1 个 semantic foreground click 进入 SDK 但独立 counter 未变化。独立 Provider 最小请求诊断确认 **HTTP 402 / balance_marker=true**；不能把这些记录解释为 35 个 Morrow 根因回归，也不能删除或改写为通过。新增 metadata 一度把 semantic 合法 window_bounds=None 当错误，已通过独立回归修复；那次中止的 v2 矩阵另外保留。
 
-余额恢复后的真实重跑仍待执行。原型 fixture 后续调整把 focus 诊断移出 SwiftUI 渲染状态，以避免诊断影响控件；定向组件 semantic click 仍为 SDK unknown、counter 0→0，本轮未证明当前 fixture 的该路径，应在重跑时独立定位，不以首轮正例掩盖此缺口。现有 SDK 固定不更换，unknown 不自动重试，不用另一个 delivery 伪装原路线通过。
+用户确认 Provider 无余额，并要求改用 Luna max 测试；停止 DeepSeek 调用。Codex Luna max 辅助受控原生测试单独记录，不作为 Morrow 已接通 Luna API Provider 的证据。余额恢复后的真实 Provider 重跑仍待执行。原型 fixture 后续调整把 focus 诊断移出 SwiftUI 渲染状态，以避免诊断影响控件；定向组件 semantic click 仍为 SDK unknown、counter 0→0。下方 Luna 对照也未证明此路径，不以首轮正例掩盖此缺口。现有 SDK 固定不更换，unknown 不自动重试，不用另一个 delivery 伪装原路线通过。
 
 native unknown 始终保持；独立 oracle 通过只证明对应 fixture 效果。640-pixel moved-window 的最终后台滚动场景因 Provider 402 未获得最终产品效果证据，不声称缩放/移动矩阵全部通过。
 
 原始证据按仓库惯例保存在 gitignored assets/computer-use-repair-2026-10-04/；汇总及 SHA-256 见 [summary.json](assets/computer-use-repair-2026-10-04/summary.json)。原分析/旧 Provider 证据不改写。首批 smoke 发现的 fixture/模型参数问题保留为诊断记录，不计入最终通过率。
 
+## Luna max 辅助受控验收
+
+按用户要求使用 Codex 的 `gpt-6-luna` / `max` 测试代理，未使用用户真实 Provider 凭据。测试代理选择并检查动作，有效产品闭环由 ScriptedProvider 驱动普通 AgentLoop；其余原生组件使用公开 SDK。只操作本案启动的 fixture PID/window，每个有效动作 case 使用独立 Python 进程；复用进程造成的窗口发现失败另存原始记录，native entries=0，不计为动作通过。
+
+| 检查 | 结果与限制 |
+| --- | --- |
+| 普通 AgentLoop 输入闭环 | passed；一次批准、一次后台输入，独立 live text 精确追加，前后两个不同图像的 Artifact/Provider SHA 匹配。ScriptedProvider 不代表真实 API 联通。 |
+| q | SDK completed，独立 fixture-text 精确 q、一次 key-down/up、fresh observation。 |
+| Shift+Y | SDK unknown/unverified_action 保留；独立 fixture-text 精确 Y、一次 key-down/up、fresh observation。 |
+| secure 合成输入 | SDK unknown 保留；独立 live buffer 与请求 input SHA 完全匹配，NSControl 通知25次。该结果是 fixture 精确效果证据，不把 SDK 状态升级。 |
+| semantic AXPress | foreground active/inactive 的 NSButton oracle 均 counter/callback 0→0；独立 SwiftUI Button 对照亦0→0。核对的 SDK PID/window 与本案实例一致；只读 AX 检查唯一 Increment/fixture-increment 明确广告 AXPress。当前证据不支持 Coordinator 绑定是根因，也未证明语义点击生效；仅限此环境与 fixture，不推导所有应用都失败。 |
+
+v3 fixture/native_counter 增加 callback 与选择对象身份诊断，投递前核对 PID/window。官方 tag 的 AXPress 调用在 AX API 成功返回且无读回时报告 unverifiable；它不证明业务回调已执行。Luna 未对 unknown 动作重试，未修改生产结果枚举或 delivery。
+
+追加坐标闭环的测试脚本替换失败：`runpy.run_path()` 返回字典的替换未进入 `run_fixture.__globals__`，仍构造真实 DeepSeek adapter，并以占位凭据走到 `real.stream` 后返回 auth。未使用用户实际 API key；不能声称没有触发外网，也未保存 HTTP status，不能进一步断言确切响应或计费。该路径已停止。原 JSON 的外层 scripted 标签不可信，由单独 sidecar 撤销；批准0/原生投递0/未发布图片，不能计为有效坐标或 scripted 验收。此前 `native_loop.py` 的独立 ScriptedProvider 输入闭环不受此注入错误影响。
+
+直接坐标组件另外被 image_not_published 拒绝，投递0；没有伪造发布事实。Luna 本轮未取得新的背景坐标滚动/前台 double/right 产品闭环证据，先前矩阵与独立 AppKit 证据仍保持原版本边界。
+
 ## 交付与后续条件
 
-Morrow 代码与离线/GUI/build 修复已提交；真实验收仍有 Provider 余额、当前 fixture semantic click，以及官方 SDK 精确属性/容器与两种投递的缺口。未将整个方案标为完成。用户已有 benchmark/docs dirty 与 staged audit 保留，未提交。
+Morrow 代码与离线/GUI/build 修复已提交；Luna 诊断提交为 `f639c152`。真实验收仍有 Provider 余额、当前 fixture semantic click，以及官方 SDK 精确属性/容器与两种投递的缺口。未将整个方案标为完成。用户已有 benchmark/docs dirty 与 staged audit 保留，未提交。
 
 关键证据 SHA-256（本地 raw assets，不随 Git 推送）：
 
@@ -78,4 +96,5 @@ Morrow 代码与离线/GUI/build 修复已提交；真实验收仍有 Provider �
 - `source-manifest.json`：`5a0e63b62fd6a715940b0b75077d014fdd4d62ebd9a6b7e925ff520af0d3c32b`
 - `sdk-contract.json`：`350c31b0153511e53e7a84b63f4029215e1dfd0bce17da23e541a9a7167edf76`
 
-- `delivery-source-manifest.json`：`c834bc4db5d879b257093d7af1899aa5559c1175df4cc98c3640f65c6a3c4c34`（最终交付源码，区别于真实矩阵启动时版本）
+- `delivery-source-manifest.json`：`c834bc4db5d879b257093d7af1899aa5559c1175df4cc98c3640f65c6a3c4c34`（Luna 诊断前的源码版本，区别于真实矩阵启动时版本）
+- `delivery-source-manifest-luna.json`：`4f09d0a844c82f5175f01f7f46debdd9d3b862a5bafd7dacf225956ae8322692`（Luna 后最终源码，`f639c152`，含753个文件hash；文档另行提交）
