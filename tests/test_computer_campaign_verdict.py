@@ -107,3 +107,137 @@ def test_evidence_projection_accepts_semantic_sdk_read_without_frame(monkeypatch
     state.screenshot_width, state.screenshot_height, state.screenshot_scale = 640, 630, 2
     assert project(state)["window_bounds"]["x"] == 100
     assert project(state)["width"] == 640
+
+
+def attribute_result(postcondition="attribute_equals", native_entries=1):
+    r = result("postcondition_attribute")
+    r["provider_calls"][0].update(
+        coordinate_target=False, element_target=True, postcondition=postcondition
+    )
+    r["sdk_input_entries"] = native_entries
+    r["action_outcomes"] = [{"postcondition": "not_checked"}]
+    return r
+
+
+def test_attribute_unavailable_requires_the_requested_postcondition():
+    assert verdict(attribute_result())["status"] == "unsupported"
+    for postcondition in (None, "element_exists", "text_appears"):
+        r = attribute_result(postcondition)
+        assert verdict(r)["status"] == "failed"
+        assert verdict(r)["verdict_reason"] == "wrong_postcondition"
+        r["sdk_input_entries"] = 0
+        r["action_outcomes"][0]["error_code"] = "unsupported_attribute"
+        assert verdict(r)["status"] == "failed"
+
+
+def denied_result():
+    r = result("denied")
+    r["provider_calls"][0].update(
+        call_id="denied-click", coordinate_target=False, element_target=True
+    )
+    r.update(
+        sdk_input_entries=0,
+        approval_count=1,
+        approval_decisions=[{"call_id": "denied-click", "approved": False}],
+        independent_effect={"unchanged": True},
+        tool_diagnostics=[
+            {
+                "call_id": "denied-click",
+                "envelope": {"ok": False, "error": {"code": "approval_rejected"}},
+            }
+        ],
+    )
+    return r
+
+
+def test_denial_needs_explicit_false_decision_and_matching_rejection():
+    r = denied_result()
+    assert verdict(r)["status"] == "passed"
+    for code in ("approval_unavailable", "approval_preview_failed", "permission_denied", None):
+        r = denied_result()
+        r["tool_diagnostics"][0]["envelope"]["error"]["code"] = code
+        assert verdict(r)["status"] == "failed"
+    for approved in (True, None, 0):
+        r = denied_result()
+        r["approval_decisions"][0]["approved"] = approved
+        assert verdict(r)["status"] == "failed"
+    for key in ("approval_decisions", "tool_diagnostics"):
+        r = denied_result()
+        r[key] = []
+        assert verdict(r)["status"] == "failed"
+        r = denied_result()
+        r[key][0]["call_id"] = "another-action"
+        assert verdict(r)["status"] == "failed"
+
+
+def test_denial_cannot_hide_native_entry_or_fixture_change():
+    r = denied_result()
+    r["sdk_input_entries"] = 1
+    assert verdict(r)["status"] == "failed"
+    r = denied_result()
+    r["independent_effect"]["unchanged"] = False
+    assert verdict(r)["status"] == "failed"
+
+
+def test_unavailable_attribute_does_not_hide_failed_click_effect():
+    r = attribute_result()
+    r["independent_effect"]["counter_delta"] = 0
+    assert verdict(r)["status"] == "failed"
+
+
+async def test_collector_links_action_and_tool_error_without_network(monkeypatch):
+    import json
+
+    from morrow.adapters.models import openai_compatible
+    from morrow.core.models import AssistantMessage, FunctionToolCall, ModelRef, ToolMessage
+    from morrow.testing import ScriptedModelProvider
+
+    directory = Path(__file__).parents[1] / "evals/computer_use"
+    monkeypatch.syspath_prepend(str(directory))
+    module = runpy.run_path(str(directory / "live_provider.py"))
+    fake = ScriptedModelProvider(
+        [
+            AssistantMessage(
+                tool_calls=(
+                    FunctionToolCall(
+                        id="current-action",
+                        name="computer_action",
+                        arguments=json.dumps(
+                            {
+                                "action": {
+                                    "type": "click",
+                                    "element_ref": "celem_1",
+                                    "postcondition": {
+                                        "type": "attribute_equals",
+                                        "element_ref": "celem_1",
+                                        "attribute": "enabled",
+                                        "value": "true",
+                                    },
+                                },
+                            }
+                        ),
+                    ),
+                )
+            ),
+        ]
+    )
+    monkeypatch.setattr(openai_compatible, "OpenAICompatibleProvider", lambda *a, **k: fake)
+    provider = module["NativeProvider"]("synthetic")
+    message = ToolMessage(
+        tool_call_id="current-action",
+        content=json.dumps(
+            {
+                "ok": False,
+                "error": {"code": "approval_rejected"},
+            }
+        ),
+    )
+    async for _ in provider.stream(ModelRef(provider_id="fixture", model_id="fixture"), [message]):
+        pass
+    assert provider.calls[0]["call_id"] == "current-action"
+    assert provider.calls[0]["postcondition"] == "attribute_equals"
+    assert provider.tool_diagnostics[0] == {
+        "call_id": "current-action",
+        "envelope": {"ok": False, "error": {"code": "approval_rejected"}},
+        "result": {},
+    }

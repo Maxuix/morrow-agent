@@ -460,7 +460,14 @@ class TypedComputerSession:
             )
         if omitted > 0:
             truncated = True
-        if truncated and omitted < 1:
+        if (
+            truncated
+            and omitted < 1
+            and (
+                bool(getattr(state, "truncated", False))
+                or not any(item.text_truncated for item in elements)
+            )
+        ):
             omitted = 1
         complete = (
             getattr(state, "elements_complete", None) is True

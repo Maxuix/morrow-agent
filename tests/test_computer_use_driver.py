@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import base64
 import importlib.abc
+import json
 import sys
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -34,6 +35,7 @@ from morrow.core.computer_use import (
     ExecuteRequest,
     ObserveWindowRequest,
     OpenRunSessionRequest,
+    PressKeyAction,
     TypeTextAction,
     decode_computer_use_scope,
     map_image_point,
@@ -971,3 +973,91 @@ async def test_unverified_screenshot_frame_never_enables_coordinate_mapping():
     frame = _frame(state, geometry=WindowGeometry(0, 0, 40, 20))
     with pytest.raises(ComputerUseContractError, match="unknown_scale"):
         map_image_point(frame, 10, 4)
+
+
+@pytest.mark.parametrize("node_count", [1, 200])
+@pytest.mark.parametrize("field", ["value", "value_description"])
+@pytest.mark.parametrize("action_kind", ["type_text", "press_key"])
+async def test_long_text_display_preserves_actionable_refs_and_shared_byte_budget(
+    node_count, field, action_kind
+):
+    from morrow.core.computer_use import MAX_AX_TEXT_BYTES, TextAppearsPostcondition
+    from morrow.services.computer_use import ComputerUseRunService
+    from morrow.services.computer_verification import evaluate_postcondition
+
+    class LongTextWindow(_Native):
+        async def get_window_state(self, payload):
+            state = await super().get_window_state(payload)
+            state.degraded = state.truncated = False
+            state.elements_complete = True
+            state.total_element_count = state.returned_element_count = node_count
+            state.elements = [
+                SimpleNamespace(
+                    role="AXTextField",
+                    depth=1,
+                    label=f"Field {index}",
+                    element_token=f"long-token-{index}",
+                    enabled=True,
+                    **{field: "界" * 4096 + "tail-only"},
+                )
+                for index in range(node_count)
+            ]
+            return state
+
+        async def call_tool(self, name, content):
+            assert name == action_kind
+            arguments = json.loads(content)
+            assert arguments["element_token"] == f"long-token-{node_count - 1}"
+            self.calls.append((name, arguments))
+            return SimpleNamespace(
+                action=SimpleNamespace(
+                    effect=_Enum("CONFIRMED"),
+                    delivery=SimpleNamespace(mode=_Enum("FOREGROUND")),
+                    error=None,
+                )
+            )
+
+    native = LongTextWindow()
+    clock = FixedClock(NOW)
+    scope = _selected_scope()
+    session = _bound_session(native, clock=clock)
+    opened = await session.open_run_session(
+        OpenRunSessionRequest(
+            authority=TRUSTED_COMPUTER_USE_AUTHORITY, agent_run_id="arun_1", scope=scope
+        )
+    )
+    service = ComputerUseRunService(
+        session, opened, scope, ComputerUseSettings(enabled=True), clock
+    )
+    try:
+        discovered = await service.discover(authority=lambda: None)
+        observed = await service.observe(discovered.targets[0].target_ref, authority=lambda: None)
+        tree = observed.observation
+        assert len(tree.elements) == node_count and tree.omitted_count == 0
+        assert tree.truncated is True and tree.complete is False
+        element = tree.elements[-1]
+        assert element.label == f"Field {node_count - 1}" and element.enabled is True
+        assert element.text_truncated is True
+        assert getattr(element, field) == ("界" * 4096 if node_count == 1 else "")
+        text = "".join(
+            f"{item.role}{item.label or ''}{item.value or ''}{item.value_description or ''}"
+            for item in tree.elements
+        )
+        assert len(text.encode()) <= MAX_AX_TEXT_BYTES
+        assert (
+            evaluate_postcondition(
+                tree, TextAppearsPostcondition(type="text_appears", text="tail-only")
+            )
+            == "pending"
+        )
+        action = (
+            TypeTextAction(type="type_text", element_ref=element.element_ref, text="append")
+            if action_kind == "type_text"
+            else PressKeyAction(type="press_key", element_ref=element.element_ref, key="q")
+        )
+        outcome = await service.execute_one(tree.observation_id, action, authority=lambda: None)
+        assert outcome.status == "completed"
+        assert sum(name == action_kind for name, _ in native.calls) == 1
+    finally:
+        service.stop()
+        await session.settle()

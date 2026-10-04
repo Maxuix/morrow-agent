@@ -620,6 +620,7 @@ class AxElement(ComputerUseModel):
     label: str | None = None
     value: str | None = Field(default=None, max_length=MAX_TEXT_CHARS)
     value_description: str | None = Field(default=None, max_length=MAX_TEXT_CHARS)
+    text_truncated: bool = False
     enabled: bool | None = None
     focused: bool | None = None
     checked: bool | None = None
@@ -731,9 +732,15 @@ class Observation(ComputerUseModel):
             raise ValueError("ax_bounds")
         if self.complete and (self.degraded or self.truncated or self.omitted_count != 0):
             raise ValueError("ax_bounds")
+        if any(item.text_truncated for item in self.elements) and not self.truncated:
+            raise ValueError("ax_bounds")
         if not self.degraded and self.degraded_reason is not None:
             raise ValueError("ax_bounds")
-        if self.truncated and self.omitted_count < 1:
+        if (
+            self.truncated
+            and self.omitted_count < 1
+            and not any(item.text_truncated for item in self.elements)
+        ):
             raise ValueError("ax_bounds")
         return self
 

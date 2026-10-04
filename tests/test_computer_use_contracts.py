@@ -416,3 +416,15 @@ def test_default_startup_does_not_construct_driver_with_computer_contracts_avail
         assert adapter.DRIVER_CONSTRUCTION_COUNT == constructions
     finally:
         sys.meta_path.remove(finder)
+
+
+def test_text_only_truncation_keeps_node_count_and_cannot_claim_complete():
+    element = AxElement(
+        element_ref="celem_1", depth=1, role="axtextfield", value="prefix", text_truncated=True
+    )
+    tree = _observation(elements=(element,), complete=False, truncated=True, omitted_count=0)
+    assert tree.omitted_count == 0 and tree.elements[0].text_truncated
+    with pytest.raises(ValueError, match="ax_bounds"):
+        _observation(elements=(element,))
+    with pytest.raises(ValueError, match="ax_bounds"):
+        _observation(complete=False, truncated=True, omitted_count=0)

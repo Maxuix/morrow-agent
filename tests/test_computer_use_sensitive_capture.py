@@ -132,5 +132,8 @@ async def test_unreadable_sdk_value_stays_none_and_text_budget_marks_partial_tre
 
     native.change = oversized
     result = await read(native)
-    assert result.observation.truncated and result.observation.omitted_count > 0
+    assert result.observation.truncated and result.observation.omitted_count == 0
+    assert len(result.observation.elements) == 2
+    assert result.observation.elements[1].value == "界" * 4096
+    assert result.observation.elements[1].text_truncated is True
     assert result.capture is not None and result.image_error is None

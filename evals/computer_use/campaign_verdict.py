@@ -58,11 +58,31 @@ def campaign_verdict(result: dict) -> dict:
         or (count is not None and actual.get("count", 1) != count)
     ):
         return verdict("failed", "wrong_variant")
+    conditions = {
+        "postcondition_exists": "element_exists",
+        "postcondition_attribute": "attribute_equals",
+        "postcondition_text": "text_appears",
+    }
+    if case in conditions and actual.get("postcondition") != conditions[case]:
+        return verdict("failed", "wrong_postcondition")
     if case == "denied":
+        call_id = actual.get("call_id")
+        decisions = result.get("approval_decisions", ())
+        diagnostics = [d for d in result.get("tool_diagnostics", ()) if d.get("call_id") == call_id]
         good = (
             result.get("sdk_input_entries") == 0
             and result.get("approval_count") == 1
-            and effects.get("unchanged")
+            and effects.get("unchanged") is True
+            and bool(call_id)
+            and len(decisions) == 1
+            and decisions[0].get("call_id") == call_id
+            and decisions[0].get("approved") is False
+            and bool(diagnostics)
+            and all(
+                d.get("envelope", {}).get("ok") is False
+                and d.get("envelope", {}).get("error", {}).get("code") == "approval_rejected"
+                for d in diagnostics
+            )
         )
         return verdict("passed" if good else "failed", "denial_effect")
     if result.get("sdk_input_entries") != 1:
@@ -123,12 +143,9 @@ def campaign_verdict(result: dict) -> dict:
     if case == "postcondition_attribute" and any(
         o.get("postcondition") == "not_checked" for o in result.get("action_outcomes", ())
     ):
+        if not good:
+            return verdict("failed", "independent_effect")
         return verdict("unsupported", "sdk_exact_attribute_readback_unavailable")
-    conditions = {
-        "postcondition_exists": "element_exists",
-        "postcondition_attribute": "attribute_equals",
-        "postcondition_text": "text_appears",
-    }
     if case in conditions:
         good = (
             good

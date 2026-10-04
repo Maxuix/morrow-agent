@@ -109,6 +109,7 @@ class NativeProvider:
                     result = envelope.get("result", {})
                     self.tool_diagnostics.append(
                         {
+                            "call_id": message.tool_call_id,
                             "envelope": {k: v for k, v in envelope.items() if k in {"ok", "error"}},
                             "result": {
                                 k: v
@@ -150,6 +151,7 @@ class NativeProvider:
                         self.action_arguments[call.id] = args.get("action", {})
                     self.calls.append(
                         {
+                            "call_id": call.id,
                             "name": call.name,
                             "operation": args.get("operation"),
                             "action": args.get("action", {}).get("type"),
@@ -204,6 +206,7 @@ async def run_fixture(
         "shifted_window": os.environ.get("MORROW_FIXTURE_SHIFTED") == "1",
         "sdk_input_entries": 0,
         "approval_count": 0,
+        "approval_decisions": [],
         "raw_evidence_only": False,
     }
     result["baseline_json"] = path.read_text()
@@ -345,7 +348,11 @@ async def run_fixture(
                 and current["window_id"] == before["window_id"],
                 "fixture_changed_before_input",
             )
-            return ToolApprovalDecision(approved=case != "denied")
+            decision = ToolApprovalDecision(approved=case != "denied")
+            result["approval_decisions"].append(
+                {"call_id": request.call_id, "approved": decision.approved}
+            )
+            return decision
 
     project = root / "workspace"
     project.mkdir()

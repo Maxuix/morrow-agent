@@ -78,10 +78,10 @@ def project_elements(
     if isinstance(total, int) and isinstance(returned, int) and not isinstance(total, bool):
         omitted = max(0, total - returned)
     truncated = bool(getattr(state, "truncated", False))
-    kept: list[AxElement] = []
+    candidates: list[tuple[Any, str]] = []
     text_bytes = 0
     for raw in raw_elements:
-        if len(kept) >= MAX_AX_ELEMENTS:
+        if len(candidates) >= MAX_AX_ELEMENTS:
             omitted += 1
             truncated = True
             continue
@@ -96,31 +96,40 @@ def project_elements(
             truncated = True
             continue
         role = _role(getattr(raw, "role", ""))
-        if any(
-            isinstance(getattr(raw, name, None), str) and len(getattr(raw, name)) > limit
-            for name, limit in (
-                ("label", 200),
-                ("value", MAX_TEXT_CHARS),
-                ("value_description", MAX_TEXT_CHARS),
-            )
-        ):
+        role_bytes = len(role.encode())
+        if text_bytes + role_bytes > MAX_AX_TEXT_BYTES:
             omitted += 1
             truncated = True
             continue
+        text_bytes += role_bytes
+        candidates.append((raw, role))
+
+    # Reserve every retained node's role and label before spending the shared
+    # display budget on values. Long content must not retire actionable tokens.
+    labels: list[tuple[str | None, bool]] = []
+    for raw, _ in candidates:
         label = _element_label(raw)
-        value = _bounded_value(getattr(raw, "value", None))
-        description = _bounded_value(getattr(raw, "value_description", None))
-        addition = (
-            len(role.encode())
-            + len((label or "").encode())
-            + len((value or "").encode())
-            + len((description or "").encode())
-        )
+        raw_label = getattr(raw, "label", None)
+        cut = isinstance(raw_label, str) and bool(raw_label.strip()) and label is None
+        addition = len((label or "").encode())
         if text_bytes + addition > MAX_AX_TEXT_BYTES:
-            omitted += 1
-            truncated = True
-            continue
-        text_bytes += addition
+            label, cut = None, True
+        else:
+            text_bytes += addition
+        labels.append((label, cut))
+
+    kept: list[AxElement] = []
+    for (raw, role), (label, cut) in zip(candidates, labels, strict=True):
+        value, value_cut = _bounded_value(
+            getattr(raw, "value", None), byte_budget=MAX_AX_TEXT_BYTES - text_bytes
+        )
+        text_bytes += len((value or "").encode())
+        description, description_cut = _bounded_value(
+            getattr(raw, "value_description", None), byte_budget=MAX_AX_TEXT_BYTES - text_bytes
+        )
+        text_bytes += len((description or "").encode())
+        cut = cut or value_cut or description_cut
+        truncated = truncated or cut
         token = getattr(raw, "element_token", None)
         element_ref = registry.remember_element(
             window_identity=window_identity,
@@ -136,6 +145,7 @@ def project_elements(
                 label=label,
                 value=value,
                 value_description=description,
+                text_truncated=cut,
                 enabled=(
                     getattr(raw, "enabled", None)
                     if type(getattr(raw, "enabled", None)) is bool
@@ -254,9 +264,12 @@ def _element_label(raw: Any) -> str | None:
     return cleaned if cleaned and len(cleaned) <= 200 else None
 
 
-def _bounded_value(value: object) -> str | None:
+def _bounded_value(value: object, *, byte_budget: int) -> tuple[str | None, bool]:
     # A missing SDK field remains unavailable. Do not infer or read private AX data.
-    return value if isinstance(value, str) and len(value) <= MAX_TEXT_CHARS else None
+    if not isinstance(value, str):
+        return None, False
+    prefix = value[:MAX_TEXT_CHARS].encode()[:byte_budget].decode("utf-8", errors="ignore")
+    return prefix, len(prefix) != len(value)
 
 
 def _center(frame: Any) -> tuple[float, float] | None:
