@@ -70,7 +70,7 @@ native unknown 始终保持；独立 oracle 通过只证明对应 fixture 效果
 
 | 检查 | 结果与限制 |
 | --- | --- |
-| 普通 AgentLoop 输入闭环 | passed；一次批准、一次后台输入，独立 live text 精确追加，前后两个不同图像的 Artifact/Provider SHA 匹配。ScriptedProvider 不代表真实 API 联通。 |
+| 普通 AgentLoop 输入闭环 | 单场景 passed；一次批准、一次后台输入，SDK completed、独立 live text 精确追加，前后两个不同图像的 Artifact/Provider SHA 匹配。记录中的 native_product_complete=false 保留；ScriptedProvider 不代表真实 API 联通或整体产品完成。 |
 | q | SDK completed，独立 fixture-text 精确 q、一次 key-down/up、fresh observation。 |
 | Shift+Y | SDK unknown/unverified_action 保留；独立 fixture-text 精确 Y、一次 key-down/up、fresh observation。 |
 | secure 合成输入 | SDK unknown 保留；独立 live buffer 与请求 input SHA 完全匹配，NSControl 通知25次。该结果是 fixture 精确效果证据，不把 SDK 状态升级。 |
@@ -80,7 +80,7 @@ v3 fixture/native_counter 增加 callback 与选择对象身份诊断，投递�
 
 追加坐标闭环的测试脚本替换失败：`runpy.run_path()` 返回字典的替换未进入 `run_fixture.__globals__`，仍构造真实 DeepSeek adapter，并以占位凭据走到 `real.stream` 后返回 auth。未使用用户实际 API key；不能声称没有触发外网，也未保存 HTTP status，不能进一步断言确切响应或计费。该路径已停止。原 JSON 的外层 scripted 标签不可信，由单独 sidecar 撤销；批准0/原生投递0/未发布图片，不能计为有效坐标或 scripted 验收。此前 `native_loop.py` 的独立 ScriptedProvider 输入闭环不受此注入错误影响。
 
-直接坐标组件另外被 image_not_published 拒绝，投递0；没有伪造发布事实。Luna 本轮未取得新的背景坐标滚动/前台 double/right 产品闭环证据，先前矩阵与独立 AppKit 证据仍保持原版本边界。
+直接坐标组件另外被 image_not_published 拒绝，投递0；没有伪造发布事实。Luna 本轮未取得新的背景坐标滚动/前台 double/right 产品闭环证据，也未重跑 fresh Enter；先前矩阵与独立 AppKit/commit 证据仍保持原版本边界。Luna 原始记录与实验脚本由 [证据清单](assets/computer-use-repair-2026-10-04/luna-evidence-manifest.json) 索引，误路由由 [纠正旁注](assets/computer-use-repair-2026-10-04/luna-agentloop-background-pixel-scroll-correction.json) 撤销错误标签。
 
 ## 交付与后续条件
 
