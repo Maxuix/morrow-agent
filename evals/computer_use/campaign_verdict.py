@@ -77,6 +77,23 @@ def recoverable_stale_attempt(call, diagnostics):
     return True
 
 
+def final_action_outcome(call, diagnostics):
+    """Match the final call, accepting repeated identical history projections."""
+    call_id = call.get("call_id")
+    matching = [d for d in diagnostics if call_id and d.get("call_id") == call_id]
+    if not matching:
+        return None
+    outcome = matching[0].get("result", {}).get("outcome")
+    if not isinstance(outcome, dict) or outcome.get("status") not in {"unknown", "completed"}:
+        return None
+    if any(
+        d.get("envelope", {}).get("ok") is not True or d.get("result", {}).get("outcome") != outcome
+        for d in matching
+    ):
+        return None
+    return outcome
+
+
 def campaign_verdict(result: dict) -> dict:
     case = result["case"]
     actions = [c for c in result.get("provider_calls", ()) if c.get("name") == "computer_action"]
@@ -258,16 +275,19 @@ def campaign_verdict(result: dict) -> dict:
             and actual.get("direction") == "down"
             and actual.get("amount") == 3
         )
-    if case == "postcondition_attribute" and any(
-        o.get("postcondition") == "not_checked" for o in result.get("action_outcomes", ())
-    ):
-        if not good:
-            return verdict("failed", "independent_effect")
-        return verdict("unsupported", "sdk_exact_attribute_readback_unavailable")
     if case in conditions:
+        # History includes unexecuted stale attempts and deduplicates equal
+        # outcomes. Only the final call's linked result proves its predicate.
+        outcome = final_action_outcome(actual, result.get("tool_diagnostics", ()))
+        if outcome is None:
+            return verdict("failed", "final_action_outcome_invalid")
+        if case == "postcondition_attribute" and outcome.get("postcondition") == "not_checked":
+            if not good:
+                return verdict("failed", "independent_effect")
+            return verdict("unsupported", "sdk_exact_attribute_readback_unavailable")
         good = (
             good
             and actual.get("postcondition") == conditions[case]
-            and any(o.get("postcondition") == "passed" for o in result.get("action_outcomes", ()))
+            and outcome.get("postcondition") == "passed"
         )
     return verdict("passed" if good else "failed", "independent_effect")

@@ -288,11 +288,123 @@ def test_evidence_projection_accepts_semantic_sdk_read_without_frame(monkeypatch
 def attribute_result(postcondition="attribute_equals", native_entries=1):
     r = result("postcondition_attribute")
     r["provider_calls"][0].update(
-        coordinate_target=False, element_target=True, postcondition=postcondition
+        call_id="attribute-final",
+        coordinate_target=False,
+        element_target=True,
+        postcondition=postcondition,
     )
     r["sdk_input_entries"] = native_entries
-    r["action_outcomes"] = [{"postcondition": "not_checked"}]
+    outcome = {"status": "unknown", "postcondition": "not_checked"}
+    r["action_outcomes"] = [outcome]
+    r["tool_diagnostics"] = [
+        {
+            "call_id": "attribute-final",
+            "envelope": {"ok": True},
+            "result": {"outcome": outcome},
+        }
+    ]
     return r
+
+
+def postcondition_recovery_result(case="postcondition_attribute", final_condition="passed"):
+    r = recovering_result()
+    r["case"] = case
+    condition = {
+        "postcondition_attribute": "attribute_equals",
+        "postcondition_exists": "element_exists",
+        "postcondition_text": "text_appears",
+    }[case]
+    for call in r["provider_calls"]:
+        call.update(coordinate_target=False, element_target=True, postcondition=condition)
+        if case == "postcondition_text":
+            call["action"] = "type_text"
+    if case == "postcondition_text":
+        r["independent_effect"] = {"exact_live_insert": True, "correct_field": True}
+    r["action_outcomes"][0]["postcondition"] = "not_checked"
+    r["action_outcomes"][1]["postcondition"] = final_condition
+    r["tool_diagnostics"] = [
+        {
+            "call_id": call["call_id"],
+            "envelope": {"ok": True},
+            "result": {"outcome": outcome},
+        }
+        for call, outcome in zip(r["provider_calls"], r["action_outcomes"], strict=True)
+    ]
+    return r
+
+
+@pytest.mark.parametrize(
+    "case", ["postcondition_attribute", "postcondition_exists", "postcondition_text"]
+)
+def test_recovered_postcondition_uses_final_linked_result(case):
+    r = postcondition_recovery_result(case)
+    r["tool_diagnostics"].append(r["tool_diagnostics"][-1])
+    v = verdict(r)
+    assert v["status"] == "passed"
+    assert v["recovered_not_started"] == 1 and v["sdk_input_entries"] == 1
+    assert v["native_completion"] == ["not_started", "unknown"]
+
+
+def test_two_stale_calls_with_deduplicated_outcomes_do_not_shift_final_result():
+    r = postcondition_recovery_result()
+    stale = dict(r["provider_calls"][0], call_id="stale-2", observation_id="cobs_stale_2")
+    r["provider_calls"].insert(1, stale)
+    r["tool_diagnostics"].append(dict(r["tool_diagnostics"][0], call_id="stale-2"))
+    v = verdict(r)
+    assert v["status"] == "passed"
+    assert v["recovered_not_started"] == 2
+    assert len(r["action_outcomes"]) == 2
+
+
+@pytest.mark.parametrize("earlier_condition", ["not_checked", "passed"])
+def test_final_unavailable_attribute_stays_unsupported(earlier_condition):
+    r = postcondition_recovery_result(final_condition="not_checked")
+    r["action_outcomes"][0]["postcondition"] = earlier_condition
+    assert verdict(r)["status"] == "unsupported"
+    assert verdict(r)["verdict_reason"] == "sdk_exact_attribute_readback_unavailable"
+
+
+@pytest.mark.parametrize(
+    "case", ["postcondition_attribute", "postcondition_exists", "postcondition_text"]
+)
+def test_historical_passed_cannot_mask_final_failed_postcondition(case):
+    r = postcondition_recovery_result(case, final_condition="failed")
+    r["action_outcomes"][0]["postcondition"] = "passed"
+    assert verdict(r)["status"] == "failed"
+
+
+@pytest.mark.parametrize("fault", ["missing", "other_call", "conflict", "envelope", "not_started"])
+def test_unlinked_or_conflicting_final_result_cannot_borrow_history(fault):
+    r = postcondition_recovery_result()
+    if fault == "missing":
+        r["tool_diagnostics"].pop()
+    elif fault == "other_call":
+        r["tool_diagnostics"][-1]["call_id"] = "another-call"
+    elif fault == "conflict":
+        r["tool_diagnostics"].append(
+            {
+                "call_id": "fresh",
+                "envelope": {"ok": True},
+                "result": {"outcome": {"status": "unknown", "postcondition": "failed"}},
+            }
+        )
+    elif fault == "envelope":
+        r["tool_diagnostics"][-1]["envelope"]["ok"] = False
+    else:
+        r["action_outcomes"][-1]["status"] = "not_started"
+    assert verdict(r)["verdict_reason"] == "final_action_outcome_invalid"
+
+
+@pytest.mark.parametrize("fault", ["unknown", "completed", "missing_proof", "extra_native"])
+def test_final_passed_does_not_bypass_recovery_or_single_native_entry(fault):
+    r = postcondition_recovery_result()
+    if fault in {"unknown", "completed"}:
+        r["tool_diagnostics"][0]["result"]["outcome"]["status"] = fault
+    elif fault == "missing_proof":
+        r["tool_diagnostics"].pop(0)
+    else:
+        r["sdk_input_entries"] = 2
+    assert verdict(r)["status"] == "failed"
 
 
 def test_attribute_unavailable_requires_the_requested_postcondition():

@@ -337,6 +337,10 @@ The verdict permits fresh-observation recovery only for a same-call-ID proven
 `stale_observation/not_started` attempt; native entry count must still be exactly one.
 Unknown/completed actions never retry. The collector approves at most three such attempts and
 records public reference/native token hash correspondence without `scripted_target`.
+Postcondition scoring uses only the final action call ID's linked tool outcome,
+with identical repeated history projections accepted. Earlier proven not-started
+results remain recovery evidence. Missing or conflicting final outcomes fail
+verification; historical passed/not_checked cannot replace the final predicate.
 
 `run_live_controller.py` offers a receipt-only alternative to `live_provider.py`:
 
