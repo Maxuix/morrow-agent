@@ -1,0 +1,467 @@
+{
+  "schema_version": 1,
+  "method": "offline_recompute_of_unchanged_native_evidence",
+  "baseline_commit": "787dd246f526eb836fe25bd09d70bab5d5c0faa1",
+  "baseline_verdict_sha256": "e132d39edafec963576deb6b477561071d9145187f8e8c29e8d75a6d9eee58dc",
+  "fixed_verdict_sha256": "a6eae2e19bc22f7189b16acb66ecf4a612eccd106fdd46fee90c98107f34e7ae",
+  "original_summary_sha256": "a33f38cccc30df115c7b63e7f2c23755632c3e5ea93d54b1d5d7948f5155917f",
+  "baseline_counts": {
+    "passed": 4,
+    "unsupported": 1
+  },
+  "recomputed_counts": {
+    "passed": 5,
+    "unsupported": 0
+  },
+  "additional_native_inputs": 0,
+  "additional_provider_requests": 0,
+  "cases": [
+    {
+      "case": "semantic-container",
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/semantic-container/evidence.json",
+      "source_sha256": "1ecbf6e0a8fc975c044329e93b6ba501721ce9c3ba5430978cb2759f11b90606",
+      "recorded_verdict": {
+        "status": "passed",
+        "verdict_reason": "independent_effect"
+      },
+      "baseline_verdict": {
+        "status": "passed",
+        "verdict_reason": "independent_effect",
+        "expected_variant": [
+          "scroll",
+          "element",
+          null,
+          null
+        ],
+        "actual_variant": {
+          "call_id": "luna-3",
+          "observation_id": "cobs_gfWuI42z6VrHxRae",
+          "name": "computer_action",
+          "operation": null,
+          "action": "scroll",
+          "key": null,
+          "keys": null,
+          "direction": "down",
+          "amount": 3,
+          "coordinate_target": false,
+          "element_target": true,
+          "include_image": null,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        },
+        "action_attempts": 1,
+        "sdk_input_entries": 1,
+        "recovered_not_started": 0,
+        "native_completion": [
+          "unknown"
+        ]
+      },
+      "recomputed_verdict": {
+        "status": "passed",
+        "verdict_reason": "independent_effect",
+        "expected_variant": [
+          "scroll",
+          "element",
+          null,
+          null
+        ],
+        "actual_variant": {
+          "call_id": "luna-3",
+          "observation_id": "cobs_gfWuI42z6VrHxRae",
+          "name": "computer_action",
+          "operation": null,
+          "action": "scroll",
+          "key": null,
+          "keys": null,
+          "direction": "down",
+          "amount": 3,
+          "coordinate_target": false,
+          "element_target": true,
+          "include_image": null,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        },
+        "action_attempts": 1,
+        "sdk_input_entries": 1,
+        "recovered_not_started": 0,
+        "native_completion": [
+          "unknown"
+        ]
+      },
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 4,
+        "revision_after": 10,
+        "revision_advanced": true
+      },
+      "attribute_read_proofs": [],
+      "sdk_input_entries": 1
+    },
+    {
+      "case": "enabled-foreground",
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/enabled-foreground/evidence.json",
+      "source_sha256": "bea3936e649168581309e1502e0a0e2df383685f58d3bcf5dfd490d7c5cfa108",
+      "recorded_verdict": {
+        "status": "passed",
+        "verdict_reason": "independent_effect"
+      },
+      "baseline_verdict": {
+        "status": "passed",
+        "verdict_reason": "independent_effect",
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "actual_variant": {
+          "call_id": "luna-3",
+          "observation_id": "cobs_4EOvddYSpC1cx-oM",
+          "name": "computer_action",
+          "operation": null,
+          "action": "click",
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": true,
+          "include_image": null,
+          "button": "left",
+          "count": 1,
+          "postcondition": "attribute_equals"
+        },
+        "action_attempts": 1,
+        "sdk_input_entries": 1,
+        "recovered_not_started": 0,
+        "native_completion": [
+          "unknown"
+        ]
+      },
+      "recomputed_verdict": {
+        "status": "passed",
+        "verdict_reason": "independent_effect",
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "actual_variant": {
+          "call_id": "luna-3",
+          "observation_id": "cobs_4EOvddYSpC1cx-oM",
+          "name": "computer_action",
+          "operation": null,
+          "action": "click",
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": true,
+          "include_image": null,
+          "button": "left",
+          "count": 1,
+          "postcondition": "attribute_equals"
+        },
+        "action_attempts": 1,
+        "sdk_input_entries": 1,
+        "recovered_not_started": 0,
+        "native_completion": [
+          "unknown"
+        ]
+      },
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 6,
+        "revision_after": 9,
+        "revision_advanced": true
+      },
+      "attribute_read_proofs": [
+        {
+          "native_token_matches_observed_sdk_token": true,
+          "attribute": "enabled",
+          "identity": "exact",
+          "status": "readable",
+          "value": true,
+          "is_error": false,
+          "degraded": false
+        }
+      ],
+      "sdk_input_entries": 1
+    },
+    {
+      "case": "enabled-background",
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/enabled-background/evidence.json",
+      "source_sha256": "87c158944bb11a3d9cd3b0e36692313ab50c2380bf9258aa4994ec2e237d46fa",
+      "recorded_verdict": {
+        "status": "unsupported",
+        "verdict_reason": "sdk_exact_attribute_readback_unavailable"
+      },
+      "baseline_verdict": {
+        "status": "unsupported",
+        "verdict_reason": "sdk_exact_attribute_readback_unavailable",
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "actual_variant": {
+          "call_id": "luna-5",
+          "observation_id": "cobs_YtLYgiPCoi-vUF5p",
+          "name": "computer_action",
+          "operation": null,
+          "action": "click",
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": true,
+          "include_image": null,
+          "button": "left",
+          "count": 1,
+          "postcondition": "attribute_equals"
+        },
+        "action_attempts": 2,
+        "sdk_input_entries": 1,
+        "recovered_not_started": 1,
+        "native_completion": [
+          "not_started",
+          "unknown"
+        ]
+      },
+      "recomputed_verdict": {
+        "status": "passed",
+        "verdict_reason": "independent_effect",
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "actual_variant": {
+          "call_id": "luna-5",
+          "observation_id": "cobs_YtLYgiPCoi-vUF5p",
+          "name": "computer_action",
+          "operation": null,
+          "action": "click",
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": true,
+          "include_image": null,
+          "button": "left",
+          "count": 1,
+          "postcondition": "attribute_equals"
+        },
+        "action_attempts": 2,
+        "sdk_input_entries": 1,
+        "recovered_not_started": 1,
+        "native_completion": [
+          "not_started",
+          "unknown"
+        ]
+      },
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 4,
+        "revision_after": 6,
+        "revision_advanced": true
+      },
+      "attribute_read_proofs": [
+        {
+          "native_token_matches_observed_sdk_token": true,
+          "attribute": "enabled",
+          "identity": "exact",
+          "status": "readable",
+          "value": true,
+          "is_error": false,
+          "degraded": false
+        }
+      ],
+      "sdk_input_entries": 1
+    },
+    {
+      "case": "foreground-wheel",
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/foreground-wheel/evidence.json",
+      "source_sha256": "e8edc2f06a765731b79072159fe31284deb3608969a70f2b59638b0949366f64",
+      "recorded_verdict": {
+        "status": "passed",
+        "verdict_reason": "independent_effect"
+      },
+      "baseline_verdict": {
+        "status": "passed",
+        "verdict_reason": "independent_effect",
+        "expected_variant": [
+          "scroll",
+          "coordinate",
+          null,
+          null
+        ],
+        "actual_variant": {
+          "call_id": "luna-5",
+          "observation_id": "cobs_l2WjlOuZkG_-KR-1",
+          "name": "computer_action",
+          "operation": null,
+          "action": "scroll",
+          "key": null,
+          "keys": null,
+          "direction": "down",
+          "amount": 3,
+          "coordinate_target": true,
+          "element_target": false,
+          "include_image": null,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        },
+        "action_attempts": 2,
+        "sdk_input_entries": 1,
+        "recovered_not_started": 1,
+        "native_completion": [
+          "not_started",
+          "unknown"
+        ]
+      },
+      "recomputed_verdict": {
+        "status": "passed",
+        "verdict_reason": "independent_effect",
+        "expected_variant": [
+          "scroll",
+          "coordinate",
+          null,
+          null
+        ],
+        "actual_variant": {
+          "call_id": "luna-5",
+          "observation_id": "cobs_l2WjlOuZkG_-KR-1",
+          "name": "computer_action",
+          "operation": null,
+          "action": "scroll",
+          "key": null,
+          "keys": null,
+          "direction": "down",
+          "amount": 3,
+          "coordinate_target": true,
+          "element_target": false,
+          "include_image": null,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        },
+        "action_attempts": 2,
+        "sdk_input_entries": 1,
+        "recovered_not_started": 1,
+        "native_completion": [
+          "not_started",
+          "unknown"
+        ]
+      },
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 6,
+        "revision_after": 12,
+        "revision_advanced": true
+      },
+      "attribute_read_proofs": [],
+      "sdk_input_entries": 1
+    },
+    {
+      "case": "background-double",
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/background-double/evidence.json",
+      "source_sha256": "49a90f01b93b8bb3d25fbb415ebf757ee1689026e80d5d846688e3c83a43cea9",
+      "recorded_verdict": {
+        "status": "passed",
+        "verdict_reason": "independent_effect"
+      },
+      "baseline_verdict": {
+        "status": "passed",
+        "verdict_reason": "independent_effect",
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          2
+        ],
+        "actual_variant": {
+          "call_id": "luna-7",
+          "observation_id": "cobs_9CRcsyPWH8LbuhmW",
+          "name": "computer_action",
+          "operation": null,
+          "action": "click",
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": true,
+          "include_image": null,
+          "button": "left",
+          "count": 2,
+          "postcondition": null
+        },
+        "action_attempts": 3,
+        "sdk_input_entries": 1,
+        "recovered_not_started": 2,
+        "native_completion": [
+          "not_started",
+          "unknown"
+        ]
+      },
+      "recomputed_verdict": {
+        "status": "passed",
+        "verdict_reason": "independent_effect",
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          2
+        ],
+        "actual_variant": {
+          "call_id": "luna-7",
+          "observation_id": "cobs_9CRcsyPWH8LbuhmW",
+          "name": "computer_action",
+          "operation": null,
+          "action": "click",
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": true,
+          "include_image": null,
+          "button": "left",
+          "count": 2,
+          "postcondition": null
+        },
+        "action_attempts": 3,
+        "sdk_input_entries": 1,
+        "recovered_not_started": 2,
+        "native_completion": [
+          "not_started",
+          "unknown"
+        ]
+      },
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 4,
+        "revision_after": 12,
+        "revision_advanced": true
+      },
+      "attribute_read_proofs": [],
+      "sdk_input_entries": 1
+    }
+  ],
+  "fix_commit": "1288ed6412ac5a6b70a613657dbcbd8ca2022e16"
+}
