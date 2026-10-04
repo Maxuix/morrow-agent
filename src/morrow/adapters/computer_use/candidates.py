@@ -62,7 +62,10 @@ class LocalCandidateRegistry:
 
     def resolve(self, candidate_id):
         if self._expires_at is None or self._clock.now() >= self._expires_at:
-            self.clear()
+            # Expired picker entries cannot revoke a previously confirmed selection.
+            # Bindings are consumed once and revalidated against process birth at run entry.
+            self._windows.clear()
+            self._expires_at = None
             raise ComputerUseContractError("stale_observation")
         identity = self._windows.get(candidate_id)
         if identity is None:
@@ -93,9 +96,6 @@ class LocalCandidateRegistry:
         return tuple(sorted(selected, key=lambda item: item.window_identity))
 
     def take_bindings(self, windows, process_reader):
-        if self._expires_at is None or self._clock.now() >= self._expires_at:
-            self.clear()
-            raise ComputerUseContractError("stale_observation")
         bindings = {}
         for window in windows:
             identity = self._selected.get(window.window_identity)

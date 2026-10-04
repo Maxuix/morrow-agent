@@ -41,6 +41,7 @@ export interface ComputerUseSettings {
   max_operations: number
   max_run_seconds: number
   max_call_seconds: number
+  max_observation_age_seconds?: number
   max_observation_bytes: number
   image_long_edge_px: number
 }

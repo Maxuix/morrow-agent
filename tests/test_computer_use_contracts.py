@@ -177,6 +177,8 @@ def test_preflight_stays_unavailable_and_settings_only_lower_budgets():
         {"max_operations": 101},
         {"max_run_seconds": 601},
         {"max_call_seconds": 61},
+        {"max_observation_age_seconds": 31},
+        {"max_observation_age_seconds": 0},
         {"max_observation_bytes": 64 * 1024 * 1024 + 1},
         {"image_long_edge_px": 1921},
     ):

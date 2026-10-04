@@ -27,7 +27,12 @@ def evaluate_postcondition(observation: Observation, predicate: Postcondition) -
         if any(
             predicate.text in (text or "")
             for element in elements
-            for text in (element.label, element.value, element.value_description)
+            for text in (
+                element.label,
+                element.value,
+                element.value_tail,
+                element.value_description,
+            )
         ):
             return "passed"
         return "failed" if exhaustive else "pending"

@@ -79,6 +79,13 @@ async def test_handler_publishes_visual_reference_through_existing_outcome(envir
     )
     (reference,) = result.visual_refs
     assert result.payload["image"]["artifact_id"] == reference.artifact_id
+    assert result.payload["valid_for_seconds"] == 30
+    from datetime import datetime
+
+    assert (
+        datetime.fromisoformat(result.payload["expires_at"])
+        - datetime.fromisoformat(result.payload["captured_at"])
+    ).total_seconds() == 30
     assert result.artifact_refs[0].artifact_id == reference.artifact_id
     assert reference.tool_execution_id == "tex_observe"
     assert "data_base64" not in str(result.payload)

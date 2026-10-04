@@ -160,18 +160,16 @@ async def test_selected_native_window_is_the_only_discovered_window_of_the_app()
         await owner.shutdown()
 
 
-@pytest.mark.parametrize("fault", ["expired", "refreshed", "pid_changed"])
+@pytest.mark.parametrize("fault", ["refreshed", "pid_changed"])
 async def test_stale_window_selection_fails_before_sdk_session(fault):
     birth = [ProcessBirth(1, 0)]
-    owner, lease, clock, sessions = owner_for(Driver(), process_reader=lambda pid: birth[0])
+    owner, lease, _, sessions = owner_for(Driver(), process_reader=lambda pid: birth[0])
     try:
         candidates = await owner.discover_local_candidates(SETTINGS, authority=AUTH)
         windows = owner.select_local_candidates(
             (candidates.candidates[0].candidate_id,), authority=AUTH
         )
-        if fault == "expired":
-            clock.value = candidates.expires_at
-        elif fault == "refreshed":
+        if fault == "refreshed":
             await owner.discover_local_candidates(SETTINGS, authority=AUTH)
         else:
             birth[0] = ProcessBirth(2, 0)

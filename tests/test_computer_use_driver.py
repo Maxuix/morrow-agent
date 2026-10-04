@@ -1040,16 +1040,14 @@ async def test_long_text_display_preserves_actionable_refs_and_shared_byte_budge
         assert element.text_truncated is True
         assert getattr(element, field) == ("界" * 4096 if node_count == 1 else "")
         text = "".join(
-            f"{item.role}{item.label or ''}{item.value or ''}{item.value_description or ''}"
+            f"{item.role}{item.label or ''}{item.value or ''}{item.value_tail or ''}"
+            f"{item.value_description or ''}"
             for item in tree.elements
         )
         assert len(text.encode()) <= MAX_AX_TEXT_BYTES
-        assert (
-            evaluate_postcondition(
-                tree, TextAppearsPostcondition(type="text_appears", text="tail-only")
-            )
-            == "pending"
-        )
+        assert evaluate_postcondition(
+            tree, TextAppearsPostcondition(type="text_appears", text="tail-only")
+        ) == ("passed" if field == "value" else "pending")
         action = (
             TypeTextAction(type="type_text", element_ref=element.element_ref, text="append")
             if action_kind == "type_text"

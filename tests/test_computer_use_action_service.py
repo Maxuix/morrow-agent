@@ -34,6 +34,23 @@ async def ready(environment, **settings):
     return service, device, clock, authority, read
 
 
+async def test_shorter_observation_lifetime_expires_preview_and_refuses_without_input(environment):
+    service, device, clock, authority, read = await ready(
+        environment, max_observation_age_seconds=5
+    )
+    assert read.observation.valid_for_seconds == 5
+    assert service.action_preview_target(read.observation.observation_id) == device.target
+    clock.value += timedelta(seconds=5)
+    assert service.action_preview_target(read.observation.observation_id) is None
+    result = await service.execute_one(
+        read.observation.observation_id,
+        ClickAction(type="click", element_ref="celem_1"),
+        authority=authority,
+    )
+    assert result.status == "not_started" and result.error_code == "stale_observation"
+    assert device.actions == []
+
+
 async def test_action_consumes_observation_and_cannot_replay_or_implicitly_reobserve(environment):
     service, device, _, authority, read = await ready(environment)
     action = ClickAction(type="click", element_ref=None, x=1, y=1)

@@ -339,6 +339,7 @@ def outcome_for_rejection(code: str) -> ActionOutcome:
 class PreparedComputerAction:
     action: ComputerUseAction
     window_point: tuple[float, float] | None
+    max_observation_age_seconds: int = 30
 
 
 class ExecuteRequest(ComputerUseModel):
@@ -461,4 +462,8 @@ def prepare_execute_request(
         and postcondition.element_ref is not None
     ):
         _matching_element(observation, postcondition.element_ref)
-    return PreparedComputerAction(action=action, window_point=point)
+    return PreparedComputerAction(
+        action=action,
+        window_point=point,
+        max_observation_age_seconds=resolved.max_observation_age_seconds,
+    )

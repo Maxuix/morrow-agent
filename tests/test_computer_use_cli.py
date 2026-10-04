@@ -39,6 +39,8 @@ def test_cli_config_occ_budgets_and_disabled_probe(tmp_path, monkeypatch):
         "hybrid",
         "--max-call-seconds",
         "7",
+        "--max-observation-age-seconds",
+        "5",
         "--expected-revision",
         str(initial["revision"]),
         *common,
@@ -48,6 +50,7 @@ def test_cli_config_occ_budgets_and_disabled_probe(tmp_path, monkeypatch):
     saved = json.loads(saved.output)
     assert saved["settings"]["enabled"] is True
     assert saved["settings"]["max_call_seconds"] == 7
+    assert saved["settings"]["max_observation_age_seconds"] == 5
     assert saved["host"]["reason"] == "native_unverified"
     assert saved["applies_to"] == "future_runs"
     assert runner.invoke(app, request).exit_code == 2

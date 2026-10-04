@@ -116,6 +116,23 @@ async def setup(delivery=ComputerUseDelivery.FOREGROUND):
     return session, native, clock, read, request
 
 
+async def test_lower_observation_ttl_is_rechecked_at_the_native_boundary():
+    session, native, clock, read, request = await setup()
+    clock.value += timedelta(seconds=5)
+    before = len(native.calls)
+    with pytest.raises(ComputerUseContractError, match="stale_observation"):
+        await session.execute_one(
+            admit_execute(
+                request(
+                    ClickAction(type="click", element_ref=read.observation.elements[0].element_ref)
+                ),
+                settings=ComputerUseSettings(enabled=True, max_observation_age_seconds=5),
+            ),
+            authority=lambda: None,
+        )
+    assert len(native.calls) == before
+
+
 def effects(native):
     return [
         (name, args)

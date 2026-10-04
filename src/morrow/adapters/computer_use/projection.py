@@ -120,9 +120,15 @@ def project_elements(
 
     kept: list[AxElement] = []
     for (raw, role), (label, cut) in zip(candidates, labels, strict=True):
-        value, value_cut = _bounded_value(
-            getattr(raw, "value", None), byte_budget=MAX_AX_TEXT_BYTES - text_bytes
-        )
+        raw_value = getattr(raw, "value", None)
+        tail = None
+        if isinstance(raw_value, str) and len(raw_value) > MAX_TEXT_CHARS:
+            # Reserve a real suffix before the prefix within the shared byte budget.
+            suffix = raw_value[-512:]
+            if len(suffix.encode()) <= MAX_AX_TEXT_BYTES - text_bytes:
+                tail = suffix
+                text_bytes += len(tail.encode())
+        value, value_cut = _bounded_value(raw_value, byte_budget=MAX_AX_TEXT_BYTES - text_bytes)
         text_bytes += len((value or "").encode())
         description, description_cut = _bounded_value(
             getattr(raw, "value_description", None), byte_budget=MAX_AX_TEXT_BYTES - text_bytes
@@ -140,10 +146,11 @@ def project_elements(
         kept.append(
             AxElement(
                 element_ref=element_ref,
-                depth=depth,
+                depth=raw.depth,
                 role=role,
                 label=label,
                 value=value,
+                value_tail=tail,
                 value_description=description,
                 text_truncated=cut,
                 enabled=(

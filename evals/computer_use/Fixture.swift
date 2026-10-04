@@ -22,7 +22,8 @@ struct RegionFacts: Codable, Equatable {
 }
 
 struct FixtureSnapshot: Encodable {
-    let schemaVersion = 3
+    let schemaVersion = 4
+    let exportHealthy = true
     let instanceId: String
     let pid: Int32
     let revision: Int
@@ -52,9 +53,30 @@ struct FixtureSnapshot: Encodable {
 struct PointerEvent: Codable {
     let kind: String
     let clickCount: Int
-    let windowX: Double
-    let windowY: Double
-    let deltaY: Double
+    let windowX: Double?
+    let windowY: Double?
+    let deltaY: Double?
+    let positionKnown: Bool
+
+    init(kind: String, clickCount: Int, windowX: Double, windowY: Double, deltaY: Double) {
+        self.kind = kind
+        self.clickCount = clickCount
+        self.windowX = windowX.isFinite ? windowX : nil
+        self.windowY = windowY.isFinite ? windowY : nil
+        self.deltaY = deltaY.isFinite ? deltaY : nil
+        self.positionKnown = windowX.isFinite && windowY.isFinite
+    }
+
+    // Encode unknown coordinates explicitly as null, never as zero or a fake position.
+    func encode(to encoder: Encoder) throws {
+        var fields = encoder.container(keyedBy: CodingKeys.self)
+        try fields.encode(kind, forKey: .kind)
+        try fields.encode(clickCount, forKey: .clickCount)
+        try fields.encode(windowX, forKey: .windowX)
+        try fields.encode(windowY, forKey: .windowY)
+        try fields.encode(deltaY, forKey: .deltaY)
+        try fields.encode(positionKnown, forKey: .positionKnown)
+    }
 }
 
 // This file is independent of AX, screenshots, the SDK and model responses.

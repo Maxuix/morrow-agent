@@ -71,6 +71,9 @@ def computer_configure(
     max_operations: int | None = typer.Option(None, "--max-operations", min=1, max=100),
     max_run_seconds: int | None = typer.Option(None, "--max-run-seconds", min=1, max=600),
     max_call_seconds: int | None = typer.Option(None, "--max-call-seconds", min=1, max=60),
+    max_observation_age_seconds: int | None = typer.Option(
+        None, "--max-observation-age-seconds", min=1, max=30
+    ),
     max_observation_bytes: int | None = typer.Option(
         None, "--max-observation-bytes", min=1, max=64 * 1024 * 1024
     ),
@@ -87,6 +90,7 @@ def computer_configure(
             "max_operations": max_operations,
             "max_run_seconds": max_run_seconds,
             "max_call_seconds": max_call_seconds,
+            "max_observation_age_seconds": max_observation_age_seconds,
             "max_observation_bytes": max_observation_bytes,
             "image_long_edge_px": image_long_edge_px,
         }.items()

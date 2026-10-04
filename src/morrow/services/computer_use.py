@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from contextlib import contextmanager
+from dataclasses import replace
 
 from morrow.core.computer_admission import (
     admit_discover,
@@ -13,7 +14,6 @@ from morrow.core.computer_admission import (
 )
 from morrow.core.computer_use import (
     MAX_DISCOVERED_TARGETS,
-    MAX_OBSERVATION_AGE_SECONDS,
     TRUSTED_COMPUTER_USE_AUTHORITY,
     ActionOutcome,
     ComputerUseAction,
@@ -216,6 +216,10 @@ class ComputerUseRunService:
                 raise ComputerUseContractError("image_budget")
             if not include_image and read.capture is not None:
                 raise ComputerUseContractError("images_not_allowed")
+            observation = observation.model_copy(
+                update={"valid_for_seconds": self.settings.max_observation_age_seconds}
+            )
+            read = replace(read, observation=observation)
             self._observations[target_ref] = observation
             return read
         except asyncio.CancelledError:
@@ -238,7 +242,7 @@ class ComputerUseRunService:
         for observation in self._observations.values():
             if observation.observation_id == observation_id:
                 age = (self.clock.now() - observation.captured_at).total_seconds()
-                if 0 <= age < MAX_OBSERVATION_AGE_SECONDS:
+                if 0 <= age < self.settings.max_observation_age_seconds:
                     return self._targets.get(observation.target_ref)
         return None
 
@@ -270,7 +274,7 @@ class ComputerUseRunService:
             if observation is None:
                 raise ComputerUseContractError("stale_observation")
             age = (self.clock.now() - observation.captured_at).total_seconds()
-            if not 0 <= age < MAX_OBSERVATION_AGE_SECONDS:
+            if not 0 <= age < self.settings.max_observation_age_seconds:
                 self._observations.pop(observation.target_ref, None)
                 raise ComputerUseContractError("stale_observation")
             target = self._targets[observation.target_ref]

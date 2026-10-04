@@ -619,6 +619,7 @@ class AxElement(ComputerUseModel):
     role: str
     label: str | None = None
     value: str | None = Field(default=None, max_length=MAX_TEXT_CHARS)
+    value_tail: str | None = Field(default=None, max_length=512)
     value_description: str | None = Field(default=None, max_length=MAX_TEXT_CHARS)
     text_truncated: bool = False
     enabled: bool | None = None
@@ -660,6 +661,7 @@ class Observation(ComputerUseModel):
     window_identity: str
     capture_digest: str
     captured_at: datetime
+    valid_for_seconds: int = Field(default=MAX_OBSERVATION_AGE_SECONDS, ge=1, le=30)
     frame: CoordinateFrame
     elements: tuple[AxElement, ...] = ()
     complete: bool = True
@@ -725,7 +727,8 @@ class Observation(ComputerUseModel):
         if len({item.element_ref for item in self.elements}) != len(self.elements):
             raise ValueError("duplicate_element")
         text = "".join(
-            f"{item.role}{item.label or ''}{item.value or ''}{item.value_description or ''}"
+            f"{item.role}{item.label or ''}{item.value or ''}{item.value_tail or ''}"
+            f"{item.value_description or ''}"
             for item in self.elements
         )
         if len(text.encode("utf-8")) > MAX_AX_TEXT_BYTES:

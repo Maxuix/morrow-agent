@@ -131,6 +131,7 @@ class ComputerUseSettings(_RuntimePolicyModel):
     max_operations: int = Field(default=100, ge=1, le=100)
     max_run_seconds: int = Field(default=600, ge=1, le=600)
     max_call_seconds: int = Field(default=15, ge=1, le=60)
+    max_observation_age_seconds: int = Field(default=30, ge=1, le=30)
     max_observation_bytes: int = Field(default=64 * 1024 * 1024, ge=1, le=64 * 1024 * 1024)
     image_long_edge_px: int = Field(default=1920, ge=1, le=1920)
 

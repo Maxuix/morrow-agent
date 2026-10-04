@@ -23,6 +23,54 @@ AUTH = TRUSTED_COMPUTER_USE_AUTHORITY
 SETTINGS = ComputerUseSettings(enabled=True)
 
 
+@pytest.mark.parametrize("expired_lookup", [False, True])
+async def test_confirmed_selection_survives_picker_expiry_and_is_consumed_once(expired_lookup):
+    owner, lease, clock, sessions = owner_for(Driver())
+    try:
+        found = await owner.discover_local_candidates(SETTINGS, authority=AUTH)
+        candidate = found.candidates[0]
+        windows = owner.select_local_candidates((candidate.candidate_id,), authority=AUTH)
+        request = _open()
+        request = request.model_copy(
+            update={"scope": request.scope.model_copy(update={"windows": windows})}
+        )
+        clock.value = NOW + timedelta(seconds=120)
+        if expired_lookup:
+            with pytest.raises(ComputerUseContractError, match="stale_observation"):
+                owner._candidates.resolve(candidate.candidate_id)
+        run = await owner.open_run_session(request)
+        assert lease.held and len(sessions) == 1
+        await owner.close_run_session(_close(run))
+        with pytest.raises(ComputerUseContractError, match="unknown_target"):
+            await owner.open_run_session(
+                request.model_copy(
+                    update={"scope": request.scope.model_copy(update={"generation": 2})}
+                )
+            )
+        assert not lease.held and len(sessions) == 1
+    finally:
+        await owner.shutdown()
+
+
+async def test_confirmed_selection_rejects_reused_pid_after_long_model_delay():
+    birth = ProcessBirth(1, 0)
+    owner, lease, clock, sessions = owner_for(Driver(), process_reader=lambda _: birth)
+    try:
+        found = await owner.discover_local_candidates(SETTINGS, authority=AUTH)
+        windows = owner.select_local_candidates((found.candidates[0].candidate_id,), authority=AUTH)
+        request = _open()
+        request = request.model_copy(
+            update={"scope": request.scope.model_copy(update={"windows": windows})}
+        )
+        clock.value = NOW + timedelta(seconds=120)
+        birth = ProcessBirth(2, 0)
+        with pytest.raises(ComputerUseContractError, match="stale_observation"):
+            await owner.open_run_session(request)
+        assert not lease.held and sessions == []
+    finally:
+        await owner.shutdown()
+
+
 def owner_for(driver, *, process_reader=lambda pid: ProcessBirth(1, 0)):
     lease, clock, sessions = _Lease(), FixedClock(NOW), []
 

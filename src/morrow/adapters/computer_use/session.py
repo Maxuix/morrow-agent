@@ -38,7 +38,6 @@ from morrow.core.computer_use import (
     MAX_AX_DEPTH,
     MAX_DISCOVERED_TARGETS,
     MAX_IMAGE_LONG_EDGE_PX,
-    MAX_OBSERVATION_AGE_SECONDS,
     ActionOutcome,
     CloseRunSessionRequest,
     ComputerUseAppIdentity,
@@ -241,7 +240,12 @@ class TypedComputerSession:
         if await self._validate_live_target(window) != geometry:
             raise ComputerUseContractError("stale_observation")
         return await self._observation(
-            request, window.window_identity, window.bundle_id, state, geometry=geometry
+            request,
+            window.window_identity,
+            window.bundle_id,
+            state,
+            geometry=geometry,
+            valid_for_seconds=resolved.max_observation_age_seconds,
         )
 
     async def execute_one(
@@ -257,7 +261,7 @@ class TypedComputerSession:
         prepared = admitted.prepared
         self._require_scope(request.scope)
         observation = request.observation
-        self._require_fresh(observation.captured_at)
+        self._require_fresh(observation.captured_at, prepared.max_observation_age_seconds)
         window = self._registry.window(request.target.window_identity)
         action = prepared.action
         element = self._registry.element(action.element_ref) if action.element_ref else None
@@ -339,7 +343,7 @@ class TypedComputerSession:
                 authority()
                 self._require_scope(request.scope)
                 self._validate_process(window)
-                self._require_fresh(observation.captured_at)
+                self._require_fresh(observation.captured_at, prepared.max_observation_age_seconds)
                 return await dispatch()
 
             try:
@@ -366,9 +370,9 @@ class TypedComputerSession:
         finally:
             self._registry.retire_window_observations(window.window_identity)
 
-    def _require_fresh(self, captured_at) -> None:
+    def _require_fresh(self, captured_at, max_age: int) -> None:
         age = (self._clock.now() - captured_at).total_seconds()
-        if not 0 <= age < MAX_OBSERVATION_AGE_SECONDS:
+        if not 0 <= age < max_age:
             raise ComputerUseContractError("stale_observation")
 
     def _window_target(
@@ -448,6 +452,7 @@ class TypedComputerSession:
         state: Any,
         *,
         geometry: WindowGeometry,
+        valid_for_seconds: int,
     ) -> ObservedWindow:
         elements, omitted, truncated = project_elements(state, self._registry, window_identity)
         degraded = bool(getattr(state, "degraded", False))
@@ -504,6 +509,7 @@ class TypedComputerSession:
                 window_identity=window_identity,
                 capture_digest=sha256_digest(digest_source),
                 captured_at=self._clock.now(),
+                valid_for_seconds=valid_for_seconds,
                 frame=project_frame(state, geometry=geometry),
                 elements=tuple(elements),
                 complete=complete,
