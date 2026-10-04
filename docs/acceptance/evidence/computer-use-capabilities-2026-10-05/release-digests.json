@@ -1,0 +1,46 @@
+{
+  "url": "https://github.com/Maxuix/morrow-agent/releases/tag/cua-driver-morrow-v0.30.4.3",
+  "assets": [
+    {
+      "name": "build-provenance.json",
+      "size": 1035,
+      "digest": "sha256:ac4d223d80315f3098690642671e0b091029d2d812dc35464e780be931dd4a06"
+    },
+    {
+      "name": "checksums.json",
+      "size": 697,
+      "digest": "sha256:68c0610d8b6d6a5bf298cb0e21878de1bce3990cb99c095b5d4ed37c7bfda499"
+    },
+    {
+      "name": "cua_driver-0.30.4+morrow.3-py3-none-macosx_14_0_arm64.whl",
+      "size": 20918124,
+      "digest": "sha256:f0b544a1ec4eed63085cfa3226c6436494f4705441c7abf97f564e555d5d9f7e"
+    },
+    {
+      "name": "functional-sdk-source.tar.gz",
+      "size": 4807886,
+      "digest": "sha256:e9e87bd94f38e1c41cfa967c21d6a37942275fd2bdd7ffaf8df4ccfe73282db2"
+    },
+    {
+      "name": "functional.patch",
+      "size": 24397,
+      "digest": "sha256:d269b57ed44653e515855e359899c73d9e7ccd40070d412e2816f0cc8ac733bf"
+    },
+    {
+      "name": "manifest.json",
+      "size": 484,
+      "digest": "sha256:8fdf1942f26a7f4d01becffb75b4646ae5035a0b6840c0e0033e52197ed43bc9"
+    },
+    {
+      "name": "native-acceptance.json",
+      "size": 54597,
+      "digest": "sha256:41ad6309b27b7daeb22314134f48d2d3a97e7879a848037dd509ba9c8acb49e8"
+    },
+    {
+      "name": "UPSTREAM-LICENSE.md",
+      "size": 1069,
+      "digest": "sha256:c0779290c1d4783169aa3dbfb55feb505e563ef8a004bbf55298ceffcfbda8d9"
+    }
+  ],
+  "verified": true
+}

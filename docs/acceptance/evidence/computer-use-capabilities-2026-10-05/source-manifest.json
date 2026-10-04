@@ -1,0 +1,31 @@
+{
+  "files": {
+    "evidence/computer-use-capabilities-2026-10-05/.gitattributes": "c759c1bb6e12f0b2bdf8305f30d67c19b57cb48b783965fe98868bc2eee0b516",
+    "evidence/computer-use-capabilities-2026-10-05/build-provenance.json": "ac4d223d80315f3098690642671e0b091029d2d812dc35464e780be931dd4a06",
+    "evidence/computer-use-capabilities-2026-10-05/campaign.json": "41ad6309b27b7daeb22314134f48d2d3a97e7879a848037dd509ba9c8acb49e8",
+    "evidence/computer-use-capabilities-2026-10-05/candidate-enabled-background.json": "b216af49a3e4493e22155fc814240ab0687693ff34e44758b4125eaaee5dcf75",
+    "evidence/computer-use-capabilities-2026-10-05/candidate-enabled-foreground-2.json": "2a070c7722c72ab404491b364a8db5635312b81ae38d287a057dceb130b8fc3e",
+    "evidence/computer-use-capabilities-2026-10-05/candidate-enabled-foreground-3.json": "f10175013e6238ec29ae5f0b789b9a603c5a633c9292451d99f2629771bda36a",
+    "evidence/computer-use-capabilities-2026-10-05/candidate-enabled-foreground.json": "2a070c7722c72ab404491b364a8db5635312b81ae38d287a057dceb130b8fc3e",
+    "evidence/computer-use-capabilities-2026-10-05/candidate-morrow-2-build.json": "d150e817d0f8c989ab95f1a9047faf9305b6f02f2b91bbc8e86d73816ed0594f",
+    "evidence/computer-use-capabilities-2026-10-05/candidate-morrow-2-campaign.json": "526d7306f6d6da5856e288f3a7988ee31fb50ba105ee832b138aed1402e57af1",
+    "evidence/computer-use-capabilities-2026-10-05/candidate-wheel-foreground.json": "6145ebc5084afa77d5a934b9942e697e153d08ae96233ed8209d1f58cf5d7776",
+    "evidence/computer-use-capabilities-2026-10-05/computer-installed.log": "8fcbd7d0bbea66df1cd12f348cecccb1a1c6e4ced7624d17218e314afd7e001b",
+    "evidence/computer-use-capabilities-2026-10-05/default-extra-install.json": "f87716c52d71a7ea76c4ab17721c6fd340819c067274747876e6a83d8b1c7ddd",
+    "evidence/computer-use-capabilities-2026-10-05/gui-build.log": "d4ed4a95722c7dea6203f51b4d2196b62e166bc2deb2b04c104603f868955b1a",
+    "evidence/computer-use-capabilities-2026-10-05/live-double-background.json": "8e034c9fbfe828d3cbf191255067d058a093013748dcb02b710f8c0d6c34912c",
+    "evidence/computer-use-capabilities-2026-10-05/live-enabled-background.json": "d61ba4f682c288156950cbbe4bc9899bb9d94a020ec5ce67caac715e045177f1",
+    "evidence/computer-use-capabilities-2026-10-05/live-enabled-foreground.json": "9596c2d317b0f33dada5dc0f650136b6e8b4b89ceae620ba2e8e766d288cf655",
+    "evidence/computer-use-capabilities-2026-10-05/live-scroll-semantic.json": "220ac32097927e73f7922d83c1608089c3706db48b956ff776bfeaa5da7bf3fa",
+    "evidence/computer-use-capabilities-2026-10-05/live-wheel-foreground.json": "c897488bcbe359d26ff70edd03dd23aa5ea84a47f5907341ce6f701aac27b6e2",
+    "evidence/computer-use-capabilities-2026-10-05/offline.log": "0a2cdc0d5f7b3d48670ab28e489b47b3959c00c6911e4cbca53ac0a6e286a41d",
+    "evidence/computer-use-capabilities-2026-10-05/package-build.log": "eb5ef0e6dd2ebce92801321bb3320f1cb6e805a337ae8b6952ee1964bf1bd963",
+    "evidence/computer-use-capabilities-2026-10-05/package-extra.json": "cbd8f530f8778dd35a38c1c11fdb465a3b24a79d6ba058837969c25775cfcc90",
+    "evidence/computer-use-capabilities-2026-10-05/package-no-extra.json": "7a4e81ce7a617ccb5389dc45838012ba33d60849f10a9132a95fb0de34e5fb04",
+    "evidence/computer-use-capabilities-2026-10-05/release-digests.json": "d6ed0bbc9a2c6cc2536d5bbdfc7b048df478e08cd1386c07754a6959d070c130",
+    "evidence/computer-use-capabilities-2026-10-05/rust-observation-classification.log": "3b6ced36f7e4c3f491d879badd07fd5e28bc633ea099d9159ae045c1eb462c6a"
+  },
+  "sdk_source_commit": "cc96036ad0f8a96aa704c214781232dc604fdaef",
+  "integration_commit": "9887130ab0115c3d1a394b8e08317b2adf1f663b",
+  "raw_evidence_unchanged": true
+}

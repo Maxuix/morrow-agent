@@ -1,0 +1,434 @@
+{
+  "schema_version": 2,
+  "scripted_provider": false,
+  "provider_model": "external_live_controller",
+  "case": "coordinate_scroll",
+  "mode": "hybrid",
+  "delivery": "foreground",
+  "image_edge": 1920,
+  "shifted_window": false,
+  "sdk_input_entries": 1,
+  "approval_count": 1,
+  "approval_decisions": [
+    {
+      "call_id": "luna-3",
+      "approved": true
+    }
+  ],
+  "raw_evidence_only": false,
+  "discovery": {
+    "fixture_app_count": 1,
+    "fixture_pids": [
+      3284
+    ],
+    "window_count": 1,
+    "windows": [
+      {
+        "window_id": 1010,
+        "fixture_title": true
+      }
+    ]
+  },
+  "window_read": {
+    "ax_element_count": 132,
+    "ax_complete": false,
+    "truncated": false,
+    "degraded": null,
+    "reason": null,
+    "image_count": 1,
+    "frame_valid": true,
+    "max_returned_depth": 5,
+    "truncation_reason": null
+  },
+  "sdk_fields": [
+    {
+      "label": "Unicode text",
+      "value": "Unicode text"
+    },
+    {
+      "label": "Synthetic secure field",
+      "value": "Synthetic secure field"
+    }
+  ],
+  "selected_frame": {
+    "width": 1040,
+    "height": 1024,
+    "backing_scale": 2.0,
+    "window_bounds": {
+      "x": 478.0,
+      "y": 202.0,
+      "width": 520.0,
+      "height": 512.0
+    }
+  },
+  "sdk_method": "scroll",
+  "sdk_target": null,
+  "sdk_coordinate": {
+    "x": 520.0,
+    "y": 768.0
+  },
+  "sdk_action_outcome": {
+    "status": "unknown",
+    "delivery": "foreground",
+    "before_observation_id": null,
+    "after_observation_id": null,
+    "error_code": "unverified_action",
+    "postcondition": "not_checked"
+  },
+  "fixture_snapshot_required": true,
+  "fixture_snapshot": {
+    "healthy": true,
+    "fields_valid": true,
+    "revision_before": 6,
+    "revision_after": 12,
+    "revision_advanced": true
+  },
+  "fixture_window": {
+    "backingScale": 2,
+    "contentHeight": 512,
+    "height": 512,
+    "number": 1010,
+    "width": 520,
+    "x": 478,
+    "y": 242
+  },
+  "fixture_foreground": {
+    "is_key": true,
+    "active": true
+  },
+  "fixture_identity_unchanged": true,
+  "status": "passed",
+  "degraded": false,
+  "finish_reason": "stop",
+  "provider_calls": [
+    {
+      "call_id": "luna-1",
+      "observation_id": null,
+      "name": "computer_observe",
+      "operation": "discover",
+      "action": null,
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": false,
+      "include_image": null,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    },
+    {
+      "call_id": "luna-2",
+      "observation_id": null,
+      "name": "computer_observe",
+      "operation": "window",
+      "action": null,
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": false,
+      "include_image": true,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    },
+    {
+      "call_id": "luna-3",
+      "observation_id": "cobs_D_1CHdr7X6tZYhh4",
+      "name": "computer_action",
+      "operation": null,
+      "action": "scroll",
+      "key": null,
+      "keys": null,
+      "direction": "down",
+      "amount": 3,
+      "coordinate_target": true,
+      "element_target": false,
+      "include_image": null,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    }
+  ],
+  "provider_failures": [],
+  "observation_meta": [
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 132
+    },
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 132
+    },
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 132
+    }
+  ],
+  "tool_diagnostics": [
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-3",
+      "envelope": {
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "outcome": {
+          "after_observation_id": "cobs_bHXNIHH6cqELDIWs",
+          "before_observation_id": "cobs_D_1CHdr7X6tZYhh4",
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        },
+        "verification_error": null
+      }
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-3",
+      "envelope": {
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "outcome": {
+          "after_observation_id": "cobs_bHXNIHH6cqELDIWs",
+          "before_observation_id": "cobs_D_1CHdr7X6tZYhh4",
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        },
+        "verification_error": null
+      }
+    }
+  ],
+  "provider_request_count": 5,
+  "provider_image_hashes": [
+    [],
+    [],
+    [
+      "3f018894ed2c7d85cd9e42623efc0a4158269939fb81b407ea14e82ef8278af1"
+    ],
+    [
+      "3f018894ed2c7d85cd9e42623efc0a4158269939fb81b407ea14e82ef8278af1",
+      "bbda1014a3c959ced6bcc5a002c3d310c519f7a9902a15705e51fcc8e0213e1d"
+    ],
+    [
+      "3f018894ed2c7d85cd9e42623efc0a4158269939fb81b407ea14e82ef8278af1",
+      "bbda1014a3c959ced6bcc5a002c3d310c519f7a9902a15705e51fcc8e0213e1d"
+    ]
+  ],
+  "action_outcomes": [
+    {
+      "after_observation_id": "cobs_bHXNIHH6cqELDIWs",
+      "before_observation_id": "cobs_D_1CHdr7X6tZYhh4",
+      "delivery": "foreground",
+      "error_code": "unverified_action",
+      "postcondition": "not_checked",
+      "status": "unknown"
+    }
+  ],
+  "ledger_states": [
+    "closed",
+    "closed",
+    "closed"
+  ],
+  "visual_count": 2,
+  "independent_effect": {
+    "counter_delta": 0,
+    "text_changed": false,
+    "unicode_marker_present": false,
+    "q_delta": 0,
+    "Y_delta": 0,
+    "scroll_delta": 30,
+    "secure_before": false,
+    "secure_after": false,
+    "exact_live_insert": false,
+    "correct_field": false,
+    "live_text_changed": false,
+    "committed_text_changed": false,
+    "committed_seed": false,
+    "secure_live_before": false,
+    "secure_live_after": false,
+    "key_down_characters": [],
+    "key_down_fields": [],
+    "key_up_events": 0,
+    "text_change_events": 0,
+    "secure_change_events": 0,
+    "mouse_click_counts": [],
+    "right_mouse_delta": 0,
+    "pointer_events": [
+      {
+        "clickCount": 0,
+        "deltaY": -1,
+        "kind": "wheel",
+        "positionKnown": true,
+        "windowX": 260,
+        "windowY": 128
+      },
+      {
+        "clickCount": 0,
+        "deltaY": -1,
+        "kind": "wheel",
+        "positionKnown": true,
+        "windowX": 260,
+        "windowY": 128
+      },
+      {
+        "clickCount": 0,
+        "deltaY": -1,
+        "kind": "wheel",
+        "positionKnown": true,
+        "windowX": 260,
+        "windowY": 128
+      }
+    ],
+    "unchanged": false,
+    "wheel_inside_scroll_region": true
+  },
+  "active_turn": false,
+  "fixture_scroll_region": {
+    "height": 200,
+    "width": 480,
+    "x": 20,
+    "y": 28
+  },
+  "artifact_image_hashes": [
+    "3f018894ed2c7d85cd9e42623efc0a4158269939fb81b407ea14e82ef8278af1",
+    "bbda1014a3c959ced6bcc5a002c3d310c519f7a9902a15705e51fcc8e0213e1d"
+  ],
+  "image_hashes_match": true,
+  "raw_status": "tested",
+  "verdict_reason": "independent_effect",
+  "expected_variant": [
+    "scroll",
+    "coordinate",
+    null,
+    null
+  ],
+  "actual_variant": {
+    "call_id": "luna-3",
+    "observation_id": "cobs_D_1CHdr7X6tZYhh4",
+    "name": "computer_action",
+    "operation": null,
+    "action": "scroll",
+    "key": null,
+    "keys": null,
+    "direction": "down",
+    "amount": 3,
+    "coordinate_target": true,
+    "element_target": false,
+    "include_image": null,
+    "button": null,
+    "count": null,
+    "postcondition": null
+  },
+  "action_attempts": 1,
+  "recovered_not_started": 0,
+  "native_completion": [
+    "unknown"
+  ],
+  "controller_decisions": [
+    {
+      "sequence": 1,
+      "request_sha256": "6487b7f82133102a7d8e650144e4162a70031a66a8de25dbf1cc2a87bc7bfc16",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "1ef08a5f85b227e171cf40f1c881bd097b34ca519f96b8e312ceb47a17d8976c"
+    },
+    {
+      "sequence": 2,
+      "request_sha256": "dc1ae7d9b06b6f926c1ed0c8d9e940ed2ed85bf1113adaf53ba5b79558bb83d7",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "00f819ca52d6ef38ee97c3a228a514e8d766d0a1224cf7757243aef26d0cb42a"
+    },
+    {
+      "sequence": 3,
+      "request_sha256": "e10aef390e443c14f5dbb977f5e1b68c0e27453083e50f2040309223c7a28474",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "893bcb1189d65ae0d34c86464151c7e6e01a47b2cac712e67ff5abdcdd96b1b7"
+    },
+    {
+      "sequence": 4,
+      "request_sha256": "e8ffb1bee2c1604490259ad5920e5153404b48944ecfe028db9c29045c055e32",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "3d53b0bdd2cbe04b4e9cb1d0b8db802bec3a4b276432af79804caa10e3db42d2"
+    },
+    {
+      "sequence": 5,
+      "request_sha256": "95c40015f3b98b61701fce9e9138ee60d0075747f44fa5c320a3bd23f6ca75a0",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "b00d25b9e778e0ce21e6ad5c6104b39d9d57485ce5a42d895036660565cc0292"
+    }
+  ]
+}

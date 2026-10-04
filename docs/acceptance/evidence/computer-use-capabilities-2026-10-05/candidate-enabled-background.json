@@ -1,0 +1,256 @@
+{
+  "schema_version": 2,
+  "scripted_provider": false,
+  "provider_model": "external_live_controller",
+  "case": "postcondition_attribute",
+  "mode": "hybrid",
+  "delivery": "background",
+  "image_edge": 1920,
+  "shifted_window": false,
+  "sdk_input_entries": 0,
+  "approval_count": 0,
+  "approval_decisions": [],
+  "raw_evidence_only": false,
+  "discovery": {
+    "fixture_app_count": 1,
+    "fixture_pids": [
+      78284
+    ],
+    "window_count": 1,
+    "windows": [
+      {
+        "window_id": 880,
+        "fixture_title": true
+      }
+    ]
+  },
+  "window_read": {
+    "ax_element_count": 0,
+    "ax_complete": false,
+    "truncated": false,
+    "degraded": true,
+    "reason": "ax_window_unresolved",
+    "image_count": 0,
+    "frame_valid": false,
+    "max_returned_depth": null,
+    "truncation_reason": null
+  },
+  "sdk_fields": [],
+  "fixture_snapshot_required": true,
+  "fixture_snapshot": {
+    "healthy": true,
+    "fields_valid": true,
+    "revision_before": 4,
+    "revision_after": 4,
+    "revision_advanced": false
+  },
+  "fixture_window": {
+    "backingScale": 2,
+    "contentHeight": 512,
+    "height": 512,
+    "number": 880,
+    "width": 520,
+    "x": 478,
+    "y": 242
+  },
+  "fixture_foreground": {
+    "is_key": false,
+    "active": false
+  },
+  "fixture_identity_unchanged": true,
+  "status": "blocked",
+  "degraded": false,
+  "finish_reason": "stop",
+  "provider_calls": [
+    {
+      "call_id": "luna-1",
+      "observation_id": null,
+      "name": "computer_observe",
+      "operation": "discover",
+      "action": null,
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": false,
+      "include_image": null,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    },
+    {
+      "call_id": "luna-2",
+      "observation_id": null,
+      "name": "computer_observe",
+      "operation": "window",
+      "action": null,
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": false,
+      "include_image": true,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    }
+  ],
+  "provider_failures": [],
+  "observation_meta": [],
+  "tool_diagnostics": [
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "error": {
+          "code": "preflight_failed",
+          "details": [
+            {
+              "reason": "image_missing"
+            }
+          ],
+          "message": "桌面操作不可用（image_missing）：窗口图像未取得；检查宿主权限与目标窗口，重新观察或显式改用语义模式。"
+        },
+        "ok": false
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "error": {
+          "code": "preflight_failed",
+          "details": [
+            {
+              "reason": "image_missing"
+            }
+          ],
+          "message": "桌面操作不可用（image_missing）：窗口图像未取得；检查宿主权限与目标窗口，重新观察或显式改用语义模式。"
+        },
+        "ok": false
+      },
+      "result": {}
+    }
+  ],
+  "provider_request_count": 4,
+  "provider_image_hashes": [
+    [],
+    [],
+    [],
+    []
+  ],
+  "action_outcomes": [],
+  "ledger_states": [
+    "closed",
+    "closed"
+  ],
+  "visual_count": 0,
+  "independent_effect": {
+    "counter_delta": 0,
+    "text_changed": false,
+    "unicode_marker_present": false,
+    "q_delta": 0,
+    "Y_delta": 0,
+    "scroll_delta": 0,
+    "secure_before": false,
+    "secure_after": false,
+    "exact_live_insert": false,
+    "correct_field": false,
+    "live_text_changed": false,
+    "committed_text_changed": false,
+    "committed_seed": false,
+    "secure_live_before": false,
+    "secure_live_after": false,
+    "key_down_characters": [],
+    "key_down_fields": [],
+    "key_up_events": 0,
+    "text_change_events": 0,
+    "secure_change_events": 0,
+    "mouse_click_counts": [],
+    "right_mouse_delta": 0,
+    "pointer_events": [],
+    "unchanged": true,
+    "wheel_inside_scroll_region": false
+  },
+  "active_turn": false,
+  "fixture_scroll_region": {
+    "height": 200,
+    "width": 480,
+    "x": 20,
+    "y": 28
+  },
+  "artifact_image_hashes": [],
+  "image_hashes_match": false,
+  "raw_status": "tested",
+  "verdict_reason": "action_not_attempted",
+  "expected_variant": [
+    "click",
+    "element",
+    "left",
+    1
+  ],
+  "actual_variant": null,
+  "action_attempts": 0,
+  "recovered_not_started": 0,
+  "native_completion": [],
+  "controller_decisions": [
+    {
+      "sequence": 1,
+      "request_sha256": "ad5a864ae22082ae175689725e3b19d9cb66c3e64227ad0c6a47fc94b8dd1636",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "3dd0a2bd6f4f6b90c17ff47764972bdba28d55121bcb83c66d5cf33c27f9cdef"
+    },
+    {
+      "sequence": 2,
+      "request_sha256": "590209b215aaacaf938669c487cd440f36f22fb2c8b4d164410408d6f8d7acfe",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "55bca8ba8223b24f9d600fcb7f2c95a12d1c1d341594509a19629dbfba8cbc64"
+    },
+    {
+      "sequence": 3,
+      "request_sha256": "f9e67962fef748b527f427c48536b4d81404eb01602e458841cf2a9c6f21a253",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "a2a415afd9c6c102df6fc4f9cfa5581b38dba3b29ed350b73100fb9d0a257593"
+    },
+    {
+      "sequence": 4,
+      "request_sha256": "02529a6f14722d896397cf6389bf185e2a583ada6c31f2a9ff8e1c45f2a8f77f",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "121ba319e2b6a8fc7cf2750c22536e8243959123c34191efc0749a0be49dd7bd"
+    }
+  ]
+}

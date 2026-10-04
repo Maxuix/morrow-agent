@@ -1,0 +1,682 @@
+{
+  "schema_version": 2,
+  "scripted_provider": false,
+  "provider_model": "external_live_controller",
+  "case": "postcondition_attribute",
+  "mode": "hybrid",
+  "delivery": "foreground",
+  "image_edge": 1920,
+  "shifted_window": false,
+  "sdk_input_entries": 1,
+  "approval_count": 2,
+  "approval_decisions": [
+    {
+      "call_id": "luna-3",
+      "approved": true
+    },
+    {
+      "call_id": "luna-5",
+      "approved": true
+    }
+  ],
+  "raw_evidence_only": false,
+  "discovery": {
+    "fixture_app_count": 1,
+    "fixture_pids": [
+      88702
+    ],
+    "window_count": 1,
+    "windows": [
+      {
+        "window_id": 916,
+        "fixture_title": true
+      }
+    ]
+  },
+  "window_read": {
+    "ax_element_count": 133,
+    "ax_complete": false,
+    "truncated": false,
+    "degraded": null,
+    "reason": null,
+    "image_count": 1,
+    "frame_valid": true,
+    "max_returned_depth": 5,
+    "truncation_reason": null
+  },
+  "sdk_fields": [
+    {
+      "label": "Unicode text",
+      "value": "Unicode text"
+    },
+    {
+      "label": "Synthetic secure field",
+      "value": "Synthetic secure field"
+    }
+  ],
+  "selected_frame": {
+    "width": 1040,
+    "height": 1024,
+    "backing_scale": 2.0,
+    "window_bounds": {
+      "x": 478.0,
+      "y": 202.0,
+      "width": 520.0,
+      "height": 512.0
+    }
+  },
+  "selected_node": {
+    "role": "AXButton",
+    "label": "Increment",
+    "enabled": true,
+    "actions": [
+      "AXPress"
+    ],
+    "frame": {
+      "x": 498.0,
+      "y": 320.0,
+      "w": 120.0,
+      "h": 24.0
+    }
+  },
+  "approved_reference": {
+    "call_id": "luna-5",
+    "observation_id": "cobs_dWz1spUJmDbQswxN",
+    "element_ref_sha256": "ed044deec817d5592bfa3d355c91cdfeb70c896d5437d9f94e27169bb72c0af9",
+    "observed_token_sha256": "af18593dfc6aa6836f454589ddac51cfcf405e9070485bb469b66dcda2059ad1",
+    "same_ref_observed_then_dispatched": true
+  },
+  "sdk_method": "click",
+  "sdk_click": {
+    "count": 1,
+    "button": "LEFT",
+    "delivery": "FOREGROUND"
+  },
+  "sdk_target": {
+    "role": "AXButton",
+    "label": "Increment",
+    "enabled": true,
+    "actions": [
+      "AXPress"
+    ],
+    "frame": {
+      "x": 498.0,
+      "y": 320.0,
+      "w": 120.0,
+      "h": 24.0
+    }
+  },
+  "sdk_coordinate": {
+    "x": null,
+    "y": null
+  },
+  "sdk_attribute_reads": 1,
+  "attribute_read_proofs": [
+    {
+      "native_token_matches_observed_sdk_token": true,
+      "attribute": "enabled",
+      "identity": null,
+      "status": "refused",
+      "value": null,
+      "is_error": true,
+      "degraded": false
+    }
+  ],
+  "fixture_snapshot_required": true,
+  "fixture_snapshot": {
+    "healthy": true,
+    "fields_valid": true,
+    "revision_before": 6,
+    "revision_after": 9,
+    "revision_advanced": true
+  },
+  "fixture_window": {
+    "backingScale": 2,
+    "contentHeight": 512,
+    "height": 512,
+    "number": 916,
+    "width": 520,
+    "x": 478,
+    "y": 242
+  },
+  "fixture_foreground": {
+    "is_key": true,
+    "active": true
+  },
+  "fixture_identity_unchanged": true,
+  "status": "unsupported",
+  "degraded": false,
+  "finish_reason": "stop",
+  "provider_calls": [
+    {
+      "call_id": "luna-1",
+      "observation_id": null,
+      "name": "computer_observe",
+      "operation": "discover",
+      "action": null,
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": false,
+      "include_image": null,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    },
+    {
+      "call_id": "luna-2",
+      "observation_id": null,
+      "name": "computer_observe",
+      "operation": "window",
+      "action": null,
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": false,
+      "include_image": true,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    },
+    {
+      "call_id": "luna-3",
+      "observation_id": "cobs_7FgU58Z_nCvx3Q_K",
+      "name": "computer_action",
+      "operation": null,
+      "action": "click",
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": true,
+      "include_image": null,
+      "button": "left",
+      "count": 1,
+      "postcondition": "attribute_equals"
+    },
+    {
+      "call_id": "luna-4",
+      "observation_id": null,
+      "name": "computer_observe",
+      "operation": "window",
+      "action": null,
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": false,
+      "include_image": true,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    },
+    {
+      "call_id": "luna-5",
+      "observation_id": "cobs_dWz1spUJmDbQswxN",
+      "name": "computer_action",
+      "operation": null,
+      "action": "click",
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": true,
+      "include_image": null,
+      "button": "left",
+      "count": 1,
+      "postcondition": "attribute_equals"
+    }
+  ],
+  "provider_failures": [],
+  "observation_meta": [
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 133
+    },
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 133
+    },
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 133
+    },
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 133
+    },
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 133
+    },
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 133
+    },
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 133
+    },
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 133
+    }
+  ],
+  "tool_diagnostics": [
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-3",
+      "envelope": {
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "outcome": {
+          "after_observation_id": null,
+          "before_observation_id": null,
+          "delivery": null,
+          "error_code": "stale_observation",
+          "postcondition": "not_checked",
+          "status": "not_started"
+        },
+        "verification_error": null
+      }
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-3",
+      "envelope": {
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "outcome": {
+          "after_observation_id": null,
+          "before_observation_id": null,
+          "delivery": null,
+          "error_code": "stale_observation",
+          "postcondition": "not_checked",
+          "status": "not_started"
+        },
+        "verification_error": null
+      }
+    },
+    {
+      "call_id": "luna-4",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-3",
+      "envelope": {
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "outcome": {
+          "after_observation_id": null,
+          "before_observation_id": null,
+          "delivery": null,
+          "error_code": "stale_observation",
+          "postcondition": "not_checked",
+          "status": "not_started"
+        },
+        "verification_error": null
+      }
+    },
+    {
+      "call_id": "luna-4",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-5",
+      "envelope": {
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "outcome": {
+          "after_observation_id": "cobs_Btf4IC2ae5SNNeYK",
+          "before_observation_id": "cobs_dWz1spUJmDbQswxN",
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        },
+        "verification_error": "verification_unavailable"
+      }
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-3",
+      "envelope": {
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "outcome": {
+          "after_observation_id": null,
+          "before_observation_id": null,
+          "delivery": null,
+          "error_code": "stale_observation",
+          "postcondition": "not_checked",
+          "status": "not_started"
+        },
+        "verification_error": null
+      }
+    },
+    {
+      "call_id": "luna-4",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-5",
+      "envelope": {
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "outcome": {
+          "after_observation_id": "cobs_Btf4IC2ae5SNNeYK",
+          "before_observation_id": "cobs_dWz1spUJmDbQswxN",
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        },
+        "verification_error": "verification_unavailable"
+      }
+    }
+  ],
+  "provider_request_count": 7,
+  "provider_image_hashes": [
+    [],
+    [],
+    [
+      "732014e115878688642e088f973c2e74d0d074000b718c1e20d81af6ec4601ae"
+    ],
+    [
+      "732014e115878688642e088f973c2e74d0d074000b718c1e20d81af6ec4601ae"
+    ],
+    [
+      "732014e115878688642e088f973c2e74d0d074000b718c1e20d81af6ec4601ae",
+      "f263a11384ec83327a4ff499836aec7141707e8e386fa5c9a1c2885ecd3edad9"
+    ],
+    [
+      "f263a11384ec83327a4ff499836aec7141707e8e386fa5c9a1c2885ecd3edad9",
+      "73f92e69941ad07c3a935366303632e81d6221df4e92144a7d120044aa85b04c"
+    ],
+    [
+      "f263a11384ec83327a4ff499836aec7141707e8e386fa5c9a1c2885ecd3edad9",
+      "73f92e69941ad07c3a935366303632e81d6221df4e92144a7d120044aa85b04c"
+    ]
+  ],
+  "action_outcomes": [
+    {
+      "after_observation_id": null,
+      "before_observation_id": null,
+      "delivery": null,
+      "error_code": "stale_observation",
+      "postcondition": "not_checked",
+      "status": "not_started"
+    },
+    {
+      "after_observation_id": "cobs_Btf4IC2ae5SNNeYK",
+      "before_observation_id": "cobs_dWz1spUJmDbQswxN",
+      "delivery": "foreground",
+      "error_code": "unverified_action",
+      "postcondition": "not_checked",
+      "status": "unknown"
+    }
+  ],
+  "ledger_states": [
+    "closed",
+    "closed",
+    "closed",
+    "closed",
+    "closed"
+  ],
+  "visual_count": 3,
+  "independent_effect": {
+    "counter_delta": 1,
+    "text_changed": false,
+    "unicode_marker_present": false,
+    "q_delta": 0,
+    "Y_delta": 0,
+    "scroll_delta": 0,
+    "secure_before": false,
+    "secure_after": false,
+    "exact_live_insert": false,
+    "correct_field": false,
+    "live_text_changed": false,
+    "committed_text_changed": false,
+    "committed_seed": false,
+    "secure_live_before": false,
+    "secure_live_after": false,
+    "key_down_characters": [],
+    "key_down_fields": [],
+    "key_up_events": 0,
+    "text_change_events": 0,
+    "secure_change_events": 0,
+    "mouse_click_counts": [],
+    "right_mouse_delta": 0,
+    "pointer_events": [
+      {
+        "clickCount": 0,
+        "deltaY": 0,
+        "kind": "left",
+        "positionKnown": false,
+        "windowX": null,
+        "windowY": null
+      }
+    ],
+    "unchanged": false,
+    "wheel_inside_scroll_region": false
+  },
+  "active_turn": false,
+  "fixture_scroll_region": {
+    "height": 200,
+    "width": 480,
+    "x": 20,
+    "y": 28
+  },
+  "artifact_image_hashes": [
+    "732014e115878688642e088f973c2e74d0d074000b718c1e20d81af6ec4601ae",
+    "73f92e69941ad07c3a935366303632e81d6221df4e92144a7d120044aa85b04c",
+    "f263a11384ec83327a4ff499836aec7141707e8e386fa5c9a1c2885ecd3edad9"
+  ],
+  "image_hashes_match": true,
+  "raw_status": "tested",
+  "verdict_reason": "sdk_exact_attribute_readback_unavailable",
+  "expected_variant": [
+    "click",
+    "element",
+    "left",
+    1
+  ],
+  "actual_variant": {
+    "call_id": "luna-5",
+    "observation_id": "cobs_dWz1spUJmDbQswxN",
+    "name": "computer_action",
+    "operation": null,
+    "action": "click",
+    "key": null,
+    "keys": null,
+    "direction": null,
+    "amount": null,
+    "coordinate_target": false,
+    "element_target": true,
+    "include_image": null,
+    "button": "left",
+    "count": 1,
+    "postcondition": "attribute_equals"
+  },
+  "action_attempts": 2,
+  "recovered_not_started": 1,
+  "native_completion": [
+    "not_started",
+    "unknown"
+  ],
+  "controller_decisions": [
+    {
+      "sequence": 1,
+      "request_sha256": "94b4493a4775db8b234de481c067e2fe3ee4fb8bb3a6a91dd8f39a99cab5a19e",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "34c70ff30db4713d367572e3dfffd86e9d959414b3ea68a771973e370057c7cc"
+    },
+    {
+      "sequence": 2,
+      "request_sha256": "b2e0fb5a732346279c74896d8a44c8a214abb54d0a132ba333fa0beccab1e230",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "a3e065d087136751da5d9828a75efdbc29b7f8793e8eb7bced42f77c1a80ef52"
+    },
+    {
+      "sequence": 3,
+      "request_sha256": "a5b64b9408fa55f6cd9994abd8f3e6696491c4d38c03d3f320b0514467055189",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "10c00438f8c1f959f56ddbd54f25317871ec8b13306fde0ff8366f5559a5b793"
+    },
+    {
+      "sequence": 4,
+      "request_sha256": "6c89eeb327e64fac1910327c83d915a53a7265704e33d33d89d5779db29c9552",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "f3f780e0a75556b7defc83ce13c32412d38a2aafeaf9ae97441ffbea728056cb"
+    },
+    {
+      "sequence": 5,
+      "request_sha256": "1ad14c85680ecec6110d71b5f67fa5a25c956f8c93053ec1f111e4f0e0c8928f",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "49fd6d1007b8429628794a707d39a3f709deefd0dd4540f2da8f6a973d8eed9c"
+    },
+    {
+      "sequence": 6,
+      "request_sha256": "0fb10cdb578116d9ba5d922fc579d97b6b8d5eb178ae241791cffd98286be198",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "44e46ff2cc8c9522d5e058e3b674dc5f49640c3c86d1c7c98117f3488da84d62"
+    },
+    {
+      "sequence": 7,
+      "request_sha256": "0651cac6ebc271aab4c99f0b081ecd2522d1dba00de561d6b176ef18170347dc",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "c188eb4f62f8e00cfb04884cd54b1a857a6b7b5c5146ebf05eb0edb73adfe742"
+    }
+  ]
+}

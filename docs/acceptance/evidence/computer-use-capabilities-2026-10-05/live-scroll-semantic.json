@@ -1,0 +1,469 @@
+{
+  "schema_version": 2,
+  "scripted_provider": false,
+  "provider_model": "external_live_controller",
+  "case": "scroll",
+  "mode": "semantic",
+  "delivery": "background",
+  "image_edge": 1920,
+  "shifted_window": false,
+  "sdk_input_entries": 1,
+  "approval_count": 1,
+  "approval_decisions": [
+    {
+      "call_id": "luna-3",
+      "approved": true
+    }
+  ],
+  "raw_evidence_only": false,
+  "discovery": {
+    "fixture_app_count": 1,
+    "fixture_pids": [
+      84506
+    ],
+    "window_count": 1,
+    "windows": [
+      {
+        "window_id": 1001,
+        "fixture_title": true
+      }
+    ]
+  },
+  "window_read": {
+    "ax_element_count": 106,
+    "ax_complete": false,
+    "truncated": false,
+    "degraded": null,
+    "reason": null,
+    "image_count": 0,
+    "frame_valid": null,
+    "max_returned_depth": 5,
+    "truncation_reason": null
+  },
+  "sdk_fields": [
+    {
+      "label": "Unicode text",
+      "value": "Unicode text"
+    },
+    {
+      "label": "Synthetic secure field",
+      "value": "Synthetic secure field"
+    }
+  ],
+  "selected_frame": {
+    "width": null,
+    "height": null,
+    "backing_scale": null,
+    "window_bounds": null
+  },
+  "selected_node": {
+    "role": "AXScrollArea",
+    "label": "fixture-scroll",
+    "enabled": null,
+    "actions": [
+      "AXScrollLeftByPage",
+      "AXScrollRightByPage",
+      "AXScrollUpByPage",
+      "AXScrollDownByPage"
+    ],
+    "frame": {
+      "x": 498.0,
+      "y": 486.0,
+      "w": 480.0,
+      "h": 200.0
+    }
+  },
+  "approved_reference": {
+    "call_id": "luna-3",
+    "observation_id": "cobs_AQdsPXgZX2XTd1x7",
+    "element_ref_sha256": "c750a2418175ae655512c6d7ad03826c3337790af773d4712f305560e754d09e",
+    "observed_token_sha256": "28d382f97453ea15aff4369b9f4d9f3a929b198b3823013e8c6a1836a02567eb",
+    "same_ref_observed_then_dispatched": true
+  },
+  "sdk_method": "scroll",
+  "reference_proofs": [
+    {
+      "call_id": "luna-3",
+      "observation_id": "cobs_AQdsPXgZX2XTd1x7",
+      "element_ref_sha256": "c750a2418175ae655512c6d7ad03826c3337790af773d4712f305560e754d09e",
+      "observed_token_sha256": "28d382f97453ea15aff4369b9f4d9f3a929b198b3823013e8c6a1836a02567eb",
+      "same_ref_observed_then_dispatched": true,
+      "native_token_sha256": "28d382f97453ea15aff4369b9f4d9f3a929b198b3823013e8c6a1836a02567eb",
+      "native_token_matches_observed_sdk_token": true
+    }
+  ],
+  "sdk_target": {
+    "role": "AXScrollArea",
+    "label": "fixture-scroll",
+    "enabled": null,
+    "actions": [
+      "AXScrollLeftByPage",
+      "AXScrollRightByPage",
+      "AXScrollUpByPage",
+      "AXScrollDownByPage"
+    ],
+    "frame": {
+      "x": 498.0,
+      "y": 486.0,
+      "w": 480.0,
+      "h": 200.0
+    }
+  },
+  "sdk_coordinate": {
+    "x": null,
+    "y": null
+  },
+  "sdk_action_outcome": {
+    "status": "unknown",
+    "delivery": "background",
+    "before_observation_id": null,
+    "after_observation_id": null,
+    "error_code": "unverified_action",
+    "postcondition": "not_checked"
+  },
+  "fixture_snapshot_required": true,
+  "fixture_snapshot": {
+    "healthy": true,
+    "fields_valid": true,
+    "revision_before": 4,
+    "revision_after": 10,
+    "revision_advanced": true
+  },
+  "fixture_window": {
+    "backingScale": 2,
+    "contentHeight": 512,
+    "height": 512,
+    "number": 1001,
+    "width": 520,
+    "x": 478,
+    "y": 242
+  },
+  "fixture_foreground": {
+    "is_key": false,
+    "active": false
+  },
+  "fixture_identity_unchanged": true,
+  "status": "passed",
+  "degraded": false,
+  "finish_reason": "stop",
+  "provider_calls": [
+    {
+      "call_id": "luna-1",
+      "observation_id": null,
+      "name": "computer_observe",
+      "operation": "discover",
+      "action": null,
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": false,
+      "include_image": null,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    },
+    {
+      "call_id": "luna-2",
+      "observation_id": null,
+      "name": "computer_observe",
+      "operation": "window",
+      "action": null,
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": false,
+      "include_image": false,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    },
+    {
+      "call_id": "luna-3",
+      "observation_id": "cobs_AQdsPXgZX2XTd1x7",
+      "name": "computer_action",
+      "operation": null,
+      "action": "scroll",
+      "key": null,
+      "keys": null,
+      "direction": "down",
+      "amount": 3,
+      "coordinate_target": false,
+      "element_target": true,
+      "include_image": null,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    }
+  ],
+  "provider_failures": [],
+  "observation_meta": [
+    {
+      "truncated": false,
+      "image": false,
+      "element_count": 106
+    },
+    {
+      "truncated": false,
+      "image": false,
+      "element_count": 106
+    },
+    {
+      "truncated": false,
+      "image": false,
+      "element_count": 106
+    }
+  ],
+  "tool_diagnostics": [
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-3",
+      "envelope": {
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "outcome": {
+          "after_observation_id": "cobs_zpfL916UuLEU7GeO",
+          "before_observation_id": "cobs_AQdsPXgZX2XTd1x7",
+          "delivery": "background",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        },
+        "verification_error": null
+      }
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-3",
+      "envelope": {
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "outcome": {
+          "after_observation_id": "cobs_zpfL916UuLEU7GeO",
+          "before_observation_id": "cobs_AQdsPXgZX2XTd1x7",
+          "delivery": "background",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        },
+        "verification_error": null
+      }
+    }
+  ],
+  "provider_request_count": 5,
+  "provider_image_hashes": [
+    [],
+    [],
+    [],
+    [],
+    []
+  ],
+  "action_outcomes": [
+    {
+      "after_observation_id": "cobs_zpfL916UuLEU7GeO",
+      "before_observation_id": "cobs_AQdsPXgZX2XTd1x7",
+      "delivery": "background",
+      "error_code": "unverified_action",
+      "postcondition": "not_checked",
+      "status": "unknown"
+    }
+  ],
+  "ledger_states": [
+    "closed",
+    "closed",
+    "closed"
+  ],
+  "visual_count": 0,
+  "independent_effect": {
+    "counter_delta": 0,
+    "text_changed": false,
+    "unicode_marker_present": false,
+    "q_delta": 0,
+    "Y_delta": 0,
+    "scroll_delta": 60,
+    "secure_before": false,
+    "secure_after": false,
+    "exact_live_insert": false,
+    "correct_field": false,
+    "live_text_changed": false,
+    "committed_text_changed": false,
+    "committed_seed": false,
+    "secure_live_before": false,
+    "secure_live_after": false,
+    "key_down_characters": [],
+    "key_down_fields": [],
+    "key_up_events": 0,
+    "text_change_events": 0,
+    "secure_change_events": 0,
+    "mouse_click_counts": [],
+    "right_mouse_delta": 0,
+    "pointer_events": [
+      {
+        "clickCount": 0,
+        "deltaY": -2,
+        "kind": "wheel",
+        "positionKnown": true,
+        "windowX": 260,
+        "windowY": 128
+      },
+      {
+        "clickCount": 0,
+        "deltaY": -2,
+        "kind": "wheel",
+        "positionKnown": true,
+        "windowX": 260,
+        "windowY": 128
+      },
+      {
+        "clickCount": 0,
+        "deltaY": -2,
+        "kind": "wheel",
+        "positionKnown": true,
+        "windowX": 260,
+        "windowY": 128
+      }
+    ],
+    "unchanged": false,
+    "wheel_inside_scroll_region": true
+  },
+  "active_turn": false,
+  "fixture_scroll_region": {
+    "height": 200,
+    "width": 480,
+    "x": 20,
+    "y": 28
+  },
+  "artifact_image_hashes": [],
+  "image_hashes_match": false,
+  "raw_status": "tested",
+  "verdict_reason": "independent_effect",
+  "expected_variant": [
+    "scroll",
+    "element",
+    null,
+    null
+  ],
+  "actual_variant": {
+    "call_id": "luna-3",
+    "observation_id": "cobs_AQdsPXgZX2XTd1x7",
+    "name": "computer_action",
+    "operation": null,
+    "action": "scroll",
+    "key": null,
+    "keys": null,
+    "direction": "down",
+    "amount": 3,
+    "coordinate_target": false,
+    "element_target": true,
+    "include_image": null,
+    "button": null,
+    "count": null,
+    "postcondition": null
+  },
+  "action_attempts": 1,
+  "recovered_not_started": 0,
+  "native_completion": [
+    "unknown"
+  ],
+  "controller_decisions": [
+    {
+      "sequence": 1,
+      "request_sha256": "b15ff633f78cd8a17e812500f878ff78d5d8682eb0a39720e5e4f38cbb49dbb3",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "56e850c072b503ae5ef75d8895e9cdc6cc06a18763eec28683b61f0f54e38618"
+    },
+    {
+      "sequence": 2,
+      "request_sha256": "84dfeb8bc7e8c55a27b65823bc907f2e68e8c74a31e7831407810b068194093d",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "e9fa83aea0fef13669d25ab1cfccd1bdddf81dbe54c9103a924e01be04874af8"
+    },
+    {
+      "sequence": 3,
+      "request_sha256": "517ba1fe6b7b2902c19929c6e544487773a82dfd533dd16d8eb5c428aeaeb163",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "984a3919bb80aff6667ef5955dfb09db9d2952b808b190b57bd9dc2eb6c77ed6"
+    },
+    {
+      "sequence": 4,
+      "request_sha256": "692d36e2bafe421cf38f1d8a0048f3cbc058963985d08b00fce7d1b36788b814",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "7a68f416285a8a114709d4f299757a6533c8dd322772da09b14bf1b8073723a8"
+    },
+    {
+      "sequence": 5,
+      "request_sha256": "f2ff2bbaf959c5b35b18a295f2446aaf213c53f328023a0500872b2f87879095",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "b0dea0582ee227d5e69e4a93907bac2eac56b92de55c626a84b5b49fd3e27912"
+    }
+  ]
+}

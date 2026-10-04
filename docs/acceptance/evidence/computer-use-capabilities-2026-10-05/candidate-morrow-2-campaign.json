@@ -1,0 +1,2066 @@
+{
+  "schema_version": 1,
+  "scripted_provider": true,
+  "sdk_version": "0.30.4+morrow.2",
+  "sdk_dylib_sha256": "fedbac4d853399203d6f40be8fe02154e15e34646f39620f8f07e5031d94287a",
+  "cases": [
+    {
+      "schema_version": 2,
+      "scripted_provider": true,
+      "provider_model": "scripted_fixture_transport",
+      "case": "postcondition_attribute",
+      "mode": "hybrid",
+      "delivery": "foreground",
+      "image_edge": 1920,
+      "shifted_window": false,
+      "sdk_input_entries": 1,
+      "approval_count": 1,
+      "approval_decisions": [
+        {
+          "call_id": "fixture-3",
+          "approved": true
+        }
+      ],
+      "raw_evidence_only": false,
+      "discovery": {
+        "fixture_app_count": 1,
+        "fixture_pids": [
+          93334
+        ],
+        "window_count": 1,
+        "windows": [
+          {
+            "window_id": 1067,
+            "fixture_title": true
+          }
+        ]
+      },
+      "window_read": {
+        "ax_element_count": 132,
+        "ax_complete": false,
+        "truncated": false,
+        "degraded": null,
+        "reason": null,
+        "image_count": 1,
+        "frame_valid": true,
+        "max_returned_depth": 5,
+        "truncation_reason": null
+      },
+      "sdk_fields": [
+        {
+          "label": "Unicode text",
+          "value": "Unicode text"
+        },
+        {
+          "label": "Synthetic secure field",
+          "value": "Synthetic secure field"
+        }
+      ],
+      "selected_frame": {
+        "width": 1040,
+        "height": 1024,
+        "backing_scale": 2.0,
+        "window_bounds": {
+          "x": 478.0,
+          "y": 202.0,
+          "width": 520.0,
+          "height": 512.0
+        }
+      },
+      "selected_node": {
+        "role": "AXButton",
+        "label": "Increment",
+        "enabled": true,
+        "actions": [
+          "AXPress"
+        ],
+        "frame": {
+          "x": 498.0,
+          "y": 320.0,
+          "w": 120.0,
+          "h": 24.0
+        }
+      },
+      "approved_reference": {
+        "call_id": "fixture-3",
+        "observation_id": "cobs_jREL2ph9pDmMAHJq",
+        "element_ref_sha256": "17993bc43adbb1af25e485aadaf397afd379f99f7ed5777591ca3108f7475ef7",
+        "observed_token_sha256": "2b94180b27e3e5364e16cf224e472c00e1fddfc013df3161b78f4297b8a4ca40",
+        "same_ref_observed_then_dispatched": true
+      },
+      "sdk_method": "click",
+      "sdk_click": {
+        "count": 1,
+        "button": "LEFT",
+        "delivery": "FOREGROUND"
+      },
+      "sdk_target": {
+        "role": "AXButton",
+        "label": "Increment",
+        "enabled": true,
+        "actions": [
+          "AXPress"
+        ],
+        "frame": {
+          "x": 498.0,
+          "y": 320.0,
+          "w": 120.0,
+          "h": 24.0
+        }
+      },
+      "sdk_coordinate": {
+        "x": null,
+        "y": null
+      },
+      "sdk_attribute_reads": 1,
+      "attribute_read_proofs": [
+        {
+          "native_token_matches_observed_sdk_token": true,
+          "attribute": "enabled",
+          "identity": "exact",
+          "status": "readable",
+          "value": true,
+          "is_error": false,
+          "degraded": false
+        }
+      ],
+      "fixture_snapshot_required": true,
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 6,
+        "revision_after": 9,
+        "revision_advanced": true
+      },
+      "fixture_window": {
+        "backingScale": 2,
+        "contentHeight": 512,
+        "height": 512,
+        "number": 1067,
+        "width": 520,
+        "x": 478,
+        "y": 242
+      },
+      "fixture_foreground": {
+        "is_key": true,
+        "active": true
+      },
+      "fixture_identity_unchanged": true,
+      "status": "passed",
+      "degraded": false,
+      "finish_reason": "stop",
+      "provider_calls": [
+        {
+          "call_id": "fixture-1",
+          "observation_id": null,
+          "name": "computer_observe",
+          "operation": "discover",
+          "action": null,
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": false,
+          "include_image": null,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        },
+        {
+          "call_id": "fixture-2",
+          "observation_id": null,
+          "name": "computer_observe",
+          "operation": "window",
+          "action": null,
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": false,
+          "include_image": true,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        },
+        {
+          "call_id": "fixture-3",
+          "observation_id": "cobs_jREL2ph9pDmMAHJq",
+          "name": "computer_action",
+          "operation": null,
+          "action": "click",
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": true,
+          "include_image": null,
+          "button": "left",
+          "count": 1,
+          "postcondition": "attribute_equals"
+        }
+      ],
+      "provider_failures": [],
+      "observation_meta": [
+        {
+          "truncated": false,
+          "image": true,
+          "element_count": 132
+        },
+        {
+          "truncated": false,
+          "image": true,
+          "element_count": 132
+        },
+        {
+          "truncated": false,
+          "image": true,
+          "element_count": 132
+        }
+      ],
+      "tool_diagnostics": [
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-3",
+          "envelope": {
+            "ok": true
+          },
+          "result": {
+            "observation_error": null,
+            "outcome": {
+              "after_observation_id": "cobs_tGxEFG3zCsiZBeNS",
+              "before_observation_id": "cobs_jREL2ph9pDmMAHJq",
+              "delivery": "foreground",
+              "error_code": "unverified_action",
+              "postcondition": "passed",
+              "status": "unknown"
+            },
+            "verification_error": null
+          }
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-3",
+          "envelope": {
+            "ok": true
+          },
+          "result": {
+            "observation_error": null,
+            "outcome": {
+              "after_observation_id": "cobs_tGxEFG3zCsiZBeNS",
+              "before_observation_id": "cobs_jREL2ph9pDmMAHJq",
+              "delivery": "foreground",
+              "error_code": "unverified_action",
+              "postcondition": "passed",
+              "status": "unknown"
+            },
+            "verification_error": null
+          }
+        }
+      ],
+      "provider_request_count": 5,
+      "provider_image_hashes": [
+        [],
+        [],
+        [
+          "b93cfbce24b1582661f5121477396e24abb5042997813fc2b86e9b40ba0002b6"
+        ],
+        [
+          "b93cfbce24b1582661f5121477396e24abb5042997813fc2b86e9b40ba0002b6",
+          "2478eb7cb7a95a88662e63b600d0df2ffc1d31b915e4e5cd5c5fd1d83a92fb17"
+        ],
+        [
+          "b93cfbce24b1582661f5121477396e24abb5042997813fc2b86e9b40ba0002b6",
+          "2478eb7cb7a95a88662e63b600d0df2ffc1d31b915e4e5cd5c5fd1d83a92fb17"
+        ]
+      ],
+      "action_outcomes": [
+        {
+          "after_observation_id": "cobs_tGxEFG3zCsiZBeNS",
+          "before_observation_id": "cobs_jREL2ph9pDmMAHJq",
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "passed",
+          "status": "unknown"
+        }
+      ],
+      "ledger_states": [
+        "closed",
+        "closed",
+        "closed"
+      ],
+      "visual_count": 2,
+      "independent_effect": {
+        "counter_delta": 1,
+        "text_changed": false,
+        "unicode_marker_present": false,
+        "q_delta": 0,
+        "Y_delta": 0,
+        "scroll_delta": 0,
+        "secure_before": false,
+        "secure_after": false,
+        "exact_live_insert": false,
+        "correct_field": false,
+        "live_text_changed": false,
+        "committed_text_changed": false,
+        "committed_seed": false,
+        "secure_live_before": false,
+        "secure_live_after": false,
+        "key_down_characters": [],
+        "key_down_fields": [],
+        "key_up_events": 0,
+        "text_change_events": 0,
+        "secure_change_events": 0,
+        "mouse_click_counts": [],
+        "right_mouse_delta": 0,
+        "pointer_events": [
+          {
+            "clickCount": 0,
+            "deltaY": 0,
+            "kind": "left",
+            "positionKnown": false,
+            "windowX": null,
+            "windowY": null
+          }
+        ],
+        "unchanged": false,
+        "wheel_inside_scroll_region": false
+      },
+      "active_turn": false,
+      "fixture_scroll_region": {
+        "height": 200,
+        "width": 480,
+        "x": 20,
+        "y": 28
+      },
+      "artifact_image_hashes": [
+        "2478eb7cb7a95a88662e63b600d0df2ffc1d31b915e4e5cd5c5fd1d83a92fb17",
+        "b93cfbce24b1582661f5121477396e24abb5042997813fc2b86e9b40ba0002b6"
+      ],
+      "image_hashes_match": true,
+      "raw_status": "tested",
+      "verdict_reason": "independent_effect",
+      "expected_variant": [
+        "click",
+        "element",
+        "left",
+        1
+      ],
+      "actual_variant": {
+        "call_id": "fixture-3",
+        "observation_id": "cobs_jREL2ph9pDmMAHJq",
+        "name": "computer_action",
+        "operation": null,
+        "action": "click",
+        "key": null,
+        "keys": null,
+        "direction": null,
+        "amount": null,
+        "coordinate_target": false,
+        "element_target": true,
+        "include_image": null,
+        "button": "left",
+        "count": 1,
+        "postcondition": "attribute_equals"
+      },
+      "action_attempts": 1,
+      "recovered_not_started": 0,
+      "native_completion": [
+        "unknown"
+      ],
+      "gate": "enabled-foreground"
+    },
+    {
+      "schema_version": 2,
+      "scripted_provider": true,
+      "provider_model": "scripted_fixture_transport",
+      "case": "postcondition_attribute",
+      "mode": "hybrid",
+      "delivery": "background",
+      "image_edge": 1920,
+      "shifted_window": false,
+      "sdk_input_entries": 1,
+      "approval_count": 1,
+      "approval_decisions": [
+        {
+          "call_id": "fixture-3",
+          "approved": true
+        }
+      ],
+      "raw_evidence_only": false,
+      "discovery": {
+        "fixture_app_count": 1,
+        "fixture_pids": [
+          11816
+        ],
+        "window_count": 1,
+        "windows": [
+          {
+            "window_id": 1075,
+            "fixture_title": true
+          }
+        ]
+      },
+      "window_read": {
+        "ax_element_count": 106,
+        "ax_complete": false,
+        "truncated": false,
+        "degraded": null,
+        "reason": null,
+        "image_count": 1,
+        "frame_valid": true,
+        "max_returned_depth": 5,
+        "truncation_reason": null
+      },
+      "sdk_fields": [
+        {
+          "label": "Unicode text",
+          "value": "Unicode text"
+        },
+        {
+          "label": "Synthetic secure field",
+          "value": "Synthetic secure field"
+        }
+      ],
+      "selected_frame": {
+        "width": 1040,
+        "height": 1024,
+        "backing_scale": 2.0,
+        "window_bounds": {
+          "x": 478.0,
+          "y": 202.0,
+          "width": 520.0,
+          "height": 512.0
+        }
+      },
+      "selected_node": {
+        "role": "AXButton",
+        "label": "Increment",
+        "enabled": true,
+        "actions": [
+          "AXPress"
+        ],
+        "frame": {
+          "x": 498.0,
+          "y": 320.0,
+          "w": 120.0,
+          "h": 24.0
+        }
+      },
+      "approved_reference": {
+        "call_id": "fixture-3",
+        "observation_id": "cobs_rJ0qRr2TJLJEDRPF",
+        "element_ref_sha256": "a3142f1cb5c95132490d396d69a022fa99ae8f8bd177198a5f060f9b453e1cda",
+        "observed_token_sha256": "2b94180b27e3e5364e16cf224e472c00e1fddfc013df3161b78f4297b8a4ca40",
+        "same_ref_observed_then_dispatched": true
+      },
+      "sdk_method": "click",
+      "sdk_click": {
+        "count": 1,
+        "button": "LEFT",
+        "delivery": "BACKGROUND"
+      },
+      "sdk_target": {
+        "role": "AXButton",
+        "label": "Increment",
+        "enabled": true,
+        "actions": [
+          "AXPress"
+        ],
+        "frame": {
+          "x": 498.0,
+          "y": 320.0,
+          "w": 120.0,
+          "h": 24.0
+        }
+      },
+      "sdk_coordinate": {
+        "x": null,
+        "y": null
+      },
+      "sdk_attribute_reads": 1,
+      "attribute_read_proofs": [
+        {
+          "native_token_matches_observed_sdk_token": true,
+          "attribute": "enabled",
+          "identity": "exact",
+          "status": "readable",
+          "value": true,
+          "is_error": false,
+          "degraded": false
+        }
+      ],
+      "fixture_snapshot_required": true,
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 4,
+        "revision_after": 6,
+        "revision_advanced": true
+      },
+      "fixture_window": {
+        "backingScale": 2,
+        "contentHeight": 512,
+        "height": 512,
+        "number": 1075,
+        "width": 520,
+        "x": 478,
+        "y": 242
+      },
+      "fixture_foreground": {
+        "is_key": false,
+        "active": false
+      },
+      "fixture_identity_unchanged": true,
+      "status": "passed",
+      "degraded": false,
+      "finish_reason": "stop",
+      "provider_calls": [
+        {
+          "call_id": "fixture-1",
+          "observation_id": null,
+          "name": "computer_observe",
+          "operation": "discover",
+          "action": null,
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": false,
+          "include_image": null,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        },
+        {
+          "call_id": "fixture-2",
+          "observation_id": null,
+          "name": "computer_observe",
+          "operation": "window",
+          "action": null,
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": false,
+          "include_image": true,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        },
+        {
+          "call_id": "fixture-3",
+          "observation_id": "cobs_rJ0qRr2TJLJEDRPF",
+          "name": "computer_action",
+          "operation": null,
+          "action": "click",
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": true,
+          "include_image": null,
+          "button": "left",
+          "count": 1,
+          "postcondition": "attribute_equals"
+        }
+      ],
+      "provider_failures": [],
+      "observation_meta": [
+        {
+          "truncated": false,
+          "image": true,
+          "element_count": 106
+        },
+        {
+          "truncated": false,
+          "image": true,
+          "element_count": 106
+        },
+        {
+          "truncated": false,
+          "image": true,
+          "element_count": 106
+        }
+      ],
+      "tool_diagnostics": [
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-3",
+          "envelope": {
+            "ok": true
+          },
+          "result": {
+            "observation_error": null,
+            "outcome": {
+              "after_observation_id": "cobs_462pw6DDyqNKBaWe",
+              "before_observation_id": "cobs_rJ0qRr2TJLJEDRPF",
+              "delivery": "background",
+              "error_code": "unverified_action",
+              "postcondition": "passed",
+              "status": "unknown"
+            },
+            "verification_error": null
+          }
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-3",
+          "envelope": {
+            "ok": true
+          },
+          "result": {
+            "observation_error": null,
+            "outcome": {
+              "after_observation_id": "cobs_462pw6DDyqNKBaWe",
+              "before_observation_id": "cobs_rJ0qRr2TJLJEDRPF",
+              "delivery": "background",
+              "error_code": "unverified_action",
+              "postcondition": "passed",
+              "status": "unknown"
+            },
+            "verification_error": null
+          }
+        }
+      ],
+      "provider_request_count": 5,
+      "provider_image_hashes": [
+        [],
+        [],
+        [
+          "d239dafb53123affad8692915bb6ae11548e7c1ee60f742b01b40c464071b677"
+        ],
+        [
+          "d239dafb53123affad8692915bb6ae11548e7c1ee60f742b01b40c464071b677",
+          "7a6db42f50a0b54acfb26cc23731e5e0174ab06b7daf8fa0f28bab391c0a5ca3"
+        ],
+        [
+          "d239dafb53123affad8692915bb6ae11548e7c1ee60f742b01b40c464071b677",
+          "7a6db42f50a0b54acfb26cc23731e5e0174ab06b7daf8fa0f28bab391c0a5ca3"
+        ]
+      ],
+      "action_outcomes": [
+        {
+          "after_observation_id": "cobs_462pw6DDyqNKBaWe",
+          "before_observation_id": "cobs_rJ0qRr2TJLJEDRPF",
+          "delivery": "background",
+          "error_code": "unverified_action",
+          "postcondition": "passed",
+          "status": "unknown"
+        }
+      ],
+      "ledger_states": [
+        "closed",
+        "closed",
+        "closed"
+      ],
+      "visual_count": 2,
+      "independent_effect": {
+        "counter_delta": 1,
+        "text_changed": false,
+        "unicode_marker_present": false,
+        "q_delta": 0,
+        "Y_delta": 0,
+        "scroll_delta": 0,
+        "secure_before": false,
+        "secure_after": false,
+        "exact_live_insert": false,
+        "correct_field": false,
+        "live_text_changed": false,
+        "committed_text_changed": false,
+        "committed_seed": false,
+        "secure_live_before": false,
+        "secure_live_after": false,
+        "key_down_characters": [],
+        "key_down_fields": [],
+        "key_up_events": 0,
+        "text_change_events": 0,
+        "secure_change_events": 0,
+        "mouse_click_counts": [],
+        "right_mouse_delta": 0,
+        "pointer_events": [],
+        "unchanged": false,
+        "wheel_inside_scroll_region": false
+      },
+      "active_turn": false,
+      "fixture_scroll_region": {
+        "height": 200,
+        "width": 480,
+        "x": 20,
+        "y": 28
+      },
+      "artifact_image_hashes": [
+        "7a6db42f50a0b54acfb26cc23731e5e0174ab06b7daf8fa0f28bab391c0a5ca3",
+        "d239dafb53123affad8692915bb6ae11548e7c1ee60f742b01b40c464071b677"
+      ],
+      "image_hashes_match": true,
+      "raw_status": "tested",
+      "verdict_reason": "independent_effect",
+      "expected_variant": [
+        "click",
+        "element",
+        "left",
+        1
+      ],
+      "actual_variant": {
+        "call_id": "fixture-3",
+        "observation_id": "cobs_rJ0qRr2TJLJEDRPF",
+        "name": "computer_action",
+        "operation": null,
+        "action": "click",
+        "key": null,
+        "keys": null,
+        "direction": null,
+        "amount": null,
+        "coordinate_target": false,
+        "element_target": true,
+        "include_image": null,
+        "button": "left",
+        "count": 1,
+        "postcondition": "attribute_equals"
+      },
+      "action_attempts": 1,
+      "recovered_not_started": 0,
+      "native_completion": [
+        "unknown"
+      ],
+      "gate": "enabled-background"
+    },
+    {
+      "schema_version": 2,
+      "scripted_provider": true,
+      "provider_model": "scripted_fixture_transport",
+      "case": "coordinate_scroll",
+      "mode": "hybrid",
+      "delivery": "foreground",
+      "image_edge": 1920,
+      "shifted_window": false,
+      "sdk_input_entries": 1,
+      "approval_count": 1,
+      "approval_decisions": [
+        {
+          "call_id": "fixture-3",
+          "approved": true
+        }
+      ],
+      "raw_evidence_only": false,
+      "discovery": {
+        "fixture_app_count": 1,
+        "fixture_pids": [
+          29439
+        ],
+        "window_count": 1,
+        "windows": [
+          {
+            "window_id": 1085,
+            "fixture_title": true
+          }
+        ]
+      },
+      "window_read": {
+        "ax_element_count": 132,
+        "ax_complete": false,
+        "truncated": false,
+        "degraded": null,
+        "reason": null,
+        "image_count": 1,
+        "frame_valid": true,
+        "max_returned_depth": 5,
+        "truncation_reason": null
+      },
+      "sdk_fields": [
+        {
+          "label": "Unicode text",
+          "value": "Unicode text"
+        },
+        {
+          "label": "Synthetic secure field",
+          "value": "Synthetic secure field"
+        }
+      ],
+      "selected_frame": {
+        "width": 1040,
+        "height": 1024,
+        "backing_scale": 2.0,
+        "window_bounds": {
+          "x": 478.0,
+          "y": 202.0,
+          "width": 520.0,
+          "height": 512.0
+        }
+      },
+      "sdk_method": "scroll",
+      "sdk_target": null,
+      "sdk_coordinate": {
+        "x": 520.0,
+        "y": 768.0
+      },
+      "sdk_action_outcome": {
+        "status": "unknown",
+        "delivery": "foreground",
+        "before_observation_id": null,
+        "after_observation_id": null,
+        "error_code": "unverified_action",
+        "postcondition": "not_checked"
+      },
+      "fixture_snapshot_required": true,
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 6,
+        "revision_after": 12,
+        "revision_advanced": true
+      },
+      "fixture_window": {
+        "backingScale": 2,
+        "contentHeight": 512,
+        "height": 512,
+        "number": 1085,
+        "width": 520,
+        "x": 478,
+        "y": 242
+      },
+      "fixture_foreground": {
+        "is_key": true,
+        "active": true
+      },
+      "fixture_identity_unchanged": true,
+      "status": "passed",
+      "degraded": false,
+      "finish_reason": "stop",
+      "provider_calls": [
+        {
+          "call_id": "fixture-1",
+          "observation_id": null,
+          "name": "computer_observe",
+          "operation": "discover",
+          "action": null,
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": false,
+          "include_image": null,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        },
+        {
+          "call_id": "fixture-2",
+          "observation_id": null,
+          "name": "computer_observe",
+          "operation": "window",
+          "action": null,
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": false,
+          "include_image": true,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        },
+        {
+          "call_id": "fixture-3",
+          "observation_id": "cobs_4W7egUDWpGQmqoE8",
+          "name": "computer_action",
+          "operation": null,
+          "action": "scroll",
+          "key": null,
+          "keys": null,
+          "direction": "down",
+          "amount": 3,
+          "coordinate_target": true,
+          "element_target": false,
+          "include_image": null,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        }
+      ],
+      "provider_failures": [],
+      "observation_meta": [
+        {
+          "truncated": false,
+          "image": true,
+          "element_count": 132
+        },
+        {
+          "truncated": false,
+          "image": true,
+          "element_count": 132
+        },
+        {
+          "truncated": false,
+          "image": true,
+          "element_count": 132
+        }
+      ],
+      "tool_diagnostics": [
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-3",
+          "envelope": {
+            "ok": true
+          },
+          "result": {
+            "observation_error": null,
+            "outcome": {
+              "after_observation_id": "cobs_K_MHSgPVYThvVS22",
+              "before_observation_id": "cobs_4W7egUDWpGQmqoE8",
+              "delivery": "foreground",
+              "error_code": "unverified_action",
+              "postcondition": "not_checked",
+              "status": "unknown"
+            },
+            "verification_error": null
+          }
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-3",
+          "envelope": {
+            "ok": true
+          },
+          "result": {
+            "observation_error": null,
+            "outcome": {
+              "after_observation_id": "cobs_K_MHSgPVYThvVS22",
+              "before_observation_id": "cobs_4W7egUDWpGQmqoE8",
+              "delivery": "foreground",
+              "error_code": "unverified_action",
+              "postcondition": "not_checked",
+              "status": "unknown"
+            },
+            "verification_error": null
+          }
+        }
+      ],
+      "provider_request_count": 5,
+      "provider_image_hashes": [
+        [],
+        [],
+        [
+          "b93cfbce24b1582661f5121477396e24abb5042997813fc2b86e9b40ba0002b6"
+        ],
+        [
+          "b93cfbce24b1582661f5121477396e24abb5042997813fc2b86e9b40ba0002b6",
+          "b8a7b205e7942ae140fdc8df8db63e7bac671c2852de49e2c9a4f845c2403e32"
+        ],
+        [
+          "b93cfbce24b1582661f5121477396e24abb5042997813fc2b86e9b40ba0002b6",
+          "b8a7b205e7942ae140fdc8df8db63e7bac671c2852de49e2c9a4f845c2403e32"
+        ]
+      ],
+      "action_outcomes": [
+        {
+          "after_observation_id": "cobs_K_MHSgPVYThvVS22",
+          "before_observation_id": "cobs_4W7egUDWpGQmqoE8",
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        }
+      ],
+      "ledger_states": [
+        "closed",
+        "closed",
+        "closed"
+      ],
+      "visual_count": 2,
+      "independent_effect": {
+        "counter_delta": 0,
+        "text_changed": false,
+        "unicode_marker_present": false,
+        "q_delta": 0,
+        "Y_delta": 0,
+        "scroll_delta": 30,
+        "secure_before": false,
+        "secure_after": false,
+        "exact_live_insert": false,
+        "correct_field": false,
+        "live_text_changed": false,
+        "committed_text_changed": false,
+        "committed_seed": false,
+        "secure_live_before": false,
+        "secure_live_after": false,
+        "key_down_characters": [],
+        "key_down_fields": [],
+        "key_up_events": 0,
+        "text_change_events": 0,
+        "secure_change_events": 0,
+        "mouse_click_counts": [],
+        "right_mouse_delta": 0,
+        "pointer_events": [
+          {
+            "clickCount": 0,
+            "deltaY": -1,
+            "kind": "wheel",
+            "positionKnown": true,
+            "windowX": 260,
+            "windowY": 128
+          },
+          {
+            "clickCount": 0,
+            "deltaY": -1,
+            "kind": "wheel",
+            "positionKnown": true,
+            "windowX": 260,
+            "windowY": 128
+          },
+          {
+            "clickCount": 0,
+            "deltaY": -1,
+            "kind": "wheel",
+            "positionKnown": true,
+            "windowX": 260,
+            "windowY": 128
+          }
+        ],
+        "unchanged": false,
+        "wheel_inside_scroll_region": true
+      },
+      "active_turn": false,
+      "fixture_scroll_region": {
+        "height": 200,
+        "width": 480,
+        "x": 20,
+        "y": 28
+      },
+      "artifact_image_hashes": [
+        "b8a7b205e7942ae140fdc8df8db63e7bac671c2852de49e2c9a4f845c2403e32",
+        "b93cfbce24b1582661f5121477396e24abb5042997813fc2b86e9b40ba0002b6"
+      ],
+      "image_hashes_match": true,
+      "raw_status": "tested",
+      "verdict_reason": "independent_effect",
+      "expected_variant": [
+        "scroll",
+        "coordinate",
+        null,
+        null
+      ],
+      "actual_variant": {
+        "call_id": "fixture-3",
+        "observation_id": "cobs_4W7egUDWpGQmqoE8",
+        "name": "computer_action",
+        "operation": null,
+        "action": "scroll",
+        "key": null,
+        "keys": null,
+        "direction": "down",
+        "amount": 3,
+        "coordinate_target": true,
+        "element_target": false,
+        "include_image": null,
+        "button": null,
+        "count": null,
+        "postcondition": null
+      },
+      "action_attempts": 1,
+      "recovered_not_started": 0,
+      "native_completion": [
+        "unknown"
+      ],
+      "gate": "wheel-foreground"
+    },
+    {
+      "schema_version": 2,
+      "scripted_provider": true,
+      "provider_model": "scripted_fixture_transport",
+      "case": "double_click",
+      "mode": "hybrid",
+      "delivery": "background",
+      "image_edge": 1920,
+      "shifted_window": false,
+      "sdk_input_entries": 1,
+      "approval_count": 1,
+      "approval_decisions": [
+        {
+          "call_id": "fixture-3",
+          "approved": true
+        }
+      ],
+      "raw_evidence_only": false,
+      "discovery": {
+        "fixture_app_count": 1,
+        "fixture_pids": [
+          47055
+        ],
+        "window_count": 1,
+        "windows": [
+          {
+            "window_id": 1093,
+            "fixture_title": true
+          }
+        ]
+      },
+      "window_read": {
+        "ax_element_count": 106,
+        "ax_complete": false,
+        "truncated": false,
+        "degraded": null,
+        "reason": null,
+        "image_count": 1,
+        "frame_valid": true,
+        "max_returned_depth": 5,
+        "truncation_reason": null
+      },
+      "sdk_fields": [
+        {
+          "label": "Unicode text",
+          "value": "Unicode text"
+        },
+        {
+          "label": "Synthetic secure field",
+          "value": "Synthetic secure field"
+        }
+      ],
+      "selected_frame": {
+        "width": 1040,
+        "height": 1024,
+        "backing_scale": 2.0,
+        "window_bounds": {
+          "x": 478.0,
+          "y": 202.0,
+          "width": 520.0,
+          "height": 512.0
+        }
+      },
+      "selected_node": {
+        "role": "AXButton",
+        "label": "Increment",
+        "enabled": true,
+        "actions": [
+          "AXPress"
+        ],
+        "frame": {
+          "x": 498.0,
+          "y": 320.0,
+          "w": 120.0,
+          "h": 24.0
+        }
+      },
+      "approved_reference": {
+        "call_id": "fixture-3",
+        "observation_id": "cobs_IxPuqvI-AuP9dX0D",
+        "element_ref_sha256": "989673ff3c1fdce1a334055600811bfd019ad785540be44463e4368eeb2968ea",
+        "observed_token_sha256": "2b94180b27e3e5364e16cf224e472c00e1fddfc013df3161b78f4297b8a4ca40",
+        "same_ref_observed_then_dispatched": true
+      },
+      "sdk_method": "double_click",
+      "reference_proofs": [
+        {
+          "call_id": "fixture-3",
+          "observation_id": "cobs_IxPuqvI-AuP9dX0D",
+          "element_ref_sha256": "989673ff3c1fdce1a334055600811bfd019ad785540be44463e4368eeb2968ea",
+          "observed_token_sha256": "2b94180b27e3e5364e16cf224e472c00e1fddfc013df3161b78f4297b8a4ca40",
+          "same_ref_observed_then_dispatched": true,
+          "native_token_sha256": "2b94180b27e3e5364e16cf224e472c00e1fddfc013df3161b78f4297b8a4ca40",
+          "native_token_matches_observed_sdk_token": true
+        }
+      ],
+      "sdk_target": {
+        "role": "AXButton",
+        "label": "Increment",
+        "enabled": true,
+        "actions": [
+          "AXPress"
+        ],
+        "frame": {
+          "x": 498.0,
+          "y": 320.0,
+          "w": 120.0,
+          "h": 24.0
+        }
+      },
+      "sdk_coordinate": {
+        "x": null,
+        "y": null
+      },
+      "sdk_action_outcome": {
+        "status": "not_started",
+        "delivery": null,
+        "before_observation_id": null,
+        "after_observation_id": null,
+        "error_code": "action_outcome_mismatch",
+        "postcondition": "not_checked"
+      },
+      "fixture_snapshot_required": true,
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 4,
+        "revision_after": 12,
+        "revision_advanced": true
+      },
+      "fixture_window": {
+        "backingScale": 2,
+        "contentHeight": 512,
+        "height": 512,
+        "number": 1093,
+        "width": 520,
+        "x": 478,
+        "y": 242
+      },
+      "fixture_foreground": {
+        "is_key": false,
+        "active": false
+      },
+      "fixture_identity_unchanged": true,
+      "status": "passed",
+      "degraded": false,
+      "finish_reason": "stop",
+      "provider_calls": [
+        {
+          "call_id": "fixture-1",
+          "observation_id": null,
+          "name": "computer_observe",
+          "operation": "discover",
+          "action": null,
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": false,
+          "include_image": null,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        },
+        {
+          "call_id": "fixture-2",
+          "observation_id": null,
+          "name": "computer_observe",
+          "operation": "window",
+          "action": null,
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": false,
+          "include_image": true,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        },
+        {
+          "call_id": "fixture-3",
+          "observation_id": "cobs_IxPuqvI-AuP9dX0D",
+          "name": "computer_action",
+          "operation": null,
+          "action": "click",
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": true,
+          "include_image": null,
+          "button": "left",
+          "count": 2,
+          "postcondition": null
+        }
+      ],
+      "provider_failures": [],
+      "observation_meta": [
+        {
+          "truncated": false,
+          "image": true,
+          "element_count": 106
+        },
+        {
+          "truncated": false,
+          "image": true,
+          "element_count": 106
+        },
+        {
+          "truncated": false,
+          "image": true,
+          "element_count": 106
+        }
+      ],
+      "tool_diagnostics": [
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-3",
+          "envelope": {
+            "ok": true
+          },
+          "result": {
+            "observation_error": null,
+            "outcome": {
+              "after_observation_id": null,
+              "before_observation_id": "cobs_IxPuqvI-AuP9dX0D",
+              "delivery": null,
+              "error_code": "action_outcome_mismatch",
+              "postcondition": "not_checked",
+              "status": "not_started"
+            },
+            "verification_error": null
+          }
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-3",
+          "envelope": {
+            "ok": true
+          },
+          "result": {
+            "observation_error": null,
+            "outcome": {
+              "after_observation_id": null,
+              "before_observation_id": "cobs_IxPuqvI-AuP9dX0D",
+              "delivery": null,
+              "error_code": "action_outcome_mismatch",
+              "postcondition": "not_checked",
+              "status": "not_started"
+            },
+            "verification_error": null
+          }
+        }
+      ],
+      "provider_request_count": 5,
+      "provider_image_hashes": [
+        [],
+        [],
+        [
+          "d239dafb53123affad8692915bb6ae11548e7c1ee60f742b01b40c464071b677"
+        ],
+        [
+          "d239dafb53123affad8692915bb6ae11548e7c1ee60f742b01b40c464071b677"
+        ],
+        [
+          "d239dafb53123affad8692915bb6ae11548e7c1ee60f742b01b40c464071b677"
+        ]
+      ],
+      "action_outcomes": [
+        {
+          "after_observation_id": null,
+          "before_observation_id": "cobs_IxPuqvI-AuP9dX0D",
+          "delivery": null,
+          "error_code": "action_outcome_mismatch",
+          "postcondition": "not_checked",
+          "status": "not_started"
+        }
+      ],
+      "ledger_states": [
+        "closed",
+        "closed",
+        "closed"
+      ],
+      "visual_count": 1,
+      "independent_effect": {
+        "counter_delta": 2,
+        "text_changed": false,
+        "unicode_marker_present": false,
+        "q_delta": 0,
+        "Y_delta": 0,
+        "scroll_delta": 0,
+        "secure_before": false,
+        "secure_after": false,
+        "exact_live_insert": false,
+        "correct_field": false,
+        "live_text_changed": false,
+        "committed_text_changed": false,
+        "committed_seed": false,
+        "secure_live_before": false,
+        "secure_live_after": false,
+        "key_down_characters": [],
+        "key_down_fields": [],
+        "key_up_events": 0,
+        "text_change_events": 0,
+        "secure_change_events": 0,
+        "mouse_click_counts": [
+          1,
+          2
+        ],
+        "right_mouse_delta": 0,
+        "pointer_events": [
+          {
+            "clickCount": 1,
+            "deltaY": 0,
+            "kind": "left",
+            "positionKnown": true,
+            "windowX": 80,
+            "windowY": 382
+          },
+          {
+            "clickCount": 2,
+            "deltaY": 0,
+            "kind": "left",
+            "positionKnown": true,
+            "windowX": 80,
+            "windowY": 382
+          }
+        ],
+        "unchanged": false,
+        "wheel_inside_scroll_region": false
+      },
+      "active_turn": false,
+      "fixture_scroll_region": {
+        "height": 200,
+        "width": 480,
+        "x": 20,
+        "y": 28
+      },
+      "artifact_image_hashes": [
+        "d239dafb53123affad8692915bb6ae11548e7c1ee60f742b01b40c464071b677"
+      ],
+      "image_hashes_match": true,
+      "raw_status": "tested",
+      "verdict_reason": "independent_effect",
+      "expected_variant": [
+        "click",
+        "element",
+        "left",
+        2
+      ],
+      "actual_variant": {
+        "call_id": "fixture-3",
+        "observation_id": "cobs_IxPuqvI-AuP9dX0D",
+        "name": "computer_action",
+        "operation": null,
+        "action": "click",
+        "key": null,
+        "keys": null,
+        "direction": null,
+        "amount": null,
+        "coordinate_target": false,
+        "element_target": true,
+        "include_image": null,
+        "button": "left",
+        "count": 2,
+        "postcondition": null
+      },
+      "action_attempts": 1,
+      "recovered_not_started": 0,
+      "native_completion": [
+        "not_started"
+      ],
+      "gate": "double-background"
+    },
+    {
+      "schema_version": 2,
+      "scripted_provider": true,
+      "provider_model": "scripted_fixture_transport",
+      "case": "scroll",
+      "mode": "semantic",
+      "delivery": "background",
+      "image_edge": 1920,
+      "shifted_window": false,
+      "sdk_input_entries": 1,
+      "approval_count": 1,
+      "approval_decisions": [
+        {
+          "call_id": "fixture-3",
+          "approved": true
+        }
+      ],
+      "raw_evidence_only": false,
+      "discovery": {
+        "fixture_app_count": 1,
+        "fixture_pids": [
+          59657
+        ],
+        "window_count": 1,
+        "windows": [
+          {
+            "window_id": 1099,
+            "fixture_title": true
+          }
+        ]
+      },
+      "window_read": {
+        "ax_element_count": 106,
+        "ax_complete": false,
+        "truncated": false,
+        "degraded": null,
+        "reason": null,
+        "image_count": 0,
+        "frame_valid": null,
+        "max_returned_depth": 5,
+        "truncation_reason": null
+      },
+      "sdk_fields": [
+        {
+          "label": "Unicode text",
+          "value": "Unicode text"
+        },
+        {
+          "label": "Synthetic secure field",
+          "value": "Synthetic secure field"
+        }
+      ],
+      "selected_frame": {
+        "width": null,
+        "height": null,
+        "backing_scale": null,
+        "window_bounds": null
+      },
+      "selected_node": {
+        "role": "AXScrollArea",
+        "label": "fixture-scroll",
+        "enabled": null,
+        "actions": [
+          "AXScrollLeftByPage",
+          "AXScrollRightByPage",
+          "AXScrollUpByPage",
+          "AXScrollDownByPage"
+        ],
+        "frame": {
+          "x": 498.0,
+          "y": 486.0,
+          "w": 480.0,
+          "h": 200.0
+        }
+      },
+      "approved_reference": {
+        "call_id": "fixture-3",
+        "observation_id": "cobs_UE39bv1-WLbe1bsv",
+        "element_ref_sha256": "88cc8a3c5b5f2b104124798be265329f04660c3c50831b274e421d0452d1a9d9",
+        "observed_token_sha256": "28d382f97453ea15aff4369b9f4d9f3a929b198b3823013e8c6a1836a02567eb",
+        "same_ref_observed_then_dispatched": true
+      },
+      "sdk_method": "scroll",
+      "reference_proofs": [
+        {
+          "call_id": "fixture-3",
+          "observation_id": "cobs_UE39bv1-WLbe1bsv",
+          "element_ref_sha256": "88cc8a3c5b5f2b104124798be265329f04660c3c50831b274e421d0452d1a9d9",
+          "observed_token_sha256": "28d382f97453ea15aff4369b9f4d9f3a929b198b3823013e8c6a1836a02567eb",
+          "same_ref_observed_then_dispatched": true,
+          "native_token_sha256": "28d382f97453ea15aff4369b9f4d9f3a929b198b3823013e8c6a1836a02567eb",
+          "native_token_matches_observed_sdk_token": true
+        }
+      ],
+      "sdk_target": {
+        "role": "AXScrollArea",
+        "label": "fixture-scroll",
+        "enabled": null,
+        "actions": [
+          "AXScrollLeftByPage",
+          "AXScrollRightByPage",
+          "AXScrollUpByPage",
+          "AXScrollDownByPage"
+        ],
+        "frame": {
+          "x": 498.0,
+          "y": 486.0,
+          "w": 480.0,
+          "h": 200.0
+        }
+      },
+      "sdk_coordinate": {
+        "x": null,
+        "y": null
+      },
+      "sdk_action_outcome": {
+        "status": "unknown",
+        "delivery": "background",
+        "before_observation_id": null,
+        "after_observation_id": null,
+        "error_code": "unverified_action",
+        "postcondition": "not_checked"
+      },
+      "fixture_snapshot_required": true,
+      "fixture_snapshot": {
+        "healthy": true,
+        "fields_valid": true,
+        "revision_before": 4,
+        "revision_after": 10,
+        "revision_advanced": true
+      },
+      "fixture_window": {
+        "backingScale": 2,
+        "contentHeight": 512,
+        "height": 512,
+        "number": 1099,
+        "width": 520,
+        "x": 478,
+        "y": 242
+      },
+      "fixture_foreground": {
+        "is_key": false,
+        "active": false
+      },
+      "fixture_identity_unchanged": true,
+      "status": "passed",
+      "degraded": false,
+      "finish_reason": "stop",
+      "provider_calls": [
+        {
+          "call_id": "fixture-1",
+          "observation_id": null,
+          "name": "computer_observe",
+          "operation": "discover",
+          "action": null,
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": false,
+          "include_image": null,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        },
+        {
+          "call_id": "fixture-2",
+          "observation_id": null,
+          "name": "computer_observe",
+          "operation": "window",
+          "action": null,
+          "key": null,
+          "keys": null,
+          "direction": null,
+          "amount": null,
+          "coordinate_target": false,
+          "element_target": false,
+          "include_image": false,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        },
+        {
+          "call_id": "fixture-3",
+          "observation_id": "cobs_UE39bv1-WLbe1bsv",
+          "name": "computer_action",
+          "operation": null,
+          "action": "scroll",
+          "key": null,
+          "keys": null,
+          "direction": "down",
+          "amount": 3,
+          "coordinate_target": false,
+          "element_target": true,
+          "include_image": null,
+          "button": null,
+          "count": null,
+          "postcondition": null
+        }
+      ],
+      "provider_failures": [],
+      "observation_meta": [
+        {
+          "truncated": false,
+          "image": false,
+          "element_count": 106
+        },
+        {
+          "truncated": false,
+          "image": false,
+          "element_count": 106
+        },
+        {
+          "truncated": false,
+          "image": false,
+          "element_count": 106
+        }
+      ],
+      "tool_diagnostics": [
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-3",
+          "envelope": {
+            "ok": true
+          },
+          "result": {
+            "observation_error": null,
+            "outcome": {
+              "after_observation_id": "cobs_sJYV2Gc9zJAbssvp",
+              "before_observation_id": "cobs_UE39bv1-WLbe1bsv",
+              "delivery": "background",
+              "error_code": "unverified_action",
+              "postcondition": "not_checked",
+              "status": "unknown"
+            },
+            "verification_error": null
+          }
+        },
+        {
+          "call_id": "fixture-1",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-2",
+          "envelope": {
+            "ok": true
+          },
+          "result": {}
+        },
+        {
+          "call_id": "fixture-3",
+          "envelope": {
+            "ok": true
+          },
+          "result": {
+            "observation_error": null,
+            "outcome": {
+              "after_observation_id": "cobs_sJYV2Gc9zJAbssvp",
+              "before_observation_id": "cobs_UE39bv1-WLbe1bsv",
+              "delivery": "background",
+              "error_code": "unverified_action",
+              "postcondition": "not_checked",
+              "status": "unknown"
+            },
+            "verification_error": null
+          }
+        }
+      ],
+      "provider_request_count": 5,
+      "provider_image_hashes": [
+        [],
+        [],
+        [],
+        [],
+        []
+      ],
+      "action_outcomes": [
+        {
+          "after_observation_id": "cobs_sJYV2Gc9zJAbssvp",
+          "before_observation_id": "cobs_UE39bv1-WLbe1bsv",
+          "delivery": "background",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        }
+      ],
+      "ledger_states": [
+        "closed",
+        "closed",
+        "closed"
+      ],
+      "visual_count": 0,
+      "independent_effect": {
+        "counter_delta": 0,
+        "text_changed": false,
+        "unicode_marker_present": false,
+        "q_delta": 0,
+        "Y_delta": 0,
+        "scroll_delta": 30,
+        "secure_before": false,
+        "secure_after": false,
+        "exact_live_insert": false,
+        "correct_field": false,
+        "live_text_changed": false,
+        "committed_text_changed": false,
+        "committed_seed": false,
+        "secure_live_before": false,
+        "secure_live_after": false,
+        "key_down_characters": [],
+        "key_down_fields": [],
+        "key_up_events": 0,
+        "text_change_events": 0,
+        "secure_change_events": 0,
+        "mouse_click_counts": [],
+        "right_mouse_delta": 0,
+        "pointer_events": [
+          {
+            "clickCount": 0,
+            "deltaY": -1,
+            "kind": "wheel",
+            "positionKnown": true,
+            "windowX": 260,
+            "windowY": 128
+          },
+          {
+            "clickCount": 0,
+            "deltaY": -1,
+            "kind": "wheel",
+            "positionKnown": true,
+            "windowX": 260,
+            "windowY": 128
+          },
+          {
+            "clickCount": 0,
+            "deltaY": -1,
+            "kind": "wheel",
+            "positionKnown": true,
+            "windowX": 260,
+            "windowY": 128
+          }
+        ],
+        "unchanged": false,
+        "wheel_inside_scroll_region": true
+      },
+      "active_turn": false,
+      "fixture_scroll_region": {
+        "height": 200,
+        "width": 480,
+        "x": 20,
+        "y": 28
+      },
+      "artifact_image_hashes": [],
+      "image_hashes_match": false,
+      "raw_status": "tested",
+      "verdict_reason": "independent_effect",
+      "expected_variant": [
+        "scroll",
+        "element",
+        null,
+        null
+      ],
+      "actual_variant": {
+        "call_id": "fixture-3",
+        "observation_id": "cobs_UE39bv1-WLbe1bsv",
+        "name": "computer_action",
+        "operation": null,
+        "action": "scroll",
+        "key": null,
+        "keys": null,
+        "direction": "down",
+        "amount": 3,
+        "coordinate_target": false,
+        "element_target": true,
+        "include_image": null,
+        "button": null,
+        "count": null,
+        "postcondition": null
+      },
+      "action_attempts": 1,
+      "recovered_not_started": 0,
+      "native_completion": [
+        "unknown"
+      ],
+      "gate": "scroll-semantic"
+    }
+  ],
+  "status": "passed"
+}

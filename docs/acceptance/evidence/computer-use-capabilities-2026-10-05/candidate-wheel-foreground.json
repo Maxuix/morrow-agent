@@ -1,0 +1,418 @@
+{
+  "schema_version": 2,
+  "scripted_provider": false,
+  "provider_model": "external_live_controller",
+  "case": "coordinate_scroll",
+  "mode": "hybrid",
+  "delivery": "foreground",
+  "image_edge": 1920,
+  "shifted_window": false,
+  "sdk_input_entries": 1,
+  "approval_count": 1,
+  "approval_decisions": [
+    {
+      "call_id": "luna-3",
+      "approved": true
+    }
+  ],
+  "raw_evidence_only": false,
+  "discovery": {
+    "fixture_app_count": 1,
+    "fixture_pids": [
+      66670
+    ],
+    "window_count": 1,
+    "windows": [
+      {
+        "window_id": 988,
+        "fixture_title": true
+      }
+    ]
+  },
+  "window_read": {
+    "ax_element_count": 106,
+    "ax_complete": false,
+    "truncated": false,
+    "degraded": null,
+    "reason": null,
+    "image_count": 1,
+    "frame_valid": true,
+    "max_returned_depth": 5,
+    "truncation_reason": null
+  },
+  "sdk_fields": [
+    {
+      "label": "Unicode text",
+      "value": "Unicode text"
+    },
+    {
+      "label": "Synthetic secure field",
+      "value": "Synthetic secure field"
+    }
+  ],
+  "selected_frame": {
+    "width": 1040,
+    "height": 1024,
+    "backing_scale": 2.0,
+    "window_bounds": {
+      "x": 478.0,
+      "y": 202.0,
+      "width": 520.0,
+      "height": 512.0
+    }
+  },
+  "sdk_method": "scroll",
+  "sdk_target": null,
+  "sdk_coordinate": {
+    "x": 520.0,
+    "y": 768.0
+  },
+  "sdk_action_outcome": {
+    "status": "unknown",
+    "delivery": "foreground",
+    "before_observation_id": null,
+    "after_observation_id": null,
+    "error_code": "unverified_action",
+    "postcondition": "not_checked"
+  },
+  "fixture_snapshot_required": true,
+  "fixture_snapshot": {
+    "healthy": true,
+    "fields_valid": true,
+    "revision_before": 6,
+    "revision_after": 11,
+    "revision_advanced": true
+  },
+  "fixture_window": {
+    "backingScale": 2,
+    "contentHeight": 512,
+    "height": 512,
+    "number": 988,
+    "width": 520,
+    "x": 478,
+    "y": 242
+  },
+  "fixture_foreground": {
+    "is_key": true,
+    "active": true
+  },
+  "fixture_identity_unchanged": true,
+  "status": "failed",
+  "degraded": false,
+  "finish_reason": "stop",
+  "provider_calls": [
+    {
+      "call_id": "luna-1",
+      "observation_id": null,
+      "name": "computer_observe",
+      "operation": "discover",
+      "action": null,
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": false,
+      "include_image": null,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    },
+    {
+      "call_id": "luna-2",
+      "observation_id": null,
+      "name": "computer_observe",
+      "operation": "window",
+      "action": null,
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": false,
+      "include_image": true,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    },
+    {
+      "call_id": "luna-3",
+      "observation_id": "cobs_e5swSWQMAC6aQl2j",
+      "name": "computer_action",
+      "operation": null,
+      "action": "scroll",
+      "key": null,
+      "keys": null,
+      "direction": "down",
+      "amount": 3,
+      "coordinate_target": true,
+      "element_target": false,
+      "include_image": null,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    }
+  ],
+  "provider_failures": [],
+  "observation_meta": [
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 106
+    },
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 106
+    },
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 106
+    }
+  ],
+  "tool_diagnostics": [
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-3",
+      "envelope": {
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "outcome": {
+          "after_observation_id": "cobs_I6_NasjbERA8Pd1X",
+          "before_observation_id": "cobs_e5swSWQMAC6aQl2j",
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        },
+        "verification_error": null
+      }
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-3",
+      "envelope": {
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "outcome": {
+          "after_observation_id": "cobs_I6_NasjbERA8Pd1X",
+          "before_observation_id": "cobs_e5swSWQMAC6aQl2j",
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        },
+        "verification_error": null
+      }
+    }
+  ],
+  "provider_request_count": 5,
+  "provider_image_hashes": [
+    [],
+    [],
+    [
+      "41f3a273c183470721c7fd02fc104a1f9e1fef8d6ddc88d9d557a45af2ff2300"
+    ],
+    [
+      "41f3a273c183470721c7fd02fc104a1f9e1fef8d6ddc88d9d557a45af2ff2300",
+      "022f7041e4a0cefd98ccba176cb1908e62c138d2579d046c62a169920c6cc161"
+    ],
+    [
+      "41f3a273c183470721c7fd02fc104a1f9e1fef8d6ddc88d9d557a45af2ff2300",
+      "022f7041e4a0cefd98ccba176cb1908e62c138d2579d046c62a169920c6cc161"
+    ]
+  ],
+  "action_outcomes": [
+    {
+      "after_observation_id": "cobs_I6_NasjbERA8Pd1X",
+      "before_observation_id": "cobs_e5swSWQMAC6aQl2j",
+      "delivery": "foreground",
+      "error_code": "unverified_action",
+      "postcondition": "not_checked",
+      "status": "unknown"
+    }
+  ],
+  "ledger_states": [
+    "closed",
+    "closed",
+    "closed"
+  ],
+  "visual_count": 2,
+  "independent_effect": {
+    "counter_delta": 0,
+    "text_changed": false,
+    "unicode_marker_present": false,
+    "q_delta": 0,
+    "Y_delta": 0,
+    "scroll_delta": 0,
+    "secure_before": false,
+    "secure_after": false,
+    "exact_live_insert": false,
+    "correct_field": false,
+    "live_text_changed": false,
+    "committed_text_changed": false,
+    "committed_seed": false,
+    "secure_live_before": false,
+    "secure_live_after": false,
+    "key_down_characters": [],
+    "key_down_fields": [],
+    "key_up_events": 0,
+    "text_change_events": 0,
+    "secure_change_events": 0,
+    "mouse_click_counts": [],
+    "right_mouse_delta": 0,
+    "pointer_events": [
+      {
+        "clickCount": 0,
+        "deltaY": 0,
+        "kind": "left",
+        "positionKnown": false,
+        "windowX": null,
+        "windowY": null
+      }
+    ],
+    "unchanged": true,
+    "wheel_inside_scroll_region": false
+  },
+  "active_turn": false,
+  "fixture_scroll_region": {
+    "height": 200,
+    "width": 480,
+    "x": 20,
+    "y": 28
+  },
+  "artifact_image_hashes": [
+    "022f7041e4a0cefd98ccba176cb1908e62c138d2579d046c62a169920c6cc161",
+    "41f3a273c183470721c7fd02fc104a1f9e1fef8d6ddc88d9d557a45af2ff2300"
+  ],
+  "image_hashes_match": true,
+  "raw_status": "tested",
+  "verdict_reason": "independent_effect",
+  "expected_variant": [
+    "scroll",
+    "coordinate",
+    null,
+    null
+  ],
+  "actual_variant": {
+    "call_id": "luna-3",
+    "observation_id": "cobs_e5swSWQMAC6aQl2j",
+    "name": "computer_action",
+    "operation": null,
+    "action": "scroll",
+    "key": null,
+    "keys": null,
+    "direction": "down",
+    "amount": 3,
+    "coordinate_target": true,
+    "element_target": false,
+    "include_image": null,
+    "button": null,
+    "count": null,
+    "postcondition": null
+  },
+  "action_attempts": 1,
+  "recovered_not_started": 0,
+  "native_completion": [
+    "unknown"
+  ],
+  "controller_decisions": [
+    {
+      "sequence": 1,
+      "request_sha256": "c98a29e35dd09c3c178d328dd58965b90b795ec7e3d1571d806cd190321dee1b",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "f058a16d71fe0a797f53ff57190d7d023aa37335d249bb5ffda543eca769721d"
+    },
+    {
+      "sequence": 2,
+      "request_sha256": "2cd45a658353b4d667dee6496bcb068af7ab08954fc940f10707b967a6353c97",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "b0377aa19d0bbfa0f503836ff6aeae725cc79b2f5cb16db8d0778f636234cc91"
+    },
+    {
+      "sequence": 3,
+      "request_sha256": "dc179fc6c89ac1a1937b12198c237854c0e0cd8b6f47959ae702eb75c7d1ac6d",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "a312a612ac9b32dc8df051285e64017b5f6888415c42c0d5e3bfebe657d80b50"
+    },
+    {
+      "sequence": 4,
+      "request_sha256": "6bfafb27691a96e324cd3c0a24a5d15cb31fea8b2f97ec34c85d37fcb222fad7",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "2b1ab867ce7e33c5a1719e5a16ef940216e972025c3f4dbff5ea2d866ff348b8"
+    },
+    {
+      "sequence": 5,
+      "request_sha256": "8116e88d09a4b7d4cb170033ad0728f4961de089c790edcd55a290dad365d09f",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "05f48c8720bd02c947233b911a891190cdd9c913f75f5cffd1acd3df4df52413"
+    }
+  ]
+}

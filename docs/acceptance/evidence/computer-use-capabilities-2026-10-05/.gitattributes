@@ -1,0 +1,2 @@
+# Preserve generated command logs exactly, including final blank lines.
+*.log whitespace=-blank-at-eof

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "upstream_commit": "bf6c76786d938070f4ecf1e44004752f69f518b8",
+  "upstream_tag": "cua-driver-rs-v0.30.4",
+  "distribution_version": "0.30.4+morrow.3",
+  "patch_sha256": "d269b57ed44653e515855e359899c73d9e7ccd40070d412e2816f0cc8ac733bf",
+  "scope": [
+    "exact retained-object enabled readback",
+    "real AXScrollArea tokens",
+    "foreground exact-window PID wheel",
+    "background native element physical double-click"
+  ],
+  "content_filters": false,
+  "release_built": true,
+  "wheel": "cua_driver-0.30.4+morrow.3-py3-none-macosx_14_0_arm64.whl",
+  "wheel_sha256": "f0b544a1ec4eed63085cfa3226c6436494f4705441c7abf97f564e555d5d9f7e",
+  "payload_sha256": {
+    "bin/cua-driver": "298903433c53dafadb5f838d8015fc35b5d741a894edbb6d60364bac6c63023a",
+    "libcua_driver_sdk.dylib": "dc35e83565283558c7ee46e08ff834bcd36eaebf56855084dae200985c557703"
+  },
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+  "native_acceptance": "separate evidence required"
+}
