@@ -29,13 +29,13 @@ Morrow 可实施的内容链、截图、手势、能力描述和 fixture 判定�
 
 | 命令/范围 | 实际结果 |
 | --- | --- |
-| uv run pytest -q tests/test_computer* | 465 passed；随后新增无帧元数据回归包含在最终全套中，最新 harness/counter/text 定向 24 passed |
-| uv run pytest -m 'not live' -q | Luna 诊断改动后的最终复跑 3087 passed，2 deselected，212.93s；之前生产版本3081 passed。首次新增回归全套有一项既有 sandbox 1秒timeout，单独复查通过，原失败日志保留。 |
+| uv run pytest -q tests/test_computer* | review 纠正后486 passed；早期465及Luna定向回归属于对应历史源码。 |
+| uv run pytest -m 'not live' -q | review 纠正后3101 passed，2 deselected，211.73s；之前Luna版3087 passed，生产版3081 passed。历史一次既有 sandbox 1秒timeout的失败日志保留。 |
 | uv run ruff check . | passed |
 | uv run ruff format --check src tests evals/computer_use | 755 files already formatted |
 | uv run ruff format --check . | 未通过；仅用户已有 evals/benchmarks/run_tb2.py 格式差异。未改动、未提交该文件。 |
 | compileall src tests / morrow --help / git diff --check | passed |
-| pnpm GUI install / typecheck / test / build | passed；107 files / 724 tests；bundle budget passed |
+| pnpm GUI install / typecheck / test / build | 上轮passed；107 files / 724 tests；bundle budget passed。本轮review无GUI改动，未重复GUI测试。 |
 | Swift fixture build | passed，独立 private state directory |
 | uv build | wheel/sdist 成功，先完成 GUI build |
 | Python 3.12.13 wheel no-extra / extra installed smoke | 两环境 passed，56/57 依赖兼容；30 GUI 文件 hash 对齐，普通任务 completed，网络/SDK 导入 0 次，desktop not_activated；extra SDK 0.30.4，no-extra SDK absent |
@@ -47,6 +47,8 @@ Morrow 可实施的内容链、截图、手势、能力描述和 fixture 判定�
 运行环境：macOS 27.0 arm64，项目 Python 3.13.0，官方 cua-driver 0.30.4；DeepSeek OpenAI-compatible base_url https://api.deepseek.com，model deepseek-flash。普通 AgentLoop、生产 Provider adapter、临时隔离 store 和每案一次批准动作。
 
 首轮修复后矩阵（生产 `ea1ad393`，当时的 v2 fixture）：**36 场景，29 passed / 4 unsupported / 3 failed**。semantic 前后台输入/按键/提交/secure、text_appears/element_exists、拒绝审批，以及 hybrid 观察/坐标点击/前台双击/左右键和后台坐标滚动有独立效果证据；hybrid 图像 SHA 与 Provider 请求一致。3 个失败为 foreground 坐标滚动（1920/640）与 background 双击，随后用原生指针事件定位并增加投递前 SDK 能力拒绝。首轮不是最终源码全量通过证据。
+
+上述29个passed是历史脚本口径。review后的当前门槛离线回算为26 passed / 4 unsupported / 6 failed：两场拒绝审批缺少明确决定与对应call ID记录，一场后台坐标滚动缺少完整wheel-region证据。不能用“状态未变/位移改变”补齐这些证明，也不据此宣称历史动作新发生了故障。原始JSON保持不变，差异见 [review-rescore.json](assets/computer-use-repair-2026-10-04/review-rescore.json)。最后真实矩阵回算仍为1 passed / 35 failed。
 
 | 额外定向证据 | 可核验结果 |
 | --- | --- |
@@ -84,6 +86,10 @@ v3 fixture/native_counter 增加 callback 与选择对象身份诊断，投递�
 
 ## 交付与后续条件
 
+2026-10-04 review纠正（代码 `e2085a22`）：三项P2均属实并已修复。长value/value_description只截断展示前缀，保留引用、role、enabled和私有token/几何；先为有效节点role/label预留32KiB共享预算，再分配文本。`text_truncated=true`明确说明节点文本不完整；Observation同样truncated/complete=false，但只截文本时omitted_count=0，不冒充删除了节点。数量/深度等结构预算仍可省略节点。单控件4097字、多字节文本及200控件共享预算的回归证明最后节点仍可输入/按键，未展示的后缀不能证明不存在。
+
+后置条件类型在能力判定前核对，漏掉或错用attribute_equals等请求直接failed/wrong_postcondition；即使属性读回不可用，也不掩盖点击oracle无效果。拒绝审批必须有同一call ID的明确approved=false、审批一次、approval_rejected错误、原生0及fixture未变。approval_unavailable、错误调用的拒绝、缺少决定和批准后未投递都不能通过。采集器同步导出审批决定和call ID关联；回归使用fake SDK/ScriptedProvider，无真实Provider或原生动作。
+
 Morrow 代码与离线/GUI/build 修复已提交；Luna 诊断提交为 `f639c152`。真实验收仍有 Provider 余额、当前 fixture semantic click，以及官方 SDK 精确属性/容器与两种投递的缺口。未将整个方案标为完成。用户已有 benchmark/docs dirty 与 staged audit 保留，未提交。
 
 关键证据 SHA-256（本地 raw assets，不随 Git 推送）：
@@ -97,4 +103,5 @@ Morrow 代码与离线/GUI/build 修复已提交；Luna 诊断提交为 `f639c15
 - `sdk-contract.json`：`350c31b0153511e53e7a84b63f4029215e1dfd0bce17da23e541a9a7167edf76`
 
 - `delivery-source-manifest.json`：`c834bc4db5d879b257093d7af1899aa5559c1175df4cc98c3640f65c6a3c4c34`（Luna 诊断前的源码版本，区别于真实矩阵启动时版本）
-- `delivery-source-manifest-luna.json`：`4f09d0a844c82f5175f01f7f46debdd9d3b862a5bafd7dacf225956ae8322692`（Luna 后最终源码，`f639c152`，含753个文件hash；文档另行提交）
+- `delivery-source-manifest-luna.json`：`4f09d0a844c82f5175f01f7f46debdd9d3b862a5bafd7dacf225956ae8322692`（Luna 诊断源码，`f639c152`，含753个文件hash；review改动另见下项）
+- 最新review源码及日志：[delivery-source-manifest-review.json](assets/computer-use-repair-2026-10-04/delivery-source-manifest-review.json)（`e2085a22`），[review-offline.txt](assets/computer-use-repair-2026-10-04/review-offline.txt)、[review-focused.txt](assets/computer-use-repair-2026-10-04/review-focused.txt)。
