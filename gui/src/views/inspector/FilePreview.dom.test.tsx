@@ -4,7 +4,7 @@ import { act, fireEvent, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiClient } from '../../api/client'
 import type { WorkspaceFileInfo } from '../../api/types'
-import { BinaryPreview, FileDownload, exceedsPixelBudget, formatBytes } from './FilePreview'
+import { BinaryPreview, exceedsPixelBudget, formatBytes } from './FilePreview'
 
 const INFO: WorkspaceFileInfo = {
   path: 'docs/图 片.png',
@@ -102,13 +102,6 @@ describe('FilePreview', () => {
     expect(screen.getByRole('alert').textContent).toContain('20 MiB')
     expect(screen.getByRole('button', { name: '重试预览' })).toBeTruthy()
     expect(container.querySelector('[data-file-preview="image"]')).toBeNull()
-  })
-
-  it('offers a tokenless download link with an attachment disposition', async () => {
-    await render(<FileDownload client={clientReturning(200)} path={INFO.path} filename="图 片.png" />)
-    const link = screen.getByRole('link', { name: '下载' })
-    expect(link.getAttribute('href')).toContain('disposition=attachment')
-    expect(link.getAttribute('href')).toContain('path=docs%2F')
   })
 
   it('stops decoding an image beyond the pixel budget', async () => {

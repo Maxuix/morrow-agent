@@ -63,7 +63,7 @@ export function BatchPanel({
   }
   const send = async () => {
     const ok = await submit(batchPayload(rows), base ?? revision).catch(() => false)
-    setMessage(ok ? '' : '批量提交失败；没有写入任何一项。')
+    setMessage(ok ? '' : '批量提交结果未确认；输入已保留，请核对当前记录后重试。')
     if (ok) { setRows([blank()]); setBase(null) }
   }
   return (

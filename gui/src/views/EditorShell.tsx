@@ -98,7 +98,7 @@ export function EditorShell({
 
   useLeaveGuard(registerGuard, dirty, promptLeave)
 
-  useEffect(() => () => controller.dispose(), [controller])
+  useEffect(() => { controller.activate(); return () => controller.dispose() }, [controller])
 
   async function refresh() {
     try {

@@ -113,6 +113,7 @@ export class SyncStore {
   private ws: WebSocketLike | null = null
   private attempts = 0
   private approvalsGeneration = 0
+  private generation = 0
   private started = false
   private stopped = false
   private recovering = false
@@ -140,12 +141,17 @@ export class SyncStore {
     if (this.started) return
     this.started = true
     this.stopped = false
+    const generation = ++this.generation
+    this.recovering = false
+    this.attempts = 0
+    this.pullChain = Promise.resolve()
+    this.seenEventIds.clear()
     this.patch({ connection: 'connecting' })
     try {
-      await this.loadSnapshot()
-      this.openSocket()
+      await this.loadSnapshot(generation)
+      if (this.isCurrent(generation)) this.openSocket(generation)
     } catch (error) {
-      this.handleSyncFailure(error)
+      this.handleSyncFailure(error, generation)
     }
   }
 
@@ -158,19 +164,23 @@ export class SyncStore {
 
   stop(): void {
     this.stopped = true
+    this.started = false
+    this.generation += 1
+    this.approvalsGeneration += 1
     this.closeSocket()
   }
 
   /** Re-read approvals after a local command settles before its event arrives. */
   async refreshPendingApprovals(): Promise<void> {
     if (this.stopped) return
-    await this.refreshApprovals()
+    await this.refreshApprovals(this.generation)
   }
 
   // Snapshot / resync ---------------------------------------------------------
 
-  private async loadSnapshot(): Promise<void> {
+  private async loadSnapshot(generation: number): Promise<void> {
     const snapshot = await this.client.snapshot()
+    if (!this.isCurrent(generation)) return
     const workflowRuns = new Map<string, WorkflowRunProjection>()
     for (const run of snapshot.workflow_runs) {
       workflowRuns.set(run.workflow_run_id, { run, view: null })
@@ -183,6 +193,7 @@ export class SyncStore {
     // from the list endpoint (first page) and let live events fill the rest.
     const sessions = new Map<string, SessionWire>()
     const sessionsPage = await this.client.listSessions({ limit: 100 })
+    if (!this.isCurrent(generation)) return
     for (const session of sessionsPage.sessions) {
       sessions.set(session.session_id, session)
     }
@@ -198,9 +209,9 @@ export class SyncStore {
   }
 
   /** Gap recovery: fresh snapshot re-anchor, then drain the remainder. */
-  private async resync(): Promise<void> {
-    await this.loadSnapshot()
-    await this.drainEvents()
+  private async resync(generation: number): Promise<void> {
+    await this.loadSnapshot(generation)
+    await this.drainEvents(generation)
   }
 
   // Event stream ---------------------------------------------------------------
@@ -215,14 +226,22 @@ export class SyncStore {
     return path
   }
 
-  private openSocket(): void {
+  private isCurrent(generation: number): boolean {
+    return !this.stopped && generation === this.generation
+  }
+
+  private openSocket(generation: number): void {
+    if (!this.isCurrent(generation)) return
     this.closeSocket()
     const ws = this.wsFactory(this.wsUrl())
     this.ws = ws
-    ws.onmessage = (event) => this.handleHint(event.data)
+    ws.onmessage = (event) => {
+      if (this.isCurrent(generation)) this.handleHint(event.data)
+    }
     ws.onclose = () => {
+      if (!this.isCurrent(generation)) return
       this.ws = null
-      this.handleSyncFailure()
+      this.handleSyncFailure(undefined, generation)
     }
   }
 
@@ -261,27 +280,30 @@ export class SyncStore {
    * generation guard drops any refresh overtaken by a newer one, so no
    * debounce is needed for back-to-back lifecycle events. */
   private schedulePull(): void {
+    const generation = this.generation
     this.pullChain = this.pullChain
       .then(async () => {
-        if (this.stopped || this.recovering) return
-        await this.drainEvents()
-        if (!this.stopped && !this.recovering && this.ws !== null) {
+        if (!this.isCurrent(generation) || this.recovering) return
+        await this.drainEvents(generation)
+        if (this.isCurrent(generation) && !this.recovering && this.ws !== null) {
           this.patch({ connection: 'live' })
         }
       })
-      .catch((error: unknown) => this.handleSyncFailure(error))
+      .catch((error: unknown) => this.handleSyncFailure(error, generation))
   }
 
-  private async drainEvents(): Promise<void> {
-    while (true) {
+  private async drainEvents(generation: number): Promise<void> {
+    while (this.isCurrent(generation)) {
       const page = await this.client.events(this.state.cursor)
+      if (!this.isCurrent(generation)) return
       for (const event of page.events) {
         if (event.cursor <= this.state.cursor) continue
         if (!this.seenEventIds.has(event.event_id)) {
+          await this.applyEvent(event, generation)
+          if (!this.isCurrent(generation)) return
           this.seenEventIds.add(event.event_id)
           // The cursor already deduplicates old events; bound the auxiliary ID window.
           if (this.seenEventIds.size > 1024) this.seenEventIds.delete(this.seenEventIds.values().next().value!)
-          await this.applyEvent(event)
         }
         this.commit(event)
       }
@@ -289,35 +311,37 @@ export class SyncStore {
     }
   }
 
-  private async applyEvent(event: EventWire): Promise<void> {
+  private async applyEvent(event: EventWire, generation: number): Promise<void> {
     switch (event.event_type) {
       case 'session.created': {
         // Payload is only {lifecycle, health}; fetch the full row.
         const session = await this.client.getSession(event.aggregate_id)
+        if (!this.isCurrent(generation)) return
         this.state.sessions.set(session.session_id, session)
         break
       }
       case 'task.created': {
         // Payload is only {status, row_version}; fetch the full row.
         const task = await this.client.getTask(event.aggregate_id)
+        if (!this.isCurrent(generation)) return
         this.state.tasks.set(task.task_run_id, task)
         break
       }
       case 'workflow_run.created': {
         // Payload is only lineage facts; fetch the full run view.
-        await this.refreshRun(event.aggregate_id)
+        await this.refreshRun(event.aggregate_id, generation)
         break
       }
       case 'workflow_run.status_changed': {
         const projection = this.state.workflowRuns.get(event.aggregate_id)
         if (projection === undefined) {
-          await this.refreshRun(event.aggregate_id)
+          await this.refreshRun(event.aggregate_id, generation)
         } else {
           patchRun(projection.run, event.payload)
         }
         // No approval.resolved event exists; a resolved approval only shows up
         // as run/node progress, so lifecycle events refresh the pending list.
-        await this.refreshApprovals()
+        await this.refreshApprovals(generation)
         break
       }
       case 'workflow_node.status_changed': {
@@ -327,7 +351,7 @@ export class SyncStore {
         if (typeof runId !== 'string') break
         if (projection === undefined) {
           // Node event for an unknown run: refetch the whole view.
-          await this.refreshRun(runId)
+          await this.refreshRun(runId, generation)
           break
         }
         const nodeView = projection.view?.nodes.find(
@@ -335,7 +359,7 @@ export class SyncStore {
         )
         if (projection.view !== null && nodeView === undefined) {
           // Unknown node (e.g. a patch extended the graph): refetch the view.
-          await this.refreshRun(runId)
+          await this.refreshRun(runId, generation)
           break
         }
         if (nodeView !== undefined) {
@@ -348,20 +372,20 @@ export class SyncStore {
         }
         // See workflow_run.status_changed: node progress is the signal that a
         // resolved approval left the pending set.
-        await this.refreshApprovals()
+        await this.refreshApprovals(generation)
         break
       }
       case 'approval.resolved': {
         // The durable decision is the authority; drop the pending entry and
         // re-pull so replay/duplicate events cannot resurrect it.
         this.state.pendingApprovals.delete(event.aggregate_id)
-        await this.refreshApprovals()
+        await this.refreshApprovals(generation)
         break
       }
       case 'approval.requested': {
         // The event is only a pull hint ({effect, reason_codes,
         // preview_line_count}); the approvals query owns the bounded preview.
-        await this.refreshApprovals()
+        await this.refreshApprovals(generation)
         break
       }
       default:
@@ -370,17 +394,19 @@ export class SyncStore {
     }
   }
 
-  private async refreshRun(runId: string): Promise<void> {
+  private async refreshRun(runId: string, generation: number): Promise<void> {
     const view = await this.client.getRunView(runId)
+    if (!this.isCurrent(generation)) return
     this.state.workflowRuns.set(runId, { run: view.run, view })
   }
 
-  private async refreshApprovals(): Promise<void> {
+  private async refreshApprovals(lifecycle: number): Promise<void> {
     // Generation guard: lifecycle events can overlap this with a newer refresh,
     // and a stale response must not resurrect resolved approvals.
+    if (!this.isCurrent(lifecycle)) return
     const generation = ++this.approvalsGeneration
     const approvals = await this.client.listApprovals(true)
-    if (generation !== this.approvalsGeneration) return
+    if (!this.isCurrent(lifecycle) || generation !== this.approvalsGeneration) return
     this.patch({pendingApprovals: new Map(
       approvals.map((approval) => [approval.approval_id, approval]),
     )})
@@ -388,8 +414,8 @@ export class SyncStore {
 
   // Failure / reconnect ---------------------------------------------------------
 
-  private handleSyncFailure(error?: unknown): void {
-    if (this.stopped || this.recovering) return
+  private handleSyncFailure(error?: unknown, generation = this.generation): void {
+    if (!this.isCurrent(generation) || this.recovering) return
     if (isUnauthorized(error)) {
       this.closeSocket()
       this.patch({ connection: 'unauthorized' })
@@ -398,42 +424,44 @@ export class SyncStore {
     this.recovering = true
     this.closeSocket()
     this.patch({ connection: 'reconnecting' })
-    void this.reconnectLoop()
+    void this.reconnectLoop(generation)
   }
 
-  private async reconnectLoop(): Promise<void> {
+  private async reconnectLoop(generation: number): Promise<void> {
     try {
-      while (!this.stopped) {
+      while (this.isCurrent(generation)) {
         if (this.attempts >= this.maxReconnectAttempts) {
           this.patch({ connection: 'offline' })
           return
         }
         this.attempts += 1
         await this.sleep(this.backoffMs(this.attempts))
-        if (this.stopped) return
+        if (!this.isCurrent(generation)) return
         try {
-          await this.resync()
+          await this.resync(generation)
         } catch (error) {
+          if (!this.isCurrent(generation)) return
           if (isUnauthorized(error)) {
             this.patch({ connection: 'unauthorized' })
             return
           }
           continue
         }
+        if (!this.isCurrent(generation)) return
         this.attempts = 0
         this.recovering = false
-        this.openSocket()
+        this.openSocket(generation)
         this.patch({ connection: 'live' })
         return
       }
     } finally {
       // `recovering` is cleared on success above; on stop/offline the store no
       // longer accepts hint-driven pulls until `retry()` runs.
-      if (
+      if (this.isCurrent(generation) && (
         this.state.connection === 'live' ||
         this.state.connection === 'offline' ||
         this.state.connection === 'unauthorized'
-      ) {
+      )) {
         this.recovering = false
       }
     }

@@ -30,6 +30,45 @@ async function settlePromises() {
 afterEach(() => vi.useRealTimers())
 
 describe('WorkflowDraftController', () => {
+  it('reactivates after cleanup and confirms a subsequent edit', async () => {
+    const update = vi.fn(async (_id, source) => draftView({ source, row_version: 2 }))
+    const controller = new WorkflowDraftController(clientFor(update))
+    controller.dispose()
+    controller.activate()
+    controller.load({ workspaceId: 'ws_fixture', draftId: 'wdraft_three_step' }, draftView())
+    controller.edit({ ...THREE_STEP_SOURCE, name: 'Remounted edit' })
+    await expect(controller.saveNow()).resolves.toEqual({ ok: true, reason: 'saved' })
+    expect(update).toHaveBeenCalledOnce()
+    expect(controller.dirty).toBe(false)
+    controller.dispose()
+  })
+
+  it('preserves an in-flight save as unknown on cleanup and ignores its late response', async () => {
+    const response = deferred<WorkflowDraftViewWire>()
+    const source = { ...THREE_STEP_SOURCE, name: 'Pending edit' }
+    const update = vi.fn(() => response.promise)
+    const controller = new WorkflowDraftController(clientFor(update, async () => draftView({ source, row_version: 2 })), {
+      makeCommandId: () => 'cmd_pending',
+    })
+    controller.load({ workspaceId: 'ws_fixture', draftId: 'wdraft_three_step' }, draftView())
+    controller.edit(source)
+    const saving = controller.saveNow()
+    controller.dispose()
+    await expect(saving).resolves.toEqual({ ok: false, reason: 'failed' })
+    await expect(controller.saveNow()).resolves.toEqual({ ok: false, reason: 'failed' })
+    controller.activate()
+    expect(controller.getState().pendingCommand).toBeNull()
+    expect(controller.getState().unresolvedCommand?.commandId).toBe('cmd_pending')
+    await expect(controller.saveNow()).resolves.toEqual({ ok: false, reason: 'unknown' })
+    response.resolve(draftView({ source, row_version: 2 }))
+    await settlePromises()
+    expect(controller.getState().serverSnapshot?.draft.row_version).toBe(1)
+    await expect(controller.reconcile()).resolves.toBe('matched')
+    expect(controller.dirty).toBe(false)
+    expect(update).toHaveBeenCalledOnce()
+    controller.dispose()
+  })
+
   it('starts clean before a draft is selected and after loading a server snapshot', () => {
     const controller = new WorkflowDraftController(clientFor(async () => draftView()))
     expect(controller.dirty).toBe(false)

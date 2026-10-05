@@ -280,6 +280,54 @@ beforeEach(() => {
 // Tests -------------------------------------------------------------------------------
 
 describe('SyncStore', () => {
+  it('drops a sleeping reconnect after stop and a fresh start', async () => {
+    let resume!: () => void
+    const sleeping = new Promise<void>(done => { resume = done })
+    const core = new FakeCore().on('/v1/snapshot', () => ({
+      body: { cursor: core.count('/v1/snapshot'), workflow_runs: [], pending_approvals: [] },
+    }))
+    const store = makeStore(core, { sleep: () => sleeping })
+    await store.start()
+    lastSocket().serverClose()
+    expect(store.getState().connection).toBe('reconnecting')
+    store.stop()
+    await store.start()
+    resume()
+    for (let index = 0; index < 10; index++) await Promise.resolve()
+    expect(core.count('/v1/snapshot')).toBe(2)
+    expect(store.getState().cursor).toBe(2)
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    store.stop()
+  })
+
+  it('does not publish an old detail response after stop and a fresh start', async () => {
+    let resolve!: (value: FakeReply) => void
+    let requested!: () => void
+    const reached = new Promise<void>(done => { requested = done })
+    const detail = new Promise<FakeReply>(done => { resolve = done })
+    const core = new FakeCore()
+      .on('/v1/snapshot', () => ({ body: { cursor: 0, workflow_runs: [], pending_approvals: [] } }))
+      .on('/v1/events', () => ({ body: {
+        events: [makeEvent(1, 'session.created', 'session', 'ses_old', {})], latest_cursor: 1, has_more: false,
+      } }))
+      .on('/v1/sessions/ses_old', () => { requested(); return detail })
+    const store = makeStore(core)
+    await store.start()
+    lastSocket().serverSend({ type: 'cursor', latest_cursor: 1 })
+    await reached
+    store.stop()
+    core.on('/v1/snapshot', () => ({ body: { cursor: 8, workflow_runs: [], pending_approvals: [] } }))
+    await store.start()
+    resolve({ body: { session: makeSession('ses_old') } })
+    // Finish the old fetch/json continuation without relying on a clock delay.
+    for (let index = 0; index < 20; index++) await Promise.resolve()
+    expect(store.getState().cursor).toBe(8)
+    expect(store.getState().sessions.has('ses_old')).toBe(false)
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    expect(FakeWebSocket.instances[0].closed).toBe(true)
+    store.stop()
+  })
+
   it('boots from a snapshot: anchors the cursor, populates runs/approvals, goes live on hello', async () => {
     const core = new FakeCore()
     core

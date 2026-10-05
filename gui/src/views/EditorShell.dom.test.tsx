@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, type ApiClient } from '../api/client'
 import type { WorkflowDefinitionSourceWire, WorkflowDraftViewWire } from '../api/types'
@@ -46,6 +47,30 @@ function mockClient(update?: (source: typeof THREE_STEP_SOURCE, row: number, com
 afterEach(() => { cleanup(); sessionStorage.clear(); vi.useRealTimers() })
 
 describe('EditorShell draft wiring', () => {
+  it('saves the rendered editor after StrictMode effect cleanup and reactivation', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    let resolve!: (value: WorkflowDraftViewWire) => void
+    const response = new Promise<WorkflowDraftViewWire>(done => { resolve = done })
+    const { client, calls } = mockClient(() => response)
+    const registered: { current: Guard | null } = { current: null }
+    render(<StrictMode><EditorShell client={client} registerGuard={guard => {
+      registered.current = guard
+      return () => { registered.current = null }
+    }} /></StrictMode>)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    fireEvent.click(within(screen.getByRole('complementary', { name: '工作流目录' })).getByRole('button', { name: /三步交付流程/ }))
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    fireEvent.change(screen.getByLabelText('任务目标'), { target: { value: 'StrictMode edit' } })
+    await act(async () => { vi.advanceTimersByTime(400); await Promise.resolve() })
+    expect(calls).toHaveLength(1)
+    expect(registered.current?.isDirty()).toBe(true)
+    await act(async () => {
+      resolve(fixtureDraft(calls[0].source, { row_version: 2, source_hash: 'b'.repeat(64) }))
+    })
+    expect(registered.current?.isDirty()).toBe(false)
+    expect((screen.getByLabelText('任务目标') as HTMLTextAreaElement).value).toBe('StrictMode edit')
+  })
+
   it('edits the rendered draft through the controller and registers one leave guard', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const registered: { current: Guard | null } = { current: null }

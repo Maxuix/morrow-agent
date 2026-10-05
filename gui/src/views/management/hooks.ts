@@ -73,10 +73,15 @@ export function useManagementMutate(client: ApiClient, connected: boolean, onCha
       setRefresh(n => n + 1); onChanged?.(); setMessage('已保存。新设置将在之后的上下文解析中生效。')
       return true
     } catch (error) {
-      if (error instanceof ApiError && error.status < 500) retry.current = null
+      const rejected = error instanceof ApiError && error.status >= 400 && error.status < 500
+      if (rejected) retry.current = null
+      else {
+        setRefresh(n => n + 1); onChanged?.()
+      }
       setMessage(error instanceof ApiError && error.status === 409
         ? '内容已变化或状态不允许此操作。你的输入已保留，请刷新事实后重试。'
-        : '保存失败。可重试相同操作；输入会保留。')
+        : rejected ? `${error.message}；输入已保留。`
+        : '保存结果未确认。正在重新读取；可重试相同操作，输入会保留。')
       return false
     } finally { setBusy(false) }
   }

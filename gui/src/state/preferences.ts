@@ -236,15 +236,22 @@ export function usePreferenceDocuments(client: ApiClient, workspaceId: string) {
           intents.current.delete(key)
           setRow(rowKeyForState, { status: 'idle', message: '' })
           setMessage('已保存。新设置将在之后的上下文解析中生效。')
-          applyDocument(scope, await client.managementQuery('preferences', { scope }))
+          try {
+            applyDocument(scope, await client.managementQuery('preferences', { scope }))
+          } catch {
+            setMessage('已保存，但刷新权威数据失败；请重新读取确认。')
+          }
           return true
         } catch (error) {
           const conflict = error instanceof ApiError && error.status === 409
-          if (error instanceof ApiError && error.status < 500) intents.current.delete(key)
+          const rejected = error instanceof ApiError && error.status >= 400 && error.status < 500
+          if (rejected) intents.current.delete(key)
+          void load()
           setRow(rowKeyForState, {
             status: 'error',
             message: conflict
               ? '该作用域内容已变化，请刷新后重试；开关保持最后确认状态。'
+              : rejected ? `${error.message}；输入已保留。`
               : '保存结果未确认，可重试相同操作。',
           })
           return false
@@ -253,7 +260,7 @@ export function usePreferenceDocuments(client: ApiClient, workspaceId: string) {
       queue.current[scope] = run.catch(() => undefined)
       return run
     },
-    [applyDocument, client, workspaceId],
+    [applyDocument, client, workspaceId, load],
   )
 
   const write = useCallback(

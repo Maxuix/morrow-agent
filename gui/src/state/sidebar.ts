@@ -80,6 +80,7 @@ export class SidebarStore {
   private state: SidebarState
   private listeners = new Set<() => void>()
   private generation = 0
+  private workspaceRequests = new Map<string, number>()
   /** Per-workspace in-flight create identity: a retry replays the same command. */
   private createKeys = new Map<string, string>()
   private searchTimer: ReturnType<typeof setTimeout> | null = null
@@ -161,8 +162,12 @@ export class SidebarStore {
 
   /** Re-fetch the first page of one workspace (event stream, after mutation). */
   async refreshWorkspace(workspace: string): Promise<void> {
+    const generation = this.generation
+    const request = (this.workspaceRequests.get(workspace) ?? 0) + 1
+    this.workspaceRequests.set(workspace, request)
     try {
       const page = await this.fetchPage(workspace)
+      if (generation !== this.generation || request !== this.workspaceRequests.get(workspace)) return
       if (this.state.sessions[workspace] === undefined && page.sessions.length === 0) return
       this.patch({
         sessions: { ...this.state.sessions, [workspace]: page.sessions },
@@ -183,14 +188,18 @@ export class SidebarStore {
     }
     const cursor = this.state.nextCursor[workspace]
     if (!cursor) return
+    const generation = this.generation
+    const request = this.workspaceRequests.get(workspace)
     try {
       const page = await this.fetchPage(workspace, cursor)
+      if (generation !== this.generation || request !== this.workspaceRequests.get(workspace) || cursor !== this.state.nextCursor[workspace]) return
       this.patch({
-        sessions: { ...this.state.sessions, [workspace]: mergeSessions(loaded, page.sessions) },
+        sessions: { ...this.state.sessions, [workspace]: mergeSessions(this.state.sessions[workspace] ?? [], page.sessions) },
         nextCursor: { ...this.state.nextCursor, [workspace]: page.next_cursor },
         visible: { ...this.state.visible, [workspace]: visible + REVEAL_STEP },
       })
     } catch (error) {
+      if (generation !== this.generation || request !== this.workspaceRequests.get(workspace)) return
       this.patch({ error: error instanceof Error ? error.message : '会话列表加载失败' })
     }
   }

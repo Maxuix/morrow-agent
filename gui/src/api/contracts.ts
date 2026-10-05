@@ -1,5 +1,5 @@
 /**
- * Frozen cross-lane protocol contracts (P01 freeze, contract version 1.0.0).
+ * Frozen cross-lane protocol contracts (P01 freeze, contract version 1.1.0).
  *
  * Mirror of src/morrow/core/contracts.py; both sides are validated against
  * tests/fixtures/parallel_contracts/wire-fixtures.json. This module is coordinator

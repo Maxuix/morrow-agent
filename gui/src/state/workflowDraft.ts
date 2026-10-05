@@ -187,6 +187,7 @@ export class WorkflowDraftController {
   edit(source: WorkflowDefinitionSourceWire): boolean {
     const snapshot = this.state.serverSnapshot
     if (
+      this.disposed ||
       snapshot === null ||
       snapshot.draft.status === 'frozen' ||
       snapshot.draft.status === 'rejected' ||
@@ -221,7 +222,7 @@ export class WorkflowDraftController {
 
   /** Wait until the latest local generation has been confirmed by Core. */
   saveNow(): Promise<DraftSaveOutcome> {
-    if (this.state.serverSnapshot === null || this.state.localSource === null) {
+    if (this.disposed || this.state.serverSnapshot === null || this.state.localSource === null) {
       return Promise.resolve({ ok: false, reason: 'failed' })
     }
     if (this.state.serverSnapshot.draft.status === 'frozen' || this.state.serverSnapshot.draft.status === 'rejected') {
@@ -257,6 +258,7 @@ export class WorkflowDraftController {
       }
       const unresolved = this.state.unresolvedCommand
       const unresolvedHash = unresolved === null ? null : await sourceHash(unresolved.source)
+      if (this.disposed || epoch !== this.scopeEpoch) return 'failed'
       const matched = unresolved !== null && (
         (unresolvedHash !== null && view.draft.source_hash === unresolvedHash) ||
         sameSource(view.draft.source, unresolved.source)
@@ -325,12 +327,27 @@ export class WorkflowDraftController {
     this.notify()
   }
 
+  /** React may reactivate the same instance after effect cleanup. */
+  activate(): void {
+    this.disposed = false
+    if (this.dirty && this.state.unresolvedCommand === null) this.schedule(this.debounceMs)
+  }
+
   dispose(): void {
     this.disposed = true
     this.clearTimer()
     this.scopeEpoch += 1
+    if (this.state.pendingCommand !== null) {
+      this.state = {
+        ...this.state,
+        unresolvedCommand: this.state.pendingCommand,
+        pendingCommand: null,
+        saveState: 'unknown',
+        message: '保存结果未确认，请重新读取服务器结果。',
+      }
+    }
     this.resolveWaiters({ ok: false, reason: 'failed' })
-    this.listeners.clear()
+    // Subscribers own their unsubscribe; StrictMode reuses this instance.
   }
 
   private schedule(delay: number): void {

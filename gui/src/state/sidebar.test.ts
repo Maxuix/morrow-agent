@@ -78,6 +78,83 @@ describe('sortSessions', () => {
 })
 
 describe('SidebarStore', () => {
+  it('ignores delayed pagination after the filter changes', async () => {
+    let resolve!: (value: { sessions: SessionWire[]; next_cursor: string | null }) => void
+    const page = new Promise<{ sessions: SessionWire[]; next_cursor: string | null }>(done => { resolve = done })
+    const search = vi.fn(async (_workspace: string, _search: string, archived: boolean, cursor?: string) => {
+      if (cursor) return page
+      return { sessions: archived ? [session('ses_archived')] : [session('ses_active')], next_cursor: archived ? null : 'c2' }
+    })
+    const instance = new SidebarStore({
+      workspaces: async () => ({ ...WORKSPACES, items: WORKSPACES.items.slice(0, 1) }), searchSessions: search,
+    } as unknown as ApiClient, { storage: null })
+    await instance.loadAll()
+    const more = instance.loadMore('ws_a')
+    instance.setArchived(true)
+    await vi.waitFor(() => expect(instance.getState().sessions.ws_a[0].session_id).toBe('ses_archived'))
+    resolve({ sessions: [session('ses_active_next')], next_cursor: 'c3' })
+    await more
+    expect(instance.getState().sessions.ws_a.map(row => row.session_id)).toEqual(['ses_archived'])
+    expect(instance.getState().nextCursor.ws_a).toBeNull()
+  })
+
+  it('ignores a delayed pagination failure from a previous filter', async () => {
+    let reject!: (error: Error) => void
+    const page = new Promise<never>((_done, fail) => { reject = fail })
+    const instance = new SidebarStore({
+      workspaces: async () => ({ ...WORKSPACES, items: WORKSPACES.items.slice(0, 1) }),
+      searchSessions: async (_workspace: string, _query: string, archived: boolean, cursor?: string) =>
+        cursor ? page : { sessions: [], next_cursor: archived ? null : 'c2' },
+    } as unknown as ApiClient, { storage: null })
+    await instance.loadAll()
+    const more = instance.loadMore('ws_a')
+    instance.setArchived(true)
+    reject(new Error('old request failed'))
+    await more
+    expect(instance.getState().error).toBeNull()
+  })
+
+  it('ignores a delayed workspace refresh when the search generation changes', async () => {
+    vi.useFakeTimers()
+    try {
+      let resolve!: (value: { sessions: SessionWire[]; next_cursor: string | null }) => void
+      const page = new Promise<{ sessions: SessionWire[]; next_cursor: string | null }>(done => { resolve = done })
+      let calls = 0
+      const instance = new SidebarStore({
+        workspaces: async () => ({ ...WORKSPACES, items: WORKSPACES.items.slice(0, 1) }),
+        searchSessions: async (_workspace: string, query: string) => {
+          if (++calls === 2) return page
+          return { sessions: [session(query ? 'ses_match' : 'ses_old')], next_cursor: null }
+        },
+      } as unknown as ApiClient, { storage: null })
+      await instance.loadAll()
+      const refreshing = instance.refreshWorkspace('ws_a')
+      instance.setSearch('match')
+      await vi.advanceTimersByTimeAsync(300)
+      expect(instance.getState().sessions.ws_a[0].session_id).toBe('ses_match')
+      resolve({ sessions: [session('ses_old')], next_cursor: 'old_cursor' })
+      await refreshing
+      expect(instance.getState().sessions.ws_a[0].session_id).toBe('ses_match')
+      expect(instance.getState().nextCursor.ws_a).toBeNull()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('merges pagination with a session inserted while the page was in flight', async () => {
+    let resolve!: (value: { sessions: SessionWire[]; next_cursor: string | null }) => void
+    const page = new Promise<{ sessions: SessionWire[]; next_cursor: string | null }>(done => { resolve = done })
+    const instance = new SidebarStore({
+      workspaces: async () => ({ ...WORKSPACES, items: WORKSPACES.items.slice(0, 1) }),
+      searchSessions: async (_workspace: string, _query: string, _archived: boolean, cursor?: string) =>
+        cursor ? page : { sessions: [session('ses_first')], next_cursor: 'c2' },
+    } as unknown as ApiClient, { storage: null })
+    await instance.loadAll()
+    const more = instance.loadMore('ws_a')
+    instance.upsertSession('ws_a', session('ses_created'))
+    resolve({ sessions: [session('ses_next')], next_cursor: null })
+    await more
+    expect(instance.getState().sessions.ws_a.map(row => row.session_id)).toEqual(['ses_first', 'ses_created', 'ses_next'])
+  })
+
   it('loads every workspace first page and hides rows beyond the default reveal', async () => {
     const sessions = Array.from({length: 6}, (_, index) => session(`ses_${index}`))
     const {store: instance} = store([{

@@ -10,13 +10,13 @@ import type { Mutate } from './management/types'
 import { commandId } from './lib/editor'
 
 type Validation={valid:boolean;tree_digest?:string;skill_id?:string;conflicts:string[];errors:string[];file_count:number;total_bytes:number}
-function useSkillAction(client:ApiClient){
+function useSkillAction(client:ApiClient,onChanged:()=>void){
   const retry=useRef<{key:string;id:string}|null>(null);const [message,setMessage]=useState('');const [busy,setBusy]=useState(false)
-  const run=async<T,>(body:Record<string,unknown>):Promise<T|null>=>{if(busy)return null;setBusy(true);const key=JSON.stringify(body);const id=retry.current?.key===key?retry.current.id:commandId('skill');retry.current={key,id};try{const result=await client.skillAction<T>({...body,command_id:id});retry.current=null;setMessage(body.action==='validate'?'校验完成，请检查来源、权限和脚本。':'操作已保存。');return result}catch(e){if(e instanceof ApiError&&e.status<500)retry.current=null;setMessage((e as Error).message);return null}finally{setBusy(false)}}
+  const run=async<T,>(body:Record<string,unknown>):Promise<T|null>=>{if(busy)return null;setBusy(true);const key=JSON.stringify(body);const id=retry.current?.key===key?retry.current.id:commandId('skill');retry.current={key,id};try{const result=await client.skillAction<T>({...body,command_id:id});retry.current=null;setMessage(body.action==='validate'?'校验完成，请检查来源、权限和脚本。':'操作已保存。');return result}catch(e){const rejected=e instanceof ApiError&&e.status>=400&&e.status<500;if(rejected)retry.current=null;else onChanged();setMessage(rejected?(e as Error).message:'操作结果未确认；正在重新读取，可重试相同操作。');return null}finally{setBusy(false)}}
   return {run,message,busy}
 }
 export function SkillRemoval({client,scope,item,version,digest,onChanged}:{client:ApiClient;scope:string;item:ManagedSkill;version:string;digest:string;onChanged:()=>void}){
-  const [remove,setRemove]=useState<'binding'|'version'|null>(null);const {run,message,busy}=useSkillAction(client)
+  const [remove,setRemove]=useState<'binding'|'version'|null>(null);const {run,message,busy}=useSkillAction(client,onChanged)
   const source=item.versions.find(v=>v.version.version_id===version)?.version.source_kind??item.status.source_kind
   const target=scope==='global'?'全局安装':'本项目绑定'
   return <div className="space-y-2"><div className="flex gap-2"><button type="button" className={buttonClass} onClick={()=>setRemove('binding')}>移除此{scope==='global'?'全局':'项目'}绑定</button><button type="button" className={buttonClass} disabled={!version||!['imported','generated'].includes(source)} onClick={()=>setRemove('version')}>移除所选包版本</button></div>
@@ -25,7 +25,7 @@ export function SkillRemoval({client,scope,item,version,digest,onChanged}:{clien
 }
 export function SkillOperations({client,scope,onChanged,registerGuard}:{client:ApiClient;scope:string;mutate:Mutate;onChanged:()=>void;registerGuard?:(guard:DirtyGuard)=>()=>void}){
   const [path,setPath]=useState('');const source='imported';const [preview,setPreview]=useState<Validation|null>(null)
-  const {run,message,busy}=useSkillAction(client)
+  const {run,message,busy}=useSkillAction(client,onChanged)
   const dirty=path.trim().length>0||preview!==null
   const {open:guardOpen,confirmLeave,settle}=useLeavePrompt()
   const promptLeave=useCallback(()=>dirty?confirmLeave():Promise.resolve(true),[confirmLeave,dirty])

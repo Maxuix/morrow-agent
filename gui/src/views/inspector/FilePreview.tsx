@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ApiClient } from '../../api/client'
 import type { WorkspaceFileInfo } from '../../api/types'
 import { buttonClass } from '../management/styles'
@@ -18,74 +18,6 @@ export function formatBytes(bytes: number): string {
 export function exceedsPixelBudget(width: number, height: number): boolean {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return true
   return width * height > MAX_PREVIEW_PIXELS
-}
-
-/**
- * 受控下载。面板不带 Core 令牌时直接用同源下载地址，浏览器原生流式处理并可
- * 取消，也不把令牌放进 URL；带令牌的环境退回经认证的有界字节读取 + 手动保存。
- */
-export function FileDownload({
-  client,
-  path,
-  filename,
-  label = '下载',
-}: {
-  client: ApiClient
-  path: string
-  filename: string
-  label?: string
-}) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const abort = useRef<AbortController | null>(null)
-
-  if (client.tokenless) {
-    return (
-      <a className={buttonClass} href={client.workspaceFileDownloadUrl(path)} download={filename}>
-        {label}
-      </a>
-    )
-  }
-
-  const start = async () => {
-    const controller = new AbortController()
-    abort.current = controller
-    setBusy(true)
-    setError(null)
-    try {
-      const blob = await client.workspaceFileBytes(path, controller.signal)
-      const url = URL.createObjectURL(blob)
-      try {
-        const anchor = document.createElement('a')
-        anchor.href = url
-        anchor.download = filename
-        anchor.click()
-      } finally {
-        URL.revokeObjectURL(url)
-      }
-    } catch (failure) {
-      if (!controller.signal.aborted) {
-        setError(failure instanceof Error ? failure.message : '下载失败')
-      }
-    } finally {
-      abort.current = null
-      setBusy(false)
-    }
-  }
-
-  return (
-    <span className="flex flex-wrap items-center gap-2">
-      <button type="button" className={buttonClass} disabled={busy} onClick={() => void start()}>
-        {busy ? '下载中…' : label}
-      </button>
-      {busy && (
-        <button type="button" className={buttonClass} onClick={() => abort.current?.abort()}>
-          取消下载
-        </button>
-      )}
-      {error !== null && <span role="alert" className="text-xs text-failed">{error}</span>}
-    </span>
-  )
 }
 
 /**
@@ -186,17 +118,6 @@ export function BinaryPreview({
       {!previewable && <p role="status" className="text-sm text-secondary">此文件类型暂不支持预览。</p>}
     </div>
   )
-}
-
-/** 浏览器是否具备 WebGL2；只作为提示，不代替页面自身的运行结果。 */
-export function webglAvailable(): boolean {
-  try {
-    const canvas = document.createElement('canvas')
-    if (typeof canvas.getContext !== 'function') return false
-    return canvas.getContext('webgl2') !== null
-  } catch {
-    return false
-  }
 }
 
 interface HtmlPreviewState {

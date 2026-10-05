@@ -28,6 +28,7 @@ export default defineConfig({
     proxy: {
       '/v1': {
         target: apiProxyTarget,
+        ws: true,
         // Core 校验 Host 端口必须等于监听端口；不改写 Host 会被 403 拒绝。
         changeOrigin: true,
         // GUI 模式的 Core 还要求 Origin/Referer 与 Host 同源；把两者一并改写

@@ -17,14 +17,11 @@ import {
   exceedsPixelBudget,
 } from "./FilePreview"
 import type { InspectorBodyProps } from "./InspectorBodyProps"
-// 编辑器与只读查看器都是按需 chunk：打开文本文件时才加载 CodeMirror。
+// 只读查看器是按需 chunk：打开文本文件时才加载 CodeMirror。
 
 const SourceView = lazy(() =>
   import("./SourceView").then(module => ({ default: module.SourceView })),
 )
-
-/** 单文件只读预览一次渲染的最大行数；超出时明确标注截断。 */
-const MAX_RENDERED_LINES = 2000
 
 /** Directory of a viewed document; its relative links resolve there, never at the root. */
 function documentDirectory(path: string | null | undefined): string | undefined {
@@ -46,48 +43,6 @@ function Unavailable({ message }: { message: string }) {
       <h2 className="px-4 pt-4 pb-2 text-xs font-medium tracking-wide text-secondary">文件</h2>
       <p className="px-4 pb-4 text-sm text-secondary">{message}</p>
     </section>
-  )
-}
-
-/** 带行号的只读正文；行元素保留 data-line 以支持行号定位。 */
-export function SourceLines({
-  text,
-  line,
-}: {
-  text: string
-  line?: number
-}) {
-  const lines = text.split("\n")
-  const shown = lines.slice(0, MAX_RENDERED_LINES)
-  const [scrollRef, setScrollRef] = useState<HTMLDivElement | null>(null)
-  useEffect(() => {
-    if (line === undefined || scrollRef === null) return
-    const node = scrollRef.querySelector<HTMLElement>(`[data-line="${line}"]`)
-    // jsdom has no layout engine; the guard keeps the scroll a pure enhancement.
-    if (typeof node?.scrollIntoView === "function") node.scrollIntoView({ block: "center" })
-  }, [line, text, scrollRef])
-  return (
-    <div ref={setScrollRef} className="max-h-[28rem] overflow-auto rounded-[8px] border border-subtle bg-base">
-      <ol className="min-w-full font-mono text-xs leading-relaxed">
-        {shown.map((value, index) => (
-          <li
-            key={index}
-            data-line={index + 1}
-            className={index + 1 === line ? "bg-raised" : undefined}
-          >
-            <span className="inline-block w-12 shrink-0 select-none pr-2 text-right text-secondary">
-              {index + 1}
-            </span>
-            <span className="whitespace-pre-wrap break-words">{value}</span>
-          </li>
-        ))}
-      </ol>
-      {lines.length > shown.length && (
-        <p role="status" className="border-t border-subtle p-2 text-xs text-secondary">
-          仅显示前 {MAX_RENDERED_LINES} 行（共 {lines.length} 行）。
-        </p>
-      )}
-    </div>
   )
 }
 

@@ -271,7 +271,8 @@ export function useProfileDocument(client: ApiClient, workspaceId: string) {
       }
       return true
     } catch (error) {
-      if (error instanceof ApiError && error.status < 500) intent.current = null
+      const rejected = error instanceof ApiError && error.status >= 400 && error.status < 500
+      if (rejected) intent.current = null
       if (error instanceof ApiError && error.status === 409) {
         setStatus('conflict')
         setMessage('服务端内容已变化：草稿已保留，请比较最新值后重新整理。')
@@ -279,7 +280,8 @@ export function useProfileDocument(client: ApiClient, workspaceId: string) {
         void load()
       } else {
         setStatus('error')
-        setMessage('保存结果未确认；可重试同一意图，或先重新读取。')
+        setMessage(rejected ? `${error.message}；草稿已保留。` : '保存结果未确认；正在重新读取，可重试同一意图。')
+        if (!rejected) void load()
       }
       return false
     }
@@ -299,22 +301,29 @@ export function useProfileDocument(client: ApiClient, workspaceId: string) {
     try {
       await client.managementCommand('profile', { ...body, command_id: commandId })
       intent.current = null
-      const value = await client.managementQuery('profile')
-      setSnapshot({ profile: value.profile, revision: value.revision })
-      setQueryError('')
-      setBase(value.profile)
-      setBaseRevision(value.revision)
-      setDraft(value.profile)
-      setStatus('saved')
-      setMessage('项目画像已清空；偏好规则和历史保留。')
+      try {
+        const value = await client.managementQuery('profile')
+        setSnapshot({ profile: value.profile, revision: value.revision })
+        setQueryError('')
+        setBase(value.profile)
+        setBaseRevision(value.revision)
+        setDraft(value.profile)
+        setStatus('saved')
+        setMessage('项目画像已清空；偏好规则和历史保留。')
+      } catch {
+        setStatus('refresh-failed')
+        setMessage('已清空，但刷新权威数据失败；请重新读取确认。')
+      }
       return true
     } catch (error) {
-      if (error instanceof ApiError && error.status < 500) intent.current = null
+      const rejected = error instanceof ApiError && error.status >= 400 && error.status < 500
+      if (rejected) intent.current = null
       setStatus('error')
-      setMessage('清空失败；草稿已保留。')
+      setMessage(rejected ? `${error.message}；草稿已保留。` : '清空结果未确认；正在重新读取，可重试同一意图，草稿已保留。')
+      void load()
       return false
     }
-  }, [client, baseRevision, status, workspaceId])
+  }, [client, baseRevision, status, workspaceId, load])
 
   return {
     snapshot,
