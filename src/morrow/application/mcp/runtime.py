@@ -412,6 +412,10 @@ class LazyMcpRunPool:
             self._degraded.add(server_id)
             raise
         self._bridges[server_id] = bridge
+        # close() can mark admission closed while startup holds the lock.
+        # Publish the bridge for cleanup, but never begin a remote call after that.
+        if self._closed:
+            raise McpRuntimeError("pool_closed", "start")
         return bridge
 
     async def call(
@@ -429,13 +433,15 @@ class LazyMcpRunPool:
         if self._closed:
             return
         self._closed = True
-        bridges = tuple(self._bridges.values())
-        self._bridges.clear()
-        for bridge in bridges:
-            try:
-                await bridge.close()
-            except McpRuntimeError:
-                self._degraded.add(bridge.definition.server_id)
+        # Wait for any in-flight lazy start to publish its bridge before draining.
+        async with self._lock:
+            bridges = tuple(self._bridges.values())
+            self._bridges.clear()
+            for bridge in bridges:
+                try:
+                    await bridge.close()
+                except McpRuntimeError:
+                    self._degraded.add(bridge.definition.server_id)
 
     def status_facts(self) -> dict[str, object]:
         return {

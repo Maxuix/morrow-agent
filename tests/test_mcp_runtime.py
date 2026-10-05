@@ -23,6 +23,7 @@ from morrow.application.mcp.catalog import build_catalog_snapshot
 from morrow.application.mcp.policy import evaluate_mcp_policy
 from morrow.application.mcp.results import McpResultNormalizer
 from morrow.application.mcp.runtime import (
+    LazyMcpRunPool,
     McpRuntimeError,
     prepare_mcp_run,
     register_mcp_tools,
@@ -494,3 +495,61 @@ def test_rehydrate_rejects_launch_fact_drift() -> None:
             agent_run_id="arun_1",
         )
     assert failure.value.code == "snapshot_drift"
+
+
+@pytest.mark.asyncio
+async def test_close_drains_inflight_lazy_start_without_calling_remote(monkeypatch) -> None:
+    started = asyncio.Event()
+    finish_start = asyncio.Event()
+    closing = asyncio.Event()
+    bridges = []
+
+    class ControlledBridge:
+        def __init__(self, definition, catalog, **kwargs):
+            self.definition = definition
+            self.started = False
+            self.closed = False
+            self.calls = 0
+            bridges.append(self)
+
+        async def start(self):
+            started.set()
+            await finish_start.wait()
+            self.started = True
+
+        async def close(self):
+            self.closed = True
+
+        async def call(self, *args):
+            self.calls += 1
+            raise AssertionError("remote call after admission closed")
+
+    monkeypatch.setattr("morrow.application.mcp.runtime.McpRunBridge", ControlledBridge)
+    server_id = "mcp_controlled"
+    pool = LazyMcpRunPool(
+        {server_id: SimpleNamespace(server_id=server_id)},
+        {server_id: object()},
+        {server_id: SimpleNamespace(executable_digest="fixture")},
+    )
+    call = asyncio.create_task(pool.call(server_id, "echo", {}))
+    await started.wait()
+
+    async def close():
+        closing.set()
+        await pool.close()
+
+    cleanup = asyncio.create_task(close())
+    await closing.wait()
+    assert pool.status_facts()["closed"] is True
+    assert not cleanup.done()
+    finish_start.set()
+    with pytest.raises(McpRuntimeError) as failure:
+        await call
+    assert failure.value.code == "pool_closed"
+    await cleanup
+    assert len(bridges) == 1 and bridges[0].closed
+    assert bridges[0].calls == 0
+    assert pool.status_facts()["started_servers"] == 0
+    with pytest.raises(McpRuntimeError):
+        await pool.call(server_id, "echo", {})
+    await pool.close()
