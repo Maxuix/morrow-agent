@@ -12,7 +12,7 @@ import os
 import secrets
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from morrow.adapters.local.process import HostProcessAdapter, ProcessAdapterError, SpawnedCommand
 from morrow.core.local_tools import TrackedCommandStatus, TrackedCommandView, TrackedLifecycle
@@ -42,6 +42,8 @@ class TrackedExecution:
     cwd_relative: str
     adapter: HostProcessAdapter
     spawned: SpawnedCommand
+    # Run-owned credentials stay in memory only, outside repr and durable evidence.
+    secret_bytes: tuple[bytes, ...] = field(default=(), repr=False)
     stop_requested: bool = False
     status: TrackedCommandStatus = TrackedCommandStatus.RUNNING
     exit_code: int | None = None
@@ -75,6 +77,7 @@ class TrackedProcessRegistry:
         validation_kind: str | None = None,
         validation_scope: str | None = None,
         started_run_id: str | None = None,
+        secret_bytes: tuple[bytes, ...] = (),
     ) -> TrackedExecution:
         spawn_args = {
             "argv": argv,
@@ -100,6 +103,7 @@ class TrackedProcessRegistry:
             started_run_id=started_run_id,
             adapter=adapter,
             spawned=spawned,
+            secret_bytes=secret_bytes,
         )
         with self._lock:
             self._items[execution.execution_id] = execution
@@ -282,12 +286,13 @@ class TrackedProcessRegistry:
         redactor,
     ) -> TrackedCommandView:
         chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
+        secrets = tuple(dict.fromkeys((*execution.secret_bytes, *redactor.secret_bytes)))
         try:
             stdout, next_stdout, stdout_skipped = _safe_page(
-                execution.spawned.stdout, offset, chunk_limit, redactor.secret_bytes
+                execution.spawned.stdout, offset, chunk_limit, secrets
             )
             stderr, next_stderr, stderr_skipped = _safe_page(
-                execution.spawned.stderr, stderr_offset, chunk_limit, redactor.secret_bytes
+                execution.spawned.stderr, stderr_offset, chunk_limit, secrets
             )
         except ProcessAdapterError as exc:
             raise TrackedProcessError(exc.code, exc.message) from exc

@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_serializer, model_validator
 
 from morrow.core.models import (
     CostMetadata,
@@ -30,6 +30,7 @@ from morrow.core.prompt import ProjectInstructionSourceRef, project_source_selec
 DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 CapabilityToolProtocol = Literal["none", "openai_function"]
+CredentialSource = Literal["environment", "keyring"]
 
 
 class ProviderCapabilities(ProtocolModel):
@@ -177,6 +178,8 @@ class ProviderRuntimeSnapshot(ProtocolModel):
     Never contains a credential value. ``endpoint`` must not carry userinfo,
     query strings or fragments, which are the usual secret carriers.
     ``config_digest`` is the SHA-256 of the exact ProviderConfig used.
+    ``credential_source`` freezes the named environment or Keyring identity;
+    missing historical fields preserve Keyring-only decoding and serialization.
     """
 
     provider_id: str
@@ -185,6 +188,9 @@ class ProviderRuntimeSnapshot(ProtocolModel):
     api_model_id: str
     endpoint: str | None = Field(default=None, max_length=2048)
     credential_ref: CredentialRef | None = None
+    # Missing on old snapshots: preserve their Keyring-only recovery contract.
+    # Environment identity is derived from provider_id; no value/hash is frozen.
+    credential_source: CredentialSource | None = None
     capabilities: ExactModelCapabilities
     config_revision: int = Field(default=0, ge=0)
     config_digest: str
@@ -196,6 +202,19 @@ class ProviderRuntimeSnapshot(ProtocolModel):
     permission_preset: (
         Literal["manual", "auto-safe", "auto-sandboxed", "full-access-manual"] | None
     ) = None
+
+    @model_validator(mode="after")
+    def credential_identity(self) -> ProviderRuntimeSnapshot:
+        if self.credential_source == "keyring" and self.credential_ref is None:
+            raise ValueError("Keyring credential source requires its frozen reference")
+        return self
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_credential_shape(self, handler):
+        payload = handler(self)
+        if self.credential_source is None:
+            payload.pop("credential_source", None)
+        return payload
 
     @field_validator("provider_id", "adapter_id", "api_model_id")
     @classmethod

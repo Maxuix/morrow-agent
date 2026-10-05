@@ -7,6 +7,7 @@ import json
 import socket
 import urllib.error
 import urllib.request
+from urllib.parse import unquote, urlsplit
 
 import pytest
 
@@ -220,6 +221,35 @@ def _fetch(url: str) -> tuple[int, dict[str, str], bytes]:
             return response.status, dict(response.headers), response.read()
     except urllib.error.HTTPError as error:
         return error.code, dict(error.headers), error.read()
+
+
+@pytest.mark.parametrize("entry_path", ["nested/中文 页#1?x%y.html", "nested/encoded%2Fname.html"])
+async def test_preview_entry_url_roundtrips_reserved_and_unicode_names(
+    tmp_path, monkeypatch, entry_path
+):
+    from morrow.server.preview_server import PreviewHttpServer
+
+    monkeypatch.setattr(socket.socket, "connect", _REAL_CONNECT)
+    monkeypatch.setattr(socket, "create_connection", _REAL_CREATE_CONNECTION)
+    entry = tmp_path / entry_path
+    entry.parent.mkdir()
+    content = b"<!doctype html><p>fixed preview bytes</p>"
+    entry.write_bytes(content)
+    bundle = HtmlPreviewBuilder(_service(tmp_path), workspace_id="ws_local").build(entry_path)
+    registry = PreviewRegistry()
+    preview_id = registry.register(bundle)
+    listener = PreviewHttpServer(registry)
+    listener.start()
+    try:
+        url = listener.url_for(preview_id, bundle.entry_path)
+        parsed = urlsplit(url)
+        assert parsed.query == parsed.fragment == ""
+        assert unquote(parsed.path) == f"/{preview_id}/{entry_path}"
+        status, _, body = await asyncio.to_thread(_fetch, url)
+        assert status == 200
+        assert body == content
+    finally:
+        listener.stop()
 
 
 class PreviewFixture(ServerFixture):

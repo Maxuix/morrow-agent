@@ -17,6 +17,7 @@ from morrow.application.computer_runs import PreparedComputerUseRun
 from morrow.application.context import ContextBuilder
 from morrow.application.mcp.runtime import PreparedMcpRun, register_mcp_tools
 from morrow.core.agent_runs import (
+    CredentialSource,
     ExactModelCapabilities,
     PreparedAgentRunSpec,
     ProviderRuntimeSnapshot,
@@ -58,6 +59,7 @@ class PreparedAgentRunRuntime:
     mcp_run: PreparedMcpRun | None = None
     agent_run_id: str | None = None
     computer_run: PreparedComputerUseRun | None = None
+    owns_provider: bool = False
 
     def activate(self, session) -> None:
         if self.computer_run is not None and self.computer_run.activate_local is not None:
@@ -74,8 +76,14 @@ class PreparedAgentRunRuntime:
             if self.mcp_run is not None:
                 await self.mcp_run.pool.close()
         finally:
-            if self.computer_run is not None:
-                await self.computer_run.aclose()
+            try:
+                if self.computer_run is not None:
+                    await self.computer_run.aclose()
+            finally:
+                if self.owns_provider:
+                    close = getattr(self.provider, "aclose", None)
+                    if close is not None:
+                        await close()
 
 
 def tool_schema_digest(tools: tuple[ToolDefinition, ...]) -> str:
@@ -100,6 +108,7 @@ def build_prepared_spec(
     generation: GenerationOptions | None = None,
     settings_sources=None,
     permission_preset=None,
+    credential_source: CredentialSource | None = None,
 ) -> PreparedAgentRunSpec:
     """Freeze the sanitized evidence one AgentRun will be rebuilt from."""
     api_model_id = provider_config.models[model.model_id].api_model_id
@@ -110,6 +119,7 @@ def build_prepared_spec(
         api_model_id=api_model_id,
         endpoint=provider_config.base_url or None,
         credential_ref=provider_config.credential_ref,
+        credential_source=credential_source,
         capabilities=exact_capabilities,
         config_revision=config_revision,
         generation=generation or GenerationOptions(),
@@ -154,7 +164,11 @@ class AgentRunPreparationService:
         registry: AdapterRegistry,
         agent_policy: AgentPolicy,
         credential_resolver: Callable[[str, CredentialRef | None], str | None],
-        frozen_credential_resolver: Callable[[str, CredentialRef | None], str | None] | None = None,
+        frozen_credential_resolver: Callable[..., str | None] | None = None,
+        credential_source_resolver: Callable[
+            [str, CredentialRef | None], tuple[str | None, CredentialSource | None]
+        ]
+        | None = None,
         estimate_request_chars,
         estimate_request_bytes=None,
         make_estimate_request_tokens=None,
@@ -175,6 +189,7 @@ class AgentRunPreparationService:
         self.agent_policy = agent_policy
         self.credential_resolver = credential_resolver
         self.frozen_credential_resolver = frozen_credential_resolver or credential_resolver
+        self.credential_source_resolver = credential_source_resolver
         self.estimate_request_chars = estimate_request_chars
         self.estimate_request_bytes = estimate_request_bytes
         self.make_estimate_request_tokens = make_estimate_request_tokens
@@ -244,7 +259,13 @@ class AgentRunPreparationService:
             raise ValueError(f"未知 Provider: {model.provider_id}")
         if model.model_id not in provider_config.models:
             raise ValueError(f"模型不属于 Provider: {model.model_id}")
-        credential = self.credential_resolver(model.provider_id, provider_config.credential_ref)
+        credential_source = None
+        if self.credential_source_resolver is not None:
+            credential, credential_source = self.credential_source_resolver(
+                model.provider_id, provider_config.credential_ref
+            )
+        else:
+            credential = self.credential_resolver(model.provider_id, provider_config.credential_ref)
         if not credential:
             raise ValueError("Provider 凭据不可用")
         capabilities = self.registry.capabilities(provider_config.adapter)
@@ -310,6 +331,7 @@ class AgentRunPreparationService:
             generation=generation,
             settings_sources=settings_sources,
             permission_preset=permission_preset,
+            credential_source=credential_source,
             run_policy=run_policy,
             tools=tools,
             mcp_run_snapshot_ids=mcp_run.snapshot_ids if mcp_run is not None else (),
@@ -325,6 +347,7 @@ class AgentRunPreparationService:
             mcp_run=mcp_run,
             agent_run_id=agent_run_id,
             computer_run=computer_run,
+            owns_provider=True,
         )
 
     def rehydrate(
@@ -362,7 +385,13 @@ class AgentRunPreparationService:
             not in self.registry.capabilities(frozen.adapter_id).reasoning_efforts
         ):
             raise AgentRunPreparationError("Frozen generation mapping is unavailable")
-        credential = self.frozen_credential_resolver(frozen.provider_id, frozen.credential_ref)
+        credential = self.frozen_credential_resolver(
+            frozen.provider_id,
+            frozen.credential_ref,
+            **(
+                {"source": frozen.credential_source} if frozen.credential_source is not None else {}
+            ),
+        )
         if not credential:
             raise ProviderUnavailableError(
                 f"frozen credential for provider {frozen.provider_id} is unavailable"
@@ -444,6 +473,7 @@ class AgentRunPreparationService:
             mcp_run=mcp_run,
             agent_run_id=agent_run_id,
             computer_run=computer_run,
+            owns_provider=True,
         )
 
     def _computer_run(self, agent_run_id, policy, *, request=None, recovering=False):

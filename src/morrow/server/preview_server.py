@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 from morrow.application.html_preview import PreviewBundle, PreviewRegistry
 
@@ -165,4 +165,4 @@ class PreviewHttpServer:
         origin = self.origin
         if origin is None:
             raise RuntimeError("preview listener is not running")
-        return f"{origin}/{preview_id}/{entry_path}"
+        return f"{origin}/{quote(preview_id, safe='')}/{quote(entry_path, safe='/')}"

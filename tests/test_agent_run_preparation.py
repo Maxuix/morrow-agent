@@ -113,6 +113,8 @@ def _preparation(app, *, constructions=None, tool_factory=None, injected=None):
         registry=app.registry,
         agent_policy=AGENT_POLICY,
         credential_resolver=app.provider_service.credential_resolver,
+        frozen_credential_resolver=app.provider_service.resolve_frozen_credential,
+        credential_source_resolver=app.provider_service.resolve_run_credential,
         estimate_request_chars=estimate_request_chars,
         tool_factory=tool_factory or (lambda policy: None),
         injected=injected,

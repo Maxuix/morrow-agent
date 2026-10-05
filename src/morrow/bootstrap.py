@@ -1195,6 +1195,7 @@ def build_session_application(
             agent_policy=app.runtime_policy.agent_run,
             credential_resolver=app.provider_service.credential_resolver,
             frozen_credential_resolver=app.provider_service.resolve_frozen_credential,
+            credential_source_resolver=app.provider_service.resolve_run_credential,
             estimate_request_chars=estimate_request_chars,
             estimate_request_bytes=estimate_request_bytes,
             make_estimate_request_tokens=make_request_token_estimator,

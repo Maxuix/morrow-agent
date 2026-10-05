@@ -191,13 +191,8 @@ class ProviderControlMixin:
                 }
             ),
         )
-        ref = config.credential_ref
-        if ref and not any(
-            item.credential_ref and item.credential_ref.ref == ref.ref
-            for item in current.providers.values()
-            if item is not config
-        ):
-            self.credentials.delete(ref.ref)
+        # Removing desired configuration does not revoke immutable AgentRuns.
+        # As with rotation, their frozen references must remain resolvable.
 
     def add_model(
         self,

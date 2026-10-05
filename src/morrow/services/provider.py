@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from morrow.adapters.credentials.keyring import CredentialAccessError, environment_credential
 from morrow.adapters.registry import PRESETS, AdapterRegistry
 from morrow.application.providers.control import ProviderControlMixin
+from morrow.core.agent_runs import CredentialSource
 from morrow.core.models import (
     CredentialRef,
     LastTestResult,
@@ -56,9 +57,34 @@ class ProviderService(ProviderControlMixin):
             return configured
         return self.credentials.get(credential_ref.ref) if credential_ref else None
 
-    def resolve_frozen_credential(self, _provider_id: str, credential_ref) -> str | None:
-        """Resolve stored run evidence without allowing a current env override."""
+    def resolve_run_credential(
+        self, provider_id: str, credential_ref
+    ) -> tuple[str | None, CredentialSource | None]:
+        """Resolve a value and its non-sensitive source together for a new run."""
 
+        if self.credential_resolver == self._resolve_credential:
+            configured = environment_credential(provider_id)
+            if configured:
+                return configured, "environment"
+            credential = self.credentials.get(credential_ref.ref) if credential_ref else None
+            return credential, "keyring" if credential_ref else None
+        # Explicit injected resolvers keep their existing recovery contract.
+        # Do not guess their source from an unrelated current environment.
+        credential = self.credential_resolver(provider_id, credential_ref)
+        source = "keyring" if self.credential_resolver == self.resolve_frozen_credential else None
+        return credential, source
+
+    def resolve_frozen_credential(
+        self, provider_id: str, credential_ref, *, source: CredentialSource | None = None
+    ) -> str | None:
+        """Read only the frozen source; old snapshots remain Keyring-only.
+
+        Environment snapshots identify the provider's named variable, not its
+        secret value. A missing variable fails closed even if Keyring is available.
+        """
+
+        if source == "environment":
+            return environment_credential(provider_id)
         return self.credentials.get(credential_ref.ref) if credential_ref else None
 
     def _read_credential(self, provider_id: str, credential_ref) -> str | None:

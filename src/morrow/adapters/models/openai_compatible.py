@@ -726,6 +726,13 @@ class OpenAICompatibleProvider:
             )
         return self._client
 
+    async def aclose(self) -> None:
+        """Release an owned runtime's SDK client, including its HTTP connection pool."""
+
+        client, self._client = self._client, None
+        if client is not None:
+            await client.close()
+
     @staticmethod
     def _messages(messages: list[Message]) -> list[dict]:
         return serialize_messages(messages)

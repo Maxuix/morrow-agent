@@ -207,6 +207,7 @@ async def _start(
             validation_kind=plan.validation_kind,
             validation_scope=plan.validation_scope,
             started_run_id=run_id,
+            secret_bytes=service.redactor.secret_bytes,
         )
     except ProcessAdapterError as exc:
         raise ProcessServiceError(exc.code, exc.message) from exc
