@@ -274,7 +274,8 @@ def _snapshot_tree(root: Path) -> dict[str, bytes]:
 
 
 def test_demo_tool_registry_names_are_exactly_lookup_record_and_calculate():
-    from morrow.runtime.tools import ToolRegistry, make_calculate_tool, make_lookup_record_tool
+    from morrow.runtime.tools import ToolRegistry
+    from morrow.testing import make_calculate_tool, make_lookup_record_tool
 
     registry = ToolRegistry()
     registry.register(make_lookup_record_tool({("plans", "starter"): {"monthly_price": 29.0}}))
@@ -290,12 +291,8 @@ def test_demo_tool_registry_names_are_exactly_lookup_record_and_calculate():
 async def test_demo_tools_leave_temporary_workspace_byte_identical(tmp_path):
     import asyncio
 
-    from morrow.runtime.tools import (
-        ToolExecutor,
-        ToolRegistry,
-        make_calculate_tool,
-        make_lookup_record_tool,
-    )
+    from morrow.runtime.tools import ToolExecutor, ToolRegistry
+    from morrow.testing import make_calculate_tool, make_lookup_record_tool
 
     registry = ToolRegistry()
     registry.register(make_lookup_record_tool({("plans", "starter"): {"monthly_price": 29.0}}))

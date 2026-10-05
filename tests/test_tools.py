@@ -21,12 +21,10 @@ from morrow.runtime.tools import (
     ToolExecutionError,
     ToolExecutor,
     ToolRegistry,
-    make_calculate_tool,
-    make_lookup_record_tool,
     make_tool,
     tool_error_envelope,
 )
-from morrow.testing import make_run_policy
+from morrow.testing import make_calculate_tool, make_lookup_record_tool, make_run_policy
 
 DEMO_RECORDS = {
     ("plans", "starter"): {"monthly_price": 29.0},

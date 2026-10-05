@@ -3,14 +3,26 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Iterable, Sequence
+import math
+from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
+from types import MappingProxyType
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from morrow.core.activity import ThinkingCapability
+from morrow.core.capabilities import (
+    OperationIntent,
+    OperationKind,
+    ToolCallContext,
+    ToolHandlerOutcome,
+)
 from morrow.core.contracts import (
     ExecutionSegmentIdentity,
     TimelineEntryIdentity,
 )
+from morrow.core.execution import tool_declaration
 from morrow.core.learning import CandidateDraftBatch
 from morrow.core.learning_ports import LearningContext
 from morrow.core.models import (
@@ -28,6 +40,7 @@ from morrow.core.models import (
     UserMessage,
 )
 from morrow.core.preference_review import PreferenceReviewContext, PreferenceReviewOutput
+from morrow.runtime.tools import RegisteredTool, ToolErrorCode, ToolExecutionError, make_tool
 
 
 def make_run_policy(
@@ -317,3 +330,101 @@ class FakeSegmentDirectory:
             if segment.workflow_run_id == workflow_run_id and segment.node_run_id == node_run_id
         ]
         return tuple(sorted(matched, key=lambda segment: segment.ordinal))
+
+
+class LookupRecordArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dataset: Literal["plans", "regions"]
+    key: str
+
+    @field_validator("key")
+    @classmethod
+    def non_empty_key(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("key must not be empty")
+        return value
+
+
+def make_lookup_record_tool(records: Mapping[tuple[str, str], object]) -> RegisteredTool:
+    """Read-only lookup over injected in-memory data; no filesystem access."""
+    data = MappingProxyType(dict(records))
+
+    async def handler(arguments: LookupRecordArguments) -> object:
+        value = data.get((arguments.dataset, arguments.key))
+        if value is None:
+            raise ToolExecutionError(
+                ToolErrorCode.NOT_FOUND,
+                f"记录不存在: {arguments.dataset}/{arguments.key}",
+            )
+        return ToolHandlerOutcome(payload=value)
+
+    def intent(_: LookupRecordArguments, __: ToolCallContext) -> OperationIntent:
+        return OperationIntent(
+            kind=OperationKind.INTERNAL_READ,
+            preview_summary=("读取注入的内存数据",),
+        )
+
+    return make_tool(
+        name="lookup_record",
+        description="查询注入的内存数据集（plans 或 regions）中的一条记录。",
+        arguments_model=LookupRecordArguments,
+        handler=handler,
+        intent_resolver=intent,
+        recovery_declaration=tool_declaration("lookup_record"),
+    )
+
+
+class CalculateArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation: Literal["add", "subtract", "multiply", "divide"]
+    values: tuple[float, ...]
+
+    @field_validator("values")
+    @classmethod
+    def bounded_finite_values(cls, values: tuple[float, ...]) -> tuple[float, ...]:
+        if not 2 <= len(values) <= 32:
+            raise ValueError("values must contain between 2 and 32 numbers")
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("values must be finite numbers")
+        return values
+
+
+def make_calculate_tool() -> RegisteredTool:
+    """Deterministic left-to-right arithmetic over validated finite numbers."""
+
+    async def handler(arguments: CalculateArguments) -> object:
+        result = arguments.values[0]
+        for value in arguments.values[1:]:
+            if arguments.operation == "add":
+                result += value
+            elif arguments.operation == "subtract":
+                result -= value
+            elif arguments.operation == "multiply":
+                result *= value
+            elif value == 0:
+                raise ToolExecutionError(ToolErrorCode.DIVISION_BY_ZERO, "除数为零")
+            else:
+                result /= value
+            if not math.isfinite(result):
+                raise ToolExecutionError(
+                    ToolErrorCode.EXECUTION_FAILED,
+                    "计算结果不是有限数字",
+                )
+        return ToolHandlerOutcome(payload={"operation": arguments.operation, "value": result})
+
+    def intent(_: CalculateArguments, __: ToolCallContext) -> OperationIntent:
+        return OperationIntent(
+            kind=OperationKind.INTERNAL_READ,
+            preview_summary=("执行本地有限数字计算",),
+        )
+
+    return make_tool(
+        name="calculate",
+        description="对 2 到 32 个有限数字做有序四则运算（add/subtract/multiply/divide）。",
+        arguments_model=CalculateArguments,
+        handler=handler,
+        intent_resolver=intent,
+        recovery_declaration=tool_declaration("calculate"),
+    )

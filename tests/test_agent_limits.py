@@ -11,8 +11,13 @@ from pydantic import BaseModel, ConfigDict
 from morrow.core.models import AssistantMessage, FunctionToolCall, ModelRef, ToolMessage
 from morrow.runtime.agent import AgentLoop
 from morrow.runtime.session import Session
-from morrow.runtime.tools import ToolExecutor, ToolRegistry, make_calculate_tool, make_tool
-from morrow.testing import ScriptedModelProvider, make_context_builder, make_run_policy
+from morrow.runtime.tools import ToolExecutor, ToolRegistry, make_tool
+from morrow.testing import (
+    ScriptedModelProvider,
+    make_calculate_tool,
+    make_context_builder,
+    make_run_policy,
+)
 
 MODEL = ModelRef(provider_id="p", model_id="m")
 
