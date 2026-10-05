@@ -52,7 +52,8 @@ async def test_confirmed_selection_survives_picker_expiry_and_is_consumed_once(e
         await owner.shutdown()
 
 
-async def test_confirmed_selection_rejects_reused_pid_after_long_model_delay():
+@pytest.mark.parametrize("refresh", [False, True])
+async def test_confirmed_selection_rejects_reused_pid_after_long_model_delay(refresh):
     birth = ProcessBirth(1, 0)
     owner, lease, clock, sessions = owner_for(Driver(), process_reader=lambda _: birth)
     try:
@@ -62,11 +63,139 @@ async def test_confirmed_selection_rejects_reused_pid_after_long_model_delay():
         request = request.model_copy(
             update={"scope": request.scope.model_copy(update={"windows": windows})}
         )
+        if refresh:
+            await owner.discover_local_candidates(SETTINGS, authority=AUTH)
         clock.value = NOW + timedelta(seconds=120)
         birth = ProcessBirth(2, 0)
         with pytest.raises(ComputerUseContractError, match="stale_observation"):
             await owner.open_run_session(request)
         assert not lease.held and sessions == []
+    finally:
+        await owner.shutdown()
+
+
+@pytest.mark.parametrize("refresh_result", ["normal", "empty", "budget"])
+async def test_picker_refresh_preserves_confirmed_selection_and_retires_old_candidates(
+    refresh_result,
+):
+    class RefreshDriver(Driver):
+        refresh = False
+
+        async def list_apps(self, payload):
+            result = await super().list_apps(payload)
+            if self.refresh and refresh_result == "empty":
+                result.apps = []
+            elif self.refresh and refresh_result == "budget":
+                result.apps = [result.apps[0]] * 101
+            return result
+
+    driver = RefreshDriver()
+    owner, lease, _, sessions = owner_for(driver)
+    try:
+        found = await owner.discover_local_candidates(SETTINGS, authority=AUTH)
+        candidate_id = found.candidates[0].candidate_id
+        windows = owner.select_local_candidates((candidate_id,), authority=AUTH)
+        request = _open()
+        request = request.model_copy(
+            update={"scope": request.scope.model_copy(update={"windows": windows})}
+        )
+        driver.refresh = True
+        if refresh_result == "budget":
+            with pytest.raises(ComputerUseContractError, match="target_budget"):
+                await owner.discover_local_candidates(SETTINGS, authority=AUTH)
+        else:
+            await owner.discover_local_candidates(SETTINGS, authority=AUTH)
+        with pytest.raises(ComputerUseContractError, match="unknown_target|stale_observation"):
+            owner.select_local_candidates((candidate_id,), authority=AUTH)
+        assert not lease.held and sessions == []
+        run = await owner.open_run_session(request)
+        assert lease.held and len(sessions) == 1
+        await owner.close_run_session(_close(run))
+        with pytest.raises(ComputerUseContractError, match="unknown_target"):
+            await owner.open_run_session(
+                request.model_copy(
+                    update={"scope": request.scope.model_copy(update={"generation": 2})}
+                )
+            )
+        assert not lease.held and len(sessions) == 1
+    finally:
+        await owner.shutdown()
+
+
+async def test_two_local_sessions_can_confirm_across_refresh_and_consume_independently():
+    owner, lease, _, sessions = owner_for(Driver())
+    try:
+        requests = []
+        for agent_run_id in ("arun_a", "arun_b"):
+            found = await owner.discover_local_candidates(SETTINGS, authority=AUTH)
+            windows = owner.select_local_candidates(
+                (found.candidates[0].candidate_id,), authority=AUTH
+            )
+            request = _open()
+            requests.append(
+                request.model_copy(
+                    update={
+                        "agent_run_id": agent_run_id,
+                        "scope": request.scope.model_copy(
+                            update={"agent_run_id": agent_run_id, "windows": windows}
+                        ),
+                    }
+                )
+            )
+        for request in requests:
+            run = await owner.open_run_session(request)
+            await owner.close_run_session(_close(run))
+            with pytest.raises(ComputerUseContractError, match="unknown_target"):
+                await owner.open_run_session(
+                    request.model_copy(
+                        update={"scope": request.scope.model_copy(update={"generation": 2})}
+                    )
+                )
+        assert len(sessions) == 2 and not lease.held
+    finally:
+        await owner.shutdown()
+
+
+@pytest.mark.parametrize("reset", ["clear", "stop", "quarantine"])
+async def test_explicit_owner_invalidation_revokes_confirmed_selection(reset):
+    owner, _, _, sessions = owner_for(Driver())
+    try:
+        found = await owner.discover_local_candidates(SETTINGS, authority=AUTH)
+        windows = owner.select_local_candidates((found.candidates[0].candidate_id,), authority=AUTH)
+        if reset == "clear":
+            owner._candidates.clear()
+        elif reset == "stop":
+            owner.stop_admission()
+        else:
+            owner._quarantine()
+        with pytest.raises(ComputerUseContractError, match="unknown_target"):
+            owner._candidates.take_bindings(windows, lambda _: ProcessBirth(1, 0))
+        assert sessions == []
+    finally:
+        await owner.shutdown()
+
+
+async def test_discard_selection_releases_only_its_bindings_and_requires_local_authority():
+    owner, lease, _, sessions = owner_for(Driver())
+    try:
+        found = await owner.discover_local_candidates(SETTINGS, authority=AUTH)
+        candidate_ids = (found.candidates[0].candidate_id,)
+        discarded = owner.select_local_candidates(candidate_ids, authority=AUTH)
+        retained = owner.select_local_candidates(candidate_ids, authority=AUTH)
+        with pytest.raises(ComputerUseContractError, match="untrusted_authority"):
+            owner.discard_local_selection(retained, authority="model")
+        owner.discard_local_selection(discarded, authority=AUTH)
+        owner.discard_local_selection(discarded, authority=AUTH)
+        with pytest.raises(ComputerUseContractError, match="unknown_target"):
+            owner._candidates.take_bindings(discarded, lambda _: ProcessBirth(1, 0))
+        request = _open()
+        run = await owner.open_run_session(
+            request.model_copy(
+                update={"scope": request.scope.model_copy(update={"windows": retained})}
+            )
+        )
+        await owner.close_run_session(_close(run))
+        assert len(sessions) == 1 and not lease.held
     finally:
         await owner.shutdown()
 

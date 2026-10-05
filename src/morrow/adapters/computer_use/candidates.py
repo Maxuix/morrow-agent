@@ -40,12 +40,17 @@ class LocalCandidateRegistry:
         return f"LocalCandidateRegistry(count={len(self._windows)})"
 
     def clear(self):
-        self._windows.clear()
+        """Revoke both picker entries and confirmed, unconsumed bindings."""
+        self.clear_candidates()
         self._selected.clear()
+
+    def clear_candidates(self):
+        """Refresh the picker without revoking a previously confirmed selection."""
+        self._windows.clear()
         self._expires_at = None
 
     def publish(self, windows):
-        self.clear()
+        self.clear_candidates()
         self._expires_at = self._clock.now() + timedelta(seconds=MAX_OBSERVATION_AGE_SECONDS)
         candidates = []
         for identity, label in windows:
@@ -64,8 +69,7 @@ class LocalCandidateRegistry:
         if self._expires_at is None or self._clock.now() >= self._expires_at:
             # Expired picker entries cannot revoke a previously confirmed selection.
             # Bindings are consumed once and revalidated against process birth at run entry.
-            self._windows.clear()
-            self._expires_at = None
+            self.clear_candidates()
             raise ComputerUseContractError("stale_observation")
         identity = self._windows.get(candidate_id)
         if identity is None:
@@ -107,3 +111,10 @@ class LocalCandidateRegistry:
         for window_id in bindings:
             self._selected.pop(window_id)
         return bindings
+
+    def discard_bindings(self, windows):
+        """Release only the selections explicitly abandoned by the local picker."""
+        for window in windows:
+            identity = self._selected.get(window.window_identity)
+            if identity is not None and window.app.bundle_id == identity.bundle_id:
+                self._selected.pop(window.window_identity)

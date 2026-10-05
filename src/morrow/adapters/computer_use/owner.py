@@ -134,7 +134,7 @@ class ComputerDriverOwner:
             raise ComputerUseContractError("disabled")
         if self._session is not None:
             raise ComputerUseContractError("desktop_busy")
-        self._candidates.clear()
+        self._candidates.clear_candidates()
         self._lease.acquire()
         self._leased = True
         self._candidate_calls = NativeCalls(self._quarantine, timeout=settings.max_call_seconds)
@@ -197,6 +197,11 @@ class ComputerDriverOwner:
         if self._session is not None:
             raise ComputerUseContractError("desktop_busy")
         return self._candidates.select(candidate_ids)
+
+    def discard_local_selection(self, windows, *, authority):
+        self._check_owner()
+        reject_untrusted_computer_use_authority(authority)
+        self._candidates.discard_bindings(windows)
 
     async def open_run_session(self, request: OpenRunSessionRequest) -> RunSession:
         self._admit()

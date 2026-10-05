@@ -54,6 +54,17 @@ class ComputerUseSelectionService:
         self._catalogs = OrderedDict()
         self._selections = OrderedDict()
 
+    def _discard_selection(self, session_id):
+        pending = self._selections.pop(session_id, None)
+        if pending is not None:
+            self.lifecycle.discard_local_selection(
+                pending.selection.windows, authority=TRUSTED_COMPUTER_USE_AUTHORITY
+            )
+
+    def clear(self, session_id):
+        self._catalogs.pop(session_id, None)
+        self._discard_selection(session_id)
+
     def _settings(self, permission):
         if permission != "full-access-manual":
             raise ApplicationError(ApplicationErrorCode.INVALID, "桌面选择需要完整访问（逐次确认）")
@@ -94,10 +105,10 @@ class ComputerUseSelectionService:
             raise ApplicationError(ApplicationErrorCode.STALE, "候选窗口已过期，请重新读取")
         self._catalogs[session_id] = catalog
         self._catalogs.move_to_end(session_id)
-        self._selections.pop(session_id, None)
+        self._discard_selection(session_id)
         while len(self._catalogs) > MAX_LOCAL_PICKERS:
             old, _ = self._catalogs.popitem(last=False)
-            self._selections.pop(old, None)
+            self._discard_selection(old)
         return catalog.model_dump(mode="json")
 
     def select(self, session_id, request, *, permission, model):
@@ -105,7 +116,7 @@ class ComputerUseSelectionService:
         catalog = self._catalogs.get(session_id)
         if catalog is None or self.clock.now() >= catalog.expires_at:
             self._catalogs.pop(session_id, None)
-            self._selections.pop(session_id, None)
+            self._discard_selection(session_id)
             raise ApplicationError(ApplicationErrorCode.STALE, "候选窗口已过期，请重新读取")
         if not isinstance(request, LocalWindowSelectionRequest):
             raise ApplicationError(ApplicationErrorCode.INVALID, "窗口选择无效")
@@ -145,6 +156,9 @@ class ComputerUseSelectionService:
             if request.share_images
             else ComputerUseImageShare.NONE,
         )
+        # Replacing this picker's pending choice must not retain abandoned bindings
+        # or revoke another picker's confirmed choice on the shared owner.
+        self._discard_selection(session_id)
         try:
             windows = self.lifecycle.select_local_candidates(
                 request.candidate_ids, authority=TRUSTED_COMPUTER_USE_AUTHORITY
@@ -176,6 +190,8 @@ class ComputerUseSelectionService:
             or pending.selection_id != selection_id
             or self.clock.now() >= pending.expires_at
         ):
+            if pending is not None and self.clock.now() >= pending.expires_at:
+                self._discard_selection(session_id)
             raise ApplicationError(ApplicationErrorCode.STALE, "本地窗口选择需要重新绑定")
         if pending.claimed_key not in {None, key}:
             raise ApplicationError(ApplicationErrorCode.CONFLICT, "窗口选择已绑定另一条输入")
@@ -207,5 +223,8 @@ class ComputerUseSelectionService:
             raise ApplicationError(ApplicationErrorCode.CONFLICT, "窗口选择已绑定另一条输入")
         self._selections.pop(session_id)
         if self.clock.now() >= pending.expires_at:
+            self.lifecycle.discard_local_selection(
+                pending.selection.windows, authority=TRUSTED_COMPUTER_USE_AUTHORITY
+            )
             raise ApplicationError(ApplicationErrorCode.STALE, "本地窗口选择已过期，请重新选择")
         return pending.selection

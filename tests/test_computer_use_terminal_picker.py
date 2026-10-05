@@ -23,7 +23,9 @@ from test_computer_use_candidates import Driver, owner_for
 from test_computer_use_loop import tool
 
 
-@pytest.mark.parametrize("mode", ["complete", "expired", "host_conflict", "invalid_delivery"])
+@pytest.mark.parametrize(
+    "mode", ["complete", "expired", "host_conflict", "invalid_delivery", "clear"]
+)
 async def test_terminal_selects_once_then_uses_existing_loop(tmp_path, mode):
     app = _app(tmp_path)
     providers = []
@@ -80,7 +82,10 @@ async def test_terminal_selects_once_then_uses_existing_loop(tmp_path, mode):
         answers += ["", ""]
         if mode == "host_conflict":
             answers += ["/grant"]
-        answers += ["observe my window", "/computer status", "/computer clear"]
+        if mode == "clear":
+            answers += ["/computer clear"]
+        else:
+            answers += ["observe my window", "/computer status", "/computer clear"]
     answers += ["/exit"]
 
     class ScriptedTerminal(Terminal):
@@ -93,6 +98,7 @@ async def test_terminal_selects_once_then_uses_existing_loop(tmp_path, mode):
                 clock.value += timedelta(seconds=31)
             if answer == "/exit":
                 saved["grants"] = journal.list_capability_grants(identity.workspace_id)
+                saved["bindings"] = len(owner._candidates._selected)
             return answer
 
     try:
@@ -111,13 +117,13 @@ async def test_terminal_selects_once_then_uses_existing_loop(tmp_path, mode):
         requests = [request for value in providers for request in value.stream_calls]
         rendered = output.getvalue()
         assert "ccandidate" not in rendered and "cselection" not in rendered
-        if mode in {"expired", "invalid_delivery"}:
+        if mode in {"expired", "invalid_delivery", "clear"}:
             assert not grants and not requests and not sessions
             if mode == "expired":
                 assert (
                     "下次运行窗口" in rendered
                 )  # Refusal retains pending scope until explicit clear.
-            else:
+            elif mode == "invalid_delivery":
                 assert "选择无效" in rendered
         else:
             assert len(grants) == 1 and grants[0].capabilities == (
@@ -140,6 +146,7 @@ async def test_terminal_selects_once_then_uses_existing_loop(tmp_path, mode):
                 assert "清除桌面选择" in rendered
                 assert products.session.pending_full_access_grant is False
         assert picker.pending is None
+        assert saved["bindings"] == 0
         assert [name for name, _ in driver.calls].count("shutdown") == 1
     finally:
         await lifecycle.shutdown()

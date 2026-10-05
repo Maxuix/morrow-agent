@@ -6,7 +6,7 @@ from datetime import timedelta
 import pytest
 
 from morrow.application.computer_use import ComputerUseLifecycle
-from morrow.core.computer_use import ComputerUsePreflight
+from morrow.core.computer_use import MAX_DISCOVERED_TARGETS, ComputerUsePreflight
 from morrow.core.models import AssistantMessage, FunctionToolCall
 from morrow.core.permissions import CapabilityName
 from test_computer_use_candidates import Driver, owner_for
@@ -16,7 +16,17 @@ from test_stage8_core_api import ServerFixture
 
 @pytest.mark.parametrize(
     "mode",
-    ["complete", "cli_revoke", "queued_expiry", "queued_claim", "queued_restart", "rollback"],
+    [
+        "complete",
+        "cli_revoke",
+        "queued_expiry",
+        "queued_claim",
+        "queued_restart",
+        "rollback",
+        "other_refresh",
+        "reselect",
+        "reselect_refresh",
+    ],
 )
 async def test_http_selection_is_bound_to_one_new_chat_run(tmp_path, mode):
     script = [
@@ -83,6 +93,28 @@ async def test_http_selection_is_bound_to_one_new_chat_run(tmp_path, mode):
         )
         assert selected.status == 200, selected.body
         selection_id = selected.json()["selection_id"]
+        if mode == "other_refresh":
+
+            async def refresh_other():
+                service = fx.host.context.chat.computer_selection
+                other_catalog = await service.prepare_catalog(permission="full-access-manual")
+                service.accept_catalog("ses_other", other_catalog, permission="full-access-manual")
+
+            await fx.host.execute_preparation(refresh_other)
+        if mode in {"reselect", "reselect_refresh"}:
+            for _ in range(MAX_DISCOVERED_TARGETS + 1):
+                if mode == "reselect_refresh":
+                    catalog = (await fx.client.post(path + "/computer-use/candidates", {})).json()
+                selected = await fx.client.post(
+                    path + "/computer-use/selection",
+                    {
+                        "candidate_ids": [catalog["candidates"][0]["candidate_id"]],
+                        "delivery": "foreground",
+                    },
+                )
+                assert selected.status == 200, selected.body
+                selection_id = selected.json()["selection_id"]
+                assert await fx.on_core(lambda: len(resources["owner"]._candidates._selected)) == 1
         body = {
             "client_message_id": "desktop.1",
             "text": "Find my selected window",
@@ -147,6 +179,7 @@ async def test_http_selection_is_bound_to_one_new_chat_run(tmp_path, mode):
         requests = [request for provider in fx.bank.providers for request in provider.stream_calls]
         if mode in {"queued_expiry", "queued_restart"}:
             assert not grants and not requests and resources["sessions"] == []
+            assert not resources["owner"]._candidates._selected
             assert receipt["status"] in {"blocked", "settled"}
             assert receipt["run_status"] != "stop"
         else:

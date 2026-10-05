@@ -45,6 +45,8 @@ class TerminalComputerPicker:
         return session, config.active_model
 
     def clear(self):
+        if self.selected_session_id is not None:
+            self.selection_service.clear(self.selected_session_id)
         self.pending = None
         self.selected_session_id = None
 
