@@ -85,6 +85,7 @@ async def test_actual_chat_sdk_tools_retry_next_run_and_rehydration(tmp_path, wi
 
     fx = ServerFixture(tmp_path)
     requests, delays = [], []
+    closed_clients = []
     sid = None
 
     class SDK:
@@ -138,7 +139,13 @@ async def test_actual_chat_sdk_tools_retry_next_run_and_rehydration(tmp_path, wi
             credential,
             api_model_ids={mid: m.api_model_id for mid, m in config.models.items()},
         )
-        provider._client = SimpleNamespace(chat=SimpleNamespace(completions=SDK()))
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SDK()))
+
+        async def close():
+            closed_clients.append(client)
+
+        client.close = close
+        provider._client = client
         return provider
 
     try:
@@ -221,6 +228,7 @@ async def test_actual_chat_sdk_tools_retry_next_run_and_rehydration(tmp_path, wi
         first = (await fx.client.get(path + "/interactions/reason.first")).json()["receipt"]
         assert first["status"] == "settled", first
         assert len(requests) == 3 and len(delays) == 1
+        assert len(closed_clients) == 1
         assert [r["reasoning_effort"] for r in requests] == ["high"] * 3
         assert any(m["role"] == "tool" for m in requests[-1]["messages"])
         assert (
@@ -231,6 +239,7 @@ async def test_actual_chat_sdk_tools_retry_next_run_and_rehydration(tmp_path, wi
         ).status == 202
         await drain(fx, sid)
         assert requests[-1]["reasoning_effort"] == "low"
+        assert len(closed_clients) == 2
 
         async def recover_original():
             run = fx.host.context.journal.get_agent_run(fx.workspace_id, first["agent_run_id"])
@@ -239,16 +248,21 @@ async def test_actual_chat_sdk_tools_retry_next_run_and_rehydration(tmp_path, wi
             restored = fx.host.context.chat.runtimes[sid].orchestrator.preparation.rehydrate(
                 run.snapshot
             )
-            runner = ModelCallRunner(
-                restored.provider, restored.model, restored.spec.provider_runtime.generation
-            )
-            pack = restored.context_builder.build(fx.host.context.chat.runtimes[sid].session)
-            async for _ in runner.attempt(pack.messages):
-                pass
+            try:
+                assert restored.owns_provider is True
+                runner = ModelCallRunner(
+                    restored.provider, restored.model, restored.spec.provider_runtime.generation
+                )
+                pack = restored.context_builder.build(fx.host.context.chat.runtimes[sid].session)
+                async for _ in runner.attempt(pack.messages):
+                    pass
+            finally:
+                await restored.aclose()
             return run.snapshot
 
         snapshot = await fx.host.execute_preparation(recover_original)
         assert requests[-1]["reasoning_effort"] == "high"
+        assert len(closed_clients) == 3
         if with_attachment:
             assert snapshot.input_attachments[0].model_dump(mode="json") == attachments[0]
             assert all(

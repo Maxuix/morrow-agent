@@ -60,6 +60,7 @@ def _buffered_execution(data: bytes, *, running: bool = True, capacity: int = 10
         lifecycle=TrackedLifecycle.TASK,
         cwd_relative=".",
         command_class="shell",
+        secret_bytes=(),
     )
 
 
