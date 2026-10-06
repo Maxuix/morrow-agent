@@ -1,0 +1,49 @@
+                                                                                
+ Usage: morrow [OPTIONS] COMMAND [ARGS]...                                      
+                                                                                
+ Morrow（承序）工作空间终端 Agent。                                             
+                                                                                
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --dir                         <directory>            [default: .]            │
+│ --permission-mode,--m…        <manual|auto-safe|aut  权限预设：manual、auto… │
+│                               o-sandboxed|full-acce  或 full-access-manual。 │
+│                               ss-manual>             [default: manual]       │
+│ --session-id                  <str>                  恢复指定                │
+│                                                      Session；不提供时创建 … │
+│                                                      Session。               │
+│ --install-completion                                 Install completion for  │
+│                                                      the current shell.      │
+│ --show-completion                                    Show completion for the │
+│                                                      current shell, to copy  │
+│                                                      it or customize the     │
+│                                                      installation.           │
+│ --help                                               Show this message and   │
+│                                                      exit.                   │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────╮
+│ serve         启动本地 Core API 服务器（前台、headless）。                   │
+│ attach        连接已有 Core；/exit 仅断开，/stop 才停止当前运行。            │
+│ gui           启动 Core 服务器并打开 Web GUI（前台）。                       │
+│ run           Run one ordinary prompt and emit versioned JSONL records only. │
+│ computer      桌面功能配置与宿主状态；运行授权需独立选择。                   │
+│ skill         Skill 验证、安装与 Binding 生命周期管理。                      │
+│ manage        Context、Learning、Skill 管理；与 GUI 使用相同命令。           │
+│ provider      Provider 管理。                                                │
+│ model         模型查看。                                                     │
+│ workspace     工作空间管理。                                                 │
+│ session       Session 生命周期与历史。                                       │
+│ task          TaskRun 操作。                                                 │
+│ artifact      Artifact 查看与保留。                                          │
+│ recovery      恢复报告与决策。                                               │
+│ approval      审批查看与决议（与 GUI 使用同一应用服务）。                    │
+│ grant         Foreground AgentRun 的手动权限授予与撤销。                     │
+│ state         Operational Store 诊断、事件与备份。                           │
+│ agent-run     AgentRun 观测查询。                                            │
+│ preferences   Generic Preference 查询与直接生命周期管理。                    │
+│ learning      Learning Inbox、Review 与候选决策。                            │
+│ memory        Project Knowledge 生命周期与历史。                             │
+│ mcp           MCP Server desired state、Catalog 与安全映射管理。             │
+│ agent         Agent definition desired state and immutable publication.      │
+│ workflow      Static Workflow definition, execution and recovery management. │
+╰──────────────────────────────────────────────────────────────────────────────╯
+

@@ -72,3 +72,7 @@ CI自动化与大文件责任提取仍属可选后续建议，当前未新增质
 [Python3.13无SDK](evidence/version-closeout-2026-10-06/release-smoke313-absent.json)、
 [原件/导航检查](evidence/version-closeout-2026-10-06/portable-check.log)。
 发行产物仅保存在本地临时目录，本轮没有上传发行包、升级版本或新增真实API/native验收。
+
+## 后续复核
+
+Grok 在 main638b3b33 上发现 R05 的共享管理入口仍会随读回事实改变重试内容，批量偏好还混淆了明确拒绝与未知结果。见[后续核实与修复](grok-review-fixes-2026-10-06.md)；上述验证数字和发行安装记录保留为首轮交付时点。

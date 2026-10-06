@@ -81,6 +81,63 @@
       "path": "smoke313-present.json",
       "sha256": "8ba26f12548ea78d3108b1f65adbe300a5c39bf6c3057dffc804b83e4bb3960e",
       "bytes": 355
+    },
+    {
+      "path": "grok-cli-help.log",
+      "sha256": "8a5d599703dc0faa33015fa660e28d716aca310884474bd99899e59b915f9a32",
+      "bytes": 4895
+    },
+    {
+      "path": "grok-gui-build.log",
+      "sha256": "1baba2bef9be818fe083b18d82467301fb2b0629aed73bfc8dabd93c35d7756c",
+      "bytes": 4398
+    },
+    {
+      "path": "grok-gui-tests.log",
+      "sha256": "122f53c24003e36b9898b1163a6df8b288e3480d7de6ae48f47580c2b651acc8",
+      "bytes": 8112
+    },
+    {
+      "path": "grok-gui-typecheck.log",
+      "sha256": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+      "bytes": 15
+    },
+    {
+      "path": "grok-pytest.log",
+      "sha256": "1d9ebb43cac2a17b672ea2688ee4ceb9e6d015eb7caf67bef83b55ea09d95bba",
+      "bytes": 22924
+    },
+    {
+      "path": "grok-review-original.md",
+      "sha256": "33561416de7fa82b8908b173a5a1279fb1c42a8cebb772ba82c4b96ad9b5f6ee",
+      "bytes": 3099
+    },
+    {
+      "path": "grok-ruff-check.log",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "bytes": 19
+    },
+    {
+      "path": "grok-ruff-format.log",
+      "sha256": "4925d783b25044bdba2585ba8da21cf0acfbbd2b308cab04a939e4d5597aa878",
+      "bytes": 28
+    }
+  ],
+  "followups": [
+    {
+      "id": "grok-review-2026-10-06",
+      "baseline_commit": "638b3b33a14706d9c89d96e96ced659ac61a9015",
+      "paths": [
+        "grok-cli-help.log",
+        "grok-gui-build.log",
+        "grok-gui-tests.log",
+        "grok-gui-typecheck.log",
+        "grok-pytest.log",
+        "grok-review-original.md",
+        "grok-ruff-check.log",
+        "grok-ruff-format.log"
+      ],
+      "verified_code_commit": "30c74f8a"
     }
   ]
 }

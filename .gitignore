@@ -113,6 +113,7 @@ docs/research/*
 !docs/research/harness-technical-analysis-2026-09-24.md
 
 !docs/acceptance/version-closeout-fixes-2026-10-06.md
+!docs/acceptance/grok-review-fixes-2026-10-06.md
 
 # Selected closeout validation logs; other generated output remains local.
 !docs/acceptance/evidence/
