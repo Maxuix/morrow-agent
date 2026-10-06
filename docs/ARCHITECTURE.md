@@ -114,8 +114,9 @@ shutdown 即失效；本地 DTO 只含应用、显示标签与编号，不作为
 运行期 SelectedWindowScope 将应用与这些窗口身份冻结到既有 grant/snapshot JSON；历史
 AppWindowScope 仅用于旧证据解码，序列化不增加 windows 字段，保持原证据摘要。
 设备请求与新 grant 只接受 SelectedWindowScope，运行路径不靠版本分支选择范围。
-候选目录刷新或到期只撤销未确认的候选编号，保留已确认的窗口绑定；owner 开启 run 前
-一次性消费该绑定并重验 process birth，
+adapter 的候选目录刷新或到期只撤销未确认的候选编号，已确认的原生绑定暂留在 owner 中。
+Application 待用选择仍使用原候选目录的 expires_at；领取或消费时过期即拒绝，重新读取目录
+也会清除对应待用选择。owner 开启 run 前一次性消费有效绑定并重验 process birth，
 将原生绑定复制给该 Session；discover 只注册选中窗口，Core observe/action 与服务返回目标
 也验证窗口范围。失效候选编号、重用绑定或变化的进程身份在 SDK Session 前拒绝，
 不扩展到同应用其他窗口。Application 替换、清除、淘汰或拒绝过期的待用选择时，

@@ -172,6 +172,9 @@ GUI/Core 已占用工作区写入权时，使用 `attach` 接入。attach 模式
 - **结果：** 可阅读的答案与文件链接，点击后在右侧打开。Markdown 支持 GFM；源码使用 CodeMirror 高亮、行号和搜索。当前文件与历史交付件在此面板中均只读展示；HTML 显示源码，不在面板内执行。
 - **管理：** 项目 Profile、偏好、知识、学习审查、Skill、MCP、Agent 定义、诊断、备份与清理。
 
+Skill 绑定或 Draft 变更结果未确认时，点击“重试原操作”确认原提交结果，再进行新的 Skill 或 Draft 变更。
+批量偏好被明确拒绝时，界面显示拒绝原因并保留输入。
+
 附件有明确上限：**每条消息最多 8 个文件**、**单文件 8 MiB**、**PDF 最多 20 页**、**图片最多 1600 万像素**、**提取文本最多 32,768 字符**。扫描 PDF 页面需要支持图片的模型。当前边界见[架构基线](docs/ARCHITECTURE.md)。
 
 ## Workflow 工作流
@@ -214,19 +217,40 @@ uv run morrow workflow --help
 
 ## 桌面配置（实验性）
 
-桌面执行默认关闭。macOS arm64 的基础观察、Unicode 输入和带实际图像的普通 AgentLoop
-已通过实机验证；安装官方固定 SDK 后，可显式启用并授权窗口：
+桌面执行默认关闭。macOS arm64 可在显式启用、取得宿主系统权限并授权本地窗口后
+使用基础 SDK 集成。可选 SDK 单独安装；普通编码任务不需要它：
 
 ```bash
 uv sync --locked --extra computer-use
 ```
 
-普通字段与密码字段共用输入路径，不再要求字段安全证明、自编 SDK 或凭据内容检测。
-工具不按关键词、凭据样式或 secure 角色拒绝、隐藏、脱敏或遮罩内容；LLM 根据用户意图和上下文判断安全。
-SDK/OS 未提供的值仍不可读。双击/物理右键需要新鲜已发布图像，使用像素手势；当前双击仅支持用户明确授权的前台投递，后台在投递前报告不支持。滚动 token 必须指向真实容器；图像坐标滚动在当前 SDK 下仅开放明确授权的后台投递。
-当前只公开 enabled 属性，官方 0.30.4 没有精确 token 属性读回，部分树中的 selector 不能证明唯一性。
-SDK 对隐藏字段可能报告 `unknown`，即使实际输入已发生；
-Morrow 保留该状态，不自动重试。其他平台暂不开放原生执行。
+macOS arm64 固定使用 `cua-driver==0.30.4+morrow.3`，由官方 0.30.4 的精确源码加上
+[已跟踪的功能补丁](vendor/cua-driver-functional/README.md)构建。
+[SDK 发布包](https://github.com/Maxuix/morrow-agent/releases/tag/cua-driver-morrow-v0.30.4.3)
+包含源码、构建来源与校验和；本地编译是可选步骤。
+Morrow 直接调用 Python SDK。经授权的文本、按键与快捷键在普通字段和密码字段中
+共用输入路径。屏幕标签及 SDK 可读取的值不经过内容分类、脱敏或截图遮罩；
+LLM 根据用户意图和上下文判断内容与操作安全。SDK/OS 未提供的值仍不可读。
+官方 SDK 已通过受控 macOS arm64 截图、Unicode 输入，以及带审批输入和真实
+操作前后 Provider 图像的普通 AgentLoop 验证。合成密码字段输入也实际生效；
+由于隐藏内容无法核验，SDK 返回 `unknown`。Morrow 保留该状态，不自动重试。
+其他平台暂不开放原生执行。macOS 辅助功能与屏幕录制权限必须授予实际负责的宿主；
+权限探针成功不代表窗口截图成功。应从该宿主运行
+[evals/computer_use](evals/computer_use/README.md) 中显式启用的受控 fixture 门禁，
+再判断其是否可用。
+
+所选精确模型需要支持 OpenAI function tools。Hybrid 模式还需要图片输入能力及
+明确的所选窗口图像分享许可；semantic 模式使用 AX，不发送图片。请选择打算分享的窗口。
+有效截图不依赖 AX 树完整性；解码、几何、所有权及图像预算约束仍生效。
+双击与物理右键需要新鲜已发布图像，并使用物理手势。功能 SDK 支持对已观察原生元素
+进行后台左键双击、前台坐标滚轮输入，以及对真实 AX 滚动容器进行 token 滚动。
+后台坐标双击和右键双击仍不支持。属性核验当前只公开 `enabled`。
+精确元素引用谓词在刷新观察之前读取原先保留的对象；该对象不可用时，核验仍保持不可用。
+官方 0.30.4 对这些不支持的变体保留原有的有界拒绝。
+详见[五项门禁证据](docs/acceptance/computer-use-capabilities-2026-10-05.md)。
+
+默认每次运行预算为 100 次操作、600 秒及 64 MiB 观察字节；单次调用默认 15 秒，
+图像长边默认 1920 像素。配置可降低运行和图像上限；单次调用期限可设为 1–60 秒。
 `uv run morrow computer status` 查看共享全局配置、宿主状态及当前全局模型能力。
 使用状态中返回的修订号明确修改配置：
 
@@ -234,6 +258,25 @@ Morrow 保留该状态，不自动重试。其他平台暂不开放原生执行�
 uv run morrow computer configure --enable --mode hybrid --expected-revision <revision>
 uv run morrow computer configure --disable --expected-revision <revision>
 ```
+
+在交互式 `full-access-manual` 会话中，使用 `/computer`（或 `/computer select`）
+读取本地窗口候选，按编号选择窗口、投递方式、操作权限及图像分享。
+`/computer status` 显示待使用范围、本地原生调用状态及当前运行中的未知桌面效果；
+`/computer clear` 清除待使用选择。停止或撤销会拒绝后续操作，已经投递的效果无法撤销；
+原生调用尚未结束时，桌面 lease 仍保持占用。刷新 GUI 授权视图或使用 `/computer status`
+读取最新状态。未知操作不得自动重试。
+
+Headless 执行不会询问审批。操作需要确认时不会投递：持久工具回复返回 `needs_approval`，
+`morrow run` 输出带 `stop_reason: "needs_approval"` 的 `run.completed` 记录，并以退出码 2
+结束。请在交互会话中重新发起请求，明确选择新窗口并批准操作。
+选择约 30 秒后过期，仅适用于一次新的普通聊天运行；准备该运行之前不会创建 grant。
+待使用的 Host 命令 `/grant` 与桌面选择互斥。过期选择需要清除或重新选择。
+GUI 在输入框权限控件中提供相同选项。候选读取是显式本地动作；窗口选择 ID 不可跨进程
+或重启复用。使用 `morrow grant list` 或 `morrow grant show <grant-id> --summary`
+检查运行冻结的桌面范围；`morrow grant revoke <grant-id> --expected-row-version <revision>`
+与 GUI 使用同一持久撤销服务。桌面操作审批显示安全窗口标签、动作、定位方式和冻结的
+投递方式，不显示输入文本。审批逐次进行，不能增加 Shell Host 权限或扩大所选窗口范围。
+原生桌面使用仍需通过已记录的原生验收门禁。
 
 `--json` 返回与 GUI 相同的配置/状态字段；`computer configure --help` 列出操作次数、
 运行/调用期限、图像字节与尺寸预算。更改对未来运行生效，启用开关不会创建设备授权。
@@ -395,7 +438,9 @@ src/morrow/
 └── resources/      # 随包运行策略
 gui/                # React 19 + TypeScript + Vite，使用 pnpm
 tests/              # Python 单元、集成与验收测试
+evals/              # 评测 harness 与显式启用的原生门禁
 scripts/            # 发布与构建工具
+vendor/             # 有来源记录的 SDK 补丁与第三方声明
 docs/               # 项目文档与当前架构基线
 ```
 
@@ -422,6 +467,11 @@ pnpm --dir gui build
 git diff --check
 ```
 
+[2026-10-06 验证记录](docs/acceptance/grok-review-fixes-2026-10-06.md)对应代码修订
+`30c74f8a`：Python 离线测试 3205 passed、2 deselected，GUI 110 个文件 / 747 个测试通过；
+前端 typecheck、build 与包体积门禁，以及 Ruff format/check、compileall、CLI help 和
+`git diff --check` 均通过。这是该修订的已记录结果，并非本次重复运行全部测试。
+
 确定性测试使用 fake SDK chunks 和 scripted Provider。真实 Provider/MCP 测试需要明确授权与兼容凭据；离线通过不代表真实模型效果或跨平台沙箱能力。
 
 ### 构建分发包
@@ -443,6 +493,7 @@ python3 scripts/build_release.py
 | 模型不能调用工具或接收图片 | 检查 Adapter 与精确模型能力，端点协议兼容不等于全部能力可用。 |
 | Auto Sandboxed 无法启动 | 检查原生后端支持；当前支持 macOS，不支持的环境会拒绝执行。 |
 | 恢复后的任务不能继续 | 查看恢复报告，先对账未知副作用，再继续。 |
+| Skill 绑定或 Draft 变更结果未确认 | 点击“重试原操作”确认原提交结果，再进行新的变更。 |
 | Workflow 尚未发布或版本陈旧 | 校验并发布新修订，或重新读取当前 Source/Head 后重试。 |
 
 当前参数以 `uv run morrow <command> --help` 为准。
@@ -464,7 +515,11 @@ python3 scripts/build_release.py
 | [状态与恢复](docs/architecture/state.md) | 持久状态、交付件、备份与清理 |
 | [接口与工作台](docs/architecture/interfaces.md) | CLI、Core API 与 GUI 所有权 |
 | [扩展](docs/architecture/extensions.md) | Provider、Skill、MCP 与学习边界 |
-| [文档索引](docs/README.md) | 公开架构文档 |
+| [文档索引](docs/README.md) | 架构与验证导航 |
+| [验收索引](docs/acceptance/README.md) | 验收记录、范围与结果边界 |
+| [可携验收证据](docs/acceptance/portable/README.md) | 来源、校验和与可复核原始材料 |
+| [Benchmark harness](evals/benchmarks/README.md) | 离线回归、真实 benchmark 入口与结果约定 |
+| [桌面验证](evals/computer_use/README.md) | 受控 fixture、安装包检查与显式启用的原生门禁 |
 
 ## 参与贡献
 

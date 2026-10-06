@@ -326,9 +326,10 @@ wheel-region delivery. New campaigns require healthy exports, valid effect field
 snapshot revision for an action effect. Historical v1–v3 component records remain readable but
 are not upgraded into new v4 acceptance evidence.
 
-Confirmed picker selections outlive the candidate list's 30-second deadline. They are consumed
-once and validated against process birth; current window identity/geometry is still checked before
-observations and actions. Action observation lifetime is independently configurable with
+Pending picker selections share the candidate list's 30-second deadline. Claiming or consuming an
+expired selection refuses it and requires selecting again. A valid selection is consumed once;
+process birth and current window identity/geometry are still checked before observations and actions.
+Action observation lifetime is independently configurable with
 `morrow computer configure --max-observation-age-seconds 5 --expected-revision REV` (1–30 seconds,
 default30). Tool replies include `expires_at`. Long values include an actual bounded `value_tail`
 within the shared text budget, so a suffix may be read back without pretending the middle is visible.

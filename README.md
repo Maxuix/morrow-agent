@@ -172,6 +172,8 @@ The browser interface brings daily coding and operational controls together:
 - **Results:** readable answers and file links that open the right-hand panel. Markdown renders with GFM; source uses CodeMirror highlighting, line numbers, and search. Current files and historical deliverables are read-only in this panel. HTML displays as source; it is not executed there.
 - **Management:** project profiles, preferences, knowledge, learning review, Skills, MCP, Agent definitions, diagnostics, and backup/cleanup tools.
 
+When a Skill binding or Draft change has an unconfirmed result, use **Retry original operation** (`重试原操作`) to confirm the original submission before making another Skill or Draft change. Preference batches show explicit rejection reasons separately and retain your input.
+
 Attachments are bounded: up to **8 files per message**, **8 MiB per file**, **20 pages per PDF**, **16 million pixels per image**, and **32,768 extracted text characters**. Scanned PDF pages require an image-capable model. See the [architecture baseline](docs/ARCHITECTURE.md) for the current boundaries.
 
 ## Workflows
@@ -450,7 +452,9 @@ src/morrow/
 └── resources/      # Packaged runtime defaults
 gui/                # React 19 + TypeScript + Vite; pnpm-managed
 tests/              # Python unit, integration, and acceptance tests
+evals/              # Benchmark harness and opt-in computer-use verification
 scripts/            # Release/build tooling
+vendor/             # SDK functional patch, provenance, and third-party notices
 docs/               # Project documentation and the current architecture baseline
 ```
 
@@ -479,6 +483,8 @@ git diff --check
 
 Use fake SDK chunks and scripted Providers for deterministic tests. Live Provider/MCP tests require explicit authorization and compatible credentials; an offline test pass does not establish live-model quality or cross-platform sandbox support.
 
+The [2026-10-06 verification record](docs/acceptance/grok-review-fixes-2026-10-06.md) for code revision `30c74f8a` reports **3,205 backend tests** (2 live tests deselected) and **747 GUI tests** across 110 files, with typecheck, bundle budgets, and Ruff passing. These are recorded results for that revision; use the commands above to verify your checkout. The [acceptance index](docs/acceptance/README.md) also links the earlier closeout and native fixture evidence.
+
 ### Build a distributable package
 
 ```bash
@@ -498,6 +504,7 @@ The release script installs frontend dependencies from the lockfile, builds the 
 | A model cannot use tools or images | Check the adapter and exact model capabilities; endpoint compatibility alone is insufficient. |
 | Auto Sandboxed cannot start | Check native backend support. Current support is macOS; unsupported environments fail closed. |
 | A recovered task cannot continue | Read its recovery report and reconcile unknown side effects before resuming. |
+| A Skill binding or Draft change has an unconfirmed result | Click **Retry original operation** to confirm the original submission before making another change. |
 | A Workflow is unpublished or stale | Validate and publish a new revision, or refresh the current source/head before retrying. |
 
 Use `uv run morrow <command> --help` for the current parameter contract.
@@ -519,7 +526,11 @@ Most detailed documents are currently in Chinese; both README pages describe the
 | [State and recovery](docs/architecture/state.md) | Durable state, artifacts, backup and cleanup |
 | [Interfaces and workbench](docs/architecture/interfaces.md) | CLI, Core API and GUI ownership |
 | [Extensions](docs/architecture/extensions.md) | Providers, Skills, MCP and learning boundaries |
-| [Documentation index](docs/README.md) | Public architecture documentation |
+| [Documentation index](docs/README.md) | Architecture, verification, and repository boundaries |
+| [Acceptance index](docs/acceptance/README.md) | Dated fixes and their validation evidence |
+| [Portable evidence](docs/acceptance/portable/README.md) | Archived source bytes, SHA-256 manifest, and reading copies |
+| [Benchmark harness](evals/benchmarks/README.md) | TB2 protocol, budgets, fixtures, and historical limitations |
+| [Desktop verification](evals/computer_use/README.md) | Installed-package checks and opt-in native fixture gates |
 
 ## Contributing
 
