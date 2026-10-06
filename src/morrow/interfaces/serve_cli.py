@@ -1,6 +1,6 @@
 """`morrow serve`: the foreground headless Core API server.
 
-The server binds loopback only, prints its address and one-time session token,
+The server binds loopback only, prints its address and private connection-file guidance,
 and shuts down gracefully on SIGINT: in-flight requests drain, driver tasks are
 cancelled without recording any user cancellation, and durable state stays
 owned by the Core process. `morrow gui` reuses the same core runner and adds

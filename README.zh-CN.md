@@ -292,7 +292,7 @@ uv run morrow provider configure volcengine
 uv run morrow provider configure volcengine --replace-credential
 ```
 
-替换已存储凭据前，需先取消正在生效的环境变量覆盖。恢复验证运行冻结的配置，不会静默套用后来修改的设置。
+替换已存储凭据前，需先取消正在生效的环境变量覆盖。恢复验证运行冻结的配置，不会静默套用后来修改的设置。 新运行也会记录认证来自指定环境变量还是 CredentialStore 引用，恢复只读取同一来源；环境值缺失不会回退已存密钥。移除 Provider 配置会保留历史运行所需的已发布凭据，需要撤销时请在凭据系统显式处理。旧快照保持原 CredentialStore-only 恢复行为。
 
 ## 项目上下文、学习与扩展
 

@@ -10,6 +10,14 @@
 请求白名单、流片段和错误归一化，不把本地权限元数据加入 Provider 工具协议。
 不静默切换 Provider/Model，恢复继续使用经过验证的冻结设置。
 
+新 AgentRun 将实际认证来源冻结为 `environment` 或 `keyring`：前者由冻结的 provider_id
+确定 `MORROW_<PROVIDER>_API_KEY` 环境变量名，后者使用冻结的 CredentialRef。恢复只读取
+该来源，环境变量缺失不回退 Keyring，Keyring 来源也不会被今天的环境变量覆盖。
+旧快照没有来源字段时保持原 Keyring-only 合同；冻结的是来源身份，不是环境值的永久副本。
+快照、日志和事件不保存凭据值、凭据哈希或其他可猜测指纹。删除 Provider 配置不销毁已发布
+的 Keyring 引用，保证 immutable 运行仍可恢复；凭据撤销需由其保管系统显式处理。
+由准备服务创建的 Provider 归该运行所有，在现有异步收尾中关闭；注入/共享实例由调用方管理。
+
 生产组合在支持 function tools 时启用 `read`、`ls`、`find`、`grep`、`edit`、`write`、`bash`。
 `run_skill_script`、`update_configuration`、`manage_preferences`、`read_artifact` 和
 `promote_sandbox_changes` 随能力组合。实际注册与冻结以
@@ -37,6 +45,10 @@ handler 不读取终端输入、不自行发公开事件、不直接依赖具体
 底层 delete/move/rename 服务仍供推广和恢复使用，不能因模型专用包装退役就删除。
 它们只接受受控普通文件、no-clobber 发布和冻结身份；源先被原子捕获再核验，不能证明身份时
 保留 staging/unknown 事实并拒绝继续。多路径稳定加锁，失败不覆盖第三方文件。
+
+保留的 tracked execution 在内存中持有启动时的精确脱敏字节，poll/stop 投影合并启动和
+当前规则，避免凭据轮换后旧缓冲重新暴露。规则不进入持久证据；普通 task 仅同 Session/Task
+可读，acceptance 可由同 Session 后续 Task 读取，跨 Session 始终拒绝。
 
 普通 Host `bash` 无 OS 隔离，不按 Git/管道/重定向等命令字符串猜测审批，也不保证工作空间、
 网络或凭据 confinement。Shell 字符串在进程启动时固定为 `/bin/bash -c` 或已探测的 POSIX sh；

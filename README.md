@@ -347,7 +347,7 @@ uv run morrow provider configure volcengine
 uv run morrow provider configure volcengine --replace-credential
 ```
 
-Unset an active environment override before replacing a stored credential. Recovery validates the run's frozen configuration rather than silently adopting new settings.
+Unset an active environment override before replacing a stored credential. Recovery validates the run's frozen configuration rather than silently adopting new settings. A new run also records whether authentication came from its named environment variable or the CredentialStore reference. Recovery reads that same source; a missing environment value does not fall back to a stored key. Removing a Provider configuration keeps published credentials available for historical runs; revoke credentials explicitly in their credential system. Legacy snapshots retain their original CredentialStore-only recovery behavior.
 
 ## Project context, learning, and extensions
 
