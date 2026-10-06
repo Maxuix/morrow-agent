@@ -35,7 +35,7 @@ export function WorkspaceToolsPage({
   registerGuard?: (guard: DirtyGuard) => () => void
 }) {
   const [scope, setScope] = useState<Scope>('workspace')
-  const { mutate, busy, message, refresh, reload } = useManagementMutate(client, connected, onChanged)
+  const { mutate, retryOriginal, awaitingRetry, busy, message, refresh, reload } = useManagementMutate(client, connected, onChanged)
   const workspaceName = useWorkspaceName(client, workspaceId ?? null)
   return (
     <PageScaffold
@@ -60,12 +60,13 @@ export function WorkspaceToolsPage({
             </button>
           </div>
           <button type="button" className={buttonClass} disabled={busy} onClick={reload}>刷新</button>
+          {awaitingRetry && <button type="button" className="pp-button" disabled={busy || !connected} onClick={() => void retryOriginal()}>重试原操作</button>}
           {!connected && <span role="status">连接中断，恢复后可编辑。</span>}
           <span role="status" className="text-secondary">{message}</span>
         </div>
         <div className="min-h-0 flex-1">
           {section === 'skills'
-            ? <SkillManager key={`${workspaceId ?? ''}:${scope}`} client={client} scope={scope} refresh={refresh} mutate={mutate} item={item} registerGuard={registerGuard} />
+            ? <SkillManager key={`${workspaceId ?? ''}:${scope}`} client={client} scope={scope} refresh={refresh} writesBlocked={busy || awaitingRetry || !connected} mutate={mutate} item={item} registerGuard={registerGuard} />
             : <McpManager key={`${workspaceId ?? ''}:${scope}`} client={client} scope={scope} refresh={refresh} item={item} registerGuard={registerGuard} />}
         </div>
       </div>

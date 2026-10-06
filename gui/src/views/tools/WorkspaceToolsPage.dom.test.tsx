@@ -45,7 +45,10 @@ function postedAction(call: { method: string; body: unknown }): string | undefin
   return String((call.body as { action: unknown }).action)
 }
 
-function client(options?: { conflict?: boolean }) {
+function client(options?: { conflict?: boolean; lost?: 'enable' | 'edit'; failure?: 'network' | 503 }) {
+  let enabled = false
+  let currentDraft = draft
+  const receipts = new Set<string>()
   const calls: { url: string; method: string; body: unknown }[] = []
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = String(input)
@@ -56,14 +59,29 @@ function client(options?: { conflict?: boolean }) {
       return json({ items: [{ workspace_id: 'ws_1', display_name: 'Demo 工程', path: '/tmp', available: true, last_used_at: null, git_root: null }], revision: 1 })
     }
     if (url.includes('/v1/management/skills') && method === 'GET') {
-      return json({ skills: [skill], scope: 'workspace', binding_digest: 'a'.repeat(64), next_cursor: null })
+      return json({ skills: [{ ...skill, enabled }], scope: 'workspace', binding_digest: (enabled ? 'b' : 'a').repeat(64), next_cursor: null })
     }
-    if (url.includes('/v1/management/skill-drafts')) return json({ drafts: [draft], limit: 50, next_cursor: null })
+    if (url.includes('/v1/management/skill-drafts')) return json({ drafts: [currentDraft], limit: 50, next_cursor: null })
     if (url.includes('/v1/management/skill-binding/') && method === 'POST') {
       if (options?.conflict) return new Response(JSON.stringify({ error: { code: 'conflict', message: 'stale' } }), { status: 409, headers: { 'content-type': 'application/json' } })
+      if (!receipts.has(body.command_id)) {
+        if (body.action === 'enable' || body.action === 'disable') enabled = body.action === 'enable'
+        receipts.add(body.command_id)
+        if (options?.lost === 'enable') {
+          if (options.failure === 503) return json({ error: { message: 'lost receipt', code: 'server_error' } }, 503)
+          throw new TypeError('lost receipt')
+        }
+      }
       return json({ result: { status: 'applied' } })
     }
-    if (url.includes('/v1/management/skill-draft/') && method === 'POST') return json({ result: { status: 'applied' } })
+    if (url.includes('/v1/management/skill-draft/') && method === 'POST') {
+      if (options?.lost === 'edit' && !receipts.has(body.command_id)) {
+        receipts.add(body.command_id)
+        currentDraft = { ...draft, skill_md: body.skill_md, draft: { ...draft.draft, draft_id: 'sdf_2', parent_draft_id: 'sdf_1', revision: 2, row_version: 2 } }
+        throw new TypeError('lost receipt')
+      }
+      return json({ result: { status: 'applied' } })
+    }
     if (url.includes('/v1/mcp-management') && url.includes('identity=')) {
       return json({
         scope: 'workspace', revision: 1, digest: 'a'.repeat(64), server: mcpServer, tools: [],
@@ -115,6 +133,54 @@ describe('WorkspaceToolsPage skills and MCP', () => {
     await waitFor(() => screen.getByRole('button', { name: '接受并发布版本' }))
     await user.click(screen.getByRole('button', { name: '重新校验' }))
     await waitFor(() => calls.some(call => postedAction(call) === 'validate'))
+  })
+
+  it.each(['network', 503] as const)('replays a lost enable after %s read-back without sending disable', async failure => {
+    const user = userEvent.setup()
+    const { client: api, calls } = client({ lost: 'enable', failure })
+    await act(async () => {
+      root.render(<WorkspaceToolsPage client={api} workspaceId="ws_1" section="skills" connected onNavigate={() => {}} onBack={() => {}} />)
+    })
+    await user.click(await screen.findByRole('button', { name: '未启用' }))
+    await user.click(await screen.findByRole('button', { name: '在本项目启用' }))
+    await screen.findByRole('button', { name: '重试原操作' })
+    await user.click(screen.getByRole('button', { name: '已启用' }))
+    const disable = await screen.findByRole('button', { name: '在本项目停用' })
+    expect((disable as HTMLButtonElement).disabled || disable.closest('fieldset')?.disabled).toBe(true)
+    await user.click(disable)
+    expect(calls.filter(call => postedAction(call) === 'disable')).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: '重试原操作' }))
+    await screen.findByText(/已保存。新设置/)
+    const writes = calls.filter(call => call.method === 'POST')
+    expect(writes).toHaveLength(2)
+    expect(writes[1].body).toEqual(writes[0].body)
+    expect(writes[0].body).toMatchObject({ action: 'enable', expected_digest: 'a'.repeat(64) })
+    expect(screen.queryByRole('button', { name: '重试原操作' })).toBeNull()
+    expect(calls.filter(call => postedAction(call) === 'disable')).toHaveLength(0)
+  })
+
+  it('replays the original draft edit after read-back shows its successor', async () => {
+    const user = userEvent.setup()
+    const { client: api, calls } = client({ lost: 'edit' })
+    await act(async () => {
+      root.render(<WorkspaceToolsPage client={api} workspaceId="ws_1" section="skills" connected onNavigate={() => {}} onBack={() => {}} />)
+    })
+    await user.click(await screen.findByRole('button', { name: '草稿' }))
+    await user.click(await screen.findByRole('button', { name: '编辑 SKILL.md' }))
+    const input = screen.getByLabelText('新的完整 SKILL.md')
+    await user.clear(input)
+    await user.type(input, '# Revised skill')
+    await user.click(screen.getByRole('button', { name: '保存 Draft 修订' }))
+    await screen.findByRole('button', { name: '重试原操作' })
+    await screen.findByText('# Revised skill')
+    await user.click(screen.getByRole('button', { name: '重试原操作' }))
+    await screen.findByText(/已保存。新设置/)
+    const writes = calls.filter(call => call.method === 'POST')
+    expect(writes).toHaveLength(2)
+    expect(writes[1].url).toBe(writes[0].url)
+    expect(writes[0].url).toContain('/skill-draft/sdf_1')
+    expect(writes[1].body).toEqual(writes[0].body)
+    expect(writes[1].body).toMatchObject({ action: 'edit', expected_row_version: 1, skill_md: '# Revised skill' })
   })
 
   it('keeps skill actions available after a 409 and explains that input is retained', async () => {

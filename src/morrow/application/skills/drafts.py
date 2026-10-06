@@ -19,6 +19,8 @@ from morrow.application.skills.validation import (
     SkillDraftValidationService,
     validation_digest,
 )
+from morrow.core.application import ApplicationCommandReceipt
+from morrow.core.domain import canonical_json_bytes, sha256_digest, validate_prefixed_id
 from morrow.core.learning import (
     LearningCandidate,
     LearningCandidateStatus,
@@ -246,6 +248,27 @@ class SkillDraftService:
         files: dict[str, bytes | str] | None = None,
         command_id: str | None = None,
     ) -> SkillDraft:
+        command_id = validate_prefixed_id(command_id or self.id_source.new_id("cmd"), "cmd")
+        request_digest = sha256_digest(
+            canonical_json_bytes(
+                {
+                    "operation": "skill.draft_edit",
+                    "draft_id": draft_id,
+                    "skill_md": skill_md,
+                    "files": {
+                        path: sha256_digest(
+                            value.encode("utf-8") if isinstance(value, str) else value
+                        )
+                        for path, value in files.items()
+                    }
+                    if files is not None
+                    else None,
+                }
+            )
+        )
+        replay = self._edit_replay(self.journal, command_id, request_digest)
+        if replay is not None:
+            return replay
         current = self._get(draft_id)
         if current.status is SkillDraftStatus.REJECTED:
             raise SkillDraftServiceError("conflict", "rejected Draft cannot be edited")
@@ -300,6 +323,9 @@ class SkillDraftService:
         try:
 
             def work(txn):
+                replay = self._edit_replay(txn, command_id, request_digest)
+                if replay is not None:
+                    return replay
                 txn.put_skill_draft(self.workspace_id, draft)
                 txn.put_skill_draft_validation(self.workspace_id, report)
                 if current.status not in {SkillDraftStatus.ACCEPTED, SkillDraftStatus.REJECTED}:
@@ -313,12 +339,47 @@ class SkillDraftService:
                     txn.save_skill_draft(
                         self.workspace_id, updated, expected_row_version=current.row_version
                     )
+                txn.put_application_command_receipt_in_txn(
+                    self.workspace_id,
+                    ApplicationCommandReceipt(
+                        command_id=command_id,
+                        workspace_id=self.workspace_id,
+                        operation="skill.draft_edit",
+                        request_digest=request_digest,
+                        result_kind="skill_draft",
+                        result_id=draft.draft_id,
+                        row_version=draft.row_version,
+                        created_at=_now(self.clock),
+                    ),
+                )
                 return draft
 
-            return self.journal.transact(work)
+            result = self.journal.transact(work)
+            if result.draft_id != draft.draft_id:
+                self._remove_package(package_ref)
+            return result
         except Exception:
             self._remove_package(package_ref)
             raise
+
+    def _edit_replay(self, journal, command_id: str, request_digest: str) -> SkillDraft | None:
+        receipt = journal.get_application_command_receipt(self.workspace_id, command_id)
+        if receipt is None:
+            if journal.get_skill_operation(command_id) is not None:
+                raise SkillDraftServiceError("conflict", "command ID belongs to another operation")
+            return None
+        if (
+            receipt.request_digest != request_digest
+            or receipt.operation != "skill.draft_edit"
+            or receipt.result_kind != "skill_draft"
+        ):
+            raise SkillDraftServiceError(
+                "conflict", "command ID was reused with a different request"
+            )
+        draft = journal.get_skill_draft(self.workspace_id, receipt.result_id)
+        if draft is None:
+            raise SkillDraftServiceError("needs_recovery", "recorded Draft edit is unavailable")
+        return draft
 
     def revalidate(self, draft_id: str) -> SkillDraftValidationReport:
         draft = self._get(draft_id)

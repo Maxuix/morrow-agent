@@ -48,6 +48,37 @@ describe('uncertain command identity and read-back', () => {
     else expect(commands[1].command_id).toBe(commands[0].command_id)
   })
 
+  it('keeps a snapshot of the original body and blocks a different write until replay', async () => {
+    const { client, commands } = losingReplyClient()
+    const { result } = renderHook(() => useManagementMutate(client, true))
+    const body = { profile: { ...emptyProfile(), name: 'Original' }, expected_revision: 0 }
+    await act(async () => { expect(await result.current.mutate('profile-save', body)).toBe(false) })
+    body.profile.name = 'Changed after read-back'
+    body.expected_revision = 1
+    await act(async () => { expect(await result.current.mutate('profile-save', body)).toBe(false) })
+    expect(commands).toHaveLength(1)
+    expect(result.current.awaitingRetry).toBe(true)
+    await act(async () => { expect(await result.current.retryOriginal()).toBe(true) })
+    expect(commands[1]).toEqual(commands[0])
+    expect(commands[1]).toMatchObject({ profile: { name: 'Original' }, expected_revision: 0 })
+    expect(result.current.awaitingRetry).toBe(false)
+  })
+
+  it('serializes writes even before React renders the busy state', async () => {
+    let finish!: () => void
+    const response = new Promise<void>(resolve => { finish = resolve })
+    const fetchImpl = vi.fn(async () => { await response; return Response.json({ result: { status: 'applied' } }) })
+    const client = new ApiClient({ baseUrl: '', token: '', fetchImpl })
+    const { result } = renderHook(() => useManagementMutate(client, true))
+    await act(async () => {
+      const first = result.current.mutate('profile', { expected_revision: 0 })
+      expect(await result.current.mutate('profile', { expected_revision: 0 })).toBe(false)
+      finish()
+      expect(await first).toBe(true)
+    })
+    expect(fetchImpl).toHaveBeenCalledOnce()
+  })
+
   it('preference read-back keeps the original revision-bound intent retryable', async () => {
     const { client, commands, queries } = losingReplyClient()
     const { result } = renderHook(() => usePreferenceDocuments(client, 'ws_a'))

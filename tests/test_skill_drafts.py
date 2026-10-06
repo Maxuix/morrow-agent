@@ -176,3 +176,124 @@ def test_draft_validation_reports_drift_and_injection_as_codes_only(tmp_path) ->
         assert report.valid is False
     finally:
         handle.close()
+
+
+def test_edit_command_replays_after_restart_without_new_package_or_revision(tmp_path) -> None:
+    app, handle, journal, services = _services(tmp_path)
+    try:
+        candidate = _accepted_candidate(journal)
+        first = services.drafts.create_from_candidate(candidate.candidate_id)
+        original = services.drafts.read_skill_md(first.draft_id)
+        second = services.drafts.edit(
+            first.draft_id,
+            skill_md=original + "\nReview the evidence.\n",
+            files={"references/report.txt": "report template"},
+            command_id="cmd_edit_replay",
+        )
+        package_root = app.data_root.root / "skill-drafts" / "ws_1"
+        packages = set(package_root.glob("*/rev-*"))
+    finally:
+        handle.close()
+
+    handle = OperationalStore(
+        app.data_root.root, clock=FixedClock(NOW), maintenance_timeout=0
+    ).initialize()
+    journal = SqliteOperationalJournal(handle)
+    services = build_skill_services(app, workspace_id="ws_1", journal=journal)
+    try:
+        replay = services.drafts.edit(
+            first.draft_id,
+            skill_md=original + "\nReview the evidence.\n",
+            files={"references/report.txt": b"report template"},
+            command_id="cmd_edit_replay",
+        )
+        assert replay == second
+        assert len(services.drafts.list()) == 2
+        assert set(package_root.glob("*/rev-*")) == packages
+        receipt = journal.get_application_command_receipt("ws_1", "cmd_edit_replay")
+        assert receipt.result_id == second.draft_id
+        assert "Review the evidence" not in receipt.model_dump_json()
+        for target, content, files in (
+            (first.draft_id, original, {"references/report.txt": "report template"}),
+            (
+                second.draft_id,
+                original + "\nReview the evidence.\n",
+                {"references/report.txt": "report template"},
+            ),
+            (
+                first.draft_id,
+                original + "\nReview the evidence.\n",
+                {"references/report.txt": "changed"},
+            ),
+        ):
+            with pytest.raises(SkillDraftServiceError, match="different request"):
+                services.drafts.edit(
+                    target, skill_md=content, files=files, command_id="cmd_edit_replay"
+                )
+        assert len(services.drafts.list()) == 2
+        assert set(package_root.glob("*/rev-*")) == packages
+    finally:
+        handle.close()
+
+
+def test_edit_transaction_rechecks_receipt_and_removes_unused_package(tmp_path, monkeypatch):
+    app, handle, journal, services = _services(tmp_path)
+    try:
+        candidate = _accepted_candidate(journal)
+        first = services.drafts.create_from_candidate(candidate.candidate_id)
+        content = services.drafts.read_skill_md(first.draft_id) + "\nReview the evidence.\n"
+        second = services.drafts.edit(first.draft_id, skill_md=content, command_id="cmd_edit_race")
+        package_root = app.data_root.root / "skill-drafts" / "ws_1"
+        packages = set(package_root.glob("*/rev-*"))
+        replay = services.drafts._edit_replay
+        checks = 0
+
+        def first_read_misses(*args):
+            nonlocal checks
+            checks += 1
+            return None if checks == 1 else replay(*args)
+
+        monkeypatch.setattr(services.drafts, "_edit_replay", first_read_misses)
+        assert (
+            services.drafts.edit(first.draft_id, skill_md=content, command_id="cmd_edit_race")
+            == second
+        )
+        assert checks == 2
+        assert len(services.drafts.list()) == 2
+        assert set(package_root.glob("*/rev-*")) == packages
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["edit", "validate", "reject"])
+async def test_management_draft_command_replays_before_stale_row_check(tmp_path, action):
+    from test_stage8_context_management import api_for, management_fixture
+
+    _app, handle, service = management_fixture(tmp_path)
+    client = api_for(service)
+    try:
+        candidate = _accepted_candidate(service.api.journal)
+        draft = service.skills.drafts.create_from_candidate(candidate.candidate_id)
+        body = {
+            "command_id": "cmd_draft_management_replay",
+            "action": action,
+            "expected_row_version": draft.row_version,
+        }
+        if action == "edit":
+            body["skill_md"] = service.skills.drafts.read_skill_md(draft.draft_id) + "\nReview.\n"
+        if action == "reject":
+            body["reason"] = "No longer needed"
+        endpoint = "/v1/management/skill-draft/" + draft.draft_id
+        response = await client.post(endpoint, body)
+        assert response.status == 200, response.json()
+        changed = service.skills.drafts.get(draft.draft_id)
+        assert changed.row_version == draft.row_version + 1
+        replay = await client.post(endpoint, body)
+        assert replay.status == 200, replay.json()
+        assert replay.json()["result"]["status"] == "replayed"
+        assert replay.json()["result"]["result_id"] == response.json()["result"]["result_id"]
+        assert service.skills.drafts.get(draft.draft_id) == changed
+        assert len(service.skills.drafts.list()) == (2 if action == "edit" else 1)
+    finally:
+        handle.close()

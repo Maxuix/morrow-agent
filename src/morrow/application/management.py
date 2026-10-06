@@ -203,7 +203,11 @@ class ManagementService:
             if draft.row_version != request.expected_row_version:
                 raise ApplicationError(ApplicationErrorCode.STALE, "Skill Draft row is stale")
             if request.action == "edit":
-                return drafts.edit(target, skill_md=request.skill_md, command_id=request.command_id)
+                return drafts.edit(
+                    target,
+                    skill_md=request.skill_md,
+                    command_id="cmd_" + sha256_digest(request.command_id + ":draft_edit")[:48],
+                )
             if request.action == "validate":
                 return drafts.revalidate(target)
             if request.action == "reject":

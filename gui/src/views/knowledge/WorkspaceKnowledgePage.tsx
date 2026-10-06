@@ -34,7 +34,7 @@ export function WorkspaceKnowledgePage({
   onNavigate: (section: KnowledgeSection) => void
   onBack: () => void
 }) {
-  const { mutate, busy, message, refresh, reload } = useManagementMutate(client, connected)
+  const { mutate, retryOriginal, awaitingRetry, busy, message, refresh, reload } = useManagementMutate(client, connected)
   return (
     <PageScaffold
       title="项目知识与偏好"
@@ -50,10 +50,11 @@ export function WorkspaceKnowledgePage({
         <div className="min-h-0 flex-1">
           <div className="flex flex-wrap items-center gap-3 px-6 pt-3 text-xs">
             <button type="button" className="pp-button" disabled={busy} onClick={reload}>刷新</button>
+            {awaitingRetry && <button type="button" className="pp-button" disabled={busy || !connected} onClick={() => void retryOriginal()}>重试原操作</button>}
             {!connected && <span role="status">连接中断，恢复后可编辑。</span>}
             <span role="status" className="text-secondary">{message}</span>
           </div>
-          <KnowledgeLibraryPage key={workspaceId} client={client} workspaceId={workspaceId} connected={connected && !busy} mutate={mutate} refresh={refresh} onChanged={reload} focus={focus} registerGuard={registerGuard} />
+          <KnowledgeLibraryPage key={workspaceId} client={client} workspaceId={workspaceId} connected={connected && !busy && !awaitingRetry} mutate={mutate} refresh={refresh} onChanged={reload} focus={focus} registerGuard={registerGuard} />
         </div>
       ) : (
         <Suspense fallback={<p className="p-6 text-sm text-secondary">正在加载偏好与项目画像…</p>}>

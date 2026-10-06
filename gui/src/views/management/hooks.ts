@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '../../api/client'
 import { ApiError } from '../../api/client'
-import type { ManagementQueries, Scope } from '../../api/management'
+import type { ManagementCommand, ManagementQueries, Scope } from '../../api/management'
 import type { Mutate } from './types'
 
 /** Workspace identity is the display name, never Profile.name. */
@@ -51,41 +51,76 @@ export function useManagement<K extends keyof ManagementQueries>(client: ApiClie
   return { data, error }
 }
 
-/**
- * Shared management mutation path (asset pages and the standalone tools
- * page): one in-flight command at a time, the same uncertain delivery reuses
- * the original command id, `refresh` bumps re-run the query hooks.
- */
+/** Keep uncertain commands intact while read-back updates the visible rows. */
 export function useManagementMutate(client: ApiClient, connected: boolean, onChanged?: () => void) {
   const [refresh, setRefresh] = useState(0)
   const [busy, setBusy] = useState(false)
+  const [awaitingRetry, setAwaitingRetry] = useState(false)
   const [message, setMessage] = useState('')
-  const retry = useRef<{ key: string; commandId: string } | null>(null)
-  const mutate: Mutate = async (kind, body, target) => {
-    if (busy || !connected) return false
-    setBusy(true); setMessage('')
-    const key = JSON.stringify([kind, target, body])
-    const commandId = typeof body.command_id === "string" ? body.command_id : retry.current?.key === key ? retry.current.commandId : `cmd_${crypto.randomUUID().replaceAll('-', '')}`
-    retry.current = { key, commandId }
+  const inFlight = useRef(false)
+  const pending = useRef<{
+    key: string
+    kind: ManagementCommand
+    body: Record<string, unknown>
+    target?: string
+  } | null>(null)
+  const send = async (command: NonNullable<typeof pending.current>) => {
+    if (inFlight.current || !connected) return false
+    inFlight.current = true
+    setBusy(true)
+    setMessage('')
     try {
-      await client.managementCommand(kind, { ...body, command_id: commandId }, target)
-      retry.current = null
-      setRefresh(n => n + 1); onChanged?.(); setMessage('已保存。新设置将在之后的上下文解析中生效。')
+      await client.managementCommand(command.kind, command.body, command.target)
+      pending.current = null
+      setAwaitingRetry(false)
+      setRefresh(n => n + 1)
+      onChanged?.()
+      setMessage('已保存。新设置将在之后的上下文解析中生效。')
       return true
     } catch (error) {
       const rejected = error instanceof ApiError && error.status >= 400 && error.status < 500
-      if (rejected) retry.current = null
-      else {
-        setRefresh(n => n + 1); onChanged?.()
+      if (rejected) {
+        pending.current = null
+        setAwaitingRetry(false)
+      } else {
+        pending.current = command
+        setAwaitingRetry(true)
+        setRefresh(n => n + 1)
+        onChanged?.()
       }
       setMessage(error instanceof ApiError && error.status === 409
         ? '内容已变化或状态不允许此操作。你的输入已保留，请刷新事实后重试。'
         : rejected ? `${error.message}；输入已保留。`
-        : '保存结果未确认。正在重新读取；可重试相同操作，输入会保留。')
+        : '保存结果未确认。正在重新读取；请点击“重试原操作”确认原提交结果。')
       return false
-    } finally { setBusy(false) }
+    } finally {
+      inFlight.current = false
+      setBusy(false)
+    }
   }
+  const mutate: Mutate = async (kind, body, target) => {
+    if (inFlight.current || !connected) return false
+    const key = JSON.stringify([kind, target, body])
+    if (pending.current) {
+      // A refreshed enable switch may now mean disable, and a draft may have
+      // a new id/version. Neither is a retry of the original submission.
+      if (pending.current.key !== key) {
+        setMessage('请先点击“重试原操作”确认上次提交结果，再提交新的变更。')
+        return false
+      }
+      return send(pending.current)
+    }
+    const commandId = typeof body.command_id === 'string'
+      ? body.command_id
+      : `cmd_${crypto.randomUUID().replaceAll('-', '')}`
+    const command = {
+      key, kind, target,
+      body: JSON.parse(JSON.stringify({ ...body, command_id: commandId })) as Record<string, unknown>,
+    }
+    return send(command)
+  }
+  const retryOriginal = () => pending.current ? send(pending.current) : Promise.resolve(false)
   const bump = () => setRefresh(n => n + 1)
   const reload = () => { bump(); onChanged?.() }
-  return { mutate, busy, message, refresh, reload, bump, setMessage }
+  return { mutate, retryOriginal, awaitingRetry, busy, message, refresh, reload, bump, setMessage }
 }

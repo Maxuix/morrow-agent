@@ -21,7 +21,7 @@ function availabilityLabel(value: string): string {
   return value
 }
 
-export function SkillCard({ item, digest, scope, mutate, client, onChanged }: { item: ManagedSkill; digest: string; scope: string; mutate: Mutate; client:ApiClient; onChanged:()=>void }) {
+export function SkillCard({ item, digest, scope, mutate, client, onChanged, writesBlocked = false }: { item: ManagedSkill; digest: string; scope: string; mutate: Mutate; client:ApiClient; onChanged:()=>void; writesBlocked?: boolean }) {
   const s = item.status
   const [version, setVersion] = useState(s.binding?.pinned_version_id ?? item.versions[0]?.version.version_id ?? '')
   const details = item.versions.find(v => v.version.version_id === version)
@@ -63,6 +63,7 @@ export function SkillCard({ item, digest, scope, mutate, client, onChanged }: { 
         ? <ul className="asset-evidence">{item.usage.map(row => <li key={row.usage_id}>{row.terminal_status} · {row.version_id ? '指定版本' : '未绑定版本'}</li>)}</ul>
         : <p className="py-2 text-xs text-secondary">暂无评估记录</p>}
     </details>
+    <fieldset disabled={writesBlocked}>
     <div className="flex flex-wrap gap-2">
       <button type="button" className={buttonClass} disabled={!item.enabled && s.availability !== 'available'} onClick={() => void change(item.enabled ? 'disable' : 'enable')}>{enableLabel}</button>
       <button type="button" className={buttonClass} disabled={!version || s.availability !== 'available'} onClick={() => void change('pin')}>绑定所选版本</button>
@@ -70,11 +71,13 @@ export function SkillCard({ item, digest, scope, mutate, client, onChanged }: { 
       <button type="button" className={buttonClass} disabled={item.versions.length < 2 || s.availability !== 'available'} onClick={() => void change('rollback')}>回滚</button>
     </div>
     <SkillRemoval client={client} scope={scope} item={item} version={version} digest={digest} onChanged={onChanged}/>
+    </fieldset>
   </Card>
 }
 
-export function DraftCard({ item, mutate, registerGuard }: {
+export function DraftCard({ item, mutate, registerGuard, writesBlocked = false }: {
   item: SkillDraft
+  writesBlocked?: boolean
   mutate: Mutate
   registerGuard?: (guard: DirtyGuard) => () => void
 }) {
@@ -112,12 +115,12 @@ export function DraftCard({ item, mutate, registerGuard }: {
         ]} />
         : <p className="py-2 text-xs text-secondary">无历史修订</p>}
     </details>
-    {mutable && <><label className="block text-sm">拒绝原因<input className={fieldClass} value={reason} maxLength={256} onChange={e=>setReason(e.target.value)}/></label><div className="flex gap-2">
+    {mutable && <fieldset disabled={writesBlocked}><label className="block text-sm">拒绝原因<input className={fieldClass} value={reason} maxLength={256} onChange={e=>setReason(e.target.value)}/></label><div className="flex gap-2">
       <button type="button" className={buttonClass} disabled={item.editable === false} onClick={() => setEditing(v => !v)}>编辑 SKILL.md</button>
       <button type="button" className={buttonClass} onClick={() => void change('validate')}>重新校验</button>
       <button type="button" className={buttonClass} disabled={!item.validation?.valid || d.status !== 'validated'} onClick={() => void change('accept')}>接受并发布版本</button>
       <button type="button" className={buttonClass} onClick={() => void change('reject')}>拒绝 Draft</button>
-    </div>{editing && <div className="space-y-2"><label className="block text-sm">新的完整 SKILL.md<textarea className={`${fieldClass} min-h-40 font-mono`} value={content} maxLength={65536} onChange={e => setContent(e.target.value)} /></label><button type="button" className={buttonClass} disabled={!content.trim()} onClick={() => void change('edit')}>保存 Draft 修订</button></div>}</>}
+    </div>{editing && <div className="space-y-2"><label className="block text-sm">新的完整 SKILL.md<textarea className={`${fieldClass} min-h-40 font-mono`} value={content} maxLength={65536} onChange={e => setContent(e.target.value)} /></label><button type="button" className={buttonClass} disabled={!content.trim()} onClick={() => void change('edit')}>保存 Draft 修订</button></div>}</fieldset>}
     <LeaveGuardDialog
       open={guardOpen}
       title="Skill Draft 有未保存修改"
@@ -130,8 +133,9 @@ export function DraftCard({ item, mutate, registerGuard }: {
   </Card>
 }
 
-export function SkillManager({ client, scope, refresh, mutate, item, registerGuard }: ManagerProps & {
+export function SkillManager({ client, scope, refresh, mutate, item, registerGuard, writesBlocked = false }: ManagerProps & {
   item?: string
+  writesBlocked?: boolean
   registerGuard?: (guard: DirtyGuard) => () => void
 }) {
   const [page, setPage] = useState(0)
@@ -174,18 +178,18 @@ export function SkillManager({ client, scope, refresh, mutate, item, registerGua
   const groups = partitionSkills(data.skills)
   const listedSkills = view === 'Active' ? groups.active : view === '未启用' ? groups.inactive : []
   return <div className="space-y-4">
-    <SkillOperations client={client} scope={scope} mutate={mutate} onChanged={onChanged} registerGuard={registerGuard}/>
+    <fieldset disabled={writesBlocked}><SkillOperations client={client} scope={scope} mutate={mutate} onChanged={onChanged} registerGuard={registerGuard}/></fieldset>
     {locateNotice && <p role="status">{locateNotice}</p>}
     {match && !locateNotice && <p role="status">已定位到 Skill：{match.status.name}</p>}
     {draftMatch && !match && !locateNotice && <p role="status">已定位到 Draft：{draftMatch.draft.name}</p>}
     <nav className="flex flex-wrap gap-2" aria-label="Skill 状态">{['Active', '未启用', 'Drafts', 'History'].map(v => <button type="button" key={v} className={buttonClass} aria-pressed={view === v} onClick={() => {setView(v);setPage(0)}}>{({Active: '已启用', Drafts: '草稿', History: '历史'} as Record<string, string>)[v] ?? v}</button>)}</nav>
 
-    {listedSkills.map(row => <SkillCard key={`${scope}:${row.status.skill_id}`} item={row} digest={data.binding_digest} scope={scope} mutate={mutate} client={client} onChanged={onChanged} />)}
+    {listedSkills.map(row => <SkillCard key={`${scope}:${row.status.skill_id}`} writesBlocked={writesBlocked} item={row} digest={data.binding_digest} scope={scope} mutate={mutate} client={client} onChanged={onChanged} />)}
     {view === 'Active' && listedSkills.length === 0 && <p className="text-sm text-secondary">此范围没有已启用 Skill。</p>}
     {view === '未启用' && listedSkills.length === 0 && <p className="text-sm text-secondary">此范围没有未启用的包。</p>}
     {['Active', '未启用'].includes(view) && <Pager page={page} next={data.next_cursor??null} onChange={setPage} />}
     {['Drafts', 'History'].includes(view) && <Pager page={page} next={drafts.data.next_cursor} onChange={setPage} />}
-    {['Drafts', 'History'].includes(view) && drafts.data.drafts.filter(d => view === 'Drafts' ? ['draft', 'validated'].includes(d.draft.status) : !['draft', 'validated'].includes(d.draft.status)).map(d => <DraftCard key={`${d.draft.draft_id}:${d.draft.row_version}`} item={d} mutate={mutate} registerGuard={registerGuard} />)}
+    {['Drafts', 'History'].includes(view) && drafts.data.drafts.filter(d => view === 'Drafts' ? ['draft', 'validated'].includes(d.draft.status) : !['draft', 'validated'].includes(d.draft.status)).map(d => <DraftCard key={`${d.draft.draft_id}:${d.draft.row_version}`} writesBlocked={writesBlocked} item={d} mutate={mutate} registerGuard={registerGuard} />)}
     {view === 'Drafts' && !drafts.data.drafts.some(d => ['draft', 'validated'].includes(d.draft.status)) && <p className="text-sm text-secondary">暂无待审阅草稿</p>}
   </div>
 }
