@@ -144,7 +144,7 @@ export function usePreferenceDocuments(client: ApiClient, workspaceId: string) {
     workspace: Promise.resolve(),
     global: Promise.resolve(),
   })
-  const intents = useRef<Map<string, string>>(new Map())
+  const intents = useRef<Map<string, { commandId: string; body: { arguments: PreferenceIntent } }>>(new Map())
 
   const load = useCallback(async () => {
     const current = ++generation.current
@@ -225,14 +225,19 @@ export function usePreferenceDocuments(client: ApiClient, workspaceId: string) {
    */
   const mutate = useCallback(
     (body: { arguments: PreferenceIntent }, rowKeyForState: string): Promise<boolean> => {
-      const key = JSON.stringify([workspaceId, 'preferences', body])
       const scope = body.arguments.scope
-      const commandId = intents.current.get(key) ?? newCommandId()
-      intents.current.set(key, commandId)
+      // Read-back can advance the document revision after a lost reply. Retry
+      // the original complete command rather than minting a new add operation.
+      const key = JSON.stringify([workspaceId, 'preferences', rowKeyForState, scope, body.arguments.operations])
+      const intent = intents.current.get(key) ?? {
+        commandId: newCommandId(),
+        body: JSON.parse(JSON.stringify(body)) as { arguments: PreferenceIntent },
+      }
+      intents.current.set(key, intent)
       setRow(rowKeyForState, { status: 'busy', message: '正在提交…' })
       const run = queue.current[scope].then(async () => {
         try {
-          await client.managementCommand('preferences', { ...body, command_id: commandId })
+          await client.managementCommand('preferences', { ...intent.body, command_id: intent.commandId })
           intents.current.delete(key)
           setRow(rowKeyForState, { status: 'idle', message: '' })
           setMessage('已保存。新设置将在之后的上下文解析中生效。')

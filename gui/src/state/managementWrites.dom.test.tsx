@@ -58,7 +58,9 @@ describe('uncertain command identity and read-back', () => {
     await waitFor(() => expect(result.current.documents.workspace.revision).toBe(1))
     expect(queries.length).toBeGreaterThan(before)
     expect(result.current.rows.new.message).toContain('结果未确认')
-    await act(async () => { expect(await result.current.write(intent, 'new')).toBe(true) })
+    // The actual form rebuilds its intent from the refreshed document revision.
+    const retry = buildIntent('workspace', 'add', result.current.documents.workspace.revision, { statement: 'Keep this rule' })
+    await act(async () => { expect(await result.current.write(retry, 'new')).toBe(true) })
     expect(commands[1]).toEqual(commands[0])
   })
 
