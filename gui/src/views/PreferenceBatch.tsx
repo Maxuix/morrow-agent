@@ -6,11 +6,12 @@ import { BATCH_LIMIT, BatchPanel } from './preferences/BatchPanel'
  * Ordered same-scope batch (at most 8 items, one document revision). The page
  * renders this component; the wrapper keeps the established entry name.
  */
-export function PreferenceBatch({ scope, revision, entries, mutate }: {
+export function PreferenceBatch({ scope, revision, entries, mutate, errorMessage }: {
   scope: Scope
   revision: number
   entries: Preference[]
   mutate: Mutate
+  errorMessage?: string
 }) {
   return (
     <div className="pp-batch-wrap">
@@ -19,6 +20,7 @@ export function PreferenceBatch({ scope, revision, entries, mutate }: {
         scope={scope}
         revision={revision}
         entries={entries}
+        errorMessage={errorMessage}
         submit={(operations, expectedRevision) =>
           mutate(
             'preferences',

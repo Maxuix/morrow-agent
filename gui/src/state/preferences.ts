@@ -255,7 +255,9 @@ export function usePreferenceDocuments(client: ApiClient, workspaceId: string) {
           setRow(rowKeyForState, {
             status: 'error',
             message: conflict
-              ? '该作用域内容已变化，请刷新后重试；开关保持最后确认状态。'
+              ? rowKeyForState.startsWith('batch:')
+                ? '该作用域内容已变化，批量提交被拒绝；输入已保留，请刷新后重试。'
+                : '该作用域内容已变化，请刷新后重试；开关保持最后确认状态。'
               : rejected ? `${error.message}；输入已保留。`
               : '保存结果未确认，可重试相同操作。',
           })

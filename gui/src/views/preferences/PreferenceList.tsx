@@ -299,6 +299,7 @@ export function PreferenceList({
           scope={batchScope}
           revision={documents[batchScope].revision}
           entries={documents[batchScope].entries}
+          errorMessage={rows[`batch:${batchScope}`]?.status === 'error' ? rows[`batch:${batchScope}`].message : ''}
           mutate={(kind, body, target) =>
             kind === 'preferences'
               ? mutate(body as { arguments: PreferenceIntent }, target ?? `batch:${batchScope}`)

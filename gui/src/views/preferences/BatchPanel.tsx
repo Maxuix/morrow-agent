@@ -46,11 +46,13 @@ export function BatchPanel({
   revision,
   entries,
   submit,
+  errorMessage = '',
 }: {
   scope: Scope
   revision: number
   entries: Preference[]
   submit: (operations: BatchOperation[], expectedRevision: number) => Promise<boolean>
+  errorMessage?: string
 }) {
   const blank = (): BatchOperation => ({ operation: 'add', preference_id: '', statement: '' })
   const [rows, setRows] = useState<BatchOperation[]>([blank()])
@@ -62,6 +64,7 @@ export function BatchPanel({
     setMessage('')
   }
   const send = async () => {
+    setMessage('')
     const ok = await submit(batchPayload(rows), base ?? revision).catch(() => false)
     setMessage(ok ? '' : '批量提交结果未确认；输入已保留，请核对当前记录后重试。')
     if (ok) { setRows([blank()]); setBase(null) }
@@ -129,7 +132,7 @@ export function BatchPanel({
         </button>
       </div>
       <p className="pp-hint" role="status">预览：{batchPreview(rows)}</p>
-      {message && <p className="pp-error" role="alert">{message}</p>}
+      {message && <p className="pp-error" role="alert">{errorMessage || message}</p>}
     </div>
   )
 }
