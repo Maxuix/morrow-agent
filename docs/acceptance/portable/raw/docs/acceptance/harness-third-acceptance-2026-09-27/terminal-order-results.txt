@@ -1,0 +1,172 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_historical_pass_does_not_validate_later_changes[change] _________
+
+tmp_path = PosixPath('/private/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/pytest-of-ruirui/pytest-143/test_historical_pass_does_not_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a1e9940>
+later_fact = 'change'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("later_fact", ["change", "failed_validation"])
+    async def test_historical_pass_does_not_validate_later_changes(tmp_path, monkeypatch, later_fact):
+        service = ProcessExecutionService(WorkspaceFileService(WorkspacePathResolver(tmp_path)))
+        execution_id = "exec_" + "a" * 24
+        execution = TrackedExecution(
+            execution_id=execution_id,
+            session_id="s",
+            task_id="old-task",
+            lifecycle=TrackedLifecycle.ACCEPTANCE,
+            command_class="shell",
+            cwd_relative=".",
+            adapter=HostProcessAdapter(),
+            spawned=SimpleNamespace(
+                stdout=_CursorBuffer(1024), stderr=_CursorBuffer(1024), started=time.monotonic()
+            ),
+            status=TrackedCommandStatus.EXITED,
+            exit_code=0,
+            validation_kind="pytest",
+            validation_scope=".",
+        )
+        service.tracked._items[execution_id] = execution
+        monkeypatch.setattr(service.tracked, "_refresh", lambda item: None)
+    
+        async def poll(run, task_id):
+            result = await bash_execution.run_bash(
+                service,
+                PreparedBash(action="poll", execution_id=execution_id),
+                session_id="s",
+                task_id=task_id,
+                result_limit=8192,
+                run=run,
+                call_id="poll-" + run.run_id,
+                tool_name="bash",
+                ordinal=2,
+                approval_verdict=PolicyVerdict.ALLOW,
+            )
+            run.record(result.facts)
+    
+        old = ToolRunContext(run_id="old-run", session_id="s", owner_task_id="old-task")
+        await poll(old, "old-task")
+        assert check_completion(old).validation_outcome == "passed"
+        new = ToolRunContext(run_id="new-run", session_id="s", owner_task_id="new-task")
+        change = ChangeToolFact(
+            call_id="write",
+            tool_name="write",
+            ordinal=1,
+            approval_verdict=PolicyVerdict.ALLOW,
+            relative_paths=("src/main.py",),
+            operation="write",
+            status="succeeded",
+            changed_lines=1,
+            changed_bytes=10,
+        )
+        failure = ValidationFact(
+            call_id="new-test",
+            tool_name="bash",
+            ordinal=1,
+            approval_verdict=PolicyVerdict.ALLOW,
+            relative_paths=(".",),
+            validator_kind="pytest",
+            scope=".",
+            status="failed",
+            exit_code=1,
+            evidence_summary="exit_nonzero",
+        )
+        new.record((change if later_fact == "change" else failure,))
+        await poll(new, "new-task")
+>       assert check_completion(new).validation_outcome != "passed", (
+            "poll replayed a previous run passing validation as proof of subsequently changed files"
+        )
+E       AssertionError: poll replayed a previous run passing validation as proof of subsequently changed files
+E       assert 'passed' != 'passed'
+E        +  where 'passed' = CompletionCheck(validation_outcome='passed', issues=(), evidence=('已记录的文件变更：src/main.py', 'pytest (.)：passed')).validation_outcome
+E        +    where CompletionCheck(validation_outcome='passed', issues=(), evidence=('已记录的文件变更：src/main.py', 'pytest (.)：passed')) = check_completion(ToolRunContext(run_id='new-run', session_id='s', owner_task_id='new-task'))
+
+docs/acceptance/harness-third-acceptance-2026-09-27/terminal_order_probes.py:84: AssertionError
+___ test_historical_pass_does_not_validate_later_changes[failed_validation] ____
+
+tmp_path = PosixPath('/private/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/pytest-of-ruirui/pytest-143/test_historical_pass_does_not_1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1094d8b00>
+later_fact = 'failed_validation'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("later_fact", ["change", "failed_validation"])
+    async def test_historical_pass_does_not_validate_later_changes(tmp_path, monkeypatch, later_fact):
+        service = ProcessExecutionService(WorkspaceFileService(WorkspacePathResolver(tmp_path)))
+        execution_id = "exec_" + "a" * 24
+        execution = TrackedExecution(
+            execution_id=execution_id,
+            session_id="s",
+            task_id="old-task",
+            lifecycle=TrackedLifecycle.ACCEPTANCE,
+            command_class="shell",
+            cwd_relative=".",
+            adapter=HostProcessAdapter(),
+            spawned=SimpleNamespace(
+                stdout=_CursorBuffer(1024), stderr=_CursorBuffer(1024), started=time.monotonic()
+            ),
+            status=TrackedCommandStatus.EXITED,
+            exit_code=0,
+            validation_kind="pytest",
+            validation_scope=".",
+        )
+        service.tracked._items[execution_id] = execution
+        monkeypatch.setattr(service.tracked, "_refresh", lambda item: None)
+    
+        async def poll(run, task_id):
+            result = await bash_execution.run_bash(
+                service,
+                PreparedBash(action="poll", execution_id=execution_id),
+                session_id="s",
+                task_id=task_id,
+                result_limit=8192,
+                run=run,
+                call_id="poll-" + run.run_id,
+                tool_name="bash",
+                ordinal=2,
+                approval_verdict=PolicyVerdict.ALLOW,
+            )
+            run.record(result.facts)
+    
+        old = ToolRunContext(run_id="old-run", session_id="s", owner_task_id="old-task")
+        await poll(old, "old-task")
+        assert check_completion(old).validation_outcome == "passed"
+        new = ToolRunContext(run_id="new-run", session_id="s", owner_task_id="new-task")
+        change = ChangeToolFact(
+            call_id="write",
+            tool_name="write",
+            ordinal=1,
+            approval_verdict=PolicyVerdict.ALLOW,
+            relative_paths=("src/main.py",),
+            operation="write",
+            status="succeeded",
+            changed_lines=1,
+            changed_bytes=10,
+        )
+        failure = ValidationFact(
+            call_id="new-test",
+            tool_name="bash",
+            ordinal=1,
+            approval_verdict=PolicyVerdict.ALLOW,
+            relative_paths=(".",),
+            validator_kind="pytest",
+            scope=".",
+            status="failed",
+            exit_code=1,
+            evidence_summary="exit_nonzero",
+        )
+        new.record((change if later_fact == "change" else failure,))
+        await poll(new, "new-task")
+>       assert check_completion(new).validation_outcome != "passed", (
+            "poll replayed a previous run passing validation as proof of subsequently changed files"
+        )
+E       AssertionError: poll replayed a previous run passing validation as proof of subsequently changed files
+E       assert 'passed' != 'passed'
+E        +  where 'passed' = CompletionCheck(validation_outcome='passed', issues=(), evidence=('pytest (.)：passed',)).validation_outcome
+E        +    where CompletionCheck(validation_outcome='passed', issues=(), evidence=('pytest (.)：passed',)) = check_completion(ToolRunContext(run_id='new-run', session_id='s', owner_task_id='new-task'))
+
+docs/acceptance/harness-third-acceptance-2026-09-27/terminal_order_probes.py:84: AssertionError
+=========================== short test summary info ============================
+FAILED docs/acceptance/harness-third-acceptance-2026-09-27/terminal_order_probes.py::test_historical_pass_does_not_validate_later_changes[change]
+FAILED docs/acceptance/harness-third-acceptance-2026-09-27/terminal_order_probes.py::test_historical_pass_does_not_validate_later_changes[failed_validation]
+2 failed in 0.13s

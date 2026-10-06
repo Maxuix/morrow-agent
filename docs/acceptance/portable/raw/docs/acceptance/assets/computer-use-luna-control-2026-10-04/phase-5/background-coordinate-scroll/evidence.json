@@ -1,0 +1,202 @@
+{
+  "action_outcomes": [],
+  "action_plan": "none",
+  "active_turn": false,
+  "approval_attempt_call_ids": [],
+  "approval_count": 0,
+  "approval_decisions": [],
+  "artifact_image_hashes": [],
+  "artifact_integrity": [],
+  "campaign_verdict": {
+    "actual_variant": null,
+    "expected_variant": [
+      "scroll",
+      "coordinate",
+      null,
+      null
+    ],
+    "status": "blocked",
+    "verdict_reason": "action_not_attempted"
+  },
+  "case": "coordinate_scroll",
+  "cua_driver_version": "0.30.4",
+  "decision_source": "Codex gpt-6-luna/max live IPC",
+  "degraded": false,
+  "finish_reason": "stop",
+  "fixture_bundle_id": "com.morrow.ComputerUseFixture",
+  "fixture_executable_sha256": "e50c90949e917dfae2497831521cda265b95cf9bbdb55404a6817cac3f13104b",
+  "fixture_identity_unchanged": true,
+  "fixture_instance_id": "F9FABFCD-DFD3-421B-93A1-A53BBDA68D15",
+  "fixture_instance_id_after": "F9FABFCD-DFD3-421B-93A1-A53BBDA68D15",
+  "fixture_launch_pid": 47298,
+  "fixture_pid": 47298,
+  "fixture_pid_after": 47298,
+  "fixture_process_exited": true,
+  "fixture_process_owned_and_identity_matched": true,
+  "fixture_scroll_geometry": {
+    "scroll_region": {
+      "height": 200,
+      "width": 480,
+      "x": 20,
+      "y": 28
+    },
+    "window": {
+      "backingScale": 2,
+      "contentHeight": 512,
+      "height": 512,
+      "number": 545,
+      "width": 520,
+      "x": 478,
+      "y": 242
+    }
+  },
+  "fixture_state_after_sha256": "52181e84bc0acfe6b113bd7d6927c03679bef2d8b782666cc46fab6a1659f353",
+  "fixture_state_before_sha256": "52181e84bc0acfe6b113bd7d6927c03679bef2d8b782666cc46fab6a1659f353",
+  "fixture_text_after_length": 0,
+  "fixture_text_after_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "fixture_text_before_length": 0,
+  "fixture_text_before_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "fixture_window_id": 545,
+  "fixture_window_id_after": 545,
+  "harness_sha256": "6ed6d4cacb83da02117a238923e3fe68f6eb19ac8b3100f37c124933cd9af8ed",
+  "image_hashes_match": false,
+  "independent_effect": {
+    "counter_delta": 0,
+    "key_down_characters": [],
+    "key_down_fields": [],
+    "key_up_events": 0,
+    "mouse_click_counts": [],
+    "pointer_events": [],
+    "right_mouse_delta": 0,
+    "scroll_delta": 0,
+    "unchanged": true,
+    "wheel_inside_scroll_region": false
+  },
+  "ledger_states": [
+    "closed",
+    "closed"
+  ],
+  "luna_controller_final": "本案阻塞：窗口发现连续两次返回stale_observation，未取得真实窗口引用、控件树或截图，因此无法确认存在axscrollarea/axscrollview元素，也未执行滚动动作。",
+  "luna_live_decisions": [
+    {
+      "decision_basis": "当前请求尚无窗口引用或控件树，先发现本案获准窗口以便随后核验真实滚动容器。",
+      "decision_sha256": "e451c284810127dd4c3cabd87eac4141e6e37ec7be8959affed40ebef46c6116",
+      "request_sha256": "2005091ddf8a9b34963a53d84391e626718ad85b916197dc83f9ddef183663f6",
+      "sequence": 1,
+      "tool_name": "computer_observe"
+    },
+    {
+      "decision_basis": "首次窗口发现返回stale_observation且未提供目标引用；按允许的一次刷新重新发现，再以刷新结果判断是否能取得真实控件树。",
+      "decision_sha256": "4351cae7583d8ee9cb394652dcfa11a93b68eae197aab90b023e2962782c5615",
+      "request_sha256": "ecfebf34888a52bfe7b088dd4c96e06b967109f80028d1cf15d62036ce07f478",
+      "sequence": 2,
+      "tool_name": "computer_observe"
+    },
+    {
+      "decision_basis": "两次窗口发现均返回stale_observation，第二次提示同法重复失败；没有窗口引用、控件树或截图可核验，不能据此构造滚动容器引用。",
+      "decision_sha256": "09c719c1a79ab9c355578ef75184d993c0dc532ec45740eb1a8f00fa18bb202f",
+      "request_sha256": "ae13b477c95f4dec2dd44d16ba113725709e3758e5b3769ba5fa86560fe4b138",
+      "sequence": 3,
+      "tool_name": null
+    }
+  ],
+  "native_entries": [],
+  "network_guard": {
+    "http_client_constructor_attempts": 0,
+    "http_send_attempts": 0,
+    "openai_provider_constructor_attempts": 0
+  },
+  "network_guard_passed": true,
+  "observation_meta": [],
+  "provider_calls": [
+    {
+      "action": null,
+      "amount": null,
+      "button": null,
+      "call_id": "luna-1",
+      "coordinate_target": false,
+      "count": null,
+      "direction": null,
+      "element_target": false,
+      "key": null,
+      "keys": null,
+      "name": "computer_observe",
+      "operation": "discover",
+      "postcondition": null,
+      "postcondition_ref_matches_action": false
+    },
+    {
+      "action": null,
+      "amount": null,
+      "button": null,
+      "call_id": "luna-2",
+      "coordinate_target": false,
+      "count": null,
+      "direction": null,
+      "element_target": false,
+      "key": null,
+      "keys": null,
+      "name": "computer_observe",
+      "operation": "discover",
+      "postcondition": null,
+      "postcondition_ref_matches_action": false
+    }
+  ],
+  "provider_failures": [],
+  "provider_image_hashes": [
+    [],
+    [],
+    []
+  ],
+  "provider_request_count": 3,
+  "raw_status": "tested",
+  "real_provider_request_count": 0,
+  "requested_delivery": "background",
+  "scenario": "background-coordinate-scroll",
+  "scenario_result": "blocked",
+  "schema_version": 1,
+  "scripted_provider": false,
+  "sdk_input_entries": 0,
+  "sdk_native_entries": 0,
+  "sdk_observations": [],
+  "selected_window": {
+    "pid": 47298,
+    "window_id": 545
+  },
+  "source_execution_count": 2,
+  "status": "tested",
+  "tool_diagnostics": [
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "error": {
+          "code": "preflight_failed",
+          "details": [
+            {
+              "reason": "stale_observation"
+            }
+          ],
+          "reason": null
+        },
+        "ok": false
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "error": {
+          "code": "preflight_failed",
+          "details": [
+            {
+              "reason": "stale_observation"
+            }
+          ],
+          "reason": null
+        },
+        "ok": false
+      },
+      "result": {}
+    }
+  ]
+}

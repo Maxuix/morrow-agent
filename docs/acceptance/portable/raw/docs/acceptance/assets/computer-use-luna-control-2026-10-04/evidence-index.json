@@ -1,0 +1,2106 @@
+{
+  "statistics": {
+    "fixture_case_executions": 28,
+    "unique_scenarios": 13,
+    "accepted_model_decisions": 109,
+    "native_entries": 13,
+    "all_receipt_bindings_valid": true,
+    "all_native_pid_window_matches": true,
+    "all_fixture_processes_exited": true,
+    "all_network_guards_passed": true,
+    "stored_image_files": 39,
+    "unique_images": 28,
+    "all_stored_image_hashes_valid": true,
+    "unaccepted_receipts": [
+      [
+        "phase-2",
+        "enabled-readback-background",
+        4
+      ],
+      [
+        "phase-2",
+        "foreground-right-click",
+        3
+      ]
+    ],
+    "validation_issues": []
+  },
+  "cases": [
+    {
+      "phase": "phase-1",
+      "case": "approval-unavailable",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/approval-unavailable/evidence.json",
+      "sha256": "921da5d4fd538f81a739ef9f0bc40148fa0396f468f41a73c744bd05afa1d95a",
+      "accepted_model_decisions": 4,
+      "action_attempts": 1,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [],
+      "legacy_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "left",
+          "call_id": "luna-3",
+          "coordinate_target": false,
+          "count": 1,
+          "direction": null,
+          "element_target": true,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "failed",
+        "verdict_reason": "denial_effect"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 11.681,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 14.114,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 49.255,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 18.471,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true
+      ]
+    },
+    {
+      "phase": "phase-1",
+      "case": "background-coordinate-scroll",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/background-coordinate-scroll/evidence.json",
+      "sha256": "2b2430f8f82fa8995e61c04025a96abda5e88c6078b110ea9d0c2b21732b5e15",
+      "accepted_model_decisions": 3,
+      "action_attempts": 0,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [],
+      "legacy_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "scroll",
+          "coordinate",
+          null,
+          null
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 31.123,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 19.627,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 21.145,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": []
+    },
+    {
+      "phase": "phase-1",
+      "case": "background-double-click",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/background-double-click/evidence.json",
+      "sha256": "4461be82c196a4042b54c6bab3623b2a51a9bd2c7b467ed50b939b62618d2973",
+      "accepted_model_decisions": 3,
+      "action_attempts": 0,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [],
+      "legacy_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          2
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 11.5,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 10.428,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 14.648,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true
+      ]
+    },
+    {
+      "phase": "phase-1",
+      "case": "denied",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/denied/evidence.json",
+      "sha256": "a21c6ed6b1f0c30be9fb2172cb3152585260453284878489b5503cf9a5a36616",
+      "accepted_model_decisions": 4,
+      "action_attempts": 1,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [],
+      "legacy_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "left",
+          "call_id": "luna-3",
+          "coordinate_target": false,
+          "count": 1,
+          "direction": null,
+          "element_target": true,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "passed",
+        "verdict_reason": "denial_effect"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 7.464,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 8.891,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 29.448,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 19.799,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true
+      ]
+    },
+    {
+      "phase": "phase-1",
+      "case": "enabled-readback",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/enabled-readback/evidence.json",
+      "sha256": "2484473ecfd5bcf931433eeaa03499d458692d0286c20edc2b383e17db17e9be",
+      "accepted_model_decisions": 6,
+      "action_attempts": 2,
+      "native_entries": 1,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": null,
+          "error_code": "stale_observation",
+          "postcondition": "not_checked",
+          "status": "not_started"
+        },
+        {
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "failed",
+        "verdict_reason": "action_count"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 13.205,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 9.974,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 43.816,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 15.482,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 5,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 16.553,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 6,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 21.42,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "phase": "phase-1",
+      "case": "enabled-readback-background",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/enabled-readback-background/evidence.json",
+      "sha256": "c84a4160b985acd2c9ff8082b2c48d0b978e7ac8885c4d38567b9f5dfc4f1949",
+      "accepted_model_decisions": 3,
+      "action_attempts": 0,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [],
+      "legacy_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 12.059,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 10.881,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 65.981,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true
+      ]
+    },
+    {
+      "phase": "phase-1",
+      "case": "foreground-double-click",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/foreground-double-click/evidence.json",
+      "sha256": "dc4de484d4c5308d989f03b3817646efe5aa314d45bc27cf0b73d72cfb875002",
+      "accepted_model_decisions": 5,
+      "action_attempts": 1,
+      "native_entries": 1,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "left",
+          "call_id": "luna-3",
+          "coordinate_target": true,
+          "count": 2,
+          "direction": null,
+          "element_target": false,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          2
+        ],
+        "status": "failed",
+        "verdict_reason": "wrong_variant"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 11.179,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 10.599,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 18.913,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 10.149,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 5,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 43.512,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "phase": "phase-1",
+      "case": "foreground-pixel-scroll",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/foreground-pixel-scroll/evidence.json",
+      "sha256": "80a9fc95d335f35c3a535821e616ac4df0b82a25f8c11959931572979ea0cd20",
+      "accepted_model_decisions": 3,
+      "action_attempts": 0,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [],
+      "legacy_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "scroll",
+          "coordinate",
+          null,
+          null
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 21.191,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 10.405,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 16.095,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true
+      ]
+    },
+    {
+      "phase": "phase-1",
+      "case": "foreground-right-click",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/foreground-right-click/evidence.json",
+      "sha256": "18fef6e359becdfce30e8d8610b2bd0818c9b61aab91fb4498eecc3c82d557cb",
+      "accepted_model_decisions": 4,
+      "action_attempts": 1,
+      "native_entries": 1,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "right",
+          "call_id": "luna-3",
+          "coordinate_target": true,
+          "count": 1,
+          "direction": null,
+          "element_target": false,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "right",
+          1
+        ],
+        "status": "failed",
+        "verdict_reason": "wrong_variant"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 19.162,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 10.66,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 13.948,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 25.094,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true,
+        true
+      ]
+    },
+    {
+      "phase": "phase-1",
+      "case": "long-text-4097",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/long-text-4097/evidence.json",
+      "sha256": "800fe619796efd078a7374f1746107fc7ab4c92ee7a76e058bef883fb09de20a",
+      "accepted_model_decisions": 2,
+      "action_attempts": 0,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [],
+      "legacy_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "type_text",
+          "element",
+          null,
+          null
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 30.052,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 27.014,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": []
+    },
+    {
+      "phase": "phase-1",
+      "case": "postcondition-omitted",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/postcondition-omitted/evidence.json",
+      "sha256": "e6497597ce33aa5d9d7b22bbd6c9c7f470ec4ce2824f34a3d9ba44d891746be5",
+      "accepted_model_decisions": 4,
+      "action_attempts": 1,
+      "native_entries": 1,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": "background",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "left",
+          "call_id": "luna-3",
+          "coordinate_target": false,
+          "count": 1,
+          "direction": null,
+          "element_target": true,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "failed",
+        "verdict_reason": "wrong_postcondition"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 10.206,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 10.51,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 18.495,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 21.209,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true,
+        true
+      ]
+    },
+    {
+      "phase": "phase-1",
+      "case": "semantic-click",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/semantic-click/evidence.json",
+      "sha256": "8fec31b1235dd1d9110e00dfac589d1c6bc0fcf489ac90366fbde1ca11d4fab3",
+      "accepted_model_decisions": 9,
+      "action_attempts": 3,
+      "native_entries": 1,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": null,
+          "error_code": "stale_observation",
+          "postcondition": "not_checked",
+          "status": "not_started"
+        },
+        {
+          "delivery": null,
+          "error_code": "stale_observation",
+          "postcondition": "not_checked",
+          "status": "not_started"
+        },
+        {
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "failed",
+        "verdict_reason": "action_count"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 12.682,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 10.046,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 49.279,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 58.453,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 5,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 36.681,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 6,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 23.931,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 7,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 22.975,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 8,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 30.464,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 9,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 15.872,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "phase": "phase-2",
+      "case": "background-coordinate-scroll",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/background-coordinate-scroll/evidence.json",
+      "sha256": "04210ace8749d8e4bd009f140dd7091678dc56d200cee350c04d4ecf0a81eaab",
+      "accepted_model_decisions": 4,
+      "action_attempts": 1,
+      "native_entries": 1,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": "background",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": {
+          "action": "scroll",
+          "amount": 3,
+          "button": null,
+          "call_id": "luna-3",
+          "coordinate_target": true,
+          "count": null,
+          "direction": "down",
+          "element_target": false,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "scroll",
+          "coordinate",
+          null,
+          null
+        ],
+        "status": "passed",
+        "verdict_reason": "independent_effect"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 18.905,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 16.272,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 19.351,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 19.368,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true,
+        true
+      ]
+    },
+    {
+      "phase": "phase-2",
+      "case": "background-double-click",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/background-double-click/evidence.json",
+      "sha256": "65dd66fcf30713e803de5ef508df1eba5b823358b5bd61aa1687381b279b0c47",
+      "accepted_model_decisions": 4,
+      "action_attempts": 1,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": null,
+          "error_code": "unsupported_double_click_delivery",
+          "postcondition": "not_checked",
+          "status": "not_started"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "left",
+          "call_id": "luna-3",
+          "coordinate_target": false,
+          "count": 2,
+          "direction": null,
+          "element_target": true,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          2
+        ],
+        "status": "unsupported",
+        "verdict_reason": "native_not_entered"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 19.934,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 15.901,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 17.464,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 19.368,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true
+      ]
+    },
+    {
+      "phase": "phase-2",
+      "case": "enabled-readback-background",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/enabled-readback-background/evidence.json",
+      "sha256": "1d2847c9118c5732a2586779d58456cf2e82f60a1107d271903a2904157fe135",
+      "accepted_model_decisions": 3,
+      "action_attempts": 1,
+      "native_entries": 1,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": "background",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "left",
+          "call_id": "luna-3",
+          "coordinate_target": false,
+          "count": 1,
+          "direction": null,
+          "element_target": true,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": "attribute_equals",
+          "postcondition_ref_matches_action": true
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "unsupported",
+        "verdict_reason": "sdk_exact_attribute_readback_unavailable"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 24.429,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 15.255,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 21.789,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": false,
+          "elapsed_seconds": 30.527,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true,
+        true
+      ]
+    },
+    {
+      "phase": "phase-2",
+      "case": "foreground-double-click",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/foreground-double-click/evidence.json",
+      "sha256": "966ad5afffebe28dee8a6e6b6fb9165ce740437b2dfba5a37255190354dcb757",
+      "accepted_model_decisions": 4,
+      "action_attempts": 1,
+      "native_entries": 1,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "left",
+          "call_id": "luna-3",
+          "coordinate_target": false,
+          "count": 2,
+          "direction": null,
+          "element_target": true,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          2
+        ],
+        "status": "passed",
+        "verdict_reason": "independent_effect"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 19.534,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 15.736,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 17.153,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 15.704,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true,
+        true
+      ]
+    },
+    {
+      "phase": "phase-2",
+      "case": "foreground-pixel-scroll",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/foreground-pixel-scroll/evidence.json",
+      "sha256": "9c3e50067c322f07c52457180020a334ac9e1e6e519d008110dbf2e1af489aa4",
+      "accepted_model_decisions": 3,
+      "action_attempts": 0,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [],
+      "legacy_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "scroll",
+          "coordinate",
+          null,
+          null
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 32.007,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 26.689,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 20.597,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": []
+    },
+    {
+      "phase": "phase-2",
+      "case": "foreground-right-click",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/foreground-right-click/evidence.json",
+      "sha256": "88ad99fd8fa41942ff6587197127b7778fc90bc1b25500c9489d09b71830a4ef",
+      "accepted_model_decisions": 2,
+      "action_attempts": 0,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [],
+      "legacy_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "click",
+          "element",
+          "right",
+          1
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 18.487,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 16.482,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": false,
+          "elapsed_seconds": 17.313,
+          "tool": "computer_action"
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true
+      ]
+    },
+    {
+      "phase": "phase-2",
+      "case": "long-text-4097",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/long-text-4097/evidence.json",
+      "sha256": "0e633655081bf9ecc553662794c2db7580821fac39d4b771ea274ab8e5c689f5",
+      "accepted_model_decisions": 3,
+      "action_attempts": 0,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [],
+      "legacy_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "type_text",
+          "element",
+          null,
+          null
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 96.079,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 19.822,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 27.615,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": []
+    },
+    {
+      "phase": "phase-2",
+      "case": "semantic-click",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/semantic-click/evidence.json",
+      "sha256": "6980a542b5fb239518d484b676917afe6864d3542ce51e1860e6485c3be089df",
+      "accepted_model_decisions": 7,
+      "action_attempts": 2,
+      "native_entries": 1,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": null,
+          "error_code": "stale_observation",
+          "postcondition": "not_checked",
+          "status": "not_started"
+        },
+        {
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "failed",
+        "verdict_reason": "action_count"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 13.346,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 12.699,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 99.522,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 31.879,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 5,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 44.499,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 6,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 22.133,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 7,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 30.967,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "phase": "phase-3",
+      "case": "enabled-readback-background",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/enabled-readback-background/evidence.json",
+      "sha256": "b2ed4a0653c8aba34336e238327483105b75bae6602bc6473563bf0a1f24b589",
+      "accepted_model_decisions": 2,
+      "action_attempts": 0,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": null,
+      "legacy_verdict": null,
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 18.973,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 14.887,
+          "tool": "computer_observe"
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": null
+    },
+    {
+      "phase": "phase-3",
+      "case": "foreground-double-click",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/foreground-double-click/evidence.json",
+      "sha256": "b75beb4194d1a7db4e38f4a3447ecf452b19f149a4bbb036e81a01b7813c6742",
+      "accepted_model_decisions": 0,
+      "action_attempts": 0,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [],
+      "legacy_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          2
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "receipts": [],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": []
+    },
+    {
+      "phase": "phase-3",
+      "case": "long-text-4097",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/evidence.json",
+      "sha256": "b91812a23f7da6a099f713a3ff709e341d65bffaed61df5d26ed9a1b9044e476",
+      "accepted_model_decisions": 8,
+      "action_attempts": 2,
+      "native_entries": 1,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": null,
+          "error_code": "stale_observation",
+          "postcondition": "not_checked",
+          "status": "not_started"
+        },
+        {
+          "delivery": "background",
+          "error_code": null,
+          "postcondition": "not_checked",
+          "status": "completed"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "type_text",
+          "element",
+          null,
+          null
+        ],
+        "status": "failed",
+        "verdict_reason": "action_count"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 13.716,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 36.361,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 81.486,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 40.018,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 5,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 34.209,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 6,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 27.719,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 7,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 23.002,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 8,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 56.646,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "phase": "phase-3",
+      "case": "semantic-click",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/evidence.json",
+      "sha256": "e32f332bf9bb29b1719a7c301b3f868b3e18b13943afe1593708edceb220822b",
+      "accepted_model_decisions": 4,
+      "action_attempts": 1,
+      "native_entries": 1,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "left",
+          "call_id": "luna-3",
+          "coordinate_target": false,
+          "count": 1,
+          "direction": null,
+          "element_target": true,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "passed",
+        "verdict_reason": "independent_effect"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 25.288,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 16.777,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 17.719,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 17.506,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true,
+        true
+      ]
+    },
+    {
+      "phase": "phase-4",
+      "case": "foreground-double-click",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4/foreground-double-click/evidence.json",
+      "sha256": "5d4f1ac1476397f2f9fbd8dc9b05a058979d29fb1718342bb466ff1311234d01",
+      "accepted_model_decisions": 4,
+      "action_attempts": 1,
+      "native_entries": 1,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "left",
+          "call_id": "luna-3",
+          "coordinate_target": false,
+          "count": 2,
+          "direction": null,
+          "element_target": true,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          2
+        ],
+        "status": "passed",
+        "verdict_reason": "independent_effect"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 19.875,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 17.683,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 18.513,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 15.265,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true,
+        true
+      ]
+    },
+    {
+      "phase": "phase-4",
+      "case": "foreground-pixel-scroll",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4/foreground-pixel-scroll/evidence.json",
+      "sha256": "a15a5ffce4be276f5c3823e58900a188f48947d9f1d42c2ac91db7bca245c578",
+      "accepted_model_decisions": 4,
+      "action_attempts": 1,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": null,
+          "error_code": "unsupported_foreground_scroll_delivery",
+          "postcondition": "not_checked",
+          "status": "not_started"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": {
+          "action": "scroll",
+          "amount": 3,
+          "button": null,
+          "call_id": "luna-3",
+          "coordinate_target": true,
+          "count": null,
+          "direction": "down",
+          "element_target": false,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "scroll",
+          "coordinate",
+          null,
+          null
+        ],
+        "status": "unsupported",
+        "verdict_reason": "native_not_entered"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 7.674,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 18.73,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 20.841,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 20.513,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true
+      ]
+    },
+    {
+      "phase": "phase-4",
+      "case": "foreground-right-click",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4/foreground-right-click/evidence.json",
+      "sha256": "48ece470719257fe2dd42cb920f606c31a03b7760eaac4caab018c9d1cdb8cdf",
+      "accepted_model_decisions": 4,
+      "action_attempts": 1,
+      "native_entries": 1,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [
+        {
+          "delivery": "foreground",
+          "error_code": "unverified_action",
+          "postcondition": "not_checked",
+          "status": "unknown"
+        }
+      ],
+      "legacy_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "right",
+          "call_id": "luna-3",
+          "coordinate_target": false,
+          "count": 1,
+          "direction": null,
+          "element_target": true,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "right",
+          1
+        ],
+        "status": "passed",
+        "verdict_reason": "independent_effect"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 22.898,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 15.623,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 18.657,
+          "tool": "computer_action"
+        },
+        {
+          "sequence": 4,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 15.962,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": [
+        true,
+        true
+      ]
+    },
+    {
+      "phase": "phase-5",
+      "case": "semantic-scroll-container",
+      "fixture_case_key": "background-coordinate-scroll",
+      "evidence": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-5/background-coordinate-scroll/evidence.json",
+      "sha256": "58d0b172ac003f7c2e47814589e9afa445cba41b523e8ea1cf1827f804bbe400",
+      "accepted_model_decisions": 3,
+      "action_attempts": 0,
+      "native_entries": 0,
+      "native_identity_matches_selection": true,
+      "action_outcomes": [],
+      "legacy_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "scroll",
+          "coordinate",
+          null,
+          null
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "receipts": [
+        {
+          "sequence": 1,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 50.334,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 2,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 47.542,
+          "tool": "computer_observe"
+        },
+        {
+          "sequence": 3,
+          "binding_valid": true,
+          "accepted": true,
+          "elapsed_seconds": 22.239,
+          "tool": null
+        }
+      ],
+      "fixture_process_exited": true,
+      "network_guard_passed": true,
+      "artifact_checks": []
+    }
+  ],
+  "images": {
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/approval-unavailable/bridge/image-2aedfcdc0afa7f9d232cf5e72dc9c2a767e5835ad2da47f61020c053134c10d0.png": {
+      "sha256": "2aedfcdc0afa7f9d232cf5e72dc9c2a767e5835ad2da47f61020c053134c10d0",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/background-double-click/bridge/image-33291d1b80787eb59e304d3bbf3da5942feac44bdd1e521b3a2e1e30afb6dc9a.png": {
+      "sha256": "33291d1b80787eb59e304d3bbf3da5942feac44bdd1e521b3a2e1e30afb6dc9a",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/denied/bridge/image-2de9d09169a0f4a121e853faf2afb8e62b0f35d5bdd252d7df49a5be074903e6.png": {
+      "sha256": "2de9d09169a0f4a121e853faf2afb8e62b0f35d5bdd252d7df49a5be074903e6",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/enabled-readback/bridge/image-40ae7bc7782df93db2776d8695707145d22d8f9e6c747f44869f8990212e8a67.png": {
+      "sha256": "40ae7bc7782df93db2776d8695707145d22d8f9e6c747f44869f8990212e8a67",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/enabled-readback/bridge/image-33291d1b80787eb59e304d3bbf3da5942feac44bdd1e521b3a2e1e30afb6dc9a.png": {
+      "sha256": "33291d1b80787eb59e304d3bbf3da5942feac44bdd1e521b3a2e1e30afb6dc9a",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/enabled-readback/bridge/image-7c422dc9812afae587896922e78664bbd965db856b054b898f3355a8d0d15df8.png": {
+      "sha256": "7c422dc9812afae587896922e78664bbd965db856b054b898f3355a8d0d15df8",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/enabled-readback-background/bridge/image-33291d1b80787eb59e304d3bbf3da5942feac44bdd1e521b3a2e1e30afb6dc9a.png": {
+      "sha256": "33291d1b80787eb59e304d3bbf3da5942feac44bdd1e521b3a2e1e30afb6dc9a",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/foreground-double-click/bridge/image-9fc74ccf072320c7541b5c2adeaf07c8412d90ffe081ab0d29deb6c2ea9590bf.png": {
+      "sha256": "9fc74ccf072320c7541b5c2adeaf07c8412d90ffe081ab0d29deb6c2ea9590bf",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/foreground-double-click/bridge/image-497fd97c990a2f21aac2e963c00ff5d3bc3bc55aa1cf176ad50268b10ad46b1b.png": {
+      "sha256": "497fd97c990a2f21aac2e963c00ff5d3bc3bc55aa1cf176ad50268b10ad46b1b",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/foreground-pixel-scroll/bridge/image-c6db2b3b0bbabd7dd0c544723d76c5708ea54878b0a57304f28458a835025f1e.png": {
+      "sha256": "c6db2b3b0bbabd7dd0c544723d76c5708ea54878b0a57304f28458a835025f1e",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/foreground-right-click/bridge/image-b761e0b744203bbcd8ed3afe245d645016cc5cb963b63db959569a9e293bab33.png": {
+      "sha256": "b761e0b744203bbcd8ed3afe245d645016cc5cb963b63db959569a9e293bab33",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/foreground-right-click/bridge/image-86715cfd1591ad5fb1671b03df671f1ecefa20de9daec52e0f3f589d7251597a.png": {
+      "sha256": "86715cfd1591ad5fb1671b03df671f1ecefa20de9daec52e0f3f589d7251597a",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/postcondition-omitted/bridge/image-b44229e36d262169f2704752707c159f467ce6bf780f84d52df23d10ea7eaa8a.png": {
+      "sha256": "b44229e36d262169f2704752707c159f467ce6bf780f84d52df23d10ea7eaa8a",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/postcondition-omitted/bridge/image-aebff0c8e7c75f16dd4b22326a3538acb6137417dd606263bd474c1e32e400b0.png": {
+      "sha256": "aebff0c8e7c75f16dd4b22326a3538acb6137417dd606263bd474c1e32e400b0",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/semantic-click/bridge/image-9750a4e4f1bc7d6cab5435b1c5b68360a0240b3966551e53c7bb22ee7f95ef9c.png": {
+      "sha256": "9750a4e4f1bc7d6cab5435b1c5b68360a0240b3966551e53c7bb22ee7f95ef9c",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/semantic-click/bridge/image-33291d1b80787eb59e304d3bbf3da5942feac44bdd1e521b3a2e1e30afb6dc9a.png": {
+      "sha256": "33291d1b80787eb59e304d3bbf3da5942feac44bdd1e521b3a2e1e30afb6dc9a",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/semantic-click/bridge/image-32e238c3bde87243e9ad32987e1715feb844703161988a97e8b271fccceaf7bc.png": {
+      "sha256": "32e238c3bde87243e9ad32987e1715feb844703161988a97e8b271fccceaf7bc",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/background-coordinate-scroll/bridge/image-c09d5eb3214780913348c511fed6d90f16507300b00580aef25c7c487d5c8abe.png": {
+      "sha256": "c09d5eb3214780913348c511fed6d90f16507300b00580aef25c7c487d5c8abe",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/background-coordinate-scroll/bridge/image-86715cfd1591ad5fb1671b03df671f1ecefa20de9daec52e0f3f589d7251597a.png": {
+      "sha256": "86715cfd1591ad5fb1671b03df671f1ecefa20de9daec52e0f3f589d7251597a",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/background-double-click/bridge/image-e671e75d2f9ed7f5761351ffd09156bac17087a85f7965b0b2d0a057dae2ff6e.png": {
+      "sha256": "e671e75d2f9ed7f5761351ffd09156bac17087a85f7965b0b2d0a057dae2ff6e",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/enabled-readback-background/bridge/image-cf262acda3c6e4b15560b0c09004336487ae6094285d71a3a19632ed3fc6f64d.png": {
+      "sha256": "cf262acda3c6e4b15560b0c09004336487ae6094285d71a3a19632ed3fc6f64d",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/enabled-readback-background/bridge/image-e671e75d2f9ed7f5761351ffd09156bac17087a85f7965b0b2d0a057dae2ff6e.png": {
+      "sha256": "e671e75d2f9ed7f5761351ffd09156bac17087a85f7965b0b2d0a057dae2ff6e",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/foreground-double-click/bridge/image-9fc74ccf072320c7541b5c2adeaf07c8412d90ffe081ab0d29deb6c2ea9590bf.png": {
+      "sha256": "9fc74ccf072320c7541b5c2adeaf07c8412d90ffe081ab0d29deb6c2ea9590bf",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/foreground-double-click/bridge/image-86715cfd1591ad5fb1671b03df671f1ecefa20de9daec52e0f3f589d7251597a.png": {
+      "sha256": "86715cfd1591ad5fb1671b03df671f1ecefa20de9daec52e0f3f589d7251597a",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/foreground-right-click/bridge/image-86715cfd1591ad5fb1671b03df671f1ecefa20de9daec52e0f3f589d7251597a.png": {
+      "sha256": "86715cfd1591ad5fb1671b03df671f1ecefa20de9daec52e0f3f589d7251597a",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/semantic-click/bridge/image-3e0e191298925ca1bcb5b61032d6fc8f7a3f4cef87fd20e38a17996e3889ae86.png": {
+      "sha256": "3e0e191298925ca1bcb5b61032d6fc8f7a3f4cef87fd20e38a17996e3889ae86",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/semantic-click/bridge/image-e671e75d2f9ed7f5761351ffd09156bac17087a85f7965b0b2d0a057dae2ff6e.png": {
+      "sha256": "e671e75d2f9ed7f5761351ffd09156bac17087a85f7965b0b2d0a057dae2ff6e",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/semantic-click/bridge/image-0434a45a50e3a65c9d885be3c490d63b683a66ffaff0bc5efd2cfcf5c233fdf1.png": {
+      "sha256": "0434a45a50e3a65c9d885be3c490d63b683a66ffaff0bc5efd2cfcf5c233fdf1",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/semantic-click/bridge/image-86715cfd1591ad5fb1671b03df671f1ecefa20de9daec52e0f3f589d7251597a.png": {
+      "sha256": "86715cfd1591ad5fb1671b03df671f1ecefa20de9daec52e0f3f589d7251597a",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/enabled-readback-background/bridge/image-530205821cc45a2b0e5e8805a79e993ad5157c44fa944b468b3e9842d28e9541.png": {
+      "sha256": "530205821cc45a2b0e5e8805a79e993ad5157c44fa944b468b3e9842d28e9541",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/image-eec9f1699bedaf3a04c75211631e2e017071fa212c3b21a36331c3b30b16d7b3.png": {
+      "sha256": "eec9f1699bedaf3a04c75211631e2e017071fa212c3b21a36331c3b30b16d7b3",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/image-fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589.png": {
+      "sha256": "fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/bridge/image-6fe61eb9eeb3ebeb983f639be07580e691527f3e50033e01fde180c6b2b73b89.png": {
+      "sha256": "6fe61eb9eeb3ebeb983f639be07580e691527f3e50033e01fde180c6b2b73b89",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/bridge/image-c298271cacdc500c0e608d8abd2a7335da1df4a27257c6d6b16998b314f1661b.png": {
+      "sha256": "c298271cacdc500c0e608d8abd2a7335da1df4a27257c6d6b16998b314f1661b",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4/foreground-double-click/bridge/image-e7a98c3a2ea73effee3ac0d17a1cc7f1c636c53fac711e1b3b3ff749511b0582.png": {
+      "sha256": "e7a98c3a2ea73effee3ac0d17a1cc7f1c636c53fac711e1b3b3ff749511b0582",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4/foreground-double-click/bridge/image-0555ed9d7b191f5ede9eac99c7414e82fb2a97bd6d54eee036f0f640b2557896.png": {
+      "sha256": "0555ed9d7b191f5ede9eac99c7414e82fb2a97bd6d54eee036f0f640b2557896",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4/foreground-pixel-scroll/bridge/image-3fe3047516ea3210cbc8dfb7fd62b75693e9b78bef954b6389b633bb70632b2e.png": {
+      "sha256": "3fe3047516ea3210cbc8dfb7fd62b75693e9b78bef954b6389b633bb70632b2e",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4/foreground-right-click/bridge/image-530205821cc45a2b0e5e8805a79e993ad5157c44fa944b468b3e9842d28e9541.png": {
+      "sha256": "530205821cc45a2b0e5e8805a79e993ad5157c44fa944b468b3e9842d28e9541",
+      "filename_hash_matches": true
+    },
+    "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4/foreground-right-click/bridge/image-1f774c0735da467a4cb15f4f95ce57081da4250277ac5e84a97ea0332086bd69.png": {
+      "sha256": "1f774c0735da467a4cb15f4f95ce57081da4250277ac5e84a97ea0332086bd69",
+      "filename_hash_matches": true
+    }
+  }
+}

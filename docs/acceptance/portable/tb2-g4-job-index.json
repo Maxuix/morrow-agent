@@ -1,0 +1,5231 @@
+{
+  "schema_version": 1,
+  "method": "local_directory_inventory_without_model_content",
+  "source_directory": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680",
+  "scope": "File inventory plus the original aggregate result and 89 structured trial result.json files. Full trial agent streams remain local. Selected structured results expose recorded rewards, failure classifications and stage timing; this is not a complete raw-stream recomputation package or a new benchmark.",
+  "archived_result": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/result.json",
+  "files": [
+    {
+      "path": "adaptive-rejection-sampler__SKhYtoJ/agent/morrow-diagnostics.jsonl",
+      "bytes": 166429
+    },
+    {
+      "path": "adaptive-rejection-sampler__SKhYtoJ/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "adaptive-rejection-sampler__SKhYtoJ/agent/morrow-partial-metrics.json",
+      "bytes": 215
+    },
+    {
+      "path": "adaptive-rejection-sampler__SKhYtoJ/agent/morrow-run.jsonl",
+      "bytes": 530308
+    },
+    {
+      "path": "adaptive-rejection-sampler__SKhYtoJ/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "adaptive-rejection-sampler__SKhYtoJ/agent/trajectory.json",
+      "bytes": 128783
+    },
+    {
+      "path": "adaptive-rejection-sampler__SKhYtoJ/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "adaptive-rejection-sampler__SKhYtoJ/config.json",
+      "bytes": 1472
+    },
+    {
+      "path": "adaptive-rejection-sampler__SKhYtoJ/lock.json",
+      "bytes": 2020
+    },
+    {
+      "path": "adaptive-rejection-sampler__SKhYtoJ/result.json",
+      "bytes": 5759
+    },
+    {
+      "path": "adaptive-rejection-sampler__SKhYtoJ/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "adaptive-rejection-sampler__SKhYtoJ/verifier/ctrf.json",
+      "bytes": 5900
+    },
+    {
+      "path": "adaptive-rejection-sampler__SKhYtoJ/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "adaptive-rejection-sampler__SKhYtoJ/verifier/test-stdout.txt",
+      "bytes": 5538
+    },
+    {
+      "path": "bn-fit-modify__yHfCWB8/agent/morrow-diagnostics.jsonl",
+      "bytes": 46177
+    },
+    {
+      "path": "bn-fit-modify__yHfCWB8/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "bn-fit-modify__yHfCWB8/agent/morrow-run.jsonl",
+      "bytes": 173769
+    },
+    {
+      "path": "bn-fit-modify__yHfCWB8/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "bn-fit-modify__yHfCWB8/agent/trajectory.json",
+      "bytes": 31237
+    },
+    {
+      "path": "bn-fit-modify__yHfCWB8/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "bn-fit-modify__yHfCWB8/config.json",
+      "bytes": 1446
+    },
+    {
+      "path": "bn-fit-modify__yHfCWB8/lock.json",
+      "bytes": 1994
+    },
+    {
+      "path": "bn-fit-modify__yHfCWB8/result.json",
+      "bytes": 5370
+    },
+    {
+      "path": "bn-fit-modify__yHfCWB8/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "bn-fit-modify__yHfCWB8/verifier/ctrf.json",
+      "bytes": 4770
+    },
+    {
+      "path": "bn-fit-modify__yHfCWB8/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "bn-fit-modify__yHfCWB8/verifier/test-stdout.txt",
+      "bytes": 6409
+    },
+    {
+      "path": "break-filter-js-from-html__iPCcXLv/agent/morrow-diagnostics.jsonl",
+      "bytes": 74031
+    },
+    {
+      "path": "break-filter-js-from-html__iPCcXLv/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "break-filter-js-from-html__iPCcXLv/agent/morrow-run.jsonl",
+      "bytes": 181061
+    },
+    {
+      "path": "break-filter-js-from-html__iPCcXLv/agent/morrow-terminal-metrics.json",
+      "bytes": 1398
+    },
+    {
+      "path": "break-filter-js-from-html__iPCcXLv/agent/trajectory.json",
+      "bytes": 46256
+    },
+    {
+      "path": "break-filter-js-from-html__iPCcXLv/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "break-filter-js-from-html__iPCcXLv/config.json",
+      "bytes": 1470
+    },
+    {
+      "path": "break-filter-js-from-html__iPCcXLv/lock.json",
+      "bytes": 2018
+    },
+    {
+      "path": "break-filter-js-from-html__iPCcXLv/result.json",
+      "bytes": 5444
+    },
+    {
+      "path": "break-filter-js-from-html__iPCcXLv/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "break-filter-js-from-html__iPCcXLv/verifier/ctrf.json",
+      "bytes": 757
+    },
+    {
+      "path": "break-filter-js-from-html__iPCcXLv/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "break-filter-js-from-html__iPCcXLv/verifier/test-stdout.txt",
+      "bytes": 4792
+    },
+    {
+      "path": "build-cython-ext__NUtatRd/agent/morrow-diagnostics.jsonl",
+      "bytes": 325731
+    },
+    {
+      "path": "build-cython-ext__NUtatRd/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "build-cython-ext__NUtatRd/agent/morrow-partial-metrics.json",
+      "bytes": 218
+    },
+    {
+      "path": "build-cython-ext__NUtatRd/agent/morrow-run.jsonl",
+      "bytes": 501305
+    },
+    {
+      "path": "build-cython-ext__NUtatRd/agent/morrow-terminal-metrics.json",
+      "bytes": 1403
+    },
+    {
+      "path": "build-cython-ext__NUtatRd/agent/trajectory.json",
+      "bytes": 277310
+    },
+    {
+      "path": "build-cython-ext__NUtatRd/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "build-cython-ext__NUtatRd/config.json",
+      "bytes": 1452
+    },
+    {
+      "path": "build-cython-ext__NUtatRd/lock.json",
+      "bytes": 2000
+    },
+    {
+      "path": "build-cython-ext__NUtatRd/result.json",
+      "bytes": 5704
+    },
+    {
+      "path": "build-cython-ext__NUtatRd/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "build-cython-ext__NUtatRd/verifier/ctrf.json",
+      "bytes": 4252
+    },
+    {
+      "path": "build-cython-ext__NUtatRd/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "build-cython-ext__NUtatRd/verifier/test-stdout.txt",
+      "bytes": 3352
+    },
+    {
+      "path": "build-pmars__sQJr73M/agent/morrow-diagnostics.jsonl",
+      "bytes": 137958
+    },
+    {
+      "path": "build-pmars__sQJr73M/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "build-pmars__sQJr73M/agent/morrow-partial-metrics.json",
+      "bytes": 214
+    },
+    {
+      "path": "build-pmars__sQJr73M/agent/morrow-run.jsonl",
+      "bytes": 247958
+    },
+    {
+      "path": "build-pmars__sQJr73M/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "build-pmars__sQJr73M/agent/trajectory.json",
+      "bytes": 109555
+    },
+    {
+      "path": "build-pmars__sQJr73M/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "build-pmars__sQJr73M/config.json",
+      "bytes": 1442
+    },
+    {
+      "path": "build-pmars__sQJr73M/lock.json",
+      "bytes": 1990
+    },
+    {
+      "path": "build-pmars__sQJr73M/result.json",
+      "bytes": 5666
+    },
+    {
+      "path": "build-pmars__sQJr73M/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "build-pmars__sQJr73M/verifier/ctrf.json",
+      "bytes": 1787
+    },
+    {
+      "path": "build-pmars__sQJr73M/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "build-pmars__sQJr73M/verifier/test-stdout.txt",
+      "bytes": 12866
+    },
+    {
+      "path": "build-pov-ray__zqo8dEU/agent/morrow-diagnostics.jsonl",
+      "bytes": 197613
+    },
+    {
+      "path": "build-pov-ray__zqo8dEU/agent/morrow-fingerprint.json",
+      "bytes": 12282
+    },
+    {
+      "path": "build-pov-ray__zqo8dEU/agent/morrow-partial-metrics.json",
+      "bytes": 216
+    },
+    {
+      "path": "build-pov-ray__zqo8dEU/agent/morrow-run.jsonl",
+      "bytes": 294866
+    },
+    {
+      "path": "build-pov-ray__zqo8dEU/agent/morrow-terminal-metrics.json",
+      "bytes": 1399
+    },
+    {
+      "path": "build-pov-ray__zqo8dEU/agent/trajectory.json",
+      "bytes": 162225
+    },
+    {
+      "path": "build-pov-ray__zqo8dEU/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "build-pov-ray__zqo8dEU/config.json",
+      "bytes": 1446
+    },
+    {
+      "path": "build-pov-ray__zqo8dEU/lock.json",
+      "bytes": 1994
+    },
+    {
+      "path": "build-pov-ray__zqo8dEU/result.json",
+      "bytes": 5682
+    },
+    {
+      "path": "build-pov-ray__zqo8dEU/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "build-pov-ray__zqo8dEU/verifier/ctrf.json",
+      "bytes": 3264
+    },
+    {
+      "path": "build-pov-ray__zqo8dEU/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "build-pov-ray__zqo8dEU/verifier/test-stdout.txt",
+      "bytes": 5857
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/agent/morrow-diagnostics.jsonl",
+      "bytes": 79564
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/agent/morrow-partial-metrics.json",
+      "bytes": 213
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/agent/morrow-run.jsonl",
+      "bytes": 153110
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/agent/morrow-terminal-metrics.json",
+      "bytes": 1406
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/agent/trajectory.json",
+      "bytes": 57633
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/config.json",
+      "bytes": 1448
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/exception.txt",
+      "bytes": 4313
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/lock.json",
+      "bytes": 1996
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/result.json",
+      "bytes": 10304
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/trial.log",
+      "bytes": 789
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/verifier/ctrf.json",
+      "bytes": 16259
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "caffe-cifar-10__j8eLUQJ/verifier/test-stdout.txt",
+      "bytes": 15102
+    },
+    {
+      "path": "cancel-async-tasks__KTRxGtL/agent/morrow-diagnostics.jsonl",
+      "bytes": 27298
+    },
+    {
+      "path": "cancel-async-tasks__KTRxGtL/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "cancel-async-tasks__KTRxGtL/agent/morrow-run.jsonl",
+      "bytes": 111511
+    },
+    {
+      "path": "cancel-async-tasks__KTRxGtL/agent/morrow-terminal-metrics.json",
+      "bytes": 1394
+    },
+    {
+      "path": "cancel-async-tasks__KTRxGtL/agent/trajectory.json",
+      "bytes": 18228
+    },
+    {
+      "path": "cancel-async-tasks__KTRxGtL/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "cancel-async-tasks__KTRxGtL/config.json",
+      "bytes": 1456
+    },
+    {
+      "path": "cancel-async-tasks__KTRxGtL/lock.json",
+      "bytes": 2004
+    },
+    {
+      "path": "cancel-async-tasks__KTRxGtL/result.json",
+      "bytes": 5397
+    },
+    {
+      "path": "cancel-async-tasks__KTRxGtL/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "cancel-async-tasks__KTRxGtL/verifier/ctrf.json",
+      "bytes": 4086
+    },
+    {
+      "path": "cancel-async-tasks__KTRxGtL/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "cancel-async-tasks__KTRxGtL/verifier/test-stdout.txt",
+      "bytes": 11397
+    },
+    {
+      "path": "chess-best-move__UB7samf/agent/morrow-diagnostics.jsonl",
+      "bytes": 125047
+    },
+    {
+      "path": "chess-best-move__UB7samf/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "chess-best-move__UB7samf/agent/morrow-partial-metrics.json",
+      "bytes": 214
+    },
+    {
+      "path": "chess-best-move__UB7samf/agent/morrow-run.jsonl",
+      "bytes": 201783
+    },
+    {
+      "path": "chess-best-move__UB7samf/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "chess-best-move__UB7samf/agent/trajectory.json",
+      "bytes": 90505
+    },
+    {
+      "path": "chess-best-move__UB7samf/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "chess-best-move__UB7samf/config.json",
+      "bytes": 1450
+    },
+    {
+      "path": "chess-best-move__UB7samf/lock.json",
+      "bytes": 1998
+    },
+    {
+      "path": "chess-best-move__UB7samf/result.json",
+      "bytes": 5692
+    },
+    {
+      "path": "chess-best-move__UB7samf/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "chess-best-move__UB7samf/verifier/ctrf.json",
+      "bytes": 1957
+    },
+    {
+      "path": "chess-best-move__UB7samf/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "chess-best-move__UB7samf/verifier/test-stdout.txt",
+      "bytes": 4890
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/agent/morrow-diagnostics.jsonl",
+      "bytes": 60956
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/agent/morrow-partial-metrics.json",
+      "bytes": 211
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/agent/morrow-run.jsonl",
+      "bytes": 158198
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/agent/morrow-terminal-metrics.json",
+      "bytes": 1405
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/agent/trajectory.json",
+      "bytes": 7934
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/config.json",
+      "bytes": 1450
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/lock.json",
+      "bytes": 1998
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/result.json",
+      "bytes": 7086
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/verifier/ctrf.json",
+      "bytes": 4498
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "circuit-fibsqrt__ej9LHAm/verifier/test-stdout.txt",
+      "bytes": 13085
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/agent/morrow-diagnostics.jsonl",
+      "bytes": 79807
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/agent/morrow-partial-metrics.json",
+      "bytes": 214
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/agent/morrow-run.jsonl",
+      "bytes": 320781
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/agent/morrow-terminal-metrics.json",
+      "bytes": 1406
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/agent/trajectory.json",
+      "bytes": 30130
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/config.json",
+      "bytes": 1458
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/lock.json",
+      "bytes": 2006
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/result.json",
+      "bytes": 7115
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/verifier/ctrf.json",
+      "bytes": 3761
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "cobol-modernization__9x6Bw7H/verifier/test-stdout.txt",
+      "bytes": 9371
+    },
+    {
+      "path": "code-from-image__5trhVip/agent/morrow-diagnostics.jsonl",
+      "bytes": 730336
+    },
+    {
+      "path": "code-from-image__5trhVip/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "code-from-image__5trhVip/agent/morrow-partial-metrics.json",
+      "bytes": 218
+    },
+    {
+      "path": "code-from-image__5trhVip/agent/morrow-run.jsonl",
+      "bytes": 760473
+    },
+    {
+      "path": "code-from-image__5trhVip/agent/morrow-terminal-metrics.json",
+      "bytes": 1403
+    },
+    {
+      "path": "code-from-image__5trhVip/agent/trajectory.json",
+      "bytes": 607223
+    },
+    {
+      "path": "code-from-image__5trhVip/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "code-from-image__5trhVip/config.json",
+      "bytes": 1450
+    },
+    {
+      "path": "code-from-image__5trhVip/lock.json",
+      "bytes": 1998
+    },
+    {
+      "path": "code-from-image__5trhVip/result.json",
+      "bytes": 5698
+    },
+    {
+      "path": "code-from-image__5trhVip/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "code-from-image__5trhVip/verifier/ctrf.json",
+      "bytes": 1104
+    },
+    {
+      "path": "code-from-image__5trhVip/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "code-from-image__5trhVip/verifier/test-stdout.txt",
+      "bytes": 2540
+    },
+    {
+      "path": "compile-compcert__2FbGxb2/agent/morrow-diagnostics.jsonl",
+      "bytes": 150072
+    },
+    {
+      "path": "compile-compcert__2FbGxb2/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "compile-compcert__2FbGxb2/agent/morrow-run.jsonl",
+      "bytes": 337938
+    },
+    {
+      "path": "compile-compcert__2FbGxb2/agent/morrow-terminal-metrics.json",
+      "bytes": 1400
+    },
+    {
+      "path": "compile-compcert__2FbGxb2/agent/trajectory.json",
+      "bytes": 113245
+    },
+    {
+      "path": "compile-compcert__2FbGxb2/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "compile-compcert__2FbGxb2/config.json",
+      "bytes": 1452
+    },
+    {
+      "path": "compile-compcert__2FbGxb2/lock.json",
+      "bytes": 2000
+    },
+    {
+      "path": "compile-compcert__2FbGxb2/result.json",
+      "bytes": 5390
+    },
+    {
+      "path": "compile-compcert__2FbGxb2/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "compile-compcert__2FbGxb2/verifier/ctrf.json",
+      "bytes": 1490
+    },
+    {
+      "path": "compile-compcert__2FbGxb2/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "compile-compcert__2FbGxb2/verifier/test-stdout.txt",
+      "bytes": 3343
+    },
+    {
+      "path": "config.json",
+      "bytes": 4817
+    },
+    {
+      "path": "configure-git-webserver__3Ry63rs/agent/morrow-diagnostics.jsonl",
+      "bytes": 80252
+    },
+    {
+      "path": "configure-git-webserver__3Ry63rs/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "configure-git-webserver__3Ry63rs/agent/morrow-run.jsonl",
+      "bytes": 146663
+    },
+    {
+      "path": "configure-git-webserver__3Ry63rs/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "configure-git-webserver__3Ry63rs/agent/trajectory.json",
+      "bytes": 59229
+    },
+    {
+      "path": "configure-git-webserver__3Ry63rs/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "configure-git-webserver__3Ry63rs/config.json",
+      "bytes": 1466
+    },
+    {
+      "path": "configure-git-webserver__3Ry63rs/lock.json",
+      "bytes": 2014
+    },
+    {
+      "path": "configure-git-webserver__3Ry63rs/result.json",
+      "bytes": 5430
+    },
+    {
+      "path": "configure-git-webserver__3Ry63rs/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "configure-git-webserver__3Ry63rs/verifier/ctrf.json",
+      "bytes": 2108
+    },
+    {
+      "path": "configure-git-webserver__3Ry63rs/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "configure-git-webserver__3Ry63rs/verifier/test-stdout.txt",
+      "bytes": 2346
+    },
+    {
+      "path": "constraints-scheduling__qKR3zCo/agent/morrow-diagnostics.jsonl",
+      "bytes": 14490
+    },
+    {
+      "path": "constraints-scheduling__qKR3zCo/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "constraints-scheduling__qKR3zCo/agent/morrow-run.jsonl",
+      "bytes": 33833
+    },
+    {
+      "path": "constraints-scheduling__qKR3zCo/agent/morrow-terminal-metrics.json",
+      "bytes": 1389
+    },
+    {
+      "path": "constraints-scheduling__qKR3zCo/agent/trajectory.json",
+      "bytes": 8444
+    },
+    {
+      "path": "constraints-scheduling__qKR3zCo/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "constraints-scheduling__qKR3zCo/config.json",
+      "bytes": 1464
+    },
+    {
+      "path": "constraints-scheduling__qKR3zCo/lock.json",
+      "bytes": 2012
+    },
+    {
+      "path": "constraints-scheduling__qKR3zCo/result.json",
+      "bytes": 5421
+    },
+    {
+      "path": "constraints-scheduling__qKR3zCo/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "constraints-scheduling__qKR3zCo/verifier/ctrf.json",
+      "bytes": 1515
+    },
+    {
+      "path": "constraints-scheduling__qKR3zCo/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "constraints-scheduling__qKR3zCo/verifier/test-stdout.txt",
+      "bytes": 11756
+    },
+    {
+      "path": "count-dataset-tokens__e7KJ3BR/agent/morrow-diagnostics.jsonl",
+      "bytes": 45601
+    },
+    {
+      "path": "count-dataset-tokens__e7KJ3BR/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "count-dataset-tokens__e7KJ3BR/agent/morrow-run.jsonl",
+      "bytes": 107010
+    },
+    {
+      "path": "count-dataset-tokens__e7KJ3BR/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "count-dataset-tokens__e7KJ3BR/agent/trajectory.json",
+      "bytes": 33627
+    },
+    {
+      "path": "count-dataset-tokens__e7KJ3BR/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "count-dataset-tokens__e7KJ3BR/config.json",
+      "bytes": 1460
+    },
+    {
+      "path": "count-dataset-tokens__e7KJ3BR/lock.json",
+      "bytes": 2008
+    },
+    {
+      "path": "count-dataset-tokens__e7KJ3BR/result.json",
+      "bytes": 5412
+    },
+    {
+      "path": "count-dataset-tokens__e7KJ3BR/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "count-dataset-tokens__e7KJ3BR/verifier/ctrf.json",
+      "bytes": 768
+    },
+    {
+      "path": "count-dataset-tokens__e7KJ3BR/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "count-dataset-tokens__e7KJ3BR/verifier/test-stdout.txt",
+      "bytes": 9578
+    },
+    {
+      "path": "crack-7z-hash__6yiHZ4A/agent/morrow-diagnostics.jsonl",
+      "bytes": 80607
+    },
+    {
+      "path": "crack-7z-hash__6yiHZ4A/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "crack-7z-hash__6yiHZ4A/agent/morrow-run.jsonl",
+      "bytes": 112117
+    },
+    {
+      "path": "crack-7z-hash__6yiHZ4A/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "crack-7z-hash__6yiHZ4A/agent/trajectory.json",
+      "bytes": 61236
+    },
+    {
+      "path": "crack-7z-hash__6yiHZ4A/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "crack-7z-hash__6yiHZ4A/config.json",
+      "bytes": 1446
+    },
+    {
+      "path": "crack-7z-hash__6yiHZ4A/lock.json",
+      "bytes": 1994
+    },
+    {
+      "path": "crack-7z-hash__6yiHZ4A/result.json",
+      "bytes": 5370
+    },
+    {
+      "path": "crack-7z-hash__6yiHZ4A/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "crack-7z-hash__6yiHZ4A/verifier/ctrf.json",
+      "bytes": 1099
+    },
+    {
+      "path": "crack-7z-hash__6yiHZ4A/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "crack-7z-hash__6yiHZ4A/verifier/test-stdout.txt",
+      "bytes": 4668
+    },
+    {
+      "path": "custom-memory-heap-crash__MdCLKcU/agent/morrow-diagnostics.jsonl",
+      "bytes": 470122
+    },
+    {
+      "path": "custom-memory-heap-crash__MdCLKcU/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "custom-memory-heap-crash__MdCLKcU/agent/morrow-partial-metrics.json",
+      "bytes": 219
+    },
+    {
+      "path": "custom-memory-heap-crash__MdCLKcU/agent/morrow-run.jsonl",
+      "bytes": 743143
+    },
+    {
+      "path": "custom-memory-heap-crash__MdCLKcU/agent/morrow-terminal-metrics.json",
+      "bytes": 1403
+    },
+    {
+      "path": "custom-memory-heap-crash__MdCLKcU/agent/trajectory.json",
+      "bytes": 389446
+    },
+    {
+      "path": "custom-memory-heap-crash__MdCLKcU/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "custom-memory-heap-crash__MdCLKcU/config.json",
+      "bytes": 1468
+    },
+    {
+      "path": "custom-memory-heap-crash__MdCLKcU/lock.json",
+      "bytes": 2016
+    },
+    {
+      "path": "custom-memory-heap-crash__MdCLKcU/result.json",
+      "bytes": 5753
+    },
+    {
+      "path": "custom-memory-heap-crash__MdCLKcU/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "custom-memory-heap-crash__MdCLKcU/verifier/ctrf.json",
+      "bytes": 2544
+    },
+    {
+      "path": "custom-memory-heap-crash__MdCLKcU/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "custom-memory-heap-crash__MdCLKcU/verifier/test-stdout.txt",
+      "bytes": 5287
+    },
+    {
+      "path": "db-wal-recovery__uGupKNX/agent/morrow-diagnostics.jsonl",
+      "bytes": 93737
+    },
+    {
+      "path": "db-wal-recovery__uGupKNX/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "db-wal-recovery__uGupKNX/agent/morrow-run.jsonl",
+      "bytes": 342181
+    },
+    {
+      "path": "db-wal-recovery__uGupKNX/agent/morrow-terminal-metrics.json",
+      "bytes": 1400
+    },
+    {
+      "path": "db-wal-recovery__uGupKNX/agent/trajectory.json",
+      "bytes": 69242
+    },
+    {
+      "path": "db-wal-recovery__uGupKNX/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "db-wal-recovery__uGupKNX/config.json",
+      "bytes": 1450
+    },
+    {
+      "path": "db-wal-recovery__uGupKNX/lock.json",
+      "bytes": 1998
+    },
+    {
+      "path": "db-wal-recovery__uGupKNX/result.json",
+      "bytes": 5384
+    },
+    {
+      "path": "db-wal-recovery__uGupKNX/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "db-wal-recovery__uGupKNX/verifier/ctrf.json",
+      "bytes": 2876
+    },
+    {
+      "path": "db-wal-recovery__uGupKNX/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "db-wal-recovery__uGupKNX/verifier/test-stdout.txt",
+      "bytes": 7850
+    },
+    {
+      "path": "distribution-search__gDgD2AQ/agent/morrow-diagnostics.jsonl",
+      "bytes": 23961
+    },
+    {
+      "path": "distribution-search__gDgD2AQ/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "distribution-search__gDgD2AQ/agent/morrow-run.jsonl",
+      "bytes": 65235
+    },
+    {
+      "path": "distribution-search__gDgD2AQ/agent/morrow-terminal-metrics.json",
+      "bytes": 1403
+    },
+    {
+      "path": "distribution-search__gDgD2AQ/agent/trajectory.json",
+      "bytes": 3183
+    },
+    {
+      "path": "distribution-search__gDgD2AQ/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "distribution-search__gDgD2AQ/config.json",
+      "bytes": 1458
+    },
+    {
+      "path": "distribution-search__gDgD2AQ/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "distribution-search__gDgD2AQ/lock.json",
+      "bytes": 2006
+    },
+    {
+      "path": "distribution-search__gDgD2AQ/result.json",
+      "bytes": 6802
+    },
+    {
+      "path": "distribution-search__gDgD2AQ/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "distribution-search__gDgD2AQ/verifier/ctrf.json",
+      "bytes": 32843
+    },
+    {
+      "path": "distribution-search__gDgD2AQ/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "distribution-search__gDgD2AQ/verifier/test-stdout.txt",
+      "bytes": 40245
+    },
+    {
+      "path": "dna-assembly__oBvThhx/agent/morrow-diagnostics.jsonl",
+      "bytes": 80957
+    },
+    {
+      "path": "dna-assembly__oBvThhx/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "dna-assembly__oBvThhx/agent/morrow-partial-metrics.json",
+      "bytes": 214
+    },
+    {
+      "path": "dna-assembly__oBvThhx/agent/morrow-run.jsonl",
+      "bytes": 182879
+    },
+    {
+      "path": "dna-assembly__oBvThhx/agent/morrow-terminal-metrics.json",
+      "bytes": 1411
+    },
+    {
+      "path": "dna-assembly__oBvThhx/agent/trajectory.json",
+      "bytes": 24025
+    },
+    {
+      "path": "dna-assembly__oBvThhx/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "dna-assembly__oBvThhx/config.json",
+      "bytes": 1444
+    },
+    {
+      "path": "dna-assembly__oBvThhx/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "dna-assembly__oBvThhx/lock.json",
+      "bytes": 1992
+    },
+    {
+      "path": "dna-assembly__oBvThhx/result.json",
+      "bytes": 7073
+    },
+    {
+      "path": "dna-assembly__oBvThhx/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "dna-assembly__oBvThhx/verifier/ctrf.json",
+      "bytes": 1492
+    },
+    {
+      "path": "dna-assembly__oBvThhx/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "dna-assembly__oBvThhx/verifier/test-stdout.txt",
+      "bytes": 14893
+    },
+    {
+      "path": "dna-insert__LkY4CRQ/agent/morrow-diagnostics.jsonl",
+      "bytes": 30401
+    },
+    {
+      "path": "dna-insert__LkY4CRQ/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "dna-insert__LkY4CRQ/agent/morrow-run.jsonl",
+      "bytes": 103792
+    },
+    {
+      "path": "dna-insert__LkY4CRQ/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "dna-insert__LkY4CRQ/agent/trajectory.json",
+      "bytes": 20664
+    },
+    {
+      "path": "dna-insert__LkY4CRQ/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "dna-insert__LkY4CRQ/config.json",
+      "bytes": 1440
+    },
+    {
+      "path": "dna-insert__LkY4CRQ/lock.json",
+      "bytes": 1988
+    },
+    {
+      "path": "dna-insert__LkY4CRQ/result.json",
+      "bytes": 5352
+    },
+    {
+      "path": "dna-insert__LkY4CRQ/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "dna-insert__LkY4CRQ/verifier/ctrf.json",
+      "bytes": 744
+    },
+    {
+      "path": "dna-insert__LkY4CRQ/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "dna-insert__LkY4CRQ/verifier/test-stdout.txt",
+      "bytes": 9954
+    },
+    {
+      "path": "extract-elf__ai3ZQMk/agent/morrow-diagnostics.jsonl",
+      "bytes": 43059
+    },
+    {
+      "path": "extract-elf__ai3ZQMk/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "extract-elf__ai3ZQMk/agent/morrow-run.jsonl",
+      "bytes": 175319
+    },
+    {
+      "path": "extract-elf__ai3ZQMk/agent/morrow-terminal-metrics.json",
+      "bytes": 1395
+    },
+    {
+      "path": "extract-elf__ai3ZQMk/agent/trajectory.json",
+      "bytes": 17367
+    },
+    {
+      "path": "extract-elf__ai3ZQMk/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "extract-elf__ai3ZQMk/config.json",
+      "bytes": 1442
+    },
+    {
+      "path": "extract-elf__ai3ZQMk/lock.json",
+      "bytes": 1990
+    },
+    {
+      "path": "extract-elf__ai3ZQMk/result.json",
+      "bytes": 5360
+    },
+    {
+      "path": "extract-elf__ai3ZQMk/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "extract-elf__ai3ZQMk/verifier/ctrf.json",
+      "bytes": 1108
+    },
+    {
+      "path": "extract-elf__ai3ZQMk/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "extract-elf__ai3ZQMk/verifier/test-stdout.txt",
+      "bytes": 4735
+    },
+    {
+      "path": "extract-moves-from-video__DRDqipB/agent/morrow-diagnostics.jsonl",
+      "bytes": 107777
+    },
+    {
+      "path": "extract-moves-from-video__DRDqipB/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "extract-moves-from-video__DRDqipB/agent/morrow-run.jsonl",
+      "bytes": 153307
+    },
+    {
+      "path": "extract-moves-from-video__DRDqipB/agent/morrow-terminal-metrics.json",
+      "bytes": 1399
+    },
+    {
+      "path": "extract-moves-from-video__DRDqipB/agent/trajectory.json",
+      "bytes": 85356
+    },
+    {
+      "path": "extract-moves-from-video__DRDqipB/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "extract-moves-from-video__DRDqipB/config.json",
+      "bytes": 1468
+    },
+    {
+      "path": "extract-moves-from-video__DRDqipB/lock.json",
+      "bytes": 2016
+    },
+    {
+      "path": "extract-moves-from-video__DRDqipB/result.json",
+      "bytes": 5436
+    },
+    {
+      "path": "extract-moves-from-video__DRDqipB/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "extract-moves-from-video__DRDqipB/verifier/ctrf.json",
+      "bytes": 2562
+    },
+    {
+      "path": "extract-moves-from-video__DRDqipB/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "extract-moves-from-video__DRDqipB/verifier/test-stdout.txt",
+      "bytes": 2969
+    },
+    {
+      "path": "feal-differential-cryptanalysis__vtLgkPJ/agent/morrow-diagnostics.jsonl",
+      "bytes": 84588
+    },
+    {
+      "path": "feal-differential-cryptanalysis__vtLgkPJ/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "feal-differential-cryptanalysis__vtLgkPJ/agent/morrow-run.jsonl",
+      "bytes": 332007
+    },
+    {
+      "path": "feal-differential-cryptanalysis__vtLgkPJ/agent/morrow-terminal-metrics.json",
+      "bytes": 1399
+    },
+    {
+      "path": "feal-differential-cryptanalysis__vtLgkPJ/agent/trajectory.json",
+      "bytes": 34812
+    },
+    {
+      "path": "feal-differential-cryptanalysis__vtLgkPJ/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "feal-differential-cryptanalysis__vtLgkPJ/config.json",
+      "bytes": 1482
+    },
+    {
+      "path": "feal-differential-cryptanalysis__vtLgkPJ/lock.json",
+      "bytes": 2030
+    },
+    {
+      "path": "feal-differential-cryptanalysis__vtLgkPJ/result.json",
+      "bytes": 5480
+    },
+    {
+      "path": "feal-differential-cryptanalysis__vtLgkPJ/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "feal-differential-cryptanalysis__vtLgkPJ/verifier/ctrf.json",
+      "bytes": 773
+    },
+    {
+      "path": "feal-differential-cryptanalysis__vtLgkPJ/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "feal-differential-cryptanalysis__vtLgkPJ/verifier/test-stdout.txt",
+      "bytes": 35048
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/agent/morrow-diagnostics.jsonl",
+      "bytes": 40304
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/agent/morrow-partial-metrics.json",
+      "bytes": 207
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/agent/morrow-run.jsonl",
+      "bytes": 107505
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/agent/morrow-terminal-metrics.json",
+      "bytes": 1405
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/agent/trajectory.json",
+      "bytes": 4649
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/config.json",
+      "bytes": 1470
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/lock.json",
+      "bytes": 2018
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/result.json",
+      "bytes": 7134
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/verifier/ctrf.json",
+      "bytes": 1804
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "feal-linear-cryptanalysis__ETxRaAt/verifier/test-stdout.txt",
+      "bytes": 8064
+    },
+    {
+      "path": "filter-js-from-html__bpZaHj6/agent/morrow-diagnostics.jsonl",
+      "bytes": 74659
+    },
+    {
+      "path": "filter-js-from-html__bpZaHj6/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "filter-js-from-html__bpZaHj6/agent/morrow-run.jsonl",
+      "bytes": 246501
+    },
+    {
+      "path": "filter-js-from-html__bpZaHj6/agent/morrow-terminal-metrics.json",
+      "bytes": 1398
+    },
+    {
+      "path": "filter-js-from-html__bpZaHj6/agent/trajectory.json",
+      "bytes": 35175
+    },
+    {
+      "path": "filter-js-from-html__bpZaHj6/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "filter-js-from-html__bpZaHj6/config.json",
+      "bytes": 1458
+    },
+    {
+      "path": "filter-js-from-html__bpZaHj6/lock.json",
+      "bytes": 2006
+    },
+    {
+      "path": "filter-js-from-html__bpZaHj6/result.json",
+      "bytes": 5408
+    },
+    {
+      "path": "filter-js-from-html__bpZaHj6/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "filter-js-from-html__bpZaHj6/verifier/ctrf.json",
+      "bytes": 11897
+    },
+    {
+      "path": "filter-js-from-html__bpZaHj6/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "filter-js-from-html__bpZaHj6/verifier/test-stdout.txt",
+      "bytes": 36103
+    },
+    {
+      "path": "financial-document-processor__LTE5B5F/agent/morrow-diagnostics.jsonl",
+      "bytes": 80635
+    },
+    {
+      "path": "financial-document-processor__LTE5B5F/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "financial-document-processor__LTE5B5F/agent/morrow-run.jsonl",
+      "bytes": 134517
+    },
+    {
+      "path": "financial-document-processor__LTE5B5F/agent/morrow-terminal-metrics.json",
+      "bytes": 1399
+    },
+    {
+      "path": "financial-document-processor__LTE5B5F/agent/trajectory.json",
+      "bytes": 61844
+    },
+    {
+      "path": "financial-document-processor__LTE5B5F/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "financial-document-processor__LTE5B5F/config.json",
+      "bytes": 1476
+    },
+    {
+      "path": "financial-document-processor__LTE5B5F/lock.json",
+      "bytes": 2024
+    },
+    {
+      "path": "financial-document-processor__LTE5B5F/result.json",
+      "bytes": 5460
+    },
+    {
+      "path": "financial-document-processor__LTE5B5F/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "financial-document-processor__LTE5B5F/verifier/ctrf.json",
+      "bytes": 2883
+    },
+    {
+      "path": "financial-document-processor__LTE5B5F/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "financial-document-processor__LTE5B5F/verifier/test-stdout.txt",
+      "bytes": 3186
+    },
+    {
+      "path": "fix-code-vulnerability__c8EN2KJ/agent/morrow-diagnostics.jsonl",
+      "bytes": 17605
+    },
+    {
+      "path": "fix-code-vulnerability__c8EN2KJ/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "fix-code-vulnerability__c8EN2KJ/agent/morrow-run.jsonl",
+      "bytes": 43460
+    },
+    {
+      "path": "fix-code-vulnerability__c8EN2KJ/agent/morrow-terminal-metrics.json",
+      "bytes": 1389
+    },
+    {
+      "path": "fix-code-vulnerability__c8EN2KJ/agent/trajectory.json",
+      "bytes": 12327
+    },
+    {
+      "path": "fix-code-vulnerability__c8EN2KJ/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "fix-code-vulnerability__c8EN2KJ/config.json",
+      "bytes": 1464
+    },
+    {
+      "path": "fix-code-vulnerability__c8EN2KJ/lock.json",
+      "bytes": 2012
+    },
+    {
+      "path": "fix-code-vulnerability__c8EN2KJ/result.json",
+      "bytes": 5421
+    },
+    {
+      "path": "fix-code-vulnerability__c8EN2KJ/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "fix-code-vulnerability__c8EN2KJ/verifier/ctrf.json",
+      "bytes": 2492
+    },
+    {
+      "path": "fix-code-vulnerability__c8EN2KJ/verifier/original-repo-ctrf.json",
+      "bytes": 136458
+    },
+    {
+      "path": "fix-code-vulnerability__c8EN2KJ/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "fix-code-vulnerability__c8EN2KJ/verifier/test-stdout.txt",
+      "bytes": 28717
+    },
+    {
+      "path": "fix-git__tL5MA7y/agent/morrow-diagnostics.jsonl",
+      "bytes": 14957
+    },
+    {
+      "path": "fix-git__tL5MA7y/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "fix-git__tL5MA7y/agent/morrow-run.jsonl",
+      "bytes": 87336
+    },
+    {
+      "path": "fix-git__tL5MA7y/agent/morrow-terminal-metrics.json",
+      "bytes": 1389
+    },
+    {
+      "path": "fix-git__tL5MA7y/agent/trajectory.json",
+      "bytes": 9543
+    },
+    {
+      "path": "fix-git__tL5MA7y/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "fix-git__tL5MA7y/config.json",
+      "bytes": 1434
+    },
+    {
+      "path": "fix-git__tL5MA7y/lock.json",
+      "bytes": 1982
+    },
+    {
+      "path": "fix-git__tL5MA7y/result.json",
+      "bytes": 5331
+    },
+    {
+      "path": "fix-git__tL5MA7y/trial.log",
+      "bytes": 840
+    },
+    {
+      "path": "fix-git__tL5MA7y/verifier/ctrf.json",
+      "bytes": 1092
+    },
+    {
+      "path": "fix-git__tL5MA7y/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "fix-git__tL5MA7y/verifier/test-stdout.txt",
+      "bytes": 3011
+    },
+    {
+      "path": "fix-ocaml-gc__iZd5rcU/agent/morrow-diagnostics.jsonl",
+      "bytes": 665299
+    },
+    {
+      "path": "fix-ocaml-gc__iZd5rcU/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "fix-ocaml-gc__iZd5rcU/agent/morrow-partial-metrics.json",
+      "bytes": 220
+    },
+    {
+      "path": "fix-ocaml-gc__iZd5rcU/agent/morrow-run.jsonl",
+      "bytes": 1193945
+    },
+    {
+      "path": "fix-ocaml-gc__iZd5rcU/agent/morrow-terminal-metrics.json",
+      "bytes": 1403
+    },
+    {
+      "path": "fix-ocaml-gc__iZd5rcU/agent/trajectory.json",
+      "bytes": 447161
+    },
+    {
+      "path": "fix-ocaml-gc__iZd5rcU/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "fix-ocaml-gc__iZd5rcU/config.json",
+      "bytes": 1444
+    },
+    {
+      "path": "fix-ocaml-gc__iZd5rcU/lock.json",
+      "bytes": 1992
+    },
+    {
+      "path": "fix-ocaml-gc__iZd5rcU/result.json",
+      "bytes": 5684
+    },
+    {
+      "path": "fix-ocaml-gc__iZd5rcU/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "fix-ocaml-gc__iZd5rcU/verifier/ctrf.json",
+      "bytes": 1893
+    },
+    {
+      "path": "fix-ocaml-gc__iZd5rcU/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "fix-ocaml-gc__iZd5rcU/verifier/test-stdout.txt",
+      "bytes": 31912
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/agent/morrow-diagnostics.jsonl",
+      "bytes": 124550
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/agent/morrow-partial-metrics.json",
+      "bytes": 215
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/agent/morrow-run.jsonl",
+      "bytes": 132018
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/agent/morrow-terminal-metrics.json",
+      "bytes": 1411
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/agent/trajectory.json",
+      "bytes": 106124
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/config.json",
+      "bytes": 1446
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/lock.json",
+      "bytes": 1994
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/result.json",
+      "bytes": 7080
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/verifier/ctrf.json",
+      "bytes": 3597
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "gcode-to-text__Bfmd7oC/verifier/test-stdout.txt",
+      "bytes": 11961
+    },
+    {
+      "path": "git-leak-recovery__YoZoaq3/agent/morrow-diagnostics.jsonl",
+      "bytes": 19085
+    },
+    {
+      "path": "git-leak-recovery__YoZoaq3/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "git-leak-recovery__YoZoaq3/agent/morrow-run.jsonl",
+      "bytes": 37941
+    },
+    {
+      "path": "git-leak-recovery__YoZoaq3/agent/morrow-terminal-metrics.json",
+      "bytes": 1389
+    },
+    {
+      "path": "git-leak-recovery__YoZoaq3/agent/trajectory.json",
+      "bytes": 13669
+    },
+    {
+      "path": "git-leak-recovery__YoZoaq3/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "git-leak-recovery__YoZoaq3/config.json",
+      "bytes": 1454
+    },
+    {
+      "path": "git-leak-recovery__YoZoaq3/lock.json",
+      "bytes": 2002
+    },
+    {
+      "path": "git-leak-recovery__YoZoaq3/result.json",
+      "bytes": 5391
+    },
+    {
+      "path": "git-leak-recovery__YoZoaq3/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "git-leak-recovery__YoZoaq3/verifier/ctrf.json",
+      "bytes": 2185
+    },
+    {
+      "path": "git-leak-recovery__YoZoaq3/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "git-leak-recovery__YoZoaq3/verifier/test-stdout.txt",
+      "bytes": 5192
+    },
+    {
+      "path": "git-multibranch__GSrhYx5/agent/morrow-diagnostics.jsonl",
+      "bytes": 86160
+    },
+    {
+      "path": "git-multibranch__GSrhYx5/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "git-multibranch__GSrhYx5/agent/morrow-run.jsonl",
+      "bytes": 245584
+    },
+    {
+      "path": "git-multibranch__GSrhYx5/agent/morrow-terminal-metrics.json",
+      "bytes": 1400
+    },
+    {
+      "path": "git-multibranch__GSrhYx5/agent/trajectory.json",
+      "bytes": 61603
+    },
+    {
+      "path": "git-multibranch__GSrhYx5/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "git-multibranch__GSrhYx5/config.json",
+      "bytes": 1450
+    },
+    {
+      "path": "git-multibranch__GSrhYx5/lock.json",
+      "bytes": 1998
+    },
+    {
+      "path": "git-multibranch__GSrhYx5/result.json",
+      "bytes": 5384
+    },
+    {
+      "path": "git-multibranch__GSrhYx5/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "git-multibranch__GSrhYx5/verifier/ctrf.json",
+      "bytes": 757
+    },
+    {
+      "path": "git-multibranch__GSrhYx5/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "git-multibranch__GSrhYx5/verifier/test-stdout.txt",
+      "bytes": 10282
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/agent/morrow-diagnostics.jsonl",
+      "bytes": 372678
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/agent/morrow-partial-metrics.json",
+      "bytes": 218
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/agent/morrow-run.jsonl",
+      "bytes": 397718
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/agent/morrow-terminal-metrics.json",
+      "bytes": 1414
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/agent/trajectory.json",
+      "bytes": 322576
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/config.json",
+      "bytes": 1446
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/lock.json",
+      "bytes": 1994
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/result.json",
+      "bytes": 7085
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/verifier/ctrf.json",
+      "bytes": 2011
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "gpt2-codegolf__ULZVYEm/verifier/test-stdout.txt",
+      "bytes": 5303
+    },
+    {
+      "path": "headless-terminal__EvbKFZb/agent/morrow-diagnostics.jsonl",
+      "bytes": 31748
+    },
+    {
+      "path": "headless-terminal__EvbKFZb/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "headless-terminal__EvbKFZb/agent/morrow-run.jsonl",
+      "bytes": 125841
+    },
+    {
+      "path": "headless-terminal__EvbKFZb/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "headless-terminal__EvbKFZb/agent/trajectory.json",
+      "bytes": 21028
+    },
+    {
+      "path": "headless-terminal__EvbKFZb/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "headless-terminal__EvbKFZb/config.json",
+      "bytes": 1454
+    },
+    {
+      "path": "headless-terminal__EvbKFZb/lock.json",
+      "bytes": 2002
+    },
+    {
+      "path": "headless-terminal__EvbKFZb/result.json",
+      "bytes": 5394
+    },
+    {
+      "path": "headless-terminal__EvbKFZb/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "headless-terminal__EvbKFZb/verifier/ctrf.json",
+      "bytes": 2848
+    },
+    {
+      "path": "headless-terminal__EvbKFZb/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "headless-terminal__EvbKFZb/verifier/test-stdout.txt",
+      "bytes": 14547
+    },
+    {
+      "path": "hf-model-inference__PnVQDdi/agent/morrow-diagnostics.jsonl",
+      "bytes": 48755
+    },
+    {
+      "path": "hf-model-inference__PnVQDdi/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "hf-model-inference__PnVQDdi/agent/morrow-run.jsonl",
+      "bytes": 123243
+    },
+    {
+      "path": "hf-model-inference__PnVQDdi/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "hf-model-inference__PnVQDdi/agent/trajectory.json",
+      "bytes": 35207
+    },
+    {
+      "path": "hf-model-inference__PnVQDdi/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "hf-model-inference__PnVQDdi/config.json",
+      "bytes": 1456
+    },
+    {
+      "path": "hf-model-inference__PnVQDdi/lock.json",
+      "bytes": 2004
+    },
+    {
+      "path": "hf-model-inference__PnVQDdi/result.json",
+      "bytes": 5400
+    },
+    {
+      "path": "hf-model-inference__PnVQDdi/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "hf-model-inference__PnVQDdi/verifier/ctrf.json",
+      "bytes": 1791
+    },
+    {
+      "path": "hf-model-inference__PnVQDdi/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "hf-model-inference__PnVQDdi/verifier/test-stdout.txt",
+      "bytes": 3080
+    },
+    {
+      "path": "install-windows-3.11__ahKYwwz/agent/morrow-diagnostics.jsonl",
+      "bytes": 941227
+    },
+    {
+      "path": "install-windows-3.11__ahKYwwz/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "install-windows-3.11__ahKYwwz/agent/morrow-partial-metrics.json",
+      "bytes": 220
+    },
+    {
+      "path": "install-windows-3.11__ahKYwwz/agent/morrow-run.jsonl",
+      "bytes": 1007195
+    },
+    {
+      "path": "install-windows-3.11__ahKYwwz/agent/morrow-terminal-metrics.json",
+      "bytes": 1404
+    },
+    {
+      "path": "install-windows-3.11__ahKYwwz/agent/trajectory.json",
+      "bytes": 848148
+    },
+    {
+      "path": "install-windows-3.11__ahKYwwz/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "install-windows-3.11__ahKYwwz/config.json",
+      "bytes": 1460
+    },
+    {
+      "path": "install-windows-3.11__ahKYwwz/lock.json",
+      "bytes": 2008
+    },
+    {
+      "path": "install-windows-3.11__ahKYwwz/result.json",
+      "bytes": 5732
+    },
+    {
+      "path": "install-windows-3.11__ahKYwwz/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "install-windows-3.11__ahKYwwz/verifier/ctrf.json",
+      "bytes": 8146
+    },
+    {
+      "path": "install-windows-3.11__ahKYwwz/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "install-windows-3.11__ahKYwwz/verifier/test-stdout.txt",
+      "bytes": 14062
+    },
+    {
+      "path": "job.log",
+      "bytes": 75687
+    },
+    {
+      "path": "kv-store-grpc__noPQBHG/agent/morrow-diagnostics.jsonl",
+      "bytes": 29789
+    },
+    {
+      "path": "kv-store-grpc__noPQBHG/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "kv-store-grpc__noPQBHG/agent/morrow-run.jsonl",
+      "bytes": 61345
+    },
+    {
+      "path": "kv-store-grpc__noPQBHG/agent/morrow-terminal-metrics.json",
+      "bytes": 1395
+    },
+    {
+      "path": "kv-store-grpc__noPQBHG/agent/trajectory.json",
+      "bytes": 21276
+    },
+    {
+      "path": "kv-store-grpc__noPQBHG/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "kv-store-grpc__noPQBHG/config.json",
+      "bytes": 1446
+    },
+    {
+      "path": "kv-store-grpc__noPQBHG/lock.json",
+      "bytes": 1994
+    },
+    {
+      "path": "kv-store-grpc__noPQBHG/result.json",
+      "bytes": 5370
+    },
+    {
+      "path": "kv-store-grpc__noPQBHG/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "kv-store-grpc__noPQBHG/verifier/ctrf.json",
+      "bytes": 2873
+    },
+    {
+      "path": "kv-store-grpc__noPQBHG/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "kv-store-grpc__noPQBHG/verifier/test-stdout.txt",
+      "bytes": 4581
+    },
+    {
+      "path": "large-scale-text-editing__vchT3c7/agent/morrow-diagnostics.jsonl",
+      "bytes": 46458
+    },
+    {
+      "path": "large-scale-text-editing__vchT3c7/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "large-scale-text-editing__vchT3c7/agent/morrow-run.jsonl",
+      "bytes": 174192
+    },
+    {
+      "path": "large-scale-text-editing__vchT3c7/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "large-scale-text-editing__vchT3c7/agent/trajectory.json",
+      "bytes": 29380
+    },
+    {
+      "path": "large-scale-text-editing__vchT3c7/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "large-scale-text-editing__vchT3c7/config.json",
+      "bytes": 1468
+    },
+    {
+      "path": "large-scale-text-editing__vchT3c7/lock.json",
+      "bytes": 2016
+    },
+    {
+      "path": "large-scale-text-editing__vchT3c7/result.json",
+      "bytes": 5436
+    },
+    {
+      "path": "large-scale-text-editing__vchT3c7/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "large-scale-text-editing__vchT3c7/verifier/ctrf.json",
+      "bytes": 4060
+    },
+    {
+      "path": "large-scale-text-editing__vchT3c7/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "large-scale-text-editing__vchT3c7/verifier/test-stdout.txt",
+      "bytes": 11646
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/agent/morrow-diagnostics.jsonl",
+      "bytes": 59667
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/agent/morrow-partial-metrics.json",
+      "bytes": 212
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/agent/morrow-run.jsonl",
+      "bytes": 135665
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/agent/morrow-terminal-metrics.json",
+      "bytes": 1409
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/agent/trajectory.json",
+      "bytes": 20978
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/config.json",
+      "bytes": 1452
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/lock.json",
+      "bytes": 2000
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/result.json",
+      "bytes": 7091
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/verifier/ctrf.json",
+      "bytes": 3314
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "largest-eigenval__SNiHevK/verifier/test-stdout.txt",
+      "bytes": 12664
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/agent/morrow-diagnostics.jsonl",
+      "bytes": 182751
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/agent/morrow-partial-metrics.json",
+      "bytes": 215
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/agent/morrow-run.jsonl",
+      "bytes": 378967
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/agent/morrow-terminal-metrics.json",
+      "bytes": 1408
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/agent/trajectory.json",
+      "bytes": 129364
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/config.json",
+      "bytes": 1484
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/lock.json",
+      "bytes": 2032
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/result.json",
+      "bytes": 7194
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/verifier/ctrf.json",
+      "bytes": 14840
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "llm-inference-batching-scheduler__9ePYZWv/verifier/test-stdout.txt",
+      "bytes": 21681
+    },
+    {
+      "path": "lock.json",
+      "bytes": 218328
+    },
+    {
+      "path": "log-summary-date-ranges__NrcVE7z/agent/morrow-diagnostics.jsonl",
+      "bytes": 30751
+    },
+    {
+      "path": "log-summary-date-ranges__NrcVE7z/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "log-summary-date-ranges__NrcVE7z/agent/morrow-run.jsonl",
+      "bytes": 127131
+    },
+    {
+      "path": "log-summary-date-ranges__NrcVE7z/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "log-summary-date-ranges__NrcVE7z/agent/trajectory.json",
+      "bytes": 20657
+    },
+    {
+      "path": "log-summary-date-ranges__NrcVE7z/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "log-summary-date-ranges__NrcVE7z/config.json",
+      "bytes": 1466
+    },
+    {
+      "path": "log-summary-date-ranges__NrcVE7z/lock.json",
+      "bytes": 2014
+    },
+    {
+      "path": "log-summary-date-ranges__NrcVE7z/result.json",
+      "bytes": 5430
+    },
+    {
+      "path": "log-summary-date-ranges__NrcVE7z/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "log-summary-date-ranges__NrcVE7z/verifier/ctrf.json",
+      "bytes": 1114
+    },
+    {
+      "path": "log-summary-date-ranges__NrcVE7z/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "log-summary-date-ranges__NrcVE7z/verifier/test-stdout.txt",
+      "bytes": 9635
+    },
+    {
+      "path": "mailman__QdpE3JA/agent/morrow-diagnostics.jsonl",
+      "bytes": 72911
+    },
+    {
+      "path": "mailman__QdpE3JA/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "mailman__QdpE3JA/agent/morrow-partial-metrics.json",
+      "bytes": 213
+    },
+    {
+      "path": "mailman__QdpE3JA/agent/morrow-run.jsonl",
+      "bytes": 189673
+    },
+    {
+      "path": "mailman__QdpE3JA/agent/morrow-terminal-metrics.json",
+      "bytes": 1396
+    },
+    {
+      "path": "mailman__QdpE3JA/agent/trajectory.json",
+      "bytes": 52215
+    },
+    {
+      "path": "mailman__QdpE3JA/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "mailman__QdpE3JA/config.json",
+      "bytes": 1434
+    },
+    {
+      "path": "mailman__QdpE3JA/lock.json",
+      "bytes": 1982
+    },
+    {
+      "path": "mailman__QdpE3JA/result.json",
+      "bytes": 5641
+    },
+    {
+      "path": "mailman__QdpE3JA/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "mailman__QdpE3JA/verifier/ctrf.json",
+      "bytes": 5397
+    },
+    {
+      "path": "mailman__QdpE3JA/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "mailman__QdpE3JA/verifier/test-stdout.txt",
+      "bytes": 16464
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/agent/morrow-diagnostics.jsonl",
+      "bytes": 411482
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/agent/morrow-partial-metrics.json",
+      "bytes": 219
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/agent/morrow-run.jsonl",
+      "bytes": 495862
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/agent/morrow-terminal-metrics.json",
+      "bytes": 1414
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/agent/trajectory.json",
+      "bytes": 351833
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/config.json",
+      "bytes": 1456
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/lock.json",
+      "bytes": 2004
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/result.json",
+      "bytes": 7116
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/verifier/ctrf.json",
+      "bytes": 6925
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "make-doom-for-mips__psGT3E3/verifier/test-stdout.txt",
+      "bytes": 27830
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/agent/morrow-diagnostics.jsonl",
+      "bytes": 1044795
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/agent/morrow-partial-metrics.json",
+      "bytes": 219
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/agent/morrow-run.jsonl",
+      "bytes": 1089828
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/agent/morrow-terminal-metrics.json",
+      "bytes": 1414
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/agent/trajectory.json",
+      "bytes": 931702
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/config.json",
+      "bytes": 1462
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/lock.json",
+      "bytes": 2010
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/result.json",
+      "bytes": 7134
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/verifier/ctrf.json",
+      "bytes": 6927
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "make-mips-interpreter__xrd3PwA/verifier/test-stdout.txt",
+      "bytes": 19448
+    },
+    {
+      "path": "mcmc-sampling-stan__6xaFzz4/agent/morrow-diagnostics.jsonl",
+      "bytes": 97406
+    },
+    {
+      "path": "mcmc-sampling-stan__6xaFzz4/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "mcmc-sampling-stan__6xaFzz4/agent/morrow-run.jsonl",
+      "bytes": 263388
+    },
+    {
+      "path": "mcmc-sampling-stan__6xaFzz4/agent/morrow-terminal-metrics.json",
+      "bytes": 1399
+    },
+    {
+      "path": "mcmc-sampling-stan__6xaFzz4/agent/trajectory.json",
+      "bytes": 69591
+    },
+    {
+      "path": "mcmc-sampling-stan__6xaFzz4/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "mcmc-sampling-stan__6xaFzz4/config.json",
+      "bytes": 1456
+    },
+    {
+      "path": "mcmc-sampling-stan__6xaFzz4/lock.json",
+      "bytes": 2004
+    },
+    {
+      "path": "mcmc-sampling-stan__6xaFzz4/result.json",
+      "bytes": 5402
+    },
+    {
+      "path": "mcmc-sampling-stan__6xaFzz4/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "mcmc-sampling-stan__6xaFzz4/verifier/ctrf.json",
+      "bytes": 2533
+    },
+    {
+      "path": "mcmc-sampling-stan__6xaFzz4/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "mcmc-sampling-stan__6xaFzz4/verifier/test-stdout.txt",
+      "bytes": 3368
+    },
+    {
+      "path": "merge-diff-arc-agi-task__Y5uzDcB/agent/morrow-diagnostics.jsonl",
+      "bytes": 67128
+    },
+    {
+      "path": "merge-diff-arc-agi-task__Y5uzDcB/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "merge-diff-arc-agi-task__Y5uzDcB/agent/morrow-run.jsonl",
+      "bytes": 176446
+    },
+    {
+      "path": "merge-diff-arc-agi-task__Y5uzDcB/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "merge-diff-arc-agi-task__Y5uzDcB/agent/trajectory.json",
+      "bytes": 48509
+    },
+    {
+      "path": "merge-diff-arc-agi-task__Y5uzDcB/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "merge-diff-arc-agi-task__Y5uzDcB/config.json",
+      "bytes": 1466
+    },
+    {
+      "path": "merge-diff-arc-agi-task__Y5uzDcB/lock.json",
+      "bytes": 2014
+    },
+    {
+      "path": "merge-diff-arc-agi-task__Y5uzDcB/result.json",
+      "bytes": 5430
+    },
+    {
+      "path": "merge-diff-arc-agi-task__Y5uzDcB/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "merge-diff-arc-agi-task__Y5uzDcB/verifier/ctrf.json",
+      "bytes": 2165
+    },
+    {
+      "path": "merge-diff-arc-agi-task__Y5uzDcB/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "merge-diff-arc-agi-task__Y5uzDcB/verifier/test-stdout.txt",
+      "bytes": 3391
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/agent/morrow-diagnostics.jsonl",
+      "bytes": 28908
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/agent/morrow-partial-metrics.json",
+      "bytes": 208
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/agent/morrow-run.jsonl",
+      "bytes": 73828
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/agent/morrow-terminal-metrics.json",
+      "bytes": 1405
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/agent/trajectory.json",
+      "bytes": 4248
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/config.json",
+      "bytes": 1476
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/lock.json",
+      "bytes": 2024
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/result.json",
+      "bytes": 7155
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/verifier/ctrf.json",
+      "bytes": 1421
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "model-extraction-relu-logits__wiBWTvA/verifier/test-stdout.txt",
+      "bytes": 10367
+    },
+    {
+      "path": "modernize-scientific-stack__tLZTaBm/agent/morrow-diagnostics.jsonl",
+      "bytes": 17079
+    },
+    {
+      "path": "modernize-scientific-stack__tLZTaBm/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "modernize-scientific-stack__tLZTaBm/agent/morrow-run.jsonl",
+      "bytes": 49584
+    },
+    {
+      "path": "modernize-scientific-stack__tLZTaBm/agent/morrow-terminal-metrics.json",
+      "bytes": 1389
+    },
+    {
+      "path": "modernize-scientific-stack__tLZTaBm/agent/trajectory.json",
+      "bytes": 11618
+    },
+    {
+      "path": "modernize-scientific-stack__tLZTaBm/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "modernize-scientific-stack__tLZTaBm/config.json",
+      "bytes": 1472
+    },
+    {
+      "path": "modernize-scientific-stack__tLZTaBm/lock.json",
+      "bytes": 2020
+    },
+    {
+      "path": "modernize-scientific-stack__tLZTaBm/result.json",
+      "bytes": 5445
+    },
+    {
+      "path": "modernize-scientific-stack__tLZTaBm/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "modernize-scientific-stack__tLZTaBm/verifier/ctrf.json",
+      "bytes": 1109
+    },
+    {
+      "path": "modernize-scientific-stack__tLZTaBm/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "modernize-scientific-stack__tLZTaBm/verifier/test-stdout.txt",
+      "bytes": 4447
+    },
+    {
+      "path": "mteb-leaderboard__TjxxoPi/agent/morrow-diagnostics.jsonl",
+      "bytes": 69346
+    },
+    {
+      "path": "mteb-leaderboard__TjxxoPi/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "mteb-leaderboard__TjxxoPi/agent/morrow-run.jsonl",
+      "bytes": 265911
+    },
+    {
+      "path": "mteb-leaderboard__TjxxoPi/agent/morrow-terminal-metrics.json",
+      "bytes": 1399
+    },
+    {
+      "path": "mteb-leaderboard__TjxxoPi/agent/trajectory.json",
+      "bytes": 50120
+    },
+    {
+      "path": "mteb-leaderboard__TjxxoPi/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "mteb-leaderboard__TjxxoPi/config.json",
+      "bytes": 1452
+    },
+    {
+      "path": "mteb-leaderboard__TjxxoPi/lock.json",
+      "bytes": 2000
+    },
+    {
+      "path": "mteb-leaderboard__TjxxoPi/result.json",
+      "bytes": 5388
+    },
+    {
+      "path": "mteb-leaderboard__TjxxoPi/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "mteb-leaderboard__TjxxoPi/verifier/ctrf.json",
+      "bytes": 1865
+    },
+    {
+      "path": "mteb-leaderboard__TjxxoPi/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "mteb-leaderboard__TjxxoPi/verifier/test-stdout.txt",
+      "bytes": 4600
+    },
+    {
+      "path": "mteb-retrieve__uois8Qb/agent/morrow-diagnostics.jsonl",
+      "bytes": 39141
+    },
+    {
+      "path": "mteb-retrieve__uois8Qb/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "mteb-retrieve__uois8Qb/agent/morrow-partial-metrics.json",
+      "bytes": 213
+    },
+    {
+      "path": "mteb-retrieve__uois8Qb/agent/morrow-run.jsonl",
+      "bytes": 96474
+    },
+    {
+      "path": "mteb-retrieve__uois8Qb/agent/morrow-terminal-metrics.json",
+      "bytes": 1395
+    },
+    {
+      "path": "mteb-retrieve__uois8Qb/agent/trajectory.json",
+      "bytes": 28275
+    },
+    {
+      "path": "mteb-retrieve__uois8Qb/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "mteb-retrieve__uois8Qb/config.json",
+      "bytes": 1446
+    },
+    {
+      "path": "mteb-retrieve__uois8Qb/lock.json",
+      "bytes": 1994
+    },
+    {
+      "path": "mteb-retrieve__uois8Qb/result.json",
+      "bytes": 5677
+    },
+    {
+      "path": "mteb-retrieve__uois8Qb/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "mteb-retrieve__uois8Qb/verifier/ctrf.json",
+      "bytes": 1958
+    },
+    {
+      "path": "mteb-retrieve__uois8Qb/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "mteb-retrieve__uois8Qb/verifier/test-stdout.txt",
+      "bytes": 9348
+    },
+    {
+      "path": "multi-source-data-merger__twqLH4N/agent/morrow-diagnostics.jsonl",
+      "bytes": 21071
+    },
+    {
+      "path": "multi-source-data-merger__twqLH4N/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "multi-source-data-merger__twqLH4N/agent/morrow-partial-metrics.json",
+      "bytes": 211
+    },
+    {
+      "path": "multi-source-data-merger__twqLH4N/agent/morrow-run.jsonl",
+      "bytes": 81404
+    },
+    {
+      "path": "multi-source-data-merger__twqLH4N/agent/morrow-terminal-metrics.json",
+      "bytes": 1392
+    },
+    {
+      "path": "multi-source-data-merger__twqLH4N/agent/trajectory.json",
+      "bytes": 14278
+    },
+    {
+      "path": "multi-source-data-merger__twqLH4N/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "multi-source-data-merger__twqLH4N/config.json",
+      "bytes": 1468
+    },
+    {
+      "path": "multi-source-data-merger__twqLH4N/lock.json",
+      "bytes": 2016
+    },
+    {
+      "path": "multi-source-data-merger__twqLH4N/result.json",
+      "bytes": 5739
+    },
+    {
+      "path": "multi-source-data-merger__twqLH4N/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "multi-source-data-merger__twqLH4N/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "multi-source-data-merger__twqLH4N/verifier/test-stdout.txt",
+      "bytes": 12595
+    },
+    {
+      "path": "nginx-request-logging__u6w49wE/agent/morrow-diagnostics.jsonl",
+      "bytes": 23059
+    },
+    {
+      "path": "nginx-request-logging__u6w49wE/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "nginx-request-logging__u6w49wE/agent/morrow-partial-metrics.json",
+      "bytes": 212
+    },
+    {
+      "path": "nginx-request-logging__u6w49wE/agent/morrow-run.jsonl",
+      "bytes": 83177
+    },
+    {
+      "path": "nginx-request-logging__u6w49wE/agent/morrow-terminal-metrics.json",
+      "bytes": 1390
+    },
+    {
+      "path": "nginx-request-logging__u6w49wE/agent/trajectory.json",
+      "bytes": 16036
+    },
+    {
+      "path": "nginx-request-logging__u6w49wE/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "nginx-request-logging__u6w49wE/config.json",
+      "bytes": 1462
+    },
+    {
+      "path": "nginx-request-logging__u6w49wE/lock.json",
+      "bytes": 2010
+    },
+    {
+      "path": "nginx-request-logging__u6w49wE/result.json",
+      "bytes": 5722
+    },
+    {
+      "path": "nginx-request-logging__u6w49wE/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "nginx-request-logging__u6w49wE/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "nginx-request-logging__u6w49wE/verifier/test-stdout.txt",
+      "bytes": 2296
+    },
+    {
+      "path": "openssl-selfsigned-cert__YnJXJsK/agent/morrow-diagnostics.jsonl",
+      "bytes": 13060
+    },
+    {
+      "path": "openssl-selfsigned-cert__YnJXJsK/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "openssl-selfsigned-cert__YnJXJsK/agent/morrow-run.jsonl",
+      "bytes": 43224
+    },
+    {
+      "path": "openssl-selfsigned-cert__YnJXJsK/agent/morrow-terminal-metrics.json",
+      "bytes": 1389
+    },
+    {
+      "path": "openssl-selfsigned-cert__YnJXJsK/agent/trajectory.json",
+      "bytes": 8443
+    },
+    {
+      "path": "openssl-selfsigned-cert__YnJXJsK/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "openssl-selfsigned-cert__YnJXJsK/config.json",
+      "bytes": 1466
+    },
+    {
+      "path": "openssl-selfsigned-cert__YnJXJsK/lock.json",
+      "bytes": 2014
+    },
+    {
+      "path": "openssl-selfsigned-cert__YnJXJsK/result.json",
+      "bytes": 5427
+    },
+    {
+      "path": "openssl-selfsigned-cert__YnJXJsK/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "openssl-selfsigned-cert__YnJXJsK/verifier/ctrf.json",
+      "bytes": 2495
+    },
+    {
+      "path": "openssl-selfsigned-cert__YnJXJsK/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "openssl-selfsigned-cert__YnJXJsK/verifier/test-stdout.txt",
+      "bytes": 9901
+    },
+    {
+      "path": "overfull-hbox__cgMCkp8/agent/morrow-diagnostics.jsonl",
+      "bytes": 144548
+    },
+    {
+      "path": "overfull-hbox__cgMCkp8/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "overfull-hbox__cgMCkp8/agent/morrow-partial-metrics.json",
+      "bytes": 214
+    },
+    {
+      "path": "overfull-hbox__cgMCkp8/agent/morrow-run.jsonl",
+      "bytes": 259998
+    },
+    {
+      "path": "overfull-hbox__cgMCkp8/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "overfull-hbox__cgMCkp8/agent/trajectory.json",
+      "bytes": 105977
+    },
+    {
+      "path": "overfull-hbox__cgMCkp8/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "overfull-hbox__cgMCkp8/config.json",
+      "bytes": 1446
+    },
+    {
+      "path": "overfull-hbox__cgMCkp8/lock.json",
+      "bytes": 1994
+    },
+    {
+      "path": "overfull-hbox__cgMCkp8/result.json",
+      "bytes": 5680
+    },
+    {
+      "path": "overfull-hbox__cgMCkp8/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "overfull-hbox__cgMCkp8/verifier/ctrf.json",
+      "bytes": 1813
+    },
+    {
+      "path": "overfull-hbox__cgMCkp8/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "overfull-hbox__cgMCkp8/verifier/test-stdout.txt",
+      "bytes": 14590
+    },
+    {
+      "path": "password-recovery__tKnzcbw/agent/morrow-diagnostics.jsonl",
+      "bytes": 17726
+    },
+    {
+      "path": "password-recovery__tKnzcbw/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "password-recovery__tKnzcbw/agent/morrow-run.jsonl",
+      "bytes": 19320
+    },
+    {
+      "path": "password-recovery__tKnzcbw/agent/morrow-terminal-metrics.json",
+      "bytes": 1406
+    },
+    {
+      "path": "password-recovery__tKnzcbw/agent/trajectory.json",
+      "bytes": 13375
+    },
+    {
+      "path": "password-recovery__tKnzcbw/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "password-recovery__tKnzcbw/config.json",
+      "bytes": 1454
+    },
+    {
+      "path": "password-recovery__tKnzcbw/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "password-recovery__tKnzcbw/lock.json",
+      "bytes": 2002
+    },
+    {
+      "path": "password-recovery__tKnzcbw/result.json",
+      "bytes": 6788
+    },
+    {
+      "path": "password-recovery__tKnzcbw/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "password-recovery__tKnzcbw/verifier/ctrf.json",
+      "bytes": 3544
+    },
+    {
+      "path": "password-recovery__tKnzcbw/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "password-recovery__tKnzcbw/verifier/test-stdout.txt",
+      "bytes": 7085
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/agent/morrow-diagnostics.jsonl",
+      "bytes": 259416
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/agent/morrow-partial-metrics.json",
+      "bytes": 217
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/agent/morrow-run.jsonl",
+      "bytes": 357802
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/agent/morrow-terminal-metrics.json",
+      "bytes": 1415
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/agent/trajectory.json",
+      "bytes": 207855
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/config.json",
+      "bytes": 1460
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/lock.json",
+      "bytes": 2008
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/result.json",
+      "bytes": 7126
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/verifier/ctrf.json",
+      "bytes": 9616
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "path-tracing-reverse__wawMDHD/verifier/test-stdout.txt",
+      "bytes": 22336
+    },
+    {
+      "path": "path-tracing__hXK6DpR/agent/morrow-diagnostics.jsonl",
+      "bytes": 576265
+    },
+    {
+      "path": "path-tracing__hXK6DpR/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "path-tracing__hXK6DpR/agent/morrow-partial-metrics.json",
+      "bytes": 219
+    },
+    {
+      "path": "path-tracing__hXK6DpR/agent/morrow-run.jsonl",
+      "bytes": 818957
+    },
+    {
+      "path": "path-tracing__hXK6DpR/agent/morrow-terminal-metrics.json",
+      "bytes": 1414
+    },
+    {
+      "path": "path-tracing__hXK6DpR/agent/trajectory.json",
+      "bytes": 494029
+    },
+    {
+      "path": "path-tracing__hXK6DpR/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "path-tracing__hXK6DpR/config.json",
+      "bytes": 1444
+    },
+    {
+      "path": "path-tracing__hXK6DpR/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "path-tracing__hXK6DpR/lock.json",
+      "bytes": 1992
+    },
+    {
+      "path": "path-tracing__hXK6DpR/result.json",
+      "bytes": 7080
+    },
+    {
+      "path": "path-tracing__hXK6DpR/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "path-tracing__hXK6DpR/verifier/ctrf.json",
+      "bytes": 11177
+    },
+    {
+      "path": "path-tracing__hXK6DpR/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "path-tracing__hXK6DpR/verifier/test-stdout.txt",
+      "bytes": 12976
+    },
+    {
+      "path": "polyglot-c-py__qmouSv7/agent/morrow-diagnostics.jsonl",
+      "bytes": 46102
+    },
+    {
+      "path": "polyglot-c-py__qmouSv7/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "polyglot-c-py__qmouSv7/agent/morrow-run.jsonl",
+      "bytes": 104950
+    },
+    {
+      "path": "polyglot-c-py__qmouSv7/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "polyglot-c-py__qmouSv7/agent/trajectory.json",
+      "bytes": 27601
+    },
+    {
+      "path": "polyglot-c-py__qmouSv7/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "polyglot-c-py__qmouSv7/config.json",
+      "bytes": 1446
+    },
+    {
+      "path": "polyglot-c-py__qmouSv7/lock.json",
+      "bytes": 1994
+    },
+    {
+      "path": "polyglot-c-py__qmouSv7/result.json",
+      "bytes": 5372
+    },
+    {
+      "path": "polyglot-c-py__qmouSv7/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "polyglot-c-py__qmouSv7/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "polyglot-c-py__qmouSv7/verifier/test-stdout.txt",
+      "bytes": 536
+    },
+    {
+      "path": "polyglot-rust-c__NFwE5uN/agent/morrow-diagnostics.jsonl",
+      "bytes": 46865
+    },
+    {
+      "path": "polyglot-rust-c__NFwE5uN/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "polyglot-rust-c__NFwE5uN/agent/morrow-partial-metrics.json",
+      "bytes": 211
+    },
+    {
+      "path": "polyglot-rust-c__NFwE5uN/agent/morrow-run.jsonl",
+      "bytes": 140094
+    },
+    {
+      "path": "polyglot-rust-c__NFwE5uN/agent/morrow-terminal-metrics.json",
+      "bytes": 1401
+    },
+    {
+      "path": "polyglot-rust-c__NFwE5uN/agent/trajectory.json",
+      "bytes": 13557
+    },
+    {
+      "path": "polyglot-rust-c__NFwE5uN/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "polyglot-rust-c__NFwE5uN/config.json",
+      "bytes": 1450
+    },
+    {
+      "path": "polyglot-rust-c__NFwE5uN/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "polyglot-rust-c__NFwE5uN/lock.json",
+      "bytes": 1998
+    },
+    {
+      "path": "polyglot-rust-c__NFwE5uN/result.json",
+      "bytes": 7086
+    },
+    {
+      "path": "polyglot-rust-c__NFwE5uN/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "polyglot-rust-c__NFwE5uN/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "polyglot-rust-c__NFwE5uN/verifier/test-stdout.txt",
+      "bytes": 13314
+    },
+    {
+      "path": "portfolio-optimization__u32x6vo/agent/morrow-diagnostics.jsonl",
+      "bytes": 22246
+    },
+    {
+      "path": "portfolio-optimization__u32x6vo/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "portfolio-optimization__u32x6vo/agent/morrow-run.jsonl",
+      "bytes": 50859
+    },
+    {
+      "path": "portfolio-optimization__u32x6vo/agent/morrow-terminal-metrics.json",
+      "bytes": 1393
+    },
+    {
+      "path": "portfolio-optimization__u32x6vo/agent/trajectory.json",
+      "bytes": 15473
+    },
+    {
+      "path": "portfolio-optimization__u32x6vo/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "portfolio-optimization__u32x6vo/config.json",
+      "bytes": 1464
+    },
+    {
+      "path": "portfolio-optimization__u32x6vo/lock.json",
+      "bytes": 2012
+    },
+    {
+      "path": "portfolio-optimization__u32x6vo/result.json",
+      "bytes": 5421
+    },
+    {
+      "path": "portfolio-optimization__u32x6vo/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "portfolio-optimization__u32x6vo/verifier/ctrf.json",
+      "bytes": 1908
+    },
+    {
+      "path": "portfolio-optimization__u32x6vo/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "portfolio-optimization__u32x6vo/verifier/test-stdout.txt",
+      "bytes": 5614
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/agent/morrow-diagnostics.jsonl",
+      "bytes": 83732
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/agent/morrow-partial-metrics.json",
+      "bytes": 213
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/agent/morrow-run.jsonl",
+      "bytes": 157780
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/agent/morrow-terminal-metrics.json",
+      "bytes": 1408
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/agent/trajectory.json",
+      "bytes": 63165
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/config.json",
+      "bytes": 1452
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/lock.json",
+      "bytes": 2000
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/result.json",
+      "bytes": 7094
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/verifier/ctrf.json",
+      "bytes": 1425
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "protein-assembly__mYuQZbn/verifier/test-stdout.txt",
+      "bytes": 10277
+    },
+    {
+      "path": "prove-plus-comm__bS6f6VL/agent/morrow-diagnostics.jsonl",
+      "bytes": 30435
+    },
+    {
+      "path": "prove-plus-comm__bS6f6VL/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "prove-plus-comm__bS6f6VL/agent/morrow-run.jsonl",
+      "bytes": 91818
+    },
+    {
+      "path": "prove-plus-comm__bS6f6VL/agent/morrow-terminal-metrics.json",
+      "bytes": 1394
+    },
+    {
+      "path": "prove-plus-comm__bS6f6VL/agent/trajectory.json",
+      "bytes": 20968
+    },
+    {
+      "path": "prove-plus-comm__bS6f6VL/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "prove-plus-comm__bS6f6VL/config.json",
+      "bytes": 1450
+    },
+    {
+      "path": "prove-plus-comm__bS6f6VL/lock.json",
+      "bytes": 1998
+    },
+    {
+      "path": "prove-plus-comm__bS6f6VL/result.json",
+      "bytes": 5379
+    },
+    {
+      "path": "prove-plus-comm__bS6f6VL/trial.log",
+      "bytes": 832
+    },
+    {
+      "path": "prove-plus-comm__bS6f6VL/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "prove-plus-comm__bS6f6VL/verifier/test-stdout.txt",
+      "bytes": 3792
+    },
+    {
+      "path": "pypi-server__iGftCWK/agent/morrow-diagnostics.jsonl",
+      "bytes": 31733
+    },
+    {
+      "path": "pypi-server__iGftCWK/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "pypi-server__iGftCWK/agent/morrow-run.jsonl",
+      "bytes": 146138
+    },
+    {
+      "path": "pypi-server__iGftCWK/agent/morrow-terminal-metrics.json",
+      "bytes": 1395
+    },
+    {
+      "path": "pypi-server__iGftCWK/agent/trajectory.json",
+      "bytes": 21318
+    },
+    {
+      "path": "pypi-server__iGftCWK/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "pypi-server__iGftCWK/config.json",
+      "bytes": 1442
+    },
+    {
+      "path": "pypi-server__iGftCWK/lock.json",
+      "bytes": 1990
+    },
+    {
+      "path": "pypi-server__iGftCWK/result.json",
+      "bytes": 5358
+    },
+    {
+      "path": "pypi-server__iGftCWK/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "pypi-server__iGftCWK/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "pypi-server__iGftCWK/verifier/test-stdout.txt",
+      "bytes": 2355
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/agent/morrow-diagnostics.jsonl",
+      "bytes": 94794
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/agent/morrow-partial-metrics.json",
+      "bytes": 213
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/agent/morrow-run.jsonl",
+      "bytes": 113182
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/agent/morrow-terminal-metrics.json",
+      "bytes": 1408
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/agent/trajectory.json",
+      "bytes": 71600
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/config.json",
+      "bytes": 1454
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/lock.json",
+      "bytes": 2002
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/result.json",
+      "bytes": 7100
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/verifier/ctrf.json",
+      "bytes": 7340
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "pytorch-model-cli__jgXLCCh/verifier/test-stdout.txt",
+      "bytes": 84202
+    },
+    {
+      "path": "pytorch-model-recovery__mztZhnQ/agent/morrow-diagnostics.jsonl",
+      "bytes": 35216
+    },
+    {
+      "path": "pytorch-model-recovery__mztZhnQ/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "pytorch-model-recovery__mztZhnQ/agent/morrow-partial-metrics.json",
+      "bytes": 213
+    },
+    {
+      "path": "pytorch-model-recovery__mztZhnQ/agent/morrow-run.jsonl",
+      "bytes": 90445
+    },
+    {
+      "path": "pytorch-model-recovery__mztZhnQ/agent/morrow-terminal-metrics.json",
+      "bytes": 1395
+    },
+    {
+      "path": "pytorch-model-recovery__mztZhnQ/agent/trajectory.json",
+      "bytes": 25308
+    },
+    {
+      "path": "pytorch-model-recovery__mztZhnQ/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "pytorch-model-recovery__mztZhnQ/config.json",
+      "bytes": 1464
+    },
+    {
+      "path": "pytorch-model-recovery__mztZhnQ/lock.json",
+      "bytes": 2012
+    },
+    {
+      "path": "pytorch-model-recovery__mztZhnQ/result.json",
+      "bytes": 5731
+    },
+    {
+      "path": "pytorch-model-recovery__mztZhnQ/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "pytorch-model-recovery__mztZhnQ/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "pytorch-model-recovery__mztZhnQ/verifier/test-stdout.txt",
+      "bytes": 8725
+    },
+    {
+      "path": "qemu-alpine-ssh__Q57GPPT/agent/morrow-diagnostics.jsonl",
+      "bytes": 28720
+    },
+    {
+      "path": "qemu-alpine-ssh__Q57GPPT/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "qemu-alpine-ssh__Q57GPPT/agent/morrow-run.jsonl",
+      "bytes": 53309
+    },
+    {
+      "path": "qemu-alpine-ssh__Q57GPPT/agent/morrow-terminal-metrics.json",
+      "bytes": 1405
+    },
+    {
+      "path": "qemu-alpine-ssh__Q57GPPT/agent/trajectory.json",
+      "bytes": 20331
+    },
+    {
+      "path": "qemu-alpine-ssh__Q57GPPT/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "qemu-alpine-ssh__Q57GPPT/config.json",
+      "bytes": 1450
+    },
+    {
+      "path": "qemu-alpine-ssh__Q57GPPT/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "qemu-alpine-ssh__Q57GPPT/lock.json",
+      "bytes": 1998
+    },
+    {
+      "path": "qemu-alpine-ssh__Q57GPPT/result.json",
+      "bytes": 6778
+    },
+    {
+      "path": "qemu-alpine-ssh__Q57GPPT/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "qemu-alpine-ssh__Q57GPPT/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "qemu-alpine-ssh__Q57GPPT/verifier/test-stdout.txt",
+      "bytes": 2874
+    },
+    {
+      "path": "qemu-startup__TPUSkAN/agent/morrow-diagnostics.jsonl",
+      "bytes": 133305
+    },
+    {
+      "path": "qemu-startup__TPUSkAN/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "qemu-startup__TPUSkAN/agent/morrow-partial-metrics.json",
+      "bytes": 214
+    },
+    {
+      "path": "qemu-startup__TPUSkAN/agent/morrow-run.jsonl",
+      "bytes": 161093
+    },
+    {
+      "path": "qemu-startup__TPUSkAN/agent/morrow-terminal-metrics.json",
+      "bytes": 1408
+    },
+    {
+      "path": "qemu-startup__TPUSkAN/agent/trajectory.json",
+      "bytes": 110745
+    },
+    {
+      "path": "qemu-startup__TPUSkAN/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "qemu-startup__TPUSkAN/config.json",
+      "bytes": 1444
+    },
+    {
+      "path": "qemu-startup__TPUSkAN/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "qemu-startup__TPUSkAN/lock.json",
+      "bytes": 1992
+    },
+    {
+      "path": "qemu-startup__TPUSkAN/result.json",
+      "bytes": 7071
+    },
+    {
+      "path": "qemu-startup__TPUSkAN/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "qemu-startup__TPUSkAN/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "qemu-startup__TPUSkAN/verifier/test-stdout.txt",
+      "bytes": 2422
+    },
+    {
+      "path": "query-optimize__UTN5W73/agent/morrow-diagnostics.jsonl",
+      "bytes": 52616
+    },
+    {
+      "path": "query-optimize__UTN5W73/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "query-optimize__UTN5W73/agent/morrow-run.jsonl",
+      "bytes": 146058
+    },
+    {
+      "path": "query-optimize__UTN5W73/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "query-optimize__UTN5W73/agent/trajectory.json",
+      "bytes": 35663
+    },
+    {
+      "path": "query-optimize__UTN5W73/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "query-optimize__UTN5W73/config.json",
+      "bytes": 1448
+    },
+    {
+      "path": "query-optimize__UTN5W73/lock.json",
+      "bytes": 1996
+    },
+    {
+      "path": "query-optimize__UTN5W73/result.json",
+      "bytes": 5376
+    },
+    {
+      "path": "query-optimize__UTN5W73/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "query-optimize__UTN5W73/verifier/ctrf.json",
+      "bytes": 2553
+    },
+    {
+      "path": "query-optimize__UTN5W73/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "query-optimize__UTN5W73/verifier/test-stdout.txt",
+      "bytes": 5170
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/agent/morrow-diagnostics.jsonl",
+      "bytes": 129890
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/agent/morrow-partial-metrics.json",
+      "bytes": 215
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/agent/morrow-run.jsonl",
+      "bytes": 175237
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/agent/morrow-terminal-metrics.json",
+      "bytes": 1408
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/agent/trajectory.json",
+      "bytes": 98999
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/config.json",
+      "bytes": 1446
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/lock.json",
+      "bytes": 1994
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/result.json",
+      "bytes": 7080
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/verifier/ctrf.json",
+      "bytes": 2849
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "raman-fitting__hPdFj2D/verifier/test-stdout.txt",
+      "bytes": 10958
+    },
+    {
+      "path": "regex-chess__LQJcFoe/agent/morrow-diagnostics.jsonl",
+      "bytes": 22649
+    },
+    {
+      "path": "regex-chess__LQJcFoe/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "regex-chess__LQJcFoe/agent/morrow-partial-metrics.json",
+      "bytes": 208
+    },
+    {
+      "path": "regex-chess__LQJcFoe/agent/morrow-run.jsonl",
+      "bytes": 55890
+    },
+    {
+      "path": "regex-chess__LQJcFoe/agent/morrow-terminal-metrics.json",
+      "bytes": 1405
+    },
+    {
+      "path": "regex-chess__LQJcFoe/agent/trajectory.json",
+      "bytes": 4227
+    },
+    {
+      "path": "regex-chess__LQJcFoe/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "regex-chess__LQJcFoe/config.json",
+      "bytes": 1442
+    },
+    {
+      "path": "regex-chess__LQJcFoe/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "regex-chess__LQJcFoe/lock.json",
+      "bytes": 1990
+    },
+    {
+      "path": "regex-chess__LQJcFoe/result.json",
+      "bytes": 7053
+    },
+    {
+      "path": "regex-chess__LQJcFoe/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "regex-chess__LQJcFoe/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "regex-chess__LQJcFoe/verifier/test-stdout.txt",
+      "bytes": 9117
+    },
+    {
+      "path": "regex-log__ys5agfE/agent/morrow-diagnostics.jsonl",
+      "bytes": 44153
+    },
+    {
+      "path": "regex-log__ys5agfE/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "regex-log__ys5agfE/agent/morrow-partial-metrics.json",
+      "bytes": 213
+    },
+    {
+      "path": "regex-log__ys5agfE/agent/morrow-run.jsonl",
+      "bytes": 160668
+    },
+    {
+      "path": "regex-log__ys5agfE/agent/morrow-terminal-metrics.json",
+      "bytes": 1391
+    },
+    {
+      "path": "regex-log__ys5agfE/agent/trajectory.json",
+      "bytes": 17767
+    },
+    {
+      "path": "regex-log__ys5agfE/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "regex-log__ys5agfE/config.json",
+      "bytes": 1438
+    },
+    {
+      "path": "regex-log__ys5agfE/lock.json",
+      "bytes": 1986
+    },
+    {
+      "path": "regex-log__ys5agfE/result.json",
+      "bytes": 5653
+    },
+    {
+      "path": "regex-log__ys5agfE/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "regex-log__ys5agfE/verifier/ctrf.json",
+      "bytes": 755
+    },
+    {
+      "path": "regex-log__ys5agfE/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "regex-log__ys5agfE/verifier/test-stdout.txt",
+      "bytes": 14071
+    },
+    {
+      "path": "reshard-c4-data__Kj8Dd7A/agent/morrow-diagnostics.jsonl",
+      "bytes": 88797
+    },
+    {
+      "path": "reshard-c4-data__Kj8Dd7A/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "reshard-c4-data__Kj8Dd7A/agent/morrow-run.jsonl",
+      "bytes": 267807
+    },
+    {
+      "path": "reshard-c4-data__Kj8Dd7A/agent/morrow-terminal-metrics.json",
+      "bytes": 1399
+    },
+    {
+      "path": "reshard-c4-data__Kj8Dd7A/agent/trajectory.json",
+      "bytes": 42902
+    },
+    {
+      "path": "reshard-c4-data__Kj8Dd7A/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "reshard-c4-data__Kj8Dd7A/config.json",
+      "bytes": 1450
+    },
+    {
+      "path": "reshard-c4-data__Kj8Dd7A/lock.json",
+      "bytes": 1998
+    },
+    {
+      "path": "reshard-c4-data__Kj8Dd7A/result.json",
+      "bytes": 5384
+    },
+    {
+      "path": "reshard-c4-data__Kj8Dd7A/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "reshard-c4-data__Kj8Dd7A/verifier/ctrf.json",
+      "bytes": 762
+    },
+    {
+      "path": "reshard-c4-data__Kj8Dd7A/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "reshard-c4-data__Kj8Dd7A/verifier/test-stdout.txt",
+      "bytes": 7719
+    },
+    {
+      "path": "result.json",
+      "bytes": 8027
+    },
+    {
+      "path": "rstan-to-pystan__9eMPhf3/agent/morrow-diagnostics.jsonl",
+      "bytes": 100320
+    },
+    {
+      "path": "rstan-to-pystan__9eMPhf3/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "rstan-to-pystan__9eMPhf3/agent/morrow-partial-metrics.json",
+      "bytes": 213
+    },
+    {
+      "path": "rstan-to-pystan__9eMPhf3/agent/morrow-run.jsonl",
+      "bytes": 316054
+    },
+    {
+      "path": "rstan-to-pystan__9eMPhf3/agent/morrow-terminal-metrics.json",
+      "bytes": 1408
+    },
+    {
+      "path": "rstan-to-pystan__9eMPhf3/agent/trajectory.json",
+      "bytes": 72936
+    },
+    {
+      "path": "rstan-to-pystan__9eMPhf3/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "rstan-to-pystan__9eMPhf3/config.json",
+      "bytes": 1450
+    },
+    {
+      "path": "rstan-to-pystan__9eMPhf3/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "rstan-to-pystan__9eMPhf3/lock.json",
+      "bytes": 1998
+    },
+    {
+      "path": "rstan-to-pystan__9eMPhf3/result.json",
+      "bytes": 7088
+    },
+    {
+      "path": "rstan-to-pystan__9eMPhf3/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "rstan-to-pystan__9eMPhf3/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "rstan-to-pystan__9eMPhf3/verifier/test-stdout.txt",
+      "bytes": 9196
+    },
+    {
+      "path": "sam-cell-seg__4JfEGSN/agent/morrow-diagnostics.jsonl",
+      "bytes": 216400
+    },
+    {
+      "path": "sam-cell-seg__4JfEGSN/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "sam-cell-seg__4JfEGSN/agent/morrow-partial-metrics.json",
+      "bytes": 217
+    },
+    {
+      "path": "sam-cell-seg__4JfEGSN/agent/morrow-run.jsonl",
+      "bytes": 559885
+    },
+    {
+      "path": "sam-cell-seg__4JfEGSN/agent/morrow-terminal-metrics.json",
+      "bytes": 1399
+    },
+    {
+      "path": "sam-cell-seg__4JfEGSN/agent/trajectory.json",
+      "bytes": 161809
+    },
+    {
+      "path": "sam-cell-seg__4JfEGSN/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "sam-cell-seg__4JfEGSN/config.json",
+      "bytes": 1444
+    },
+    {
+      "path": "sam-cell-seg__4JfEGSN/lock.json",
+      "bytes": 1992
+    },
+    {
+      "path": "sam-cell-seg__4JfEGSN/result.json",
+      "bytes": 5679
+    },
+    {
+      "path": "sam-cell-seg__4JfEGSN/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "sam-cell-seg__4JfEGSN/verifier/ctrf.json",
+      "bytes": 5273
+    },
+    {
+      "path": "sam-cell-seg__4JfEGSN/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "sam-cell-seg__4JfEGSN/verifier/test-stdout.txt",
+      "bytes": 24656
+    },
+    {
+      "path": "sanitize-git-repo__7XA47Uf/agent/morrow-diagnostics.jsonl",
+      "bytes": 29644
+    },
+    {
+      "path": "sanitize-git-repo__7XA47Uf/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "sanitize-git-repo__7XA47Uf/agent/morrow-run.jsonl",
+      "bytes": 81277
+    },
+    {
+      "path": "sanitize-git-repo__7XA47Uf/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "sanitize-git-repo__7XA47Uf/agent/trajectory.json",
+      "bytes": 21568
+    },
+    {
+      "path": "sanitize-git-repo__7XA47Uf/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "sanitize-git-repo__7XA47Uf/config.json",
+      "bytes": 1454
+    },
+    {
+      "path": "sanitize-git-repo__7XA47Uf/lock.json",
+      "bytes": 2002
+    },
+    {
+      "path": "sanitize-git-repo__7XA47Uf/result.json",
+      "bytes": 5394
+    },
+    {
+      "path": "sanitize-git-repo__7XA47Uf/trial.log",
+      "bytes": 831
+    },
+    {
+      "path": "sanitize-git-repo__7XA47Uf/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "sanitize-git-repo__7XA47Uf/verifier/test-stdout.txt",
+      "bytes": 2807
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/agent/morrow-diagnostics.jsonl",
+      "bytes": 72119
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/agent/morrow-partial-metrics.json",
+      "bytes": 213
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/agent/morrow-run.jsonl",
+      "bytes": 180885
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/agent/morrow-terminal-metrics.json",
+      "bytes": 1411
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/agent/trajectory.json",
+      "bytes": 28853
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/config.json",
+      "bytes": 1476
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/lock.json",
+      "bytes": 2024
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/result.json",
+      "bytes": 7168
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/verifier/ctrf.json",
+      "bytes": 4947
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "schemelike-metacircular-eval__GjH3Mvz/verifier/test-stdout.txt",
+      "bytes": 56690
+    },
+    {
+      "path": "sparql-university__LGRbht2/agent/morrow-diagnostics.jsonl",
+      "bytes": 43310
+    },
+    {
+      "path": "sparql-university__LGRbht2/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "sparql-university__LGRbht2/agent/morrow-partial-metrics.json",
+      "bytes": 213
+    },
+    {
+      "path": "sparql-university__LGRbht2/agent/morrow-run.jsonl",
+      "bytes": 113605
+    },
+    {
+      "path": "sparql-university__LGRbht2/agent/morrow-terminal-metrics.json",
+      "bytes": 1395
+    },
+    {
+      "path": "sparql-university__LGRbht2/agent/trajectory.json",
+      "bytes": 25985
+    },
+    {
+      "path": "sparql-university__LGRbht2/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "sparql-university__LGRbht2/config.json",
+      "bytes": 1454
+    },
+    {
+      "path": "sparql-university__LGRbht2/lock.json",
+      "bytes": 2002
+    },
+    {
+      "path": "sparql-university__LGRbht2/result.json",
+      "bytes": 5701
+    },
+    {
+      "path": "sparql-university__LGRbht2/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "sparql-university__LGRbht2/verifier/ctrf.json",
+      "bytes": 1460
+    },
+    {
+      "path": "sparql-university__LGRbht2/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "sparql-university__LGRbht2/verifier/test-stdout.txt",
+      "bytes": 23553
+    },
+    {
+      "path": "sqlite-db-truncate__24uLy4F/agent/morrow-diagnostics.jsonl",
+      "bytes": 20134
+    },
+    {
+      "path": "sqlite-db-truncate__24uLy4F/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "sqlite-db-truncate__24uLy4F/agent/morrow-run.jsonl",
+      "bytes": 46413
+    },
+    {
+      "path": "sqlite-db-truncate__24uLy4F/agent/morrow-terminal-metrics.json",
+      "bytes": 1389
+    },
+    {
+      "path": "sqlite-db-truncate__24uLy4F/agent/trajectory.json",
+      "bytes": 13688
+    },
+    {
+      "path": "sqlite-db-truncate__24uLy4F/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "sqlite-db-truncate__24uLy4F/config.json",
+      "bytes": 1456
+    },
+    {
+      "path": "sqlite-db-truncate__24uLy4F/lock.json",
+      "bytes": 2004
+    },
+    {
+      "path": "sqlite-db-truncate__24uLy4F/result.json",
+      "bytes": 5397
+    },
+    {
+      "path": "sqlite-db-truncate__24uLy4F/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "sqlite-db-truncate__24uLy4F/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "sqlite-db-truncate__24uLy4F/verifier/test-stdout.txt",
+      "bytes": 9143
+    },
+    {
+      "path": "sqlite-with-gcov__UJHSNnu/agent/morrow-diagnostics.jsonl",
+      "bytes": 62171
+    },
+    {
+      "path": "sqlite-with-gcov__UJHSNnu/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "sqlite-with-gcov__UJHSNnu/agent/morrow-run.jsonl",
+      "bytes": 111790
+    },
+    {
+      "path": "sqlite-with-gcov__UJHSNnu/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "sqlite-with-gcov__UJHSNnu/agent/trajectory.json",
+      "bytes": 46820
+    },
+    {
+      "path": "sqlite-with-gcov__UJHSNnu/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "sqlite-with-gcov__UJHSNnu/config.json",
+      "bytes": 1452
+    },
+    {
+      "path": "sqlite-with-gcov__UJHSNnu/lock.json",
+      "bytes": 2000
+    },
+    {
+      "path": "sqlite-with-gcov__UJHSNnu/result.json",
+      "bytes": 5388
+    },
+    {
+      "path": "sqlite-with-gcov__UJHSNnu/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "sqlite-with-gcov__UJHSNnu/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "sqlite-with-gcov__UJHSNnu/verifier/test-stdout.txt",
+      "bytes": 11701
+    },
+    {
+      "path": "torch-pipeline-parallelism__6uMfJTo/agent/morrow-diagnostics.jsonl",
+      "bytes": 28294
+    },
+    {
+      "path": "torch-pipeline-parallelism__6uMfJTo/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "torch-pipeline-parallelism__6uMfJTo/agent/morrow-run.jsonl",
+      "bytes": 107183
+    },
+    {
+      "path": "torch-pipeline-parallelism__6uMfJTo/agent/morrow-terminal-metrics.json",
+      "bytes": 1392
+    },
+    {
+      "path": "torch-pipeline-parallelism__6uMfJTo/agent/trajectory.json",
+      "bytes": 12942
+    },
+    {
+      "path": "torch-pipeline-parallelism__6uMfJTo/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "torch-pipeline-parallelism__6uMfJTo/config.json",
+      "bytes": 1472
+    },
+    {
+      "path": "torch-pipeline-parallelism__6uMfJTo/lock.json",
+      "bytes": 2020
+    },
+    {
+      "path": "torch-pipeline-parallelism__6uMfJTo/result.json",
+      "bytes": 5447
+    },
+    {
+      "path": "torch-pipeline-parallelism__6uMfJTo/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "torch-pipeline-parallelism__6uMfJTo/verifier/ctrf.json",
+      "bytes": 8187
+    },
+    {
+      "path": "torch-pipeline-parallelism__6uMfJTo/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "torch-pipeline-parallelism__6uMfJTo/verifier/test-stdout.txt",
+      "bytes": 22143
+    },
+    {
+      "path": "torch-tensor-parallelism__DRF8CP5/agent/morrow-diagnostics.jsonl",
+      "bytes": 14763
+    },
+    {
+      "path": "torch-tensor-parallelism__DRF8CP5/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "torch-tensor-parallelism__DRF8CP5/agent/morrow-run.jsonl",
+      "bytes": 42834
+    },
+    {
+      "path": "torch-tensor-parallelism__DRF8CP5/agent/morrow-terminal-metrics.json",
+      "bytes": 1389
+    },
+    {
+      "path": "torch-tensor-parallelism__DRF8CP5/agent/trajectory.json",
+      "bytes": 8449
+    },
+    {
+      "path": "torch-tensor-parallelism__DRF8CP5/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "torch-tensor-parallelism__DRF8CP5/config.json",
+      "bytes": 1468
+    },
+    {
+      "path": "torch-tensor-parallelism__DRF8CP5/lock.json",
+      "bytes": 2016
+    },
+    {
+      "path": "torch-tensor-parallelism__DRF8CP5/result.json",
+      "bytes": 5433
+    },
+    {
+      "path": "torch-tensor-parallelism__DRF8CP5/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "torch-tensor-parallelism__DRF8CP5/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "torch-tensor-parallelism__DRF8CP5/verifier/test-stdout.txt",
+      "bytes": 13055
+    },
+    {
+      "path": "train-fasttext__KLUxS8b/agent/morrow-diagnostics.jsonl",
+      "bytes": 145025
+    },
+    {
+      "path": "train-fasttext__KLUxS8b/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "train-fasttext__KLUxS8b/agent/morrow-partial-metrics.json",
+      "bytes": 214
+    },
+    {
+      "path": "train-fasttext__KLUxS8b/agent/morrow-run.jsonl",
+      "bytes": 316157
+    },
+    {
+      "path": "train-fasttext__KLUxS8b/agent/morrow-terminal-metrics.json",
+      "bytes": 1409
+    },
+    {
+      "path": "train-fasttext__KLUxS8b/agent/trajectory.json",
+      "bytes": 115229
+    },
+    {
+      "path": "train-fasttext__KLUxS8b/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "train-fasttext__KLUxS8b/config.json",
+      "bytes": 1448
+    },
+    {
+      "path": "train-fasttext__KLUxS8b/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "train-fasttext__KLUxS8b/lock.json",
+      "bytes": 1996
+    },
+    {
+      "path": "train-fasttext__KLUxS8b/result.json",
+      "bytes": 7083
+    },
+    {
+      "path": "train-fasttext__KLUxS8b/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "train-fasttext__KLUxS8b/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "train-fasttext__KLUxS8b/verifier/test-stdout.txt",
+      "bytes": 3947
+    },
+    {
+      "path": "tune-mjcf__GgA3jt4/agent/morrow-diagnostics.jsonl",
+      "bytes": 101540
+    },
+    {
+      "path": "tune-mjcf__GgA3jt4/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "tune-mjcf__GgA3jt4/agent/morrow-partial-metrics.json",
+      "bytes": 214
+    },
+    {
+      "path": "tune-mjcf__GgA3jt4/agent/morrow-run.jsonl",
+      "bytes": 293384
+    },
+    {
+      "path": "tune-mjcf__GgA3jt4/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "tune-mjcf__GgA3jt4/agent/trajectory.json",
+      "bytes": 76535
+    },
+    {
+      "path": "tune-mjcf__GgA3jt4/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "tune-mjcf__GgA3jt4/config.json",
+      "bytes": 1438
+    },
+    {
+      "path": "tune-mjcf__GgA3jt4/lock.json",
+      "bytes": 1986
+    },
+    {
+      "path": "tune-mjcf__GgA3jt4/result.json",
+      "bytes": 5656
+    },
+    {
+      "path": "tune-mjcf__GgA3jt4/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "tune-mjcf__GgA3jt4/verifier/ctrf.json",
+      "bytes": 1783
+    },
+    {
+      "path": "tune-mjcf__GgA3jt4/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "tune-mjcf__GgA3jt4/verifier/test-stdout.txt",
+      "bytes": 10332
+    },
+    {
+      "path": "video-processing__Lj9MAgt/agent/morrow-diagnostics.jsonl",
+      "bytes": 113763
+    },
+    {
+      "path": "video-processing__Lj9MAgt/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "video-processing__Lj9MAgt/agent/morrow-partial-metrics.json",
+      "bytes": 215
+    },
+    {
+      "path": "video-processing__Lj9MAgt/agent/morrow-run.jsonl",
+      "bytes": 462245
+    },
+    {
+      "path": "video-processing__Lj9MAgt/agent/morrow-terminal-metrics.json",
+      "bytes": 1411
+    },
+    {
+      "path": "video-processing__Lj9MAgt/agent/trajectory.json",
+      "bytes": 73439
+    },
+    {
+      "path": "video-processing__Lj9MAgt/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "video-processing__Lj9MAgt/config.json",
+      "bytes": 1452
+    },
+    {
+      "path": "video-processing__Lj9MAgt/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "video-processing__Lj9MAgt/lock.json",
+      "bytes": 2000
+    },
+    {
+      "path": "video-processing__Lj9MAgt/result.json",
+      "bytes": 7098
+    },
+    {
+      "path": "video-processing__Lj9MAgt/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "video-processing__Lj9MAgt/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "video-processing__Lj9MAgt/verifier/test-stdout.txt",
+      "bytes": 8869
+    },
+    {
+      "path": "vulnerable-secret__oiPGi7V/agent/morrow-diagnostics.jsonl",
+      "bytes": 31076
+    },
+    {
+      "path": "vulnerable-secret__oiPGi7V/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "vulnerable-secret__oiPGi7V/agent/morrow-run.jsonl",
+      "bytes": 75884
+    },
+    {
+      "path": "vulnerable-secret__oiPGi7V/agent/morrow-terminal-metrics.json",
+      "bytes": 1396
+    },
+    {
+      "path": "vulnerable-secret__oiPGi7V/agent/trajectory.json",
+      "bytes": 22388
+    },
+    {
+      "path": "vulnerable-secret__oiPGi7V/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "vulnerable-secret__oiPGi7V/config.json",
+      "bytes": 1454
+    },
+    {
+      "path": "vulnerable-secret__oiPGi7V/lock.json",
+      "bytes": 2002
+    },
+    {
+      "path": "vulnerable-secret__oiPGi7V/result.json",
+      "bytes": 5394
+    },
+    {
+      "path": "vulnerable-secret__oiPGi7V/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "vulnerable-secret__oiPGi7V/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "vulnerable-secret__oiPGi7V/verifier/test-stdout.txt",
+      "bytes": 6337
+    },
+    {
+      "path": "winning-avg-corewars__FxkgPQM/agent/morrow-diagnostics.jsonl",
+      "bytes": 92888
+    },
+    {
+      "path": "winning-avg-corewars__FxkgPQM/agent/morrow-fingerprint.json",
+      "bytes": 12281
+    },
+    {
+      "path": "winning-avg-corewars__FxkgPQM/agent/morrow-partial-metrics.json",
+      "bytes": 214
+    },
+    {
+      "path": "winning-avg-corewars__FxkgPQM/agent/morrow-run.jsonl",
+      "bytes": 347095
+    },
+    {
+      "path": "winning-avg-corewars__FxkgPQM/agent/morrow-terminal-metrics.json",
+      "bytes": 1397
+    },
+    {
+      "path": "winning-avg-corewars__FxkgPQM/agent/trajectory.json",
+      "bytes": 55753
+    },
+    {
+      "path": "winning-avg-corewars__FxkgPQM/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "winning-avg-corewars__FxkgPQM/config.json",
+      "bytes": 1460
+    },
+    {
+      "path": "winning-avg-corewars__FxkgPQM/lock.json",
+      "bytes": 2008
+    },
+    {
+      "path": "winning-avg-corewars__FxkgPQM/result.json",
+      "bytes": 5722
+    },
+    {
+      "path": "winning-avg-corewars__FxkgPQM/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "winning-avg-corewars__FxkgPQM/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "winning-avg-corewars__FxkgPQM/verifier/test-stdout.txt",
+      "bytes": 4169
+    },
+    {
+      "path": "write-compressor__ENBKC6j/agent/morrow-diagnostics.jsonl",
+      "bytes": 25543
+    },
+    {
+      "path": "write-compressor__ENBKC6j/agent/morrow-fingerprint.json",
+      "bytes": 12280
+    },
+    {
+      "path": "write-compressor__ENBKC6j/agent/morrow-partial-metrics.json",
+      "bytes": 207
+    },
+    {
+      "path": "write-compressor__ENBKC6j/agent/morrow-run.jsonl",
+      "bytes": 65639
+    },
+    {
+      "path": "write-compressor__ENBKC6j/agent/morrow-terminal-metrics.json",
+      "bytes": 1405
+    },
+    {
+      "path": "write-compressor__ENBKC6j/agent/trajectory.json",
+      "bytes": 3587
+    },
+    {
+      "path": "write-compressor__ENBKC6j/artifacts/manifest.json",
+      "bytes": 178
+    },
+    {
+      "path": "write-compressor__ENBKC6j/config.json",
+      "bytes": 1452
+    },
+    {
+      "path": "write-compressor__ENBKC6j/exception.txt",
+      "bytes": 1165
+    },
+    {
+      "path": "write-compressor__ENBKC6j/lock.json",
+      "bytes": 2000
+    },
+    {
+      "path": "write-compressor__ENBKC6j/result.json",
+      "bytes": 7080
+    },
+    {
+      "path": "write-compressor__ENBKC6j/trial.log",
+      "bytes": 826
+    },
+    {
+      "path": "write-compressor__ENBKC6j/verifier/ctrf.json",
+      "bytes": 3712
+    },
+    {
+      "path": "write-compressor__ENBKC6j/verifier/reward.txt",
+      "bytes": 2
+    },
+    {
+      "path": "write-compressor__ENBKC6j/verifier/test-stdout.txt",
+      "bytes": 15409
+    }
+  ],
+  "archived_trial_results": [
+    {
+      "trial": "adaptive-rejection-sampler__SKhYtoJ",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/adaptive-rejection-sampler__SKhYtoJ/result.json"
+    },
+    {
+      "trial": "bn-fit-modify__yHfCWB8",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/bn-fit-modify__yHfCWB8/result.json"
+    },
+    {
+      "trial": "break-filter-js-from-html__iPCcXLv",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/break-filter-js-from-html__iPCcXLv/result.json"
+    },
+    {
+      "trial": "build-cython-ext__NUtatRd",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/build-cython-ext__NUtatRd/result.json"
+    },
+    {
+      "trial": "build-pmars__sQJr73M",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/build-pmars__sQJr73M/result.json"
+    },
+    {
+      "trial": "build-pov-ray__zqo8dEU",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/build-pov-ray__zqo8dEU/result.json"
+    },
+    {
+      "trial": "caffe-cifar-10__j8eLUQJ",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/caffe-cifar-10__j8eLUQJ/result.json"
+    },
+    {
+      "trial": "cancel-async-tasks__KTRxGtL",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/cancel-async-tasks__KTRxGtL/result.json"
+    },
+    {
+      "trial": "chess-best-move__UB7samf",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/chess-best-move__UB7samf/result.json"
+    },
+    {
+      "trial": "circuit-fibsqrt__ej9LHAm",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/circuit-fibsqrt__ej9LHAm/result.json"
+    },
+    {
+      "trial": "cobol-modernization__9x6Bw7H",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/cobol-modernization__9x6Bw7H/result.json"
+    },
+    {
+      "trial": "code-from-image__5trhVip",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/code-from-image__5trhVip/result.json"
+    },
+    {
+      "trial": "compile-compcert__2FbGxb2",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/compile-compcert__2FbGxb2/result.json"
+    },
+    {
+      "trial": "configure-git-webserver__3Ry63rs",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/configure-git-webserver__3Ry63rs/result.json"
+    },
+    {
+      "trial": "constraints-scheduling__qKR3zCo",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/constraints-scheduling__qKR3zCo/result.json"
+    },
+    {
+      "trial": "count-dataset-tokens__e7KJ3BR",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/count-dataset-tokens__e7KJ3BR/result.json"
+    },
+    {
+      "trial": "crack-7z-hash__6yiHZ4A",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/crack-7z-hash__6yiHZ4A/result.json"
+    },
+    {
+      "trial": "custom-memory-heap-crash__MdCLKcU",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/custom-memory-heap-crash__MdCLKcU/result.json"
+    },
+    {
+      "trial": "db-wal-recovery__uGupKNX",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/db-wal-recovery__uGupKNX/result.json"
+    },
+    {
+      "trial": "distribution-search__gDgD2AQ",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/distribution-search__gDgD2AQ/result.json"
+    },
+    {
+      "trial": "dna-assembly__oBvThhx",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/dna-assembly__oBvThhx/result.json"
+    },
+    {
+      "trial": "dna-insert__LkY4CRQ",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/dna-insert__LkY4CRQ/result.json"
+    },
+    {
+      "trial": "extract-elf__ai3ZQMk",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/extract-elf__ai3ZQMk/result.json"
+    },
+    {
+      "trial": "extract-moves-from-video__DRDqipB",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/extract-moves-from-video__DRDqipB/result.json"
+    },
+    {
+      "trial": "feal-differential-cryptanalysis__vtLgkPJ",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/feal-differential-cryptanalysis__vtLgkPJ/result.json"
+    },
+    {
+      "trial": "feal-linear-cryptanalysis__ETxRaAt",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/feal-linear-cryptanalysis__ETxRaAt/result.json"
+    },
+    {
+      "trial": "filter-js-from-html__bpZaHj6",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/filter-js-from-html__bpZaHj6/result.json"
+    },
+    {
+      "trial": "financial-document-processor__LTE5B5F",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/financial-document-processor__LTE5B5F/result.json"
+    },
+    {
+      "trial": "fix-code-vulnerability__c8EN2KJ",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/fix-code-vulnerability__c8EN2KJ/result.json"
+    },
+    {
+      "trial": "fix-git__tL5MA7y",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/fix-git__tL5MA7y/result.json"
+    },
+    {
+      "trial": "fix-ocaml-gc__iZd5rcU",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/fix-ocaml-gc__iZd5rcU/result.json"
+    },
+    {
+      "trial": "gcode-to-text__Bfmd7oC",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/gcode-to-text__Bfmd7oC/result.json"
+    },
+    {
+      "trial": "git-leak-recovery__YoZoaq3",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/git-leak-recovery__YoZoaq3/result.json"
+    },
+    {
+      "trial": "git-multibranch__GSrhYx5",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/git-multibranch__GSrhYx5/result.json"
+    },
+    {
+      "trial": "gpt2-codegolf__ULZVYEm",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/gpt2-codegolf__ULZVYEm/result.json"
+    },
+    {
+      "trial": "headless-terminal__EvbKFZb",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/headless-terminal__EvbKFZb/result.json"
+    },
+    {
+      "trial": "hf-model-inference__PnVQDdi",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/hf-model-inference__PnVQDdi/result.json"
+    },
+    {
+      "trial": "install-windows-3.11__ahKYwwz",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/install-windows-3.11__ahKYwwz/result.json"
+    },
+    {
+      "trial": "kv-store-grpc__noPQBHG",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/kv-store-grpc__noPQBHG/result.json"
+    },
+    {
+      "trial": "large-scale-text-editing__vchT3c7",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/large-scale-text-editing__vchT3c7/result.json"
+    },
+    {
+      "trial": "largest-eigenval__SNiHevK",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/largest-eigenval__SNiHevK/result.json"
+    },
+    {
+      "trial": "llm-inference-batching-scheduler__9ePYZWv",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/llm-inference-batching-scheduler__9ePYZWv/result.json"
+    },
+    {
+      "trial": "log-summary-date-ranges__NrcVE7z",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/log-summary-date-ranges__NrcVE7z/result.json"
+    },
+    {
+      "trial": "mailman__QdpE3JA",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/mailman__QdpE3JA/result.json"
+    },
+    {
+      "trial": "make-doom-for-mips__psGT3E3",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/make-doom-for-mips__psGT3E3/result.json"
+    },
+    {
+      "trial": "make-mips-interpreter__xrd3PwA",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/make-mips-interpreter__xrd3PwA/result.json"
+    },
+    {
+      "trial": "mcmc-sampling-stan__6xaFzz4",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/mcmc-sampling-stan__6xaFzz4/result.json"
+    },
+    {
+      "trial": "merge-diff-arc-agi-task__Y5uzDcB",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/merge-diff-arc-agi-task__Y5uzDcB/result.json"
+    },
+    {
+      "trial": "model-extraction-relu-logits__wiBWTvA",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/model-extraction-relu-logits__wiBWTvA/result.json"
+    },
+    {
+      "trial": "modernize-scientific-stack__tLZTaBm",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/modernize-scientific-stack__tLZTaBm/result.json"
+    },
+    {
+      "trial": "mteb-leaderboard__TjxxoPi",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/mteb-leaderboard__TjxxoPi/result.json"
+    },
+    {
+      "trial": "mteb-retrieve__uois8Qb",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/mteb-retrieve__uois8Qb/result.json"
+    },
+    {
+      "trial": "multi-source-data-merger__twqLH4N",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/multi-source-data-merger__twqLH4N/result.json"
+    },
+    {
+      "trial": "nginx-request-logging__u6w49wE",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/nginx-request-logging__u6w49wE/result.json"
+    },
+    {
+      "trial": "openssl-selfsigned-cert__YnJXJsK",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/openssl-selfsigned-cert__YnJXJsK/result.json"
+    },
+    {
+      "trial": "overfull-hbox__cgMCkp8",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/overfull-hbox__cgMCkp8/result.json"
+    },
+    {
+      "trial": "password-recovery__tKnzcbw",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/password-recovery__tKnzcbw/result.json"
+    },
+    {
+      "trial": "path-tracing-reverse__wawMDHD",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/path-tracing-reverse__wawMDHD/result.json"
+    },
+    {
+      "trial": "path-tracing__hXK6DpR",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/path-tracing__hXK6DpR/result.json"
+    },
+    {
+      "trial": "polyglot-c-py__qmouSv7",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/polyglot-c-py__qmouSv7/result.json"
+    },
+    {
+      "trial": "polyglot-rust-c__NFwE5uN",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/polyglot-rust-c__NFwE5uN/result.json"
+    },
+    {
+      "trial": "portfolio-optimization__u32x6vo",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/portfolio-optimization__u32x6vo/result.json"
+    },
+    {
+      "trial": "protein-assembly__mYuQZbn",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/protein-assembly__mYuQZbn/result.json"
+    },
+    {
+      "trial": "prove-plus-comm__bS6f6VL",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/prove-plus-comm__bS6f6VL/result.json"
+    },
+    {
+      "trial": "pypi-server__iGftCWK",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/pypi-server__iGftCWK/result.json"
+    },
+    {
+      "trial": "pytorch-model-cli__jgXLCCh",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/pytorch-model-cli__jgXLCCh/result.json"
+    },
+    {
+      "trial": "pytorch-model-recovery__mztZhnQ",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/pytorch-model-recovery__mztZhnQ/result.json"
+    },
+    {
+      "trial": "qemu-alpine-ssh__Q57GPPT",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/qemu-alpine-ssh__Q57GPPT/result.json"
+    },
+    {
+      "trial": "qemu-startup__TPUSkAN",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/qemu-startup__TPUSkAN/result.json"
+    },
+    {
+      "trial": "query-optimize__UTN5W73",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/query-optimize__UTN5W73/result.json"
+    },
+    {
+      "trial": "raman-fitting__hPdFj2D",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/raman-fitting__hPdFj2D/result.json"
+    },
+    {
+      "trial": "regex-chess__LQJcFoe",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/regex-chess__LQJcFoe/result.json"
+    },
+    {
+      "trial": "regex-log__ys5agfE",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/regex-log__ys5agfE/result.json"
+    },
+    {
+      "trial": "reshard-c4-data__Kj8Dd7A",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/reshard-c4-data__Kj8Dd7A/result.json"
+    },
+    {
+      "trial": "rstan-to-pystan__9eMPhf3",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/rstan-to-pystan__9eMPhf3/result.json"
+    },
+    {
+      "trial": "sam-cell-seg__4JfEGSN",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sam-cell-seg__4JfEGSN/result.json"
+    },
+    {
+      "trial": "sanitize-git-repo__7XA47Uf",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sanitize-git-repo__7XA47Uf/result.json"
+    },
+    {
+      "trial": "schemelike-metacircular-eval__GjH3Mvz",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/schemelike-metacircular-eval__GjH3Mvz/result.json"
+    },
+    {
+      "trial": "sparql-university__LGRbht2",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sparql-university__LGRbht2/result.json"
+    },
+    {
+      "trial": "sqlite-db-truncate__24uLy4F",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sqlite-db-truncate__24uLy4F/result.json"
+    },
+    {
+      "trial": "sqlite-with-gcov__UJHSNnu",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sqlite-with-gcov__UJHSNnu/result.json"
+    },
+    {
+      "trial": "torch-pipeline-parallelism__6uMfJTo",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/torch-pipeline-parallelism__6uMfJTo/result.json"
+    },
+    {
+      "trial": "torch-tensor-parallelism__DRF8CP5",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/torch-tensor-parallelism__DRF8CP5/result.json"
+    },
+    {
+      "trial": "train-fasttext__KLUxS8b",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/train-fasttext__KLUxS8b/result.json"
+    },
+    {
+      "trial": "tune-mjcf__GgA3jt4",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/tune-mjcf__GgA3jt4/result.json"
+    },
+    {
+      "trial": "video-processing__Lj9MAgt",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/video-processing__Lj9MAgt/result.json"
+    },
+    {
+      "trial": "vulnerable-secret__oiPGi7V",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/vulnerable-secret__oiPGi7V/result.json"
+    },
+    {
+      "trial": "winning-avg-corewars__FxkgPQM",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/winning-avg-corewars__FxkgPQM/result.json"
+    },
+    {
+      "trial": "write-compressor__ENBKC6j",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/write-compressor__ENBKC6j/result.json"
+    }
+  ]
+}

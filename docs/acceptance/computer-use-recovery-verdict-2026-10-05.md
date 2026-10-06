@@ -17,7 +17,7 @@
 
 ## 原证据离线重算
 
-依据 [Luna max 原现场报告](/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/computer-use-luna-functional-retest-2026-10-05.md)。[重算 sidecar](evidence/computer-use-recovery-verdict-2026-10-05/recomputed.json) 记录每份原 evidence 的 SHA-256、原判定、baseline 源码 SHA、修复源码 SHA、独立快照、属性证明、输入次数及重算结果。原 complete.json 的 SHA 也被保留，未覆盖原始汇总。
+依据 [Luna max 原现场报告](portable/views/docs/acceptance/computer-use-luna-functional-retest-2026-10-05.md)。[重算 sidecar](evidence/computer-use-recovery-verdict-2026-10-05/recomputed.json) 记录每份原 evidence 的 SHA-256、原判定、baseline 源码 SHA、修复源码 SHA、独立快照、属性证明、输入次数及重算结果。原 complete.json 的 SHA 也被保留，未覆盖原始汇总。
 
 | 场景 | 原始 verdict | 修复后离线重算 | 已证明未执行的恢复 / 原生输入 |
 | --- | --- | --- | --- |

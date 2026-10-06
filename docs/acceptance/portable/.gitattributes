@@ -1,0 +1,2 @@
+# Preserve historical evidence bytes, including generated traceback whitespace.
+raw/** -text whitespace=-blank-at-eol,-blank-at-eof

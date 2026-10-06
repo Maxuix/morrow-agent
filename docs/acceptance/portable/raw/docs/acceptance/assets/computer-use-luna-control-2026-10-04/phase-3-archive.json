@@ -1,0 +1,312 @@
+[
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/Fixture.swift",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/Fixture.swift",
+    "sha256": "bd6b24b8779c5c09db4f1af51fd750ea62f937bc0c47fb361257aed5380b3ee8"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/bridge_transport.py",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/bridge_transport.py",
+    "sha256": "dcea2f38cd8bd250e270bd6550fda098947918f7492a4218c06c2fdd2402179d"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/build_fixture.py",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/build_fixture.py",
+    "sha256": "7f1727cc2ed7959acf321b1f122b335762f4468db23fce0036ff0896b74f2108"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/campaign-complete.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/campaign-complete.json",
+    "sha256": "c84becac3f6325031568010d4abb6537df01d63650e8e52e66678913473a4def"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/campaign-progress.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/campaign-progress.json",
+    "sha256": "37ae2e7c5b6950361a7f3cceba776d8fc1d8396b56e9a53bb94c26d5bf898fa0"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/enabled-readback-background/bridge/decision-001.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/enabled-readback-background/bridge/decision-001.json",
+    "sha256": "150dee04bb6ca57b89cf9444890f76ce72fc89c63809b6efd5cfce8f484d4bc9"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/enabled-readback-background/bridge/decision-002.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/enabled-readback-background/bridge/decision-002.json",
+    "sha256": "619e672e50c4df94bf3993dfd28fa01190e5240468fd5605aa01f896c9dda681"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/enabled-readback-background/bridge/image-530205821cc45a2b0e5e8805a79e993ad5157c44fa944b468b3e9842d28e9541.png",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/enabled-readback-background/bridge/image-530205821cc45a2b0e5e8805a79e993ad5157c44fa944b468b3e9842d28e9541.png",
+    "sha256": "530205821cc45a2b0e5e8805a79e993ad5157c44fa944b468b3e9842d28e9541"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/enabled-readback-background/bridge/request-001.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/enabled-readback-background/bridge/request-001.json",
+    "sha256": "63304c964f791dac47912d72c895050a012fc6afdb821a73553fd0522cbf7525"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/enabled-readback-background/bridge/request-002.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/enabled-readback-background/bridge/request-002.json",
+    "sha256": "c70135083de0fbb5dd8c0fec077485f964b3e3f49fff32f51d59ed282400fa7b"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/enabled-readback-background/bridge/request-003.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/enabled-readback-background/bridge/request-003.json",
+    "sha256": "51c45391899cb6ff8dc01197c1ea09e715b9e16cb53bf9adc81bf72e3f5139b9"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/enabled-readback-background/build.log",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/enabled-readback-background/build.log",
+    "sha256": "fe7a7e3294a77c27473fe811700f69427170ef19e27c263a0216bbbb8b5f26e3"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/enabled-readback-background/evidence.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/enabled-readback-background/evidence.json",
+    "sha256": "b2ed4a0653c8aba34336e238327483105b75bae6602bc6473563bf0a1f24b589"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/enabled-readback-background/live.log",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/enabled-readback-background/live.log",
+    "sha256": "53ad6a0e3afd94a4989981233f49e3d0f8263f6294f66be5a57e2654c624856c"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/enabled-readback-background/state/state.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/enabled-readback-background/state/state.json",
+    "sha256": "88fc9f7c7e1367e77bf0aced610cf70d27f79a4e98509e175b804f350a7dd9c6"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/foreground-double-click/bridge/request-001.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/foreground-double-click/bridge/request-001.json",
+    "sha256": "d6c9be88258f96db3e7701d80611d5ca0a84e99c1c65f16f543d6c3d6e5ef716"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/foreground-double-click/build.log",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/foreground-double-click/build.log",
+    "sha256": "09198ec7366430b2c89ed830ca99afbe8c75cd8117fd9423b150cec5c30057da"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/foreground-double-click/evidence.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/foreground-double-click/evidence.json",
+    "sha256": "b75beb4194d1a7db4e38f4a3447ecf452b19f149a4bbb036e81a01b7813c6742"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/foreground-double-click/live.log",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/foreground-double-click/live.log",
+    "sha256": "4ad4c1b5ecca4426ca68fc9c61fa8f2229393bf000cddfd2651baa75f7cf8ec6"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/foreground-double-click/state/state.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/foreground-double-click/state/state.json",
+    "sha256": "7bde4ab11371a913dbd41a2f02c87ad75800cdf9397ea0ef1060cc805e591848"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/live_composition.py",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/live_composition.py",
+    "sha256": "6ed6d4cacb83da02117a238923e3fe68f6eb19ac8b3100f37c124933cd9af8ed"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/decision-001.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/decision-001.json",
+    "sha256": "903728c7a6f9963d2888ecedcb04d6958422216afef66439e567ac67114392d7"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/decision-002.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/decision-002.json",
+    "sha256": "22eb270c888109aac8226934fd6372a4293533b1e2e33c86aacff95b3261c51a"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/decision-003.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/decision-003.json",
+    "sha256": "c159c9d8e172f88ad1fe34df3c9ff0e1493b9d1b8caab71a103fd2544d3a7282"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/decision-004.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/decision-004.json",
+    "sha256": "e10575b35d5f4d408b9261d80d1626e3eb36c361b319d0c844835bd1a23fb1be"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/decision-005.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/decision-005.json",
+    "sha256": "48cc69398306744bf6bfb7d2850769a7ab72db4fa2b313fbd4d675668292e100"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/decision-006.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/decision-006.json",
+    "sha256": "7a82435a6dcce6d35f7344f89d9da175fd58dfc8240d65f2d293faf728b09f9f"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/decision-007.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/decision-007.json",
+    "sha256": "83f9fa9e7a8944debfc020afb7b034ff9d5326af917afb6589f95cd0e6f524b3"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/decision-008.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/decision-008.json",
+    "sha256": "8a500d5faf58a287ab3a2c61d4bd221720d3f8e157dd53fa817054ce1a029d82"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/image-eec9f1699bedaf3a04c75211631e2e017071fa212c3b21a36331c3b30b16d7b3.png",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/image-eec9f1699bedaf3a04c75211631e2e017071fa212c3b21a36331c3b30b16d7b3.png",
+    "sha256": "eec9f1699bedaf3a04c75211631e2e017071fa212c3b21a36331c3b30b16d7b3"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/image-fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589.png",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/image-fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589.png",
+    "sha256": "fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/request-001.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/request-001.json",
+    "sha256": "7e8654830275dbddcf5697b8694f4a1d3074efed8d0ada653f626b0a72d82690"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/request-002.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/request-002.json",
+    "sha256": "5a9fc5aba5932b1f92e4e4793edf88f91207dd57f46300efc573785776414e09"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/request-003.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/request-003.json",
+    "sha256": "17645fb1cf6a6a922efd128980a9757734776662734fc849015847a3b53c4732"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/request-004.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/request-004.json",
+    "sha256": "d9b6e7d6b397a5bb704cdccee9434522da40f0a36a04664d346dda1dfb2c43d9"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/request-005.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/request-005.json",
+    "sha256": "af7cda52f7864414288185aeca38ec647fbc957d9ed50b3874fd7b383a6ab3a6"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/request-006.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/request-006.json",
+    "sha256": "125dfb4e938f1706aaa7dfef7f96a15dadbf6cb53a76d790ed5cbd006e9eded6"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/request-007.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/request-007.json",
+    "sha256": "1bb71566cffbc460c0dd280a8a147d29c5745e6d857c1dc7ba5473bd08cf4a9f"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/bridge/request-008.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/bridge/request-008.json",
+    "sha256": "a8735b601990b5c5ab3648226a34ae2cf487a404637929bc07b795ef729828d5"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/build.log",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/build.log",
+    "sha256": "0df90ca5ac29c9c293d71035da190b9e8b60ed2940281f7ea0067574c74ade23"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/evidence.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/evidence.json",
+    "sha256": "b91812a23f7da6a099f713a3ff709e341d65bffaed61df5d26ed9a1b9044e476"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/live-reference-proof.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/live-reference-proof.json",
+    "sha256": "a5edd08159e94493c62bb3e8fc1d5f26ac1ba6f54ec58493ae1ac4b8918cea06"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/live.log",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/live.log",
+    "sha256": "6e1fb6b17f202848154fd269a84f9ba05a282f6a8cbb3dbdcdbe4d5c90155775"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/long-text-4097/state/state.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/state/state.json",
+    "sha256": "dd79ef0c24cc0149419db668c358f69305d6c906889bc6938d00c8ea6b0593ac"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/pending.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/pending.json",
+    "sha256": "975a07a517a44071c3e1bd099b1f8dd30bde96c6a4e6fa065f1fffb80919fb2b"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/read_pending.py",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/read_pending.py",
+    "sha256": "e5cd8aafde175cc4c1f58cc8a1b54539579c60095a442e0a307f5718ecc8a910"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/run_campaign.py",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/run_campaign.py",
+    "sha256": "bedde521b5623e041212d7468f611d0c07d6d59e6b4977d81d5ccbb74df9972f"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/run_right_click.py",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/run_right_click.py",
+    "sha256": "6e0981afab0279f2091822c396197ce14d83a7b9744787ef5d5fc055f8e3fe69"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/semantic-click/bridge/decision-001.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/bridge/decision-001.json",
+    "sha256": "fdfc8dbda9b38c929589e7f016915d7fc0ce61cffcff258116e660db0af8e2cb"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/semantic-click/bridge/decision-002.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/bridge/decision-002.json",
+    "sha256": "74f310b9a9d8694a995448ddf59d6b424cad018c20b4dd42c118809ce34bca07"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/semantic-click/bridge/decision-003.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/bridge/decision-003.json",
+    "sha256": "e5db17fe02778e84ff1de322f817984e2a3feadae719c71eacc337a8ac7eb477"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/semantic-click/bridge/decision-004.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/bridge/decision-004.json",
+    "sha256": "66692cbe71dcc093efce77f76c88e8b1a41592eba096fb52b09e1eca88b866a2"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/semantic-click/bridge/image-6fe61eb9eeb3ebeb983f639be07580e691527f3e50033e01fde180c6b2b73b89.png",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/bridge/image-6fe61eb9eeb3ebeb983f639be07580e691527f3e50033e01fde180c6b2b73b89.png",
+    "sha256": "6fe61eb9eeb3ebeb983f639be07580e691527f3e50033e01fde180c6b2b73b89"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/semantic-click/bridge/image-c298271cacdc500c0e608d8abd2a7335da1df4a27257c6d6b16998b314f1661b.png",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/bridge/image-c298271cacdc500c0e608d8abd2a7335da1df4a27257c6d6b16998b314f1661b.png",
+    "sha256": "c298271cacdc500c0e608d8abd2a7335da1df4a27257c6d6b16998b314f1661b"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/semantic-click/bridge/request-001.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/bridge/request-001.json",
+    "sha256": "92f13a75bcf771abc0b917e8e6cc146ffd8dc096f2232fb2eb990d975a419d15"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/semantic-click/bridge/request-002.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/bridge/request-002.json",
+    "sha256": "f8cd9053a079a9cc20835635c644ebb8159c38dfd791d6ca0b628de29c1678e4"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/semantic-click/bridge/request-003.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/bridge/request-003.json",
+    "sha256": "9915d262e7130b470d39dc0ebe01e2254c25dd4e00be16876e885b69cc9fb007"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/semantic-click/bridge/request-004.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/bridge/request-004.json",
+    "sha256": "501a876f3a23f23778d9f32022f639eedd76c7238af8fab50ca12bb2b771121a"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/semantic-click/build.log",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/build.log",
+    "sha256": "18a9d7218611b7c26648699fd7f18fe2e52435101a093fe4a406b32c9939c99e"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/semantic-click/evidence.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/evidence.json",
+    "sha256": "e32f332bf9bb29b1719a7c301b3f868b3e18b13943afe1593708edceb220822b"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/semantic-click/live.log",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/live.log",
+    "sha256": "b4e1bc1f7d01a1b3a290f7b4708deccdbb6b86db581ad5c1ae0dc375a95a69f2"
+  },
+  {
+    "source": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-final-bzbyk931/semantic-click/state/state.json",
+    "archived": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/state/state.json",
+    "sha256": "1b2293e7086bdbf9bc5064acff18392227afe0efbe99da8ca6d79c521fffc747"
+  }
+]

@@ -50,4 +50,4 @@
 
 可复现入口：[live_provider.py](../../evals/computer_use/live_provider.py)，命令及 opt-in 说明见 [README](../../evals/computer_use/README.md#real-provider-functional-campaign)。脚本使用已启动的受控 fixture、隐藏密钥输入或环境变量；最终脚本经过真实 observe/denied smoke。密钥只在进程内存中，不在源码、YAML、报告、输出或证据中。临时应用存储与原生 session 均已关闭；本轮创建的最后 fixture 已结束。
 
-本地详细证据：[summary.json](assets/computer-use-live-2026-10-04/summary.json)。该 assets 目录按仓库惯例 gitignored；汇总包含每个场景文件及最终脚本 SHA-256。场景原始 JSON 的 `status=tested` 是记录完成，不是验收成功；脚本在测试过程中补充了元数据，最终 smoke 文件明确记录 fixture identity unchanged。早期尚未接入网络的脚本调试结果未计入以上统计。
+本地详细证据：[summary.json](portable/raw/docs/acceptance/assets/computer-use-live-2026-10-04/summary.json)。该 assets 目录按仓库惯例 gitignored；汇总包含每个场景文件及最终脚本 SHA-256。场景原始 JSON 的 `status=tested` 是记录完成，不是验收成功；脚本在测试过程中补充了元数据，最终 smoke 文件明确记录 fixture identity unchanged。早期尚未接入网络的脚本调试结果未计入以上统计。

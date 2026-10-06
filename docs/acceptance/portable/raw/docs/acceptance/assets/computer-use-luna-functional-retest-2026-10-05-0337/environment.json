@@ -1,0 +1,16 @@
+{
+  "repo": "/Users/ruirui/Documents/Project/Agent/developing",
+  "assets": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337",
+  "temporary_root": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-functional-retest-cnizhmjt",
+  "commit": "787dd246f526eb836fe25bd09d70bab5d5c0faa1",
+  "model": "gpt-6-luna",
+  "reasoning_effort": "max",
+  "fixture_source_sha256": "33dd87b9b2c8c692765e70aba65d32546291ac7f95b253d1cbc48dc2ba36f571",
+  "sdk_version": "0.30.4+morrow.3",
+  "sdk_dylib_sha256": "dc35e83565283558c7ee46e08ff834bcd36eaebf56855084dae200985c557703",
+  "sdk_module": "/Users/ruirui/Documents/Project/Agent/developing/.venv/lib/python3.13/site-packages/cua_driver/__init__.py",
+  "sdk_distribution_direct_url": {
+    "url": "https://github.com/Maxuix/morrow-agent/releases/download/cua-driver-morrow-v0.30.4.3/cua_driver-0.30.4%2Bmorrow.3-py3-none-macosx_14_0_arm64.whl",
+    "archive_info": {}
+  }
+}

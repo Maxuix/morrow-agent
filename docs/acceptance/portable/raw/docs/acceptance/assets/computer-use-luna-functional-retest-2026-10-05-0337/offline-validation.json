@@ -1,0 +1,5 @@
+{
+  "command": "uv run pytest -q -m 'not live' tests/test_computer*.py",
+  "result": "538 passed in 15.20s",
+  "scope": "offline; separate from live Luna control"
+}

@@ -1,0 +1,292 @@
+{
+  "schema_version": 2,
+  "scripted_provider": false,
+  "provider_model": "external_live_controller",
+  "case": "scroll",
+  "mode": "hybrid",
+  "delivery": "background",
+  "image_edge": 1920,
+  "shifted_window": false,
+  "sdk_input_entries": 0,
+  "approval_count": 0,
+  "approval_decisions": [],
+  "raw_evidence_only": false,
+  "discovery": {
+    "fixture_app_count": 1,
+    "fixture_pids": [
+      59600
+    ],
+    "window_count": 1,
+    "windows": [
+      {
+        "window_id": 623,
+        "fixture_title": true
+      }
+    ]
+  },
+  "window_read": {
+    "ax_element_count": 131,
+    "ax_complete": false,
+    "truncated": false,
+    "degraded": null,
+    "reason": null,
+    "image_count": 1,
+    "frame_valid": true,
+    "max_returned_depth": 5,
+    "truncation_reason": null
+  },
+  "sdk_fields": [
+    {
+      "label": "Unicode text",
+      "value": "Unicode text"
+    },
+    {
+      "label": "Synthetic secure field",
+      "value": "Synthetic secure field"
+    }
+  ],
+  "fixture_snapshot_required": true,
+  "fixture_snapshot": {
+    "healthy": true,
+    "fields_valid": true,
+    "revision_before": 5,
+    "revision_after": 5,
+    "revision_advanced": false
+  },
+  "fixture_window": {
+    "backingScale": 2,
+    "contentHeight": 512,
+    "height": 512,
+    "number": 623,
+    "width": 520,
+    "x": 478,
+    "y": 242
+  },
+  "fixture_foreground": {
+    "is_key": true,
+    "active": true
+  },
+  "fixture_identity_unchanged": true,
+  "status": "failed",
+  "degraded": false,
+  "finish_reason": "stop",
+  "provider_calls": [
+    {
+      "call_id": "luna-1",
+      "observation_id": null,
+      "name": "computer_observe",
+      "operation": "discover",
+      "action": null,
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": false,
+      "include_image": null,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    },
+    {
+      "call_id": "luna-2",
+      "observation_id": null,
+      "name": "computer_observe",
+      "operation": "window",
+      "action": null,
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": false,
+      "include_image": true,
+      "button": null,
+      "count": null,
+      "postcondition": null
+    }
+  ],
+  "provider_failures": [],
+  "observation_meta": [
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 131
+    },
+    {
+      "truncated": false,
+      "image": true,
+      "element_count": 131
+    }
+  ],
+  "tool_diagnostics": [
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "ok": true
+      },
+      "result": {}
+    }
+  ],
+  "provider_request_count": 4,
+  "provider_image_hashes": [
+    [],
+    [],
+    [
+      "5277b69db9aecfd799e41950cf94c3bdcf259f1091bd3c6244c57dc6c77245ea"
+    ],
+    [
+      "5277b69db9aecfd799e41950cf94c3bdcf259f1091bd3c6244c57dc6c77245ea"
+    ]
+  ],
+  "action_outcomes": [],
+  "ledger_states": [
+    "closed",
+    "closed"
+  ],
+  "visual_count": 1,
+  "independent_effect": {
+    "counter_delta": 0,
+    "text_changed": false,
+    "unicode_marker_present": false,
+    "q_delta": 0,
+    "Y_delta": 0,
+    "scroll_delta": 0,
+    "secure_before": false,
+    "secure_after": false,
+    "exact_live_insert": false,
+    "correct_field": false,
+    "live_text_changed": false,
+    "committed_text_changed": false,
+    "committed_seed": false,
+    "secure_live_before": false,
+    "secure_live_after": false,
+    "key_down_characters": [],
+    "key_down_fields": [],
+    "key_up_events": 0,
+    "text_change_events": 0,
+    "secure_change_events": 0,
+    "mouse_click_counts": [],
+    "right_mouse_delta": 0,
+    "pointer_events": [],
+    "unchanged": true,
+    "wheel_inside_scroll_region": false
+  },
+  "active_turn": false,
+  "fixture_scroll_region": {
+    "height": 200,
+    "width": 480,
+    "x": 20,
+    "y": 28
+  },
+  "artifact_image_hashes": [
+    "5277b69db9aecfd799e41950cf94c3bdcf259f1091bd3c6244c57dc6c77245ea"
+  ],
+  "image_hashes_match": true,
+  "raw_status": "tested",
+  "verdict_reason": "fixture_snapshot_invalid",
+  "expected_variant": [
+    "scroll",
+    "element",
+    null,
+    null
+  ],
+  "actual_variant": null,
+  "action_attempts": 0,
+  "recovered_not_started": 0,
+  "native_completion": [],
+  "controller_decisions": [
+    {
+      "sequence": 1,
+      "request_sha256": "5d8a5bcabf13e3aeeb9f10c7d91cc47ca2126033424fa7b57473832afb590d7d",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "e749c613a4cc613efe72408bdcb482366f99ab1f095d7cddab1e9ed03948e61d"
+    },
+    {
+      "sequence": 2,
+      "request_sha256": "b9ba94452bbd05a0ff5c52256f4d2b3c93cc09fcdf0a30e2152d1f96d34345a5",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "d8d73401e8a5d0b6b17eeb7827c2dba74604417a558461ececd104857ed5541f"
+    },
+    {
+      "sequence": 3,
+      "request_sha256": "ecff30bbedfbd803f161ba50df4ce0a1f088ec05321cb62a9ec5f2765bd20dde",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "48bd863f12bbb3ff46e020b41e8b8802a1ab90efdc679fc4173724afedcbe41c"
+    },
+    {
+      "sequence": 4,
+      "request_sha256": "9752c3a356becb55accb559825ef780c83c1f8582c87185f58d4d5f10d7ee0a2",
+      "receipt_received": true,
+      "accepted": true,
+      "error_category": null,
+      "termination": "accepted",
+      "decision_sha256": "cb5da7b01d68214f37d2701d47668316d241138ab4dd69c63b720fae15b5e9ee"
+    }
+  ],
+  "alias": "semantic-container",
+  "commit": "4845b4c38a2ea86c16496611d27cc28e055591e1",
+  "decision_source": "Codex gpt-6-luna/max real-time IPC",
+  "native_entries": [],
+  "sdk_observations": [
+    {
+      "pid": 59600,
+      "window_id": 623,
+      "snapshot_hash": "54983564a124e7ad390d3c1a678508e05b72e8a55a79c325da3f83b2e9b91c85",
+      "roles": {
+        "AXWindow": 1,
+        "AXButton": 7,
+        "AXTextField": 2,
+        "AXMenuBar": 1,
+        "AXMenuBarItem": 7,
+        "AXMenu": 11,
+        "AXMenuItem": 102
+      },
+      "elements_complete": false,
+      "raw_text_lengths": [
+        12,
+        22
+      ]
+    }
+  ],
+  "network_guard": {},
+  "network_guard_passed": true,
+  "fixture_process_exited": true
+}

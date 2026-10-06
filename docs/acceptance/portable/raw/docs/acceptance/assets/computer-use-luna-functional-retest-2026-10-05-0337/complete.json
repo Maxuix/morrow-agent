@@ -1,0 +1,47 @@
+[
+  {
+    "alias": "semantic-container",
+    "exit": 0,
+    "status": "passed",
+    "reason": null,
+    "verdict_reason": "independent_effect",
+    "decisions": 5,
+    "native_entries": 1
+  },
+  {
+    "alias": "enabled-foreground",
+    "exit": 0,
+    "status": "passed",
+    "reason": null,
+    "verdict_reason": "independent_effect",
+    "decisions": 5,
+    "native_entries": 1
+  },
+  {
+    "alias": "enabled-background",
+    "exit": 0,
+    "status": "unsupported",
+    "reason": null,
+    "verdict_reason": "sdk_exact_attribute_readback_unavailable",
+    "decisions": 7,
+    "native_entries": 1
+  },
+  {
+    "alias": "foreground-wheel",
+    "exit": 0,
+    "status": "passed",
+    "reason": null,
+    "verdict_reason": "independent_effect",
+    "decisions": 7,
+    "native_entries": 1
+  },
+  {
+    "alias": "background-double",
+    "exit": 0,
+    "status": "passed",
+    "reason": null,
+    "verdict_reason": "independent_effect",
+    "decisions": 9,
+    "native_entries": 1
+  }
+]

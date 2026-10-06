@@ -1,0 +1,87 @@
+[
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/evals/computer_use/live_bridge.py",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/evals/computer_use/live_bridge.py",
+    "sha256": "ec20c92b565512ee3f2949736637a57cd3b89812c585a2c8ad393b01d610f5ef"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/evals/computer_use/live_provider.py",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/evals/computer_use/live_provider.py",
+    "sha256": "3c54a0c59b08caa064e1ef0540b3d48247c4078774ef7d4d3b5beafaa082e95e"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/evals/computer_use/run_live_controller.py",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/evals/computer_use/run_live_controller.py",
+    "sha256": "330bcfe90e284741dcdb2b8db394e897e049e0b483b9341342e70aa91a43d9d7"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/evals/computer_use/campaign_verdict.py",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/evals/computer_use/campaign_verdict.py",
+    "sha256": "e132d39edafec963576deb6b477561071d9145187f8e8c29e8d75a6d9eee58dc"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/evals/computer_use/Fixture.swift",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/evals/computer_use/Fixture.swift",
+    "sha256": "33dd87b9b2c8c692765e70aba65d32546291ac7f95b253d1cbc48dc2ba36f571"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/evals/computer_use/build_fixture.py",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/evals/computer_use/build_fixture.py",
+    "sha256": "7f1727cc2ed7959acf321b1f122b335762f4468db23fce0036ff0896b74f2108"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/adapters/computer_use/candidates.py",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/src/morrow/adapters/computer_use/candidates.py",
+    "sha256": "d6696e94f1182cdf8c17cbbb71c701321b3f038c56138e143616dd6de054ef79"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/adapters/computer_use/projection.py",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/src/morrow/adapters/computer_use/projection.py",
+    "sha256": "e947f3e7f27967edf241d0020b42a77efe8c66d6961fcb5d865ed693f6ad2e5b"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/adapters/computer_use/session.py",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/src/morrow/adapters/computer_use/session.py",
+    "sha256": "e72f6ff4c4b608099a997eb94215b0e2f595618d4184ac164156faa1b7cf5f2c"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/services/computer_verification.py",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/src/morrow/services/computer_verification.py",
+    "sha256": "74f07e181e4e17ef06bdc76360e0005dfa06b319b136e1cb171c93b8eed62aeb"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/core/computer_use.py",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/src/morrow/core/computer_use.py",
+    "sha256": "0e31a7df21c2273c38e45a2d21f9aac585a3ea2109f8fefa17aa94158ae07e0e"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/application/computer_tools.py",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/src/morrow/application/computer_tools.py",
+    "sha256": "1b996d6926e3912d1766bb0e3573a9e82c568a8051afe3333a278b7c9197b3a9"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/adapters/computer_use/action_inputs.py",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/src/morrow/adapters/computer_use/action_inputs.py",
+    "sha256": "a5a46aa30b9b0672f20fcd208714955f3133a6433f6bf2a4268aef19aca501fc"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/adapters/computer_use/diagnostics.py",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/src/morrow/adapters/computer_use/diagnostics.py",
+    "sha256": "bc2d61c33526eaff73e31f13c0fdb64ea755de2c47e434af88d43f9bc117aee0"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/vendor/cua-driver-functional/functional.patch",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/vendor/cua-driver-functional/functional.patch",
+    "sha256": "d269b57ed44653e515855e359899c73d9e7ccd40070d412e2816f0cc8ac733bf"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/pyproject.toml",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/pyproject.toml",
+    "sha256": "100fd9dc553a8f8867ffe45b18db0f087293e2b1b1c758f3dbe1ed54919bd97d"
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/uv.lock",
+    "archive": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source/uv.lock",
+    "sha256": "3a905f4e734ea81fc894df206373cf6d5b988b88a22982657c274db2966e4451"
+  }
+]

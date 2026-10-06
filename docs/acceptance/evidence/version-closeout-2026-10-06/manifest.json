@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "9b3e5bf5191d152f91feaa54392b52dbf0bae597",
+  "entries": [
+    {
+      "path": "benchmark-export.log",
+      "sha256": "fe5270a55da21020fffb2181eeaf8127989d3cb9da6c06b763a8c226ed4f3b24",
+      "bytes": 1016
+    },
+    {
+      "path": "cli-help.log",
+      "sha256": "8a5d599703dc0faa33015fa660e28d716aca310884474bd99899e59b915f9a32",
+      "bytes": 4895
+    },
+    {
+      "path": "dependencies-check.log",
+      "sha256": "e8717289c252e6064c614ec72d754e6c28c873b7920420bafce871c5e83f4733",
+      "bytes": 142
+    },
+    {
+      "path": "format.log",
+      "sha256": "4925d783b25044bdba2585ba8da21cf0acfbbd2b308cab04a939e4d5597aa878",
+      "bytes": 28
+    },
+    {
+      "path": "gui-build.log",
+      "sha256": "5944057c039bc4beb8c125c93548de39f529037d592bd4d2a203404a94c07949",
+      "bytes": 4398
+    },
+    {
+      "path": "gui-tests.log",
+      "sha256": "339cd2b7a6e842b9faaf97fb6fe17ff4911441895629be2c9eb0204299efd455",
+      "bytes": 7592
+    },
+    {
+      "path": "gui-typecheck.log",
+      "sha256": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+      "bytes": 15
+    },
+    {
+      "path": "portable-check.log",
+      "sha256": "e4385b3c3ac693ec940fff334610f745497345789f7880fe4169686a1ed3fd43",
+      "bytes": 51
+    },
+    {
+      "path": "pytest-final.log",
+      "sha256": "2c81ac3f87f365c63ac3dad1068b15f98b9b0bdf0ee724b1a281cf91bc5bcb5e",
+      "bytes": 22924
+    },
+    {
+      "path": "pytest-first-run.log",
+      "sha256": "a96541084423dc972c5fcdca2e4cd4a43d2da06e6bd598cd4660b3a7da54a807",
+      "bytes": 59936
+    },
+    {
+      "path": "release-build.log",
+      "sha256": "f194188621d143a6d069905c544a54e5323b95094711827972b007c54ae62c27",
+      "bytes": 243
+    },
+    {
+      "path": "release-smoke312-present.json",
+      "sha256": "f00ef14b7ebf9b78acd2232345d64ac0d1b48e748b628b77f5028c1724cd09dc",
+      "bytes": 356
+    },
+    {
+      "path": "release-smoke313-absent.json",
+      "sha256": "61667f9bccf889b81ce4a05816d237caecc68b753274a413da51ce6676f5513c",
+      "bytes": 343
+    },
+    {
+      "path": "ruff.log",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "bytes": 19
+    },
+    {
+      "path": "smoke312-absent.json",
+      "sha256": "2b35da4709d8332335522d05c6ac6494aa14487d189bed5748d27e056482d454",
+      "bytes": 344
+    },
+    {
+      "path": "smoke313-present.json",
+      "sha256": "8ba26f12548ea78d3108b1f65adbe300a5c39bf6c3057dffc804b83e4bb3960e",
+      "bytes": 355
+    }
+  ]
+}

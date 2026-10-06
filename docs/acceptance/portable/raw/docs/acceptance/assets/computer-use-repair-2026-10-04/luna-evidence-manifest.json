@@ -1,0 +1,108 @@
+{
+  "evidence": {
+    "luna-agentloop-background-pixel-scroll-correction.json": {
+      "role": "Correction sidecar; explicitly forbids replay of the invalid harness.",
+      "sha256": "a4e6e182d24bd89d94e6e4f5594a25b83099268feae6ff700cee3d707f0d0e30"
+    },
+    "luna-agentloop-background-pixel-scroll.json": {
+      "role": "INVALID provider harness attempt; see correction sidecar. No native action.",
+      "sha256": "4b7040ca742662a526473113f5f334658c2d259668458651354e478a62bc3174"
+    },
+    "luna-ax-readonly.swift": {
+      "role": "Raw Luna acceptance evidence; retain its per-case SDK/oracle fields.",
+      "sha256": "ad9305d057c10780ee140ad48666306e65a21c368a82bdecf33c9dcf9c13e0c1"
+    },
+    "luna-core-background-pixel-scroll.json": {
+      "role": "Setup blocked before action; zero SDK entries; not an action failure.",
+      "sha256": "6e22cbfeb5057bfd697e71f763e85871f9a3d47d041e694cc639932796768869"
+    },
+    "luna-core-hotkey-shift-y.json": {
+      "role": "SDK unknown; independent synthetic fixture effect observed; keep classifications separate.",
+      "sha256": "a5ca36bd1ee73926310e51542065241a93110955cf66047db90c26f4b9021456"
+    },
+    "luna-core-keyboard-cases-process-reused.json": {
+      "role": "Raw Luna acceptance evidence; retain its per-case SDK/oracle fields.",
+      "sha256": "f396b2145a15b90bdcf6e01a749274da3e89ae3d0e3fba27bac4c7d3d8ba22f2"
+    },
+    "luna-core-observe.json": {
+      "role": "Read-only observation evidence.",
+      "sha256": "35239a2b91a87dc19c15eecdfdf87ad154ca5ff7ad18a8c291114c36d9bca1b3"
+    },
+    "luna-core-secure-input-hash-check.json": {
+      "role": "Raw Luna acceptance evidence; retain its per-case SDK/oracle fields.",
+      "sha256": "71728b74bbce5d76af0dcec4a9209d1331aaeddbeaf61b552b430b43910b08db"
+    },
+    "luna-core-secure-input.json": {
+      "role": "SDK unknown; independent secure-field synthetic effect observed; no raw secure value in evidence.",
+      "sha256": "c6b530cc8e3fd3ca72a313e24a4c66d77d805ccf7f57d0dd50d5b30092696143"
+    },
+    "luna-counter-probe.py": {
+      "role": "Raw Luna acceptance evidence; retain its per-case SDK/oracle fields.",
+      "sha256": "43ce7e277e18f047844ca5a18cb73b2100225e34c9825d9a2ad256ee7bfce2d2"
+    },
+    "luna-scripted-agent-loop.json": {
+      "role": "Valid controlled AgentLoop + ScriptedModelProvider case; not API Provider connectivity.",
+      "sha256": "d7e6d57df117895333b1e8631d314d160a5bfbf7ef590c634b8dc689b98a1269"
+    },
+    "luna-semantic-counter-ax-advertisement.json": {
+      "role": "Raw Luna acceptance evidence; retain its per-case SDK/oracle fields.",
+      "sha256": "6f441f085edffc0d7b728c8511a9f6729f52a7f85ac7050a8a79c9df20047f0e"
+    },
+    "luna-semantic-counter-callback-probe.json": {
+      "role": "SDK unknown and callback oracle unchanged; no effect claimed.",
+      "sha256": "6fe3f62d378305bc1334d3249f9573e1d0c7eee51897164bf47dbe0b3dff0c03"
+    },
+    "luna-semantic-counter-foreground-active.json": {
+      "role": "Raw Luna acceptance evidence; retain its per-case SDK/oracle fields.",
+      "sha256": "22e889bd3ed1f5cdcff2940f3326bae870cee7a779f6c3586c8f163d110bb291"
+    },
+    "luna-semantic-counter-foreground-inactive.json": {
+      "role": "Raw Luna acceptance evidence; retain its per-case SDK/oracle fields.",
+      "sha256": "a8627b2aec87e8d063129ee2fc9fd679e04690646930edf890e85dcfd04b457f"
+    },
+    "luna-semantic-counter-swiftui-control.json": {
+      "role": "Fresh SwiftUI comparison; SDK unknown and callback oracle unchanged.",
+      "sha256": "08c3b8b207a60817d22a1f0c78e81210eceae443831b26b52678aeec34bc2309"
+    }
+  },
+  "fixture_build_command": "uv run python evals/computer_use/build_fixture.py --output-directory /tmp/morrow-repair-final-fixture --state-directory /tmp/morrow-repair-final-fixture/state",
+  "invalid_attempt": "luna-agentloop-background-pixel-scroll.json is preserved with correction sidecar; its attempted run entered the real DeepSeek provider path with a placeholder key and auth failure; invalid; do not replay.",
+  "manifest_kind": "Luna max controlled native acceptance evidence index",
+  "official_sdk_source": {
+    "commit": "bf6c76786d938070f4ecf1e44004752f69f518b8",
+    "tag": "cua-driver-rs-v0.30.4"
+  },
+  "repo_commit": "7751c5c0e76df194435a952b56fca57af9398d46",
+  "scope": "Codex Luna-assisted, synthetic-only native acceptance using fresh fixture cases and controlled SDK/product calls. No valid Morrow API Provider connectivity test was performed.",
+  "script_sha256": {
+    "luna-ax-readonly.swift": {
+      "sha256": "ad9305d057c10780ee140ad48666306e65a21c368a82bdecf33c9dcf9c13e0c1",
+      "status": "retained source for audit/reproduction of read-only or prior controlled diagnostics"
+    },
+    "luna-counter-probe.py": {
+      "sha256": "43ce7e277e18f047844ca5a18cb73b2100225e34c9825d9a2ad256ee7bfce2d2",
+      "status": "retained source for audit/reproduction of read-only or prior controlled diagnostics"
+    },
+    "luna_scripted_live_case.py": {
+      "sha256": "9f57ae0194bbe2c28e0f78b0611c5e4ba2caf5ab7d6f1a47f37585033634b6c7",
+      "status": "INVALID_HARNESS_DO_NOT_RERUN"
+    }
+  },
+  "sdk_version": "0.30.4",
+  "separate_valid_product_loop": "luna-scripted-agent-loop.json uses ScriptedModelProvider through production AgentLoop and preserves Artifact image hashes; it is offline evidence only.",
+  "source_manifest": {
+    "path": "delivery-source-manifest-luna.json",
+    "sha256": "4f09d0a844c82f5175f01f7f46debdd9d3b862a5bafd7dacf225956ae8322692"
+  },
+  "source_sha256": {
+    "evals/computer_use/Fixture.swift": "ac264d3e06febf861c5e4743567ae0a1ee5af268f86738fef2f45826295baff2",
+    "evals/computer_use/build_fixture.py": "7f1727cc2ed7959acf321b1f122b335762f4468db23fce0036ff0896b74f2108",
+    "evals/computer_use/live_provider.py": "d6585fb9a8a297f0490f07343df54e3712f5f97e4cefe819e2e87c2c36d3af76",
+    "evals/computer_use/native_counter.py": "d958b8dcb6762c05d852723b40d496d1ed07185cbdf561a5ba1179b9b29df61c",
+    "evals/computer_use/native_loop.py": "8306bdc23a6aa573f8d604abe6c06659a645d453eb3928ba62d6b5be3168727d",
+    "evals/computer_use/native_readonly.py": "47afb545ff20b5c2332acf9948a78c28943f2bbc1645ebc09eeff3aec685f465",
+    "evals/computer_use/native_text.py": "d011db35d5c72a625f350c9677137eebecafc804d18427d0b6455a63334a647f",
+    "tests/test_computer_use_native_counter.py": "306b38de0f3d08223877f8129a0fad25faeaaad520e83cb18f5e208607876833",
+    "tests/test_computer_use_native_gate.py": "a85ada8217cce24b0504f658ed712693601cbc889e679322ab7ab68484080e68"
+  }
+}

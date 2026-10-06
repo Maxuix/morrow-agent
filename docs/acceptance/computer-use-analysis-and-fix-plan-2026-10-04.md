@@ -34,7 +34,7 @@ P1 表示阻塞对应功能验收或存在明确语义缺陷，不表示所有�
 
 唯一 `sensitive=true` 的投影节点是索引 94 的 `axmenuitem`：无 value、有 label、frame=null；标签匹配 `password`。`_element_label()` 对 value/value_description/label 都调用默认 `legacy_strict` 的 `refuse_secret_material()`。这个规则只要文本包含 password 等关键词就拒绝，分类随后变成 sensitive。`project_sensitive_regions()` 遇到该敏感节点的空 frame，在第 224 行抛出 image_safety_unconfirmed。错误经观察服务上抛，图像没有进入发布/Provider 阶段。
 
-证据：[read-probe.json](assets/computer-use-analysis-2026-10-04/read-probe.json)。代码：[projection.py](../../src/morrow/adapters/computer_use/projection.py)、[domain.py](../../src/morrow/core/domain.py)、[computer_visuals.py](../../src/morrow/application/computer_visuals.py)。
+证据：[read-probe.json](portable/raw/docs/acceptance/assets/computer-use-analysis-2026-10-04/read-probe.json)。代码：[projection.py](../../src/morrow/adapters/computer_use/projection.py)、[domain.py](../../src/morrow/core/domain.py)、[computer_visuals.py](../../src/morrow/application/computer_visuals.py)。
 
 **修复方案：**
 
@@ -61,7 +61,7 @@ P1 表示阻塞对应功能验收或存在明确语义缺陷，不表示所有�
 
 `project_frame()` 在无截图时保留逻辑窗口尺寸，但 scale/crop 为空，`map_image_point()` 返回 unknown_scale。第一次真实模型坐标滚动发生在 semantic fallback 后，拒绝符合契约；不应拿 Retina 倍率猜坐标。
 
-本轮有截图的只读观察得到 SDK screenshot_scale=2，Morrow frame 为 1040×1024、scale_x/y=1、crop=1040×1024。这里的 1 **是正确值**：Morrow 输出送入 SDK 的已交付图片像素，SDK 再完成 backing/downscale 转换。尝试通过 Morrow admission 使用该 frame，错误变为 `image_not_published`，说明映射本身可用，但模型尚未获得合法发布的图片。证据：[coordinate-probe.json](assets/computer-use-analysis-2026-10-04/coordinate-probe.json)。
+本轮有截图的只读观察得到 SDK screenshot_scale=2，Morrow frame 为 1040×1024、scale_x/y=1、crop=1040×1024。这里的 1 **是正确值**：Morrow 输出送入 SDK 的已交付图片像素，SDK 再完成 backing/downscale 转换。尝试通过 Morrow admission 使用该 frame，错误变为 `image_not_published`，说明映射本身可用，但模型尚未获得合法发布的图片。证据：[coordinate-probe.json](portable/raw/docs/acceptance/assets/computer-use-analysis-2026-10-04/coordinate-probe.json)。
 
 **修复方案：** 优先修 CU-01，保留当前“图像已经发布且观察新鲜”才能执行坐标的约束。在模型指引中明确 semantic 观察只支持元素目标；视觉动作必须使用同一次发布图像。图像失败时将坐标场景记为 blocked，不能自动改成元素点击后算作坐标通过。
 
@@ -79,7 +79,7 @@ P1 表示阻塞对应功能验收或存在明确语义缺陷，不表示所有�
 
 这直接证明原报告中 state.json 无变化不能推出按键未送达。fixture 只在 SwiftUI `@State` 的 `.onChange` 中写文件；原生 field editor 与绑定提交不是同一个观察时点。旧场景在 secure 输入改变焦点时才出现 q/Y，与旧编辑状态被提交相符，**不能继续称为输入事件到 secure 步骤才抵达**。
 
-证据：[component-probe.json](assets/computer-use-analysis-2026-10-04/component-probe.json)，代码：[Fixture.swift](../../evals/computer_use/Fixture.swift)。SDK 单键以同一原生对象的 value/selection 变化作为确认依据，解释了为什么 q 已返回 completed；这仍不能当成业务应用保存成功。[官方 press_key 实现](https://github.com/trycua/cua/blob/cua-driver-rs-v0.30.4/libs/cua-driver/rust/crates/platform-macos/src/tools/press_key.rs)。
+证据：[component-probe.json](portable/raw/docs/acceptance/assets/computer-use-analysis-2026-10-04/component-probe.json)，代码：[Fixture.swift](../../evals/computer_use/Fixture.swift)。SDK 单键以同一原生对象的 value/selection 变化作为确认依据，解释了为什么 q 已返回 completed；这仍不能当成业务应用保存成功。[官方 press_key 实现](https://github.com/trycua/cua/blob/cua-driver-rs-v0.30.4/libs/cua-driver/rust/crates/platform-macos/src/tools/press_key.rs)。
 
 **修复方案：**
 
@@ -95,7 +95,7 @@ P1 表示阻塞对应功能验收或存在明确语义缺陷，不表示所有�
 
 Apple 原生只读 AX 探针找到了 fixture 真实滚动区域：屏幕 frame `(498,484,87,200)`。其宽度只有 87 点，属于 SwiftUI 当前布局；窗口中心不在该区域。对照组件诊断中，公开 SDK 在窗口中部滚动无变化；改为实际滚动区域中心对应的图片点 `(127,764)`，同样 foreground/down/3，使独立 scrollOffset 从 **0→60**。SDK 仍返回 unknown。这说明 SDK 的轮事件路径在此环境可以工作，并非“滚动 API 完全失效”。
 
-证据：[ax-scroll-probe.json](assets/computer-use-analysis-2026-10-04/ax-scroll-probe.json)、[wheel-sdk-targeted-probe.json](assets/computer-use-analysis-2026-10-04/wheel-sdk-targeted-probe.json)。组件诊断直接调用公开 SDK，未经过 Morrow 的图像发布/admission，不能当作产品坐标链路通过。
+证据：[ax-scroll-probe.json](portable/raw/docs/acceptance/assets/computer-use-analysis-2026-10-04/ax-scroll-probe.json)、[wheel-sdk-targeted-probe.json](portable/raw/docs/acceptance/assets/computer-use-analysis-2026-10-04/wheel-sdk-targeted-probe.json)。组件诊断直接调用公开 SDK，未经过 Morrow 的图像发布/admission，不能当作产品坐标链路通过。
 
 **修复方案：**
 
@@ -172,7 +172,7 @@ fixture 还需分别提供 live-edit/commit、滚轮 offset、按钮 mouse event
 
 ## 11. 证据范围与剩余事项
 
-补充诊断依据见 [summary.json](assets/computer-use-analysis-2026-10-04/summary.json)。原始 JSON 保留；assets 按仓库惯例仅本地保存，汇总含文件 hash。源码分析使用官方 tag `cua-driver-rs-v0.30.4`、commit `bf6c76786d938070f4ecf1e44004752f69f518b8`，排除了本地 SDK checkout 后续实验提交对结论的影响。
+补充诊断依据见 [summary.json](portable/raw/docs/acceptance/assets/computer-use-analysis-2026-10-04/summary.json)。原始 JSON 保留；assets 按仓库惯例仅本地保存，汇总含文件 hash。源码分析使用官方 tag `cua-driver-rs-v0.30.4`、commit `bf6c76786d938070f4ecf1e44004752f69f518b8`，排除了本地 SDK checkout 后续实验提交对结论的影响。
 
 已定位的根因不需要继续按“所有动作失败”处理。仍未证实的是：原场景所选滚动 token 的精确落点、全量键盘组合的精确事件次数/字串、其他框架和应用的兼容性，以及修复后的完整视觉链路。报告明确保留这些边界，没有将 SDK 组件生效写成产品验收通过。
 

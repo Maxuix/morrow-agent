@@ -1,0 +1,30 @@
+{
+  "actual_path": {
+    "classification_basis": "The local adapter classifies HTTP 401/403 responses or an authentication exception as auth. The raw evidence retained only the normalized auth code, not the underlying exception class or HTTP status.",
+    "configured_credential": "The literal placeholder synthetic-only-no-network from the saved runner; no user credential was supplied.",
+    "endpoint": "https://api.deepseek.com",
+    "method": "NativeProvider.stream -> OpenAICompatibleProvider.stream -> AsyncOpenAI.chat.completions.create",
+    "model": "deepseek-flash",
+    "network_assessment": "The real DeepSeek request path was entered and a remote authentication rejection is the most likely explanation. Because the underlying exception/status was not preserved, the exact wire response cannot be independently proven from this artifact. Do not characterize this as a no-network run or as a valid Provider connectivity test; billing outcome is unknown.",
+    "provider_class": "evals/computer_use/live_provider.py::NativeProvider",
+    "provider_request_count": 1,
+    "recorded_failure_code": "auth"
+  },
+  "created_utc_date": "2026-10-04",
+  "invalid_reason": "The attempted runpy monkeypatch changed the dictionary returned by runpy.run_path, but run_fixture resolves NativeProvider through its original function __globals__. The replacement ScriptedModelProvider was therefore never constructed.",
+  "native_case_effect": {
+    "approval_count": 0,
+    "classification": "No computer-use action was executed; this is an invalid provider harness attempt, not a scroll result.",
+    "fixture_scroll_delta": 0,
+    "model_tool_calls": 0,
+    "sdk_input_entries": 0
+  },
+  "raw_evidence_file": "luna-agentloop-background-pixel-scroll.json",
+  "raw_evidence_preserved_without_modification": true,
+  "raw_evidence_sha256": "4b7040ca742662a526473113f5f334658c2d259668458651354e478a62bc3174",
+  "record_type": "correction_sidecar",
+  "replay_policy": "Do not rerun luna_scripted_live_case.py. The harness is retained byte-for-byte for audit only; no repair or retry was made.",
+  "status": "INVALID_HARNESS_DO_NOT_RERUN",
+  "successful_loop_scope": "A separate production AgentLoop run using an actual ScriptedModelProvider; it establishes the ordinary text/action loop and image Artifact forwarding only. It does not establish Morrow API Provider connectivity.",
+  "successful_offline_product_loop_evidence": "luna-scripted-agent-loop.json"
+}

@@ -1,0 +1,1119 @@
+{
+  "schema_version": 1,
+  "method": "byte_preserving_copy_of_existing_local_evidence",
+  "native_inputs": 0,
+  "provider_requests": 0,
+  "entries": [
+    {
+      "source": "docs/acceptance/assets/computer-use-analysis-2026-10-04/ax-scroll-probe.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-analysis-2026-10-04/ax-scroll-probe.json",
+      "sha256": "ca29cb2a4636f2cd0da969740ae7fa29c592939d8d32e89bb4d48f5ce21c80e0",
+      "bytes": 196
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-analysis-2026-10-04/component-probe.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-analysis-2026-10-04/component-probe.json",
+      "sha256": "a5fca4201bab093732a78f794a52814a3dba43ad3a07d77fc9b91fd147871716",
+      "bytes": 3881
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-analysis-2026-10-04/coordinate-probe.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-analysis-2026-10-04/coordinate-probe.json",
+      "sha256": "a092d9443495533eb6acd444e6370a01d0aee4587e7fe400a3f90fb1b207e4df",
+      "bytes": 792
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-analysis-2026-10-04/read-probe.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-analysis-2026-10-04/read-probe.json",
+      "sha256": "1577a317eaeb66a38245134f6828ebaa4acff3e2a02f2f2533d222d2622b7540",
+      "bytes": 3135
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-analysis-2026-10-04/summary.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-analysis-2026-10-04/summary.json",
+      "sha256": "a3d331a6c3a0c97dbb3c2e9b993bd5e23f883f509988f0f46fdd44b2db564e03",
+      "bytes": 1706
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-analysis-2026-10-04/wheel-sdk-targeted-probe.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-analysis-2026-10-04/wheel-sdk-targeted-probe.json",
+      "sha256": "8ab1b9fb84174759e5ad34f88806e52ccbf2c3e72d1f14d74f177b5088a339c5",
+      "bytes": 1731
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-live-2026-10-04/summary.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-live-2026-10-04/summary.json",
+      "sha256": "17aa7bff9bd8533fae8890e273f3a5edc2a5a83cee12ef9e4073871d6271716f",
+      "bytes": 1788
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/approval-unavailable/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/approval-unavailable/evidence.json",
+      "sha256": "921da5d4fd538f81a739ef9f0bc40148fa0396f468f41a73c744bd05afa1d95a",
+      "bytes": 15492
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/campaign-complete.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/campaign-complete.json",
+      "sha256": "146e2b51177d252932b252ef8656bf54183448b2db0f6e05f2d7468d0047adb8",
+      "bytes": 8299
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/denied/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/denied/evidence.json",
+      "sha256": "a21c6ed6b1f0c30be9fb2172cb3152585260453284878489b5503cf9a5a36616",
+      "bytes": 15208
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/enabled-readback/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/enabled-readback/evidence.json",
+      "sha256": "2484473ecfd5bcf931433eeaa03499d458692d0286c20edc2b383e17db17e9be",
+      "bytes": 32666
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/evidence-index.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/evidence-index.json",
+      "sha256": "defb0febb507a12aea806b55b53132b607f40600fd6c77f331fdba129bf0b61f",
+      "bytes": 68892
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2-archive.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2-archive.json",
+      "sha256": "cfdad876033becb01f22b2616a59fc723c2b1beabc8a2df9bf2f90cc9d2b326f",
+      "bytes": 48275
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/background-coordinate-scroll/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/background-coordinate-scroll/evidence.json",
+      "sha256": "04210ace8749d8e4bd009f140dd7091678dc56d200cee350c04d4ecf0a81eaab",
+      "bytes": 23255
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/background-double-click/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/background-double-click/evidence.json",
+      "sha256": "65dd66fcf30713e803de5ef508df1eba5b823358b5bd61aa1687381b279b0c47",
+      "bytes": 15566
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/enabled-readback-background/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-2/enabled-readback-background/evidence.json",
+      "sha256": "1d2847c9118c5732a2586779d58456cf2e82f60a1107d271903a2904157fe135",
+      "bytes": 22119
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3-archive.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3-archive.json",
+      "sha256": "6f35544781ce2fed5db23e4e5bc60b5304ca82b000c8a330f0cfbb0c18959c9a",
+      "bytes": 24793
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/evidence.json",
+      "sha256": "b91812a23f7da6a099f713a3ff709e341d65bffaed61df5d26ed9a1b9044e476",
+      "bytes": 72300
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/live-reference-proof-bound.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/long-text-4097/live-reference-proof-bound.json",
+      "sha256": "2ec9dcb9f7dbd4daff16cee1c2d8075ab9ee7adb3eb9193ba67a75cea668d3ee",
+      "bytes": 681
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/evidence.json",
+      "sha256": "e32f332bf9bb29b1719a7c301b3f868b3e18b13943afe1593708edceb220822b",
+      "bytes": 22728
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/state/state.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-3/semantic-click/state/state.json",
+      "sha256": "1b2293e7086bdbf9bc5064acff18392227afe0efbe99da8ca6d79c521fffc747",
+      "bytes": 669
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4-archive.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4-archive.json",
+      "sha256": "0864eab0a49e93c2f5140331d54fa0b6d43c02258eb1a357922ca7267304c0d7",
+      "bytes": 20563
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4/foreground-double-click/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4/foreground-double-click/evidence.json",
+      "sha256": "5d4f1ac1476397f2f9fbd8dc9b05a058979d29fb1718342bb466ff1311234d01",
+      "bytes": 22820
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4/foreground-pixel-scroll/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4/foreground-pixel-scroll/evidence.json",
+      "sha256": "a15a5ffce4be276f5c3823e58900a188f48947d9f1d42c2ac91db7bca245c578",
+      "bytes": 15603
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4/foreground-right-click/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-4/foreground-right-click/evidence.json",
+      "sha256": "48ece470719257fe2dd42cb920f606c31a03b7760eaac4caab018c9d1cdb8cdf",
+      "bytes": 22742
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-5-archive.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-5-archive.json",
+      "sha256": "90d7157b9f347e56fdc935511efef3ca7b6199f42ab0bfe06b6a7e51f53a3375",
+      "bytes": 7807
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-5/background-coordinate-scroll/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-5/background-coordinate-scroll/evidence.json",
+      "sha256": "58d0b172ac003f7c2e47814589e9afa445cba41b523e8ea1cf1827f804bbe400",
+      "bytes": 6215
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-5/scenario-metadata.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/phase-5/scenario-metadata.json",
+      "sha256": "cd7fecf780b02a67de4b5780aa78c6e3c455140a0cfe79255a9d24ad842d2be4",
+      "bytes": 708
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-control-2026-10-04/postcondition-omitted/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-control-2026-10-04/postcondition-omitted/evidence.json",
+      "sha256": "e6497597ce33aa5d9d7b22bbd6c9c7f470ec4ce2824f34a3d9ba44d891746be5",
+      "bytes": 23012
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/background-double/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/background-double/evidence.json",
+      "sha256": "1c1a6301144bbca660ff8668dcea91e4c8e9aa2d2692de9a403d52dcfd68c26b",
+      "bytes": 10416
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/delayed-selection/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/delayed-selection/evidence.json",
+      "sha256": "689d65927630e7daab1dbc738af92864161496009d0106ccddd7b3539f438ce1",
+      "bytes": 6806
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/enabled-background/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/enabled-background/evidence.json",
+      "sha256": "0b3c8177c4c91e2af950e84f35b5f2d2ecc5b6a61f6f306877808823db52fdee",
+      "bytes": 12144
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/enabled-foreground/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/enabled-foreground/evidence.json",
+      "sha256": "47942ffe9560c84ef8c2fb069da6cfa3ef474c6961948f55eafb2a6d3bd783df",
+      "bytes": 12316
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/fixture-semantic-click/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/fixture-semantic-click/evidence.json",
+      "sha256": "897723ffbca3fccc149b898c13c0bb15a0e6a47c94d5c65b604aa80a095051db",
+      "bytes": 12203
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/foreground-wheel/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/foreground-wheel/evidence.json",
+      "sha256": "58d3dab8b7f9eba7d0b89b5d3dd8dc4337aac875845767454263d872c18b1f00",
+      "bytes": 9874
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/long-text-tail/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/long-text-tail/evidence.json",
+      "sha256": "ee29bdf4b1643331482e0f7444968f29bb51c0bbdca4ed1840e680b028f419db",
+      "bytes": 34646
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/semantic-container/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-fixed-retest-2026-10-04-2216/semantic-container/evidence.json",
+      "sha256": "b973815df196f6593c9be532b61164abbad851fff7dd84f100f5e6236df9ac9d",
+      "bytes": 6859
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/artifact-audit.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/artifact-audit.json",
+      "sha256": "25058b5a5ce29db74db5a1ab7931436857bb2b0ad037905ce820d032dfc88439",
+      "bytes": 14337
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/attribute-stale-scoring-diagnostic.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/attribute-stale-scoring-diagnostic.json",
+      "sha256": "b7ec01b4639ce69eb10b3145c3d5c9a509aef8ef5ca40039532af80dfbf28dbf",
+      "bytes": 2736
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/background-double/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/background-double/evidence.json",
+      "sha256": "49a90f01b93b8bb3d25fbb415ebf757ee1689026e80d5d846688e3c83a43cea9",
+      "bytes": 25470
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/comparison.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/comparison.json",
+      "sha256": "1f381ac82cd60432d7807694df5cebf66c251598350d8daae20a8ccdf5ba5266",
+      "bytes": 12531
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/complete.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/complete.json",
+      "sha256": "a33f38cccc30df115c7b63e7f2c23755632c3e5ea93d54b1d5d7948f5155917f",
+      "bytes": 982
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/controller-notes.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/controller-notes.json",
+      "sha256": "3768d5404ec1b78e59c52ad625882898daaa452f33b2539af256a9a495720f53",
+      "bytes": 5716
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/enabled-background/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/enabled-background/evidence.json",
+      "sha256": "87c158944bb11a3d9cd3b0e36692313ab50c2380bf9258aa4994ec2e237d46fa",
+      "bytes": 18559
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/enabled-foreground/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/enabled-foreground/evidence.json",
+      "sha256": "bea3936e649168581309e1502e0a0e2df383685f58d3bcf5dfd490d7c5cfa108",
+      "bytes": 13180
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/environment.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/environment.json",
+      "sha256": "68c297b002d3d00c411e968df858910ece2fcc6f4f8fb7576cb115c54a7f5c18",
+      "bytes": 994
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/foreground-wheel/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/foreground-wheel/evidence.json",
+      "sha256": "e8edc2f06a765731b79072159fe31284deb3608969a70f2b59638b0949366f64",
+      "bytes": 17654
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/offline-validation.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/offline-validation.json",
+      "sha256": "ec64aac15102ae3fccd28a1e616d6134fba43d15ae25e866818a27020ed34dde",
+      "bytes": 165
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/semantic-container/evidence.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/semantic-container/evidence.json",
+      "sha256": "1ecbf6e0a8fc975c044329e93b6ba501721ce9c3ba5430978cb2759f11b90606",
+      "bytes": 13679
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source-audit.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source-audit.json",
+      "sha256": "dad4d977669a9ec6e6030c260588f527b0235994f6efe8bb46a19f3354998b54",
+      "bytes": 2890
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source-manifest.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337/source-manifest.json",
+      "sha256": "437c24383ba994dc310bd414dd6a29b921bd7f4a942822ffac00ca866220dfc0",
+      "bytes": 6474
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-repair-2026-10-04/delivery-source-manifest-luna.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/delivery-source-manifest-luna.json",
+      "sha256": "4f09d0a844c82f5175f01f7f46debdd9d3b862a5bafd7dacf225956ae8322692",
+      "bytes": 86097
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-repair-2026-10-04/delivery-source-manifest-review.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/delivery-source-manifest-review.json",
+      "sha256": "57e202d7b89db04fe26df736648599ba82d869b971c13b345bfb7973dee21b2c",
+      "bytes": 86523
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-repair-2026-10-04/luna-agentloop-background-pixel-scroll-correction.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/luna-agentloop-background-pixel-scroll-correction.json",
+      "sha256": "a4e6e182d24bd89d94e6e4f5594a25b83099268feae6ff700cee3d707f0d0e30",
+      "bytes": 2454
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-repair-2026-10-04/luna-evidence-manifest.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/luna-evidence-manifest.json",
+      "sha256": "da746cf155f6eb578b2c6b152eea091460289497babb593314f7f96eaf46efef",
+      "bytes": 6537
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-repair-2026-10-04/review-focused.txt",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/review-focused.txt",
+      "sha256": "36f679f817b3482868ba6e4fa11b19f53ce80cc7e737205d9a96defee16818a3",
+      "bytes": 581
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-repair-2026-10-04/review-offline.txt",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/review-offline.txt",
+      "sha256": "737796a759d44025bc380380cfcc96ebf4f6d9798956edc8bfbdb9987d069a68",
+      "bytes": 3567
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-repair-2026-10-04/review-rescore.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/review-rescore.json",
+      "sha256": "c97beae15888dbd1ff588fd47a867464c1ec6c346309216b4b01b278ff2e774b",
+      "bytes": 3392
+    },
+    {
+      "source": "docs/acceptance/assets/computer-use-repair-2026-10-04/summary.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/summary.json",
+      "sha256": "36fb9d8a8f6937904859ef50f3fb44fe18f15f5f044823a25e6439c2cf53b3e8",
+      "bytes": 11473
+    },
+    {
+      "source": "docs/acceptance/computer-use-luna-control-2026-10-04.md",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/computer-use-luna-control-2026-10-04.md",
+      "sha256": "aa92e17e99f7e93581c7a1ef376a8224b1e5164ca0929324935e1b28a626282b",
+      "bytes": 14163
+    },
+    {
+      "source": "docs/acceptance/computer-use-luna-functional-retest-2026-10-05.md",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/computer-use-luna-functional-retest-2026-10-05.md",
+      "sha256": "47497e46703b262f5377874bd4dab97ac39dd2509b0b359f57153a69222cc424",
+      "bytes": 8721
+    },
+    {
+      "source": "docs/acceptance/harness-fifth-acceptance-2026-09-27.md",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-fifth-acceptance-2026-09-27.md",
+      "sha256": "f1125fdd4e681c6cd93d74e38cbcce5663dbf16fa24cae3f19558af57b75bab8",
+      "bytes": 6007
+    },
+    {
+      "source": "docs/acceptance/harness-fifth-acceptance-2026-09-27/cross-run-results.txt",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-fifth-acceptance-2026-09-27/cross-run-results.txt",
+      "sha256": "a767c9bfcf42de202c7b2652c71d8ae701a536cdbd9303e468dc0ee09661ef25",
+      "bytes": 9172
+    },
+    {
+      "source": "docs/acceptance/harness-fifth-acceptance-2026-09-27/cross_run_probes.py",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-fifth-acceptance-2026-09-27/cross_run_probes.py",
+      "sha256": "936a45aa125b0e50b1e3624330da5034f15707d05b7d421b5443e79e37e06ef3",
+      "bytes": 3786
+    },
+    {
+      "source": "docs/acceptance/harness-final-2026-09-27.md",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-final-2026-09-27.md",
+      "sha256": "df4e72ea3630fb00305d05bf991fe296aca5937c50ed46d584df327930316370",
+      "bytes": 12588
+    },
+    {
+      "source": "docs/acceptance/harness-final-2026-09-27/regression-results.txt",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-final-2026-09-27/regression-results.txt",
+      "sha256": "37b0d43e164e9b70586e3207745e02a0d3e2306c84e7ef34df7c48e30f79261e",
+      "bytes": 11587
+    },
+    {
+      "source": "docs/acceptance/harness-final-2026-09-27/regression_probes.py",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-final-2026-09-27/regression_probes.py",
+      "sha256": "ddb444063bff622266cbb2974e45c64a0e28e83957119e8421ad04b5681e0fa1",
+      "bytes": 6899
+    },
+    {
+      "source": "docs/acceptance/harness-fourth-acceptance-2026-09-27.md",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-fourth-acceptance-2026-09-27.md",
+      "sha256": "e6135104b297f0c70ed67ed59efdeba2d0395e8c25f76383eb97c69145b0896a",
+      "bytes": 6312
+    },
+    {
+      "source": "docs/acceptance/harness-fourth-acceptance-2026-09-27/delayed-observation-results.txt",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-fourth-acceptance-2026-09-27/delayed-observation-results.txt",
+      "sha256": "f92ff07f6945dfda7a9eea0a0f6ab6453bd28addfda70e1f3a0226d165cb18c5",
+      "bytes": 19885
+    },
+    {
+      "source": "docs/acceptance/harness-fourth-acceptance-2026-09-27/delayed_observation_probes.py",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-fourth-acceptance-2026-09-27/delayed_observation_probes.py",
+      "sha256": "483764b8c2c71d3e2cf3b805ff9a39aeca32460ad48fdd6e64335c00d4cb74b7",
+      "bytes": 4048
+    },
+    {
+      "source": "docs/acceptance/harness-reacceptance-2026-09-27.md",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-reacceptance-2026-09-27.md",
+      "sha256": "d0234202edcc7bea2f0894973db2c034b816d1d5669daeede07109fac3dc8566",
+      "bytes": 6547
+    },
+    {
+      "source": "docs/acceptance/harness-reacceptance-2026-09-27/boundary-results.txt",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-reacceptance-2026-09-27/boundary-results.txt",
+      "sha256": "16e30d319251b0590638e01ecbff6719fd4f0d984453798b526a7beab4d02829",
+      "bytes": 7288
+    },
+    {
+      "source": "docs/acceptance/harness-reacceptance-2026-09-27/boundary_probes.py",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-reacceptance-2026-09-27/boundary_probes.py",
+      "sha256": "487df915518c897318072adf4c55362c068ed2ef23705861d28dfc5744229f0b",
+      "bytes": 2753
+    },
+    {
+      "source": "docs/acceptance/harness-sixth-acceptance-2026-09-27.md",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-sixth-acceptance-2026-09-27.md",
+      "sha256": "6262dec753493fb0bb94a05612c71c94f00d2775b66907944a9f4e9ee4db9b29",
+      "bytes": 5513
+    },
+    {
+      "source": "docs/acceptance/harness-sixth-acceptance-2026-09-27/evidence_matrix.py",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-sixth-acceptance-2026-09-27/evidence_matrix.py",
+      "sha256": "bb35cb7773b1ef6ae035d7ec1301c62a95fc9c431b3bce698700c6e75acf7cab",
+      "bytes": 5130
+    },
+    {
+      "source": "docs/acceptance/harness-sixth-acceptance-2026-09-27/matrix-results.txt",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-sixth-acceptance-2026-09-27/matrix-results.txt",
+      "sha256": "514ea8d9b563a2065b60b9d0895a7d1d52d5e5a6de88bc0da74a34509bc144f7",
+      "bytes": 99
+    },
+    {
+      "source": "docs/acceptance/harness-third-acceptance-2026-09-27.md",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-third-acceptance-2026-09-27.md",
+      "sha256": "f67887c45d58380808962630110d222f09424cf1d64bfc97249c382f94bfe93f",
+      "bytes": 6496
+    },
+    {
+      "source": "docs/acceptance/harness-third-acceptance-2026-09-27/terminal-order-results.txt",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-third-acceptance-2026-09-27/terminal-order-results.txt",
+      "sha256": "c3721425d50db88ddcc5da92e8ba98a5e0398774ae3056ff96bd38746407db00",
+      "bytes": 8254
+    },
+    {
+      "source": "docs/acceptance/harness-third-acceptance-2026-09-27/terminal_order_probes.py",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/harness-third-acceptance-2026-09-27/terminal_order_probes.py",
+      "sha256": "256346ba12e037d6929ef2d5b589e228c67235d68516844d121a3f39c5c8b0e1",
+      "bytes": 3886
+    },
+    {
+      "source": "docs/acceptance/tb2-g4-89-failure-audit-2026-09-28.md",
+      "source_snapshot": "initial_worktree_before_closeout",
+      "archive_path": "docs/acceptance/portable/raw/docs/acceptance/tb2-g4-89-failure-audit-2026-09-28.md",
+      "sha256": "3778bff328e71e6b08d7f5f1ae2f9fd014fd424d25c7e1cf49151304ba3562ca",
+      "bytes": 21124
+    },
+    {
+      "source": "docs/research/benchmark-v2-implementation-plan-2026-09-27.md",
+      "archive_path": "docs/acceptance/portable/raw/docs/research/benchmark-v2-implementation-plan-2026-09-27.md",
+      "sha256": "d750196bf93f4f0e4175e43892412c87acb04d693c5baad3bcdcddcff8a9f697",
+      "bytes": 24138
+    },
+    {
+      "source": "docs/research/harness-benchmark-audit-2026-09-24.json",
+      "archive_path": "docs/acceptance/portable/raw/docs/research/harness-benchmark-audit-2026-09-24.json",
+      "sha256": "ff8b904e1116624081a7a1eaca66d9b8e205fe8ef8c978db6ea8a12ecd0d7234",
+      "bytes": 69839
+    },
+    {
+      "source": "evals/benchmarks/assets/morrow_agent-0.1.0-py3-none-any.whl",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/assets/morrow_agent-0.1.0-py3-none-any.whl",
+      "sha256": "75ca041c46ebf910f948c8278e50eb456a3801e1607bf2bebbd67b7182340064",
+      "bytes": 2463011
+    },
+    {
+      "source": "evals/benchmarks/results/exit-reasons.jsonl",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/results/exit-reasons.jsonl",
+      "sha256": "8aaafdc3f692f978adbef556498d2b5d462c4e3eada6fdfc8dcd90d13ac44a0f",
+      "bytes": 14248
+    },
+    {
+      "source": "evals/benchmarks/results/final-evaluation-report.md",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/results/final-evaluation-report.md",
+      "sha256": "3c716598a3890719cdfb6da2475777729bcff336d6f354bc31b19ec25eb69193",
+      "bytes": 7859
+    },
+    {
+      "source": "evals/benchmarks/results/full-89-metrics.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/results/full-89-metrics.json",
+      "sha256": "1bdaec63cd7cad4e5acd7706b75fc9fac49f573d20540a565dd78f6d5b28211a",
+      "bytes": 2868027
+    },
+    {
+      "source": "evals/benchmarks/results/progress-monitor.jsonl",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/results/progress-monitor.jsonl",
+      "sha256": "c80ed029ad3bde984229680437b7535671c7c165f0ba1ad519f9175b69260a79",
+      "bytes": 36958
+    },
+    {
+      "source": "evals/benchmarks/results/tb2-high-errors-analysis-report.md",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/results/tb2-high-errors-analysis-report.md",
+      "sha256": "d85cb610a59352ebae4a4a51065db98817ddd9d163c2fd53be8f26e332d600e2",
+      "bytes": 7179
+    },
+    {
+      "source": "evals/benchmarks/results/tb2-high-failure-rootcause-plan.md",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/results/tb2-high-failure-rootcause-plan.md",
+      "sha256": "fac154917e30366e006a00ef634bc321815906dabf8117af7a4ad607b1f35324",
+      "bytes": 9823
+    },
+    {
+      "source": "evals/benchmarks/results/tb2-high-pilot-report.md",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/results/tb2-high-pilot-report.md",
+      "sha256": "fd0d179784b7262b0ab27154b4716e6229776a95783e62b60f251ca84a530864",
+      "bytes": 6287
+    },
+    {
+      "source": "evals/benchmarks/results/tb2-high-r3-repair-rerun-error-report.md",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/results/tb2-high-r3-repair-rerun-error-report.md",
+      "sha256": "76ef647924d830c2358f4026469dde2985995299818ecbfb833809e3f60517b3",
+      "bytes": 2073
+    },
+    {
+      "source": "evals/benchmarks/results/tb2-high-r4-verifier-rerun-error-report.md",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/results/tb2-high-r4-verifier-rerun-error-report.md",
+      "sha256": "72566ccce0856eec102a4694effb718a95b7e1d8a48f19a4493e3277bae0b252",
+      "bytes": 6340
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/adaptive-rejection-sampler__SKhYtoJ/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/adaptive-rejection-sampler__SKhYtoJ/result.json",
+      "sha256": "55cbe017e431ab77acb81546b50f475b32866a3c3d47410decd619fae8b41020",
+      "bytes": 5759
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/bn-fit-modify__yHfCWB8/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/bn-fit-modify__yHfCWB8/result.json",
+      "sha256": "ab8eb9084687ce790e68ac41749566ef5d0a6f6ed4c299b9b42dc3bd9a4ff8f3",
+      "bytes": 5370
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/break-filter-js-from-html__iPCcXLv/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/break-filter-js-from-html__iPCcXLv/result.json",
+      "sha256": "4b2183fae0ca2cf43e60b86964c64e5c7a113d8bd4513a9a99c024f169a00ee1",
+      "bytes": 5444
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/build-cython-ext__NUtatRd/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/build-cython-ext__NUtatRd/result.json",
+      "sha256": "8ff20838fca11fe90e022f2d3fbc2c5d6ffb75376f0ef28833f14a95ad6835ed",
+      "bytes": 5704
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/build-pmars__sQJr73M/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/build-pmars__sQJr73M/result.json",
+      "sha256": "69a0a25d89f9ed2cb325bdf6e6b6d5bb0d8580149bc99929b71a7456bf1fc95d",
+      "bytes": 5666
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/build-pov-ray__zqo8dEU/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/build-pov-ray__zqo8dEU/result.json",
+      "sha256": "723d850773774c7c3c574b44fff440893d63392fc4fe6ab9a7f2f0d1a7864173",
+      "bytes": 5682
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/caffe-cifar-10__j8eLUQJ/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/caffe-cifar-10__j8eLUQJ/result.json",
+      "sha256": "eb2221449ccc2ecbbb1b2650b954fb0121aba568cebd10b3b1d64f80e9f15f8b",
+      "bytes": 10304
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/cancel-async-tasks__KTRxGtL/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/cancel-async-tasks__KTRxGtL/result.json",
+      "sha256": "e0433f85715a95c2f57bd07d3e33e166d5acc95dc06c0649f614e4d4eb67b79b",
+      "bytes": 5397
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/chess-best-move__UB7samf/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/chess-best-move__UB7samf/result.json",
+      "sha256": "56cf9adf0f069f348e29c64c4569c1caa32283eefa2a9d4b105c4a591c61e28a",
+      "bytes": 5692
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/circuit-fibsqrt__ej9LHAm/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/circuit-fibsqrt__ej9LHAm/result.json",
+      "sha256": "e7545ba8a93bae7f0088bd771a0daeee832f8dc44af18025e735b6072ae248a8",
+      "bytes": 7086
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/cobol-modernization__9x6Bw7H/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/cobol-modernization__9x6Bw7H/result.json",
+      "sha256": "f6f0725bebd16f6bcec98af390233c707eb6f06185e6a7291a78b7912f0a1414",
+      "bytes": 7115
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/code-from-image__5trhVip/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/code-from-image__5trhVip/result.json",
+      "sha256": "dc6b262d68d8d728f34b9eb4cee1d88cac2ee42c67e3d46b347b63e402e3c4ef",
+      "bytes": 5698
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/compile-compcert__2FbGxb2/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/compile-compcert__2FbGxb2/result.json",
+      "sha256": "8c3a5946e059a5c8301fb636e2e5c1314c64b7ade7d6f93dab0d553c4e9679f1",
+      "bytes": 5390
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/configure-git-webserver__3Ry63rs/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/configure-git-webserver__3Ry63rs/result.json",
+      "sha256": "670b11b452e084e046bf441362bab0c44a3436efaef24ebb63181e93331dc404",
+      "bytes": 5430
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/constraints-scheduling__qKR3zCo/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/constraints-scheduling__qKR3zCo/result.json",
+      "sha256": "175999904721fa8ec0135406fd4227ea128768ffc6284371fd2a5d9564625d18",
+      "bytes": 5421
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/count-dataset-tokens__e7KJ3BR/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/count-dataset-tokens__e7KJ3BR/result.json",
+      "sha256": "b821f412253ec1f5e03556f861a87e29a82003e76ea31dbaa5516e9b131de1d4",
+      "bytes": 5412
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/crack-7z-hash__6yiHZ4A/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/crack-7z-hash__6yiHZ4A/result.json",
+      "sha256": "9ddbab78abba12c49a305ff88ffab04ec9aed2ceda401a08ce041f31b7b59734",
+      "bytes": 5370
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/custom-memory-heap-crash__MdCLKcU/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/custom-memory-heap-crash__MdCLKcU/result.json",
+      "sha256": "d75f040d4887f7f2c7afe5144c2bcd7ca24332ec0c1f0eb45ac657a30c06f2ab",
+      "bytes": 5753
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/db-wal-recovery__uGupKNX/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/db-wal-recovery__uGupKNX/result.json",
+      "sha256": "62c515c374e42924501c48e9d61ce4f439f0511c6db3584b971e70283ea09a98",
+      "bytes": 5384
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/distribution-search__gDgD2AQ/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/distribution-search__gDgD2AQ/result.json",
+      "sha256": "224cc5e6943a45138bdc474b3af82cdae2c2ef1f3c42dd8a217fa557831ab83a",
+      "bytes": 6802
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/dna-assembly__oBvThhx/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/dna-assembly__oBvThhx/result.json",
+      "sha256": "b86f98d564e074e3068f09e1fa2a39013c0fe81654add644b81d3a5f236b7e8d",
+      "bytes": 7073
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/dna-insert__LkY4CRQ/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/dna-insert__LkY4CRQ/result.json",
+      "sha256": "428609e9beb8de0ee0fc4124007c7809747c3a9cb883cfece921c13f13fe6dcb",
+      "bytes": 5352
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/extract-elf__ai3ZQMk/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/extract-elf__ai3ZQMk/result.json",
+      "sha256": "f13e156cdcdd489d2fe534b8d0cebf1de300758a1c3eceac4e25cb638d678cc0",
+      "bytes": 5360
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/extract-moves-from-video__DRDqipB/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/extract-moves-from-video__DRDqipB/result.json",
+      "sha256": "301cbf367f043f2d09833c7c2c2d517e926c3de1263f119aa81d862f1de5c1a0",
+      "bytes": 5436
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/feal-differential-cryptanalysis__vtLgkPJ/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/feal-differential-cryptanalysis__vtLgkPJ/result.json",
+      "sha256": "d4fb2f2ac1557782732510724a2ed6468f777a5c5355d73b440049b5af77c39a",
+      "bytes": 5480
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/feal-linear-cryptanalysis__ETxRaAt/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/feal-linear-cryptanalysis__ETxRaAt/result.json",
+      "sha256": "59b8f07b2678f9cbaf0331fbbdc660cac7b93762e43887e8409295e9d2358b7a",
+      "bytes": 7134
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/filter-js-from-html__bpZaHj6/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/filter-js-from-html__bpZaHj6/result.json",
+      "sha256": "e39b1539f1841084c9433947dc02ee96300dc02d2d4d4b9e980cdbb5777e5e78",
+      "bytes": 5408
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/financial-document-processor__LTE5B5F/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/financial-document-processor__LTE5B5F/result.json",
+      "sha256": "685d8c385e06ac0b4ef0df9561278cd31ba86dfe9f90e365129d8807b62552a5",
+      "bytes": 5460
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/fix-code-vulnerability__c8EN2KJ/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/fix-code-vulnerability__c8EN2KJ/result.json",
+      "sha256": "aa2d1cc6764de819dd4a76a3d56d5dcf1debdd9394a3cc0a2a2d16cf880f24ba",
+      "bytes": 5421
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/fix-git__tL5MA7y/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/fix-git__tL5MA7y/result.json",
+      "sha256": "c67c59626b1471410b5bd2ea97121ca3f75b0ce9e854d8a065a66b33dd5f4c38",
+      "bytes": 5331
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/fix-ocaml-gc__iZd5rcU/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/fix-ocaml-gc__iZd5rcU/result.json",
+      "sha256": "2605232238d91d6db4d62d4cb29b00fd46885343655757f6e57ae5395b913ed9",
+      "bytes": 5684
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/gcode-to-text__Bfmd7oC/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/gcode-to-text__Bfmd7oC/result.json",
+      "sha256": "1f6a8e3e4357e83e4a1f4c44965d49bf33e5d4003810e1e0eee0db93edb54ae8",
+      "bytes": 7080
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/git-leak-recovery__YoZoaq3/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/git-leak-recovery__YoZoaq3/result.json",
+      "sha256": "2d8d2b7fd885a97a3a220fd7ec98ca9f8427150e3787ce6be33a5d0a2a10db88",
+      "bytes": 5391
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/git-multibranch__GSrhYx5/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/git-multibranch__GSrhYx5/result.json",
+      "sha256": "c297aa5a2df08c4602eb8c50a3a4753b826ee1b0582f36f52e9d4c2ff0bf1c8b",
+      "bytes": 5384
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/gpt2-codegolf__ULZVYEm/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/gpt2-codegolf__ULZVYEm/result.json",
+      "sha256": "7c4e412e0a5e282c531fac8203102b1e13dd555a2f1bdedbfb85c0c9330f6aed",
+      "bytes": 7085
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/headless-terminal__EvbKFZb/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/headless-terminal__EvbKFZb/result.json",
+      "sha256": "af7d67502da0aff180d3c58705cfed1f33437f5b3af0c98b212e02e3e19c7736",
+      "bytes": 5394
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/hf-model-inference__PnVQDdi/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/hf-model-inference__PnVQDdi/result.json",
+      "sha256": "5d6668e4881c787a722c81820d367b3a2ce1291dfb2b550159750bef36919ea9",
+      "bytes": 5400
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/install-windows-3.11__ahKYwwz/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/install-windows-3.11__ahKYwwz/result.json",
+      "sha256": "91ea645700b465d10abbd0dbed7e4db4624593bbca5c372a7f4ff0f4223e2ef1",
+      "bytes": 5732
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/kv-store-grpc__noPQBHG/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/kv-store-grpc__noPQBHG/result.json",
+      "sha256": "a039601ff63b68b0949086081e1ddbea41204ad0272f77b0a5cec89cfc5be67e",
+      "bytes": 5370
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/large-scale-text-editing__vchT3c7/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/large-scale-text-editing__vchT3c7/result.json",
+      "sha256": "39fe804ce002a9324a89c03067a15f7ffb806b204cce255ff27c06d5f228a0b4",
+      "bytes": 5436
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/largest-eigenval__SNiHevK/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/largest-eigenval__SNiHevK/result.json",
+      "sha256": "388a5d666bc77d10881d4d6e76153a27a7e072cafbb87f980a29e15b051b06db",
+      "bytes": 7091
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/llm-inference-batching-scheduler__9ePYZWv/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/llm-inference-batching-scheduler__9ePYZWv/result.json",
+      "sha256": "c3082e1263908fc5d13e0c3d28f8c9a37a868865788a0303eef92d30be126261",
+      "bytes": 7194
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/log-summary-date-ranges__NrcVE7z/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/log-summary-date-ranges__NrcVE7z/result.json",
+      "sha256": "37783e871ed46ba59183778fb03a927d1eddd6345b7dc80baf7634b5e4f9f5ad",
+      "bytes": 5430
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/mailman__QdpE3JA/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/mailman__QdpE3JA/result.json",
+      "sha256": "4946460bdccb6375968918ab80ad5c297647961632442c6d6776604acd1dac55",
+      "bytes": 5641
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/make-doom-for-mips__psGT3E3/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/make-doom-for-mips__psGT3E3/result.json",
+      "sha256": "e6496be9845394a6c5a925f52223528887fb9fd4a655919062a2fabea25b3e9c",
+      "bytes": 7116
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/make-mips-interpreter__xrd3PwA/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/make-mips-interpreter__xrd3PwA/result.json",
+      "sha256": "78db0ff96b904e710d7a068722f56b3220a1457ce28701ef268f91dc1d257d25",
+      "bytes": 7134
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/mcmc-sampling-stan__6xaFzz4/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/mcmc-sampling-stan__6xaFzz4/result.json",
+      "sha256": "9d0b192bcbce5b65030d4b7d3156b883efd35dbecb9415d59025fc4a787883b1",
+      "bytes": 5402
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/merge-diff-arc-agi-task__Y5uzDcB/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/merge-diff-arc-agi-task__Y5uzDcB/result.json",
+      "sha256": "d6a7ea699f58e6ca0b37d69af70a8684531f3dcc48d733ac240e20cee1236a4d",
+      "bytes": 5430
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/model-extraction-relu-logits__wiBWTvA/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/model-extraction-relu-logits__wiBWTvA/result.json",
+      "sha256": "e92ea93c2cc0608e7e138a4dc5f2b3d7dc2a98d0fe6b48ef5d44bb5a7b5aa1e7",
+      "bytes": 7155
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/modernize-scientific-stack__tLZTaBm/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/modernize-scientific-stack__tLZTaBm/result.json",
+      "sha256": "2923ef0358878554e6e9b812394797d2ec5f8c13656f11283cc2772adf97c5cc",
+      "bytes": 5445
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/mteb-leaderboard__TjxxoPi/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/mteb-leaderboard__TjxxoPi/result.json",
+      "sha256": "d0886d39b85576f581b178c5856e9e48546eda82376cc96d8bef7c5944dcbdbc",
+      "bytes": 5388
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/mteb-retrieve__uois8Qb/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/mteb-retrieve__uois8Qb/result.json",
+      "sha256": "470873a853b25bd526f3836a5eadad351bffb153e41fbac492f4e1c4492e22b5",
+      "bytes": 5677
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/multi-source-data-merger__twqLH4N/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/multi-source-data-merger__twqLH4N/result.json",
+      "sha256": "afd05d88b0e0d22797b4655158ac20716261a2fa2e0f2106cd179202c45f45db",
+      "bytes": 5739
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/nginx-request-logging__u6w49wE/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/nginx-request-logging__u6w49wE/result.json",
+      "sha256": "1ca27138de8f687effd34d3319cc1cd747533d0da4507d523370e459f512e711",
+      "bytes": 5722
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/openssl-selfsigned-cert__YnJXJsK/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/openssl-selfsigned-cert__YnJXJsK/result.json",
+      "sha256": "bef421beb2135f1cede55faa77201cf520dfaea94de817bad271bba2c66d0e19",
+      "bytes": 5427
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/overfull-hbox__cgMCkp8/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/overfull-hbox__cgMCkp8/result.json",
+      "sha256": "4318cf2ab7d2153dca163bb8dce643905d25de2c098ca5d4e948d44e1c0764ab",
+      "bytes": 5680
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/password-recovery__tKnzcbw/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/password-recovery__tKnzcbw/result.json",
+      "sha256": "c32da549a2120bbd4e42f6c4cde38ae9955011b3eb0a433155453232eadb4ee3",
+      "bytes": 6788
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/path-tracing-reverse__wawMDHD/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/path-tracing-reverse__wawMDHD/result.json",
+      "sha256": "f6b6a3906bd87032ebdc37379e6875076b016032d0a0caac310160ae3b9be6fb",
+      "bytes": 7126
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/path-tracing__hXK6DpR/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/path-tracing__hXK6DpR/result.json",
+      "sha256": "ddbd13b6a2bcc189059f591ec35a96ed6bb2e763c3c3a3f960930be4bb06010c",
+      "bytes": 7080
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/polyglot-c-py__qmouSv7/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/polyglot-c-py__qmouSv7/result.json",
+      "sha256": "3f646ff8726de815a0e0dcb79aea0779177993fa19743d8d9df5ad7603df4cff",
+      "bytes": 5372
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/polyglot-rust-c__NFwE5uN/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/polyglot-rust-c__NFwE5uN/result.json",
+      "sha256": "fd93d5ed7c44c01805081941477047c72e8f57753968ce1f07a86cef20f50076",
+      "bytes": 7086
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/portfolio-optimization__u32x6vo/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/portfolio-optimization__u32x6vo/result.json",
+      "sha256": "4a0648f8e1ac7345d03da6ee300fe57fa725a890efb11ed35264dc2e41e6393c",
+      "bytes": 5421
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/protein-assembly__mYuQZbn/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/protein-assembly__mYuQZbn/result.json",
+      "sha256": "8ccd4535e7218316005fac7e5426672d5fba354ab4963516bfaafec97969b065",
+      "bytes": 7094
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/prove-plus-comm__bS6f6VL/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/prove-plus-comm__bS6f6VL/result.json",
+      "sha256": "22295657bd2d90c41105ab4c1592d01d3584d086a1626eb1d11d7af2f935c60a",
+      "bytes": 5379
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/pypi-server__iGftCWK/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/pypi-server__iGftCWK/result.json",
+      "sha256": "e79aceaf269cd6da306d252c0ae56a7298d8255d2463ca95abeefc54f333f5e1",
+      "bytes": 5358
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/pytorch-model-cli__jgXLCCh/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/pytorch-model-cli__jgXLCCh/result.json",
+      "sha256": "7bec4b8359a6d275e9b3519c2ffe0b0540c4b229dfb1dcf98605eb9f5496f07a",
+      "bytes": 7100
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/pytorch-model-recovery__mztZhnQ/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/pytorch-model-recovery__mztZhnQ/result.json",
+      "sha256": "f059f9b45489002813eea1d1db0801b41cacbc4f3d1b79833649449eaa42bb0e",
+      "bytes": 5731
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/qemu-alpine-ssh__Q57GPPT/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/qemu-alpine-ssh__Q57GPPT/result.json",
+      "sha256": "5ad39ef4f7f83e389e76a9317bbf0f33a561f125ec6766d9ae4610537ea7ee98",
+      "bytes": 6778
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/qemu-startup__TPUSkAN/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/qemu-startup__TPUSkAN/result.json",
+      "sha256": "9452afc7346ee82b1f187faec7e386b8c79888a8c7d67850c66e13aa5d99b783",
+      "bytes": 7071
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/query-optimize__UTN5W73/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/query-optimize__UTN5W73/result.json",
+      "sha256": "3dfa82c7a60e906fa8e5a642cef2923043f7b9e8cf7196d6a12e1850ca6a2df8",
+      "bytes": 5376
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/raman-fitting__hPdFj2D/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/raman-fitting__hPdFj2D/result.json",
+      "sha256": "52a66f43414387c8f17c11a2c7e7d9a7e96f380e083207a6ff61797a8f3172e7",
+      "bytes": 7080
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/regex-chess__LQJcFoe/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/regex-chess__LQJcFoe/result.json",
+      "sha256": "145fbe8c50d9b0ca6012dc5c4daf07b0c47b57b81485d5f8520d248a46b0d179",
+      "bytes": 7053
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/regex-log__ys5agfE/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/regex-log__ys5agfE/result.json",
+      "sha256": "d6f7bbf1625294629e12cdc3105369597c1eb4c80472fce7537146f84196285e",
+      "bytes": 5653
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/reshard-c4-data__Kj8Dd7A/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/reshard-c4-data__Kj8Dd7A/result.json",
+      "sha256": "e339cca996b2bfcc07086aca9dda6f6985c7abf47fe439fc5eb12da74baecbfa",
+      "bytes": 5384
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/result.json",
+      "sha256": "990ec7427e78adc89baa30d54829d6d85fb707cdfc46e2532274fbb12181f0ce",
+      "bytes": 8027
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/rstan-to-pystan__9eMPhf3/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/rstan-to-pystan__9eMPhf3/result.json",
+      "sha256": "757b8709a1c12e2f14f13e721800a12b5ac283a87f38f99d805936b674128922",
+      "bytes": 7088
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sam-cell-seg__4JfEGSN/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sam-cell-seg__4JfEGSN/result.json",
+      "sha256": "4529c06f5989852950537d0b4b9bc3126047c1a367b2cb823191fe9ab98c81c7",
+      "bytes": 5679
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sanitize-git-repo__7XA47Uf/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sanitize-git-repo__7XA47Uf/result.json",
+      "sha256": "e347b885125ed80419a547eccb7128e8c52b4d40368324649e54a3d2954acb2b",
+      "bytes": 5394
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/schemelike-metacircular-eval__GjH3Mvz/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/schemelike-metacircular-eval__GjH3Mvz/result.json",
+      "sha256": "33c00e4c3f97426a0b2242a3f52f271a849f7b42847f4b21f2dae7f8a5942f5f",
+      "bytes": 7168
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sparql-university__LGRbht2/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sparql-university__LGRbht2/result.json",
+      "sha256": "70e44c25457db1d57fad3900d685aef194246fca510e42b7a60a066c043b3d46",
+      "bytes": 5701
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sqlite-db-truncate__24uLy4F/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sqlite-db-truncate__24uLy4F/result.json",
+      "sha256": "e450b260c135bf01791fc3396eb022296438db5a67cf43ff323e057f3e6cf01a",
+      "bytes": 5397
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sqlite-with-gcov__UJHSNnu/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/sqlite-with-gcov__UJHSNnu/result.json",
+      "sha256": "760b1f78d1aa77dc4106e4fdbd1aa1c891b2c3b8193ff3203a3c596d625254eb",
+      "bytes": 5388
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/torch-pipeline-parallelism__6uMfJTo/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/torch-pipeline-parallelism__6uMfJTo/result.json",
+      "sha256": "0989d29d9e1fa55b6d447aebd8722a477c8e34ef094e2bbbb4a9bdcc846551bb",
+      "bytes": 5447
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/torch-tensor-parallelism__DRF8CP5/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/torch-tensor-parallelism__DRF8CP5/result.json",
+      "sha256": "7b304963815871739e8a073dac566fe8b6781e087b7a7776337730b1794a2d32",
+      "bytes": 5433
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/train-fasttext__KLUxS8b/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/train-fasttext__KLUxS8b/result.json",
+      "sha256": "670c10f3248cf857ab7e576814bb7f967ffbf70120b7b2fa17f6afa2c59baaa4",
+      "bytes": 7083
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/tune-mjcf__GgA3jt4/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/tune-mjcf__GgA3jt4/result.json",
+      "sha256": "fc9e141f75e08c5a162decd8095eb3c4c1050f85319445515674645118f51c2a",
+      "bytes": 5656
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/video-processing__Lj9MAgt/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/video-processing__Lj9MAgt/result.json",
+      "sha256": "3678ebc4d875169cb7f3af6dac0829dec5493a489f414594e4acb69d7dd78a8e",
+      "bytes": 7098
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/vulnerable-secret__oiPGi7V/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/vulnerable-secret__oiPGi7V/result.json",
+      "sha256": "54924979e80059d5170addfd1f5b75b73188661cc2a89eee4071405eada4c8c1",
+      "bytes": 5394
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/winning-avg-corewars__FxkgPQM/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/winning-avg-corewars__FxkgPQM/result.json",
+      "sha256": "92ca36751ff951df312ab5de662d879313164224e7d88464f637fa415c072904",
+      "bytes": 5722
+    },
+    {
+      "source": "evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/write-compressor__ENBKC6j/result.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/write-compressor__ENBKC6j/result.json",
+      "sha256": "f07dc52165ecc84d6f8912a256f67828ed871521c02d9a4dd5f92dc62ad3e135",
+      "bytes": 7080
+    },
+    {
+      "source": "evals/benchmarks/runs/manifests/3c641082b680436d8d61905d62746685.json",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/runs/manifests/3c641082b680436d8d61905d62746685.json",
+      "sha256": "2f925a5e5fc7611ba97d8148c9493bc438a6ea654e24f3819abfca9930228b77",
+      "bytes": 10480
+    },
+    {
+      "source": "evals/benchmarks/vendor/swebench/LICENSE",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/vendor/swebench/LICENSE",
+      "sha256": "2bd2e08df7147f67a69b42c10efae09bd4bf119df397371036187d5dd1b02f57",
+      "bytes": 1159
+    },
+    {
+      "source": "evals/benchmarks/vendor/swebench/swebench/harness/utils.py",
+      "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/vendor/swebench/swebench/harness/utils.py",
+      "sha256": "c22f38fdd4ffd34301da7f837b82926cf261d81ca0387d92dd2990b393517c79",
+      "bytes": 9794
+    }
+  ]
+}

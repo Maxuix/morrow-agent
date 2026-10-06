@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "https://github.com/SWE-bench/SWE-bench",
+  "upstream_commit": "02e7a74ffd0b707aab73d203fe87bdc7c76afc8e",
+  "working_tree_clean": true,
+  "source": "evals/benchmarks/vendor/swebench/swebench/harness/utils.py",
+  "archive_path": "docs/acceptance/portable/raw/evals/benchmarks/vendor/swebench/swebench/harness/utils.py",
+  "source_sha256": "c22f38fdd4ffd34301da7f837b82926cf261d81ca0387d92dd2990b393517c79",
+  "license_archive_path": "docs/acceptance/portable/raw/evals/benchmarks/vendor/swebench/LICENSE",
+  "scope": "One cited parser source file and its MIT license; not the entire vendored repository."
+}

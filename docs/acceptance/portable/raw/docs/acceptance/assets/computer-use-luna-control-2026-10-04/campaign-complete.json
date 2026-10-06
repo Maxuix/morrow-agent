@@ -1,0 +1,308 @@
+{
+  "status": "complete",
+  "cases": [
+    {
+      "case": "long-text-4097",
+      "process_exit_code": 0,
+      "evidence_sha256": "800fe619796efd078a7374f1746107fc7ab4c92ee7a76e058bef883fb09de20a",
+      "campaign_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "type_text",
+          "element",
+          null,
+          null
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "live_decisions": 2,
+      "native_entries": 0,
+      "reason": null
+    },
+    {
+      "case": "denied",
+      "process_exit_code": 0,
+      "evidence_sha256": "a21c6ed6b1f0c30be9fb2172cb3152585260453284878489b5503cf9a5a36616",
+      "campaign_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "left",
+          "call_id": "luna-3",
+          "coordinate_target": false,
+          "count": 1,
+          "direction": null,
+          "element_target": true,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "passed",
+        "verdict_reason": "denial_effect"
+      },
+      "live_decisions": 4,
+      "native_entries": 0,
+      "reason": null
+    },
+    {
+      "case": "approval-unavailable",
+      "process_exit_code": 0,
+      "evidence_sha256": "921da5d4fd538f81a739ef9f0bc40148fa0396f468f41a73c744bd05afa1d95a",
+      "campaign_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "left",
+          "call_id": "luna-3",
+          "coordinate_target": false,
+          "count": 1,
+          "direction": null,
+          "element_target": true,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "failed",
+        "verdict_reason": "denial_effect"
+      },
+      "live_decisions": 4,
+      "native_entries": 0,
+      "reason": null
+    },
+    {
+      "case": "postcondition-omitted",
+      "process_exit_code": 0,
+      "evidence_sha256": "e6497597ce33aa5d9d7b22bbd6c9c7f470ec4ce2824f34a3d9ba44d891746be5",
+      "campaign_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "left",
+          "call_id": "luna-3",
+          "coordinate_target": false,
+          "count": 1,
+          "direction": null,
+          "element_target": true,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "failed",
+        "verdict_reason": "wrong_postcondition"
+      },
+      "live_decisions": 4,
+      "native_entries": 1,
+      "reason": null
+    },
+    {
+      "case": "semantic-click",
+      "process_exit_code": 0,
+      "evidence_sha256": "8fec31b1235dd1d9110e00dfac589d1c6bc0fcf489ac90366fbde1ca11d4fab3",
+      "campaign_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "failed",
+        "verdict_reason": "action_count"
+      },
+      "live_decisions": 9,
+      "native_entries": 1,
+      "reason": null
+    },
+    {
+      "case": "enabled-readback",
+      "process_exit_code": 0,
+      "evidence_sha256": "2484473ecfd5bcf931433eeaa03499d458692d0286c20edc2b383e17db17e9be",
+      "campaign_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "failed",
+        "verdict_reason": "action_count"
+      },
+      "live_decisions": 6,
+      "native_entries": 1,
+      "reason": null
+    },
+    {
+      "case": "enabled-readback-background",
+      "process_exit_code": 0,
+      "evidence_sha256": "c84a4160b985acd2c9ff8082b2c48d0b978e7ac8885c4d38567b9f5dfc4f1949",
+      "campaign_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          1
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "live_decisions": 3,
+      "native_entries": 0,
+      "reason": null
+    },
+    {
+      "case": "foreground-pixel-scroll",
+      "process_exit_code": 0,
+      "evidence_sha256": "80a9fc95d335f35c3a535821e616ac4df0b82a25f8c11959931572979ea0cd20",
+      "campaign_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "scroll",
+          "coordinate",
+          null,
+          null
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "live_decisions": 3,
+      "native_entries": 0,
+      "reason": null
+    },
+    {
+      "case": "background-double-click",
+      "process_exit_code": 0,
+      "evidence_sha256": "4461be82c196a4042b54c6bab3623b2a51a9bd2c7b467ed50b939b62618d2973",
+      "campaign_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          2
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "live_decisions": 3,
+      "native_entries": 0,
+      "reason": null
+    },
+    {
+      "case": "background-coordinate-scroll",
+      "process_exit_code": 0,
+      "evidence_sha256": "2b2430f8f82fa8995e61c04025a96abda5e88c6078b110ea9d0c2b21732b5e15",
+      "campaign_verdict": {
+        "actual_variant": null,
+        "expected_variant": [
+          "scroll",
+          "coordinate",
+          null,
+          null
+        ],
+        "status": "blocked",
+        "verdict_reason": "action_not_attempted"
+      },
+      "live_decisions": 3,
+      "native_entries": 0,
+      "reason": null
+    },
+    {
+      "case": "foreground-double-click",
+      "process_exit_code": 0,
+      "evidence_sha256": "dc4de484d4c5308d989f03b3817646efe5aa314d45bc27cf0b73d72cfb875002",
+      "campaign_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "left",
+          "call_id": "luna-3",
+          "coordinate_target": true,
+          "count": 2,
+          "direction": null,
+          "element_target": false,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "left",
+          2
+        ],
+        "status": "failed",
+        "verdict_reason": "wrong_variant"
+      },
+      "live_decisions": 5,
+      "native_entries": 1,
+      "reason": null
+    },
+    {
+      "case": "foreground-right-click",
+      "process_exit_code": 0,
+      "evidence_sha256": "18fef6e359becdfce30e8d8610b2bd0818c9b61aab91fb4498eecc3c82d557cb",
+      "campaign_verdict": {
+        "actual_variant": {
+          "action": "click",
+          "amount": null,
+          "button": "right",
+          "call_id": "luna-3",
+          "coordinate_target": true,
+          "count": 1,
+          "direction": null,
+          "element_target": false,
+          "key": null,
+          "keys": null,
+          "name": "computer_action",
+          "operation": null,
+          "postcondition": null,
+          "postcondition_ref_matches_action": false
+        },
+        "expected_variant": [
+          "click",
+          "element",
+          "right",
+          1
+        ],
+        "status": "failed",
+        "verdict_reason": "wrong_variant"
+      },
+      "live_decisions": 4,
+      "native_entries": 1,
+      "reason": null
+    }
+  ]
+}

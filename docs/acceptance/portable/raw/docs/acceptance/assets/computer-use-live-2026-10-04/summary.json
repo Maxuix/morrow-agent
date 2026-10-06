@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-04",
+  "source_commit": "6513077de1d8dc398ca98291277f24235a4b8c69",
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "sdk_version": "0.30.4",
+  "provider": "https://api.deepseek.com",
+  "model": "deepseek-flash",
+  "all_features_passed": false,
+  "scenario_count": 30,
+  "provider_stream_requests": 121,
+  "sdk_action_entries": 19,
+  "ledger_execution_count": 91,
+  "all_ledger_entries_closed": true,
+  "all_turns_closed": true,
+  "provider_failure_count": 0,
+  "model_visual_part_count": 0,
+  "max_sdk_actions_per_case": 1,
+  "files": {
+    "semantic-background-v2.json": "6eaf95c18b8569e5b42ba1323fa9c83ab67e3c099c8c6a8730a9c2674a984bb6",
+    "semantic-foreground.json": "e840e35184aafb59cadec27b18998a69d99f3ead7d1595a49ed0e84e50349a44",
+    "hybrid-foreground.json": "6eee97404a647bbece52f1f1974e46c0bae1b2d39e2dcbb98b6864ba61eaa060",
+    "hybrid-explicit-image.json": "468f2be91b7d1781b4deec22e4a1c19e91daed2d9db4a0c97c275ce74af57634",
+    "hybrid-error-detail.json": "45f398ac1e2784a1f737f405e4c32673ec3ec3c9ec40637ffa4e095e984b2766",
+    "semantic-variants.json": "010a15aa3962611511994967c1c39b87781ef643c2a55b1868299e194e5ef591",
+    "final-harness-smoke.json": "e715aad2b45923988eb00dcf3fbb073722f641e2341179dbcbd344bf57abff12"
+  },
+  "final_harness_sha256": "5929ea2727a41162395f34c82128223026d6fe14346c2325aef8f2030c8d1bdd",
+  "verification": {
+    "targeted_tests": 443,
+    "full_offline_tests": 3058,
+    "full_offline_deselected": 2,
+    "gui_tests": 724,
+    "gui_test_files": 107,
+    "ruff_check": "passed",
+    "gui_typecheck": "passed",
+    "compileall": "passed",
+    "cli_help": "passed",
+    "full_tree_format": "failed_existing_evals/benchmarks/run_tb2.py",
+    "new_harness_format": "passed",
+    "post_harness_targeted_tests": 73
+  }
+}

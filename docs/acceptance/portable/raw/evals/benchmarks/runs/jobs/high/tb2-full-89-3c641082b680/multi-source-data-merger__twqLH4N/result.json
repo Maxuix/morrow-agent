@@ -1,0 +1,151 @@
+{
+    "id": "56340663-3fc4-415c-a0dc-1bff43828a21",
+    "task_name": "terminal-bench/multi-source-data-merger",
+    "trial_name": "multi-source-data-merger__twqLH4N",
+    "trial_uri": "file:///Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/multi-source-data-merger__twqLH4N",
+    "task_id": {
+        "path": "/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/vendor/terminal-bench-2/multi-source-data-merger"
+    },
+    "source": "terminal-bench-2",
+    "task_checksum": "90f265ea2fcb70f81f2fddd984182b6ed140af8d2873d9611ae379159304e157",
+    "config": {
+        "task": {
+            "path": "/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/vendor/terminal-bench-2/multi-source-data-merger",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "terminal-bench-2"
+        },
+        "trial_name": "multi-source-data-merger__twqLH4N",
+        "trials_dir": "/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680",
+        "install_only": false,
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": 1.0,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "harness.morrow_harbor_agent:MorrowAgent",
+            "import_path": null,
+            "model_name": null,
+            "n_concurrent": null,
+            "concurrency_group": null,
+            "skills": [],
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "resume_trajectory": false,
+            "load_trajectory": null,
+            "extra_allowed_hosts": [],
+            "kwargs": {
+                "provider_adapter": "openai-compatible",
+                "provider_base_url": "https://ark.cn-beijing.volces.com/api/plan/v3",
+                "provider_id": "volcengine",
+                "model_id": "glm-5.3-flash",
+                "api_model_id": "glm-5.3-flash",
+                "reasoning_effort": "high",
+                "context_window_tokens": 256000,
+                "max_output_tokens": 239616
+            },
+            "mcp_servers": []
+        },
+        "user_agent": null,
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "stream": false,
+            "cpu_enforcement_policy": "auto",
+            "memory_enforcement_policy": "auto",
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "override_tpu": null,
+            "mounts": null,
+            "extra_docker_compose": [],
+            "kwargs": {},
+            "extra_allowed_hosts": []
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "env": {
+                "HTTP_PROXY": "http://host.docker.internal:60425",
+                "HTTPS_PROXY": "http://host.docker.internal:60425",
+                "http_proxy": "http://host.docker.internal:60425",
+                "https_proxy": "http://host.docker.internal:60425",
+                "NO_PROXY": "localhost,127.0.0.1,::1,*.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+                "no_proxy": "localhost,127.0.0.1,::1,*.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+            },
+            "disable": false
+        },
+        "artifacts": [],
+        "extra_instruction_paths": [],
+        "extra_instructions": [],
+        "job_id": "a0cf5945-9274-4f65-a117-6ff653917624",
+        "source_trial": null
+    },
+    "agent_info": {
+        "name": "morrow",
+        "version": "0.1.0",
+        "model_info": null
+    },
+    "agent_result": {
+        "n_input_tokens": 78471,
+        "n_cache_tokens": null,
+        "n_output_tokens": 2978,
+        "cost_usd": null,
+        "model_usage": {
+            "morrow-known-requests": {
+                "n_input_tokens": 78471,
+                "n_cache_tokens": 0,
+                "n_output_tokens": 2978,
+                "cost_usd": null
+            }
+        },
+        "rollout_details": null,
+        "metadata": {
+            "morrow_fingerprint": "morrow-fingerprint.json",
+            "morrow_partial_usage": {
+                "known_request_count": 9,
+                "unknown_request_count": 1,
+                "complete": false,
+                "known_input_tokens": 78471,
+                "known_output_tokens": 2978,
+                "known_usd_cost_minor": null,
+                "unknown_cost_request_count": 10
+            }
+        }
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0
+        }
+    },
+    "verifier_environment_mode": "shared",
+    "exception_info": null,
+    "started_at": "2026-09-28T00:42:23.306334Z",
+    "finished_at": "2026-09-28T00:45:11.530746Z",
+    "environment_setup": {
+        "started_at": "2026-09-28T00:42:23.307998Z",
+        "finished_at": "2026-09-28T00:42:25.027298Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-09-28T00:42:25.027348Z",
+        "finished_at": "2026-09-28T00:42:37.162956Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-09-28T00:42:37.163679Z",
+        "finished_at": "2026-09-28T00:44:33.086416Z"
+    },
+    "verifier": {
+        "started_at": "2026-09-28T00:44:33.972208Z",
+        "finished_at": "2026-09-28T00:45:07.490437Z"
+    },
+    "step_results": null
+}

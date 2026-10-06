@@ -1,6 +1,6 @@
 # Morrow Benchmark Harness
 
-> **v2 执行入口：**使用[新版实施与执行方案](/Users/ruirui/Documents/Project/Agent/developing/docs/research/benchmark-v2-implementation-plan-2026-09-27.md)及 [v2 协议规格](/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/config/v2/protocol.json)。协议 JSON 是冻结规格，不是 CLI `--profile` 输入。先完成离线和容器门禁并确认模型容量，再按 3 → 12 → 独立 89 题执行。SWE Lite 暂不纳入主线。
+> **v2 执行入口：**使用[新版实施与执行方案](../../docs/acceptance/portable/views/docs/research/benchmark-v2-implementation-plan-2026-09-27.md)及 [v2 协议规格](config/v2/protocol.json)。协议 JSON 是冻结规格，不是 CLI `--profile` 输入。先完成离线和容器门禁并确认模型容量，再按 3 → 12 → 独立 89 题执行。SWE Lite 暂不纳入主线。
 
 面向 Morrow（承序）的自动化评测 harness，覆盖 **Terminal-Bench 2.0**（89 任务，Harbor 官方 harness + 官方 verifier）与 **SWE-bench Lite**（300 任务，官方 harness 评分）。TB2 驱动默认使用 300M token 任务接纳账本，须与已有账本一致；运行中的请求仍可能超出任务预留。
 

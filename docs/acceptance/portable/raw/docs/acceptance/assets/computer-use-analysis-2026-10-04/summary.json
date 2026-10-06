@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-04",
+  "source_commit": "aa506737",
+  "sdk_version": "0.30.4",
+  "official_sdk_tag": "cua-driver-rs-v0.30.4",
+  "official_sdk_commit": "bf6c76786d938070f4ecf1e44004752f69f518b8",
+  "production_changes": false,
+  "provider_network_calls": 0,
+  "read_probe": {
+    "native_elements": 132,
+    "projected_elements": 132,
+    "omitted": 0,
+    "truncated": false,
+    "sensitive_menu_no_frame": true,
+    "keyword_match": "password",
+    "increment_enabled": true
+  },
+  "keyboard_component_probe": {
+    "q_visible_in_native": true,
+    "Y_visible_in_native": true,
+    "q_and_Y_in_swiftui_oracle_at_that_time": false,
+    "exact_full_text_sequence_not_attested": true
+  },
+  "scroll_area": {
+    "x": 498,
+    "y": 484,
+    "width": 87,
+    "height": 200
+  },
+  "sdk_correct_target_scroll": {
+    "before_offset": 0,
+    "after_offset": 60,
+    "native_status": "unknown",
+    "morrow_coordinate_admission_verified": false
+  },
+  "coordinate_mapping": {
+    "screenshot_scale": 2,
+    "morrow_scale": 1,
+    "width": 1040,
+    "height": 1024,
+    "gate_error": "image_not_published"
+  },
+  "files": {
+    "read-probe.json": "1577a317eaeb66a38245134f6828ebaa4acff3e2a02f2f2533d222d2622b7540",
+    "wheel-sdk-probe.json": "c2f29e653223c28beb1789b705f526cfcde1ebe80d19ac875408fad8bf339b69",
+    "coordinate-probe.json": "a092d9443495533eb6acd444e6370a01d0aee4587e7fe400a3f90fb1b207e4df",
+    "wheel-sdk-targeted-probe.json": "8ab1b9fb84174759e5ad34f88806e52ccbf2c3e72d1f14d74f177b5088a339c5",
+    "component-probe.json": "a5fca4201bab093732a78f794a52814a3dba43ad3a07d77fc9b91fd147871716",
+    "ax-scroll-probe.json": "ca29cb2a4636f2cd0da969740ae7fa29c592939d8d32e89bb4d48f5ce21c80e0"
+  }
+}

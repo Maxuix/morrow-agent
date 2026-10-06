@@ -1,0 +1,1110 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.0, pytest-8.4.2, pluggy-1.6.0
+rootdir: /Users/ruirui/Documents/Project/Agent/developing
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.14.2, asyncio-0.26.0
+asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 3202 items / 2 deselected / 3200 selected
+
+tests/acceptance/test_s7p08_single_agent_matrix.py ...                   [  0%]
+tests/acceptance/test_stage6_integrated.py ..                            [  0%]
+tests/parallel_contracts/test_ownership.py ...                           [  0%]
+tests/parallel_contracts/test_wire_fixtures.py ................          [  0%]
+tests/parallel_planning/test_planning_pause_lifecycle.py ...........     [  1%]
+tests/parallel_runtime/test_chat_pause_projection.py ....                [  1%]
+tests/parallel_runtime/test_execution_segments.py ..........             [  1%]
+tests/parallel_runtime/test_turn_interruption.py ......                  [  1%]
+tests/parallel_trajectory/test_p06_timeline_index.py ...........         [  2%]
+tests/parallel_trajectory/test_p07_activity_persistence.py ............. [  2%]
+.                                                                        [  2%]
+tests/parallel_trajectory/test_p08_timeline_replay.py ...........        [  2%]
+tests/spikes/test_mcp_stdio_spike.py .                                   [  2%]
+tests/spikes/test_stage6_budgets.py ...                                  [  2%]
+tests/test_activity_contracts.py .........................               [  3%]
+tests/test_activity_pressure.py ...                                      [  3%]
+tests/test_activity_stream.py .............................              [  4%]
+tests/test_agent_guardrails.py ................                          [  5%]
+tests/test_agent_limits.py ....                                          [  5%]
+tests/test_agent_run_observability.py .................................. [  6%]
+......                                                                   [  6%]
+tests/test_agent_run_preparation.py ....................                 [  7%]
+tests/test_agent_tool_loop.py .................                          [  7%]
+tests/test_architecture_boundaries.py .....................              [  8%]
+tests/test_benchmark_assets.py ..                                        [  8%]
+tests/test_capabilities.py .............                                 [  8%]
+tests/test_capability_executor.py .....                                  [  9%]
+tests/test_capability_policy.py ................                         [  9%]
+tests/test_capability_prompt_and_preset.py ....                          [  9%]
+tests/test_chat_execution_projection.py ........                         [  9%]
+tests/test_chat_trajectory_restart.py ...                                [ 10%]
+tests/test_cli_commands.py ................                              [ 10%]
+tests/test_cli_hardening.py ...............                              [ 11%]
+tests/test_cli_secret_input.py .........                                 [ 11%]
+tests/test_code_agent_mini_eval.py ..................................... [ 12%]
+...............................                                          [ 13%]
+tests/test_computer_action_tool.py ..................................... [ 14%]
+......                                                                   [ 14%]
+tests/test_computer_campaign_verdict.py ................................ [ 15%]
+...............                                                          [ 16%]
+tests/test_computer_capabilities_fixture.py ...                          [ 16%]
+tests/test_computer_fixture_process.py ...                               [ 16%]
+tests/test_computer_functional_sdk.py ...........                        [ 16%]
+tests/test_computer_run_requests.py ........                             [ 17%]
+tests/test_computer_runs.py ..........                                   [ 17%]
+tests/test_computer_use_action_service.py ...........                    [ 17%]
+tests/test_computer_use_actions.py ..................................... [ 18%]
+..                                                                       [ 18%]
+tests/test_computer_use_after_action.py ...............                  [ 19%]
+tests/test_computer_use_api.py ...                                       [ 19%]
+tests/test_computer_use_candidates.py ............................       [ 20%]
+tests/test_computer_use_chat_cancellation.py ...                         [ 20%]
+tests/test_computer_use_chat_selection.py ..........                     [ 20%]
+tests/test_computer_use_cli.py .                                         [ 20%]
+tests/test_computer_use_contracts.py .........                           [ 21%]
+tests/test_computer_use_driver.py ...............................        [ 22%]
+tests/test_computer_use_fixture.py ..............                        [ 22%]
+tests/test_computer_use_fixture_export.py .                              [ 22%]
+tests/test_computer_use_gui_native_gate.py ....                          [ 22%]
+tests/test_computer_use_images.py ..                                     [ 22%]
+tests/test_computer_use_lease.py ......                                  [ 22%]
+tests/test_computer_use_lifecycle.py ................                    [ 23%]
+tests/test_computer_use_live_bridge.py .........                         [ 23%]
+tests/test_computer_use_loop.py .........                                [ 23%]
+tests/test_computer_use_loop_boundaries.py ........                      [ 24%]
+tests/test_computer_use_native_counter.py ...........                    [ 24%]
+tests/test_computer_use_native_gate.py .......................           [ 25%]
+tests/test_computer_use_native_loop.py ..                                [ 25%]
+tests/test_computer_use_native_text.py ..........                        [ 25%]
+tests/test_computer_use_observer.py ............................         [ 26%]
+tests/test_computer_use_permission_summary.py .......                    [ 26%]
+tests/test_computer_use_permissions.py .......                           [ 26%]
+tests/test_computer_use_preview_api.py .                                 [ 26%]
+tests/test_computer_use_process_identity.py ..........................   [ 27%]
+tests/test_computer_use_recovery.py ........                             [ 28%]
+tests/test_computer_use_sensitive_capture.py .................           [ 28%]
+tests/test_computer_use_terminal_picker.py .....                         [ 28%]
+tests/test_computer_use_tools.py ...................                     [ 29%]
+tests/test_computer_use_verification.py ................................ [ 30%]
+                                                                         [ 30%]
+tests/test_computer_use_window_scope.py .............                    [ 30%]
+tests/test_computer_use_workflow.py .....                                [ 30%]
+tests/test_computer_visual_service.py ...........                        [ 31%]
+tests/test_configuration_tool.py ....................................    [ 32%]
+tests/test_context_projections.py .........                              [ 32%]
+tests/test_context_runtime.py .....................                      [ 33%]
+tests/test_conversation_and_loop.py .............................        [ 34%]
+tests/test_core_contracts.py ....................                        [ 34%]
+tests/test_credential_runtime_lifecycle.py .............                 [ 35%]
+tests/test_current_preference_yaml.py ..                                 [ 35%]
+tests/test_direct_coding_prompt.py .................                     [ 35%]
+tests/test_dynamic_tool_contracts.py ......                              [ 35%]
+tests/test_git.py .....                                                  [ 36%]
+tests/test_h6_bench_setup.py .                                           [ 36%]
+tests/test_h6_context_semantics.py ..                                    [ 36%]
+tests/test_harness_acceptance_fixes.py FFFFFFFFFFFFF.................... [ 37%]
+..                                                                       [ 37%]
+tests/test_harness_streaming.py .....                                    [ 37%]
+tests/test_headless_diagnostics.py ........                              [ 37%]
+tests/test_headless_run.py ......                                        [ 37%]
+tests/test_image_context_budget.py ............                          [ 38%]
+tests/test_image_tokens.py .....                                         [ 38%]
+tests/test_local_files.py ................                               [ 38%]
+tests/test_local_mutation.py ..................                          [ 39%]
+tests/test_local_search.py ...............                               [ 39%]
+tests/test_local_tool_factories.py .........                             [ 40%]
+tests/test_long_task_reliability.py ..................                   [ 40%]
+tests/test_mcp_control.py .........                                      [ 41%]
+tests/test_mcp_runtime.py .........                                      [ 41%]
+tests/test_node_steer.py ....                                            [ 41%]
+tests/test_operational_store.py ..................................       [ 42%]
+tests/test_policy.py .........................                           [ 43%]
+tests/test_preference_cli.py ......                                      [ 43%]
+tests/test_preference_context.py ........                                [ 43%]
+tests/test_preference_doctor_backup.py .....                             [ 43%]
+tests/test_preference_domain.py .......                                  [ 44%]
+tests/test_preference_evaluation.py ...                                  [ 44%]
+tests/test_preference_inbox.py .....                                     [ 44%]
+tests/test_preference_proposals.py ...                                   [ 44%]
+tests/test_preference_review_context.py .....                            [ 44%]
+tests/test_preference_review_jobs.py ....                                [ 44%]
+tests/test_preference_reviewer.py ......                                 [ 44%]
+tests/test_preference_store.py .....                                     [ 45%]
+tests/test_preference_writer.py ..........                               [ 45%]
+tests/test_preferences_and_orchestration.py .......                      [ 45%]
+tests/test_process.py ..............                                     [ 46%]
+tests/test_process_observation.py ............                           [ 46%]
+tests/test_project_instructions.py ...........                           [ 46%]
+tests/test_provider.py ................................................. [ 48%]
+..................................                                       [ 49%]
+tests/test_provider_control.py .......                                   [ 49%]
+tests/test_provider_visuals.py ..........                                [ 49%]
+tests/test_reasoning_filter.py ........                                  [ 50%]
+tests/test_repeated_failure_stop.py ...                                  [ 50%]
+tests/test_result_presentation.py ..........                             [ 50%]
+tests/test_review_worker.py .................                            [ 51%]
+tests/test_run_deadline.py ....                                          [ 51%]
+tests/test_runtime_control.py ......................                     [ 51%]
+tests/test_s7p04_workspace_change_lifecycle.py ......................... [ 52%]
+......                                                                   [ 52%]
+tests/test_s7p05_audit_remediation.py .....                              [ 53%]
+tests/test_s7p05_completion_truth.py ..............                      [ 53%]
+tests/test_s7p06_pi_parity.py .........................                  [ 54%]
+tests/test_sandbox.py ................                                   [ 54%]
+tests/test_shell_contract.py .........                                   [ 55%]
+tests/test_skill_bindings.py .....                                       [ 55%]
+tests/test_skill_catalog.py .........................                    [ 56%]
+tests/test_skill_context.py ..                                           [ 56%]
+tests/test_skill_drafts.py ....                                          [ 56%]
+tests/test_skill_install_cli.py ...                                      [ 56%]
+tests/test_skill_lifecycle.py .......                                    [ 56%]
+tests/test_skill_resources.py ..                                         [ 56%]
+tests/test_skill_scripts.py ..........                                   [ 56%]
+tests/test_skill_selection.py .....                                      [ 57%]
+tests/test_skill_usage.py .                                              [ 57%]
+tests/test_stage2_e2e.py .....                                           [ 57%]
+tests/test_stage2_product_acceptance.py ..                               [ 57%]
+tests/test_stage3_product_acceptance.py ..                               [ 57%]
+tests/test_stage4_application_api.py ...............                     [ 57%]
+tests/test_stage4_artifacts.py .....................                     [ 58%]
+tests/test_stage4_backup.py ..                                           [ 58%]
+tests/test_stage4_cleanup.py ...............                             [ 59%]
+tests/test_stage4_cli_operational.py .......                             [ 59%]
+tests/test_stage4_context_fork.py .........                              [ 59%]
+tests/test_stage4_doctor.py ........                                     [ 59%]
+tests/test_stage4_domain.py .......                                      [ 59%]
+tests/test_stage4_durable_log.py ....                                    [ 60%]
+tests/test_stage4_execution.py ................                          [ 60%]
+tests/test_stage4_journal.py ..............                              [ 61%]
+tests/test_stage4_operational_store_spike.py ...............             [ 61%]
+tests/test_stage4_permissions.py .................                       [ 62%]
+tests/test_stage4_recovery.py ...........                                [ 62%]
+tests/test_stage4_recovery_crash.py .............                        [ 62%]
+tests/test_stage4_session_conversation.py ........                       [ 63%]
+tests/test_stage4_task_outcome.py ................                       [ 63%]
+tests/test_stage4_tool_journal.py .......                                [ 63%]
+tests/test_stage4_tool_persist.py ..........                             [ 64%]
+tests/test_stage5_doctor_backup.py ....                                  [ 64%]
+tests/test_stage5_learning_domain.py ........                            [ 64%]
+tests/test_stage5_learning_live.py ...                                   [ 64%]
+tests/test_stage5_learning_policy.py ...                                 [ 64%]
+tests/test_stage5_learning_ports.py ..                                   [ 64%]
+tests/test_stage5_learning_reviewer.py ......                            [ 64%]
+tests/test_stage5_learning_store.py ......                               [ 65%]
+tests/test_stage5_memory_agent_run.py ....                               [ 65%]
+tests/test_stage5_memory_inspection.py .............                     [ 65%]
+tests/test_stage5_memory_selection.py ....                               [ 65%]
+tests/test_stage5_memory_selector.py ...                                 [ 65%]
+tests/test_stage5_memory_tokens.py ....                                  [ 65%]
+tests/test_stage5_project_knowledge.py ........                          [ 66%]
+tests/test_stage5_review_pipeline.py ..................                  [ 66%]
+tests/test_stage6_backup.py .......                                      [ 66%]
+tests/test_stage7_acceptance.py ...                                      [ 67%]
+tests/test_stage7_agent_definitions.py ................................. [ 68%]
+.........                                                                [ 68%]
+tests/test_stage7_direct_adapter.py .................                    [ 68%]
+tests/test_stage7_isolated_workflow_slice.py ........................... [ 69%]
+..........                                                               [ 70%]
+tests/test_stage7_multi_agent_pipeline.py .............................. [ 71%]
+.                                                                        [ 71%]
+tests/test_stage7_serial_scheduler.py .............................      [ 71%]
+tests/test_stage7_workflow_cli.py .............                          [ 72%]
+tests/test_stage7_workflow_compiler.py ..............................    [ 73%]
+tests/test_stage7_workflow_domain.py ....................                [ 73%]
+tests/test_stage7_workflow_management.py .....                           [ 74%]
+tests/test_stage7_workflow_store.py .............                        [ 74%]
+tests/test_stage8_attachment_api.py .............                        [ 74%]
+tests/test_stage8_attachments.py ...............                         [ 75%]
+tests/test_stage8_chat_host.py ..............                            [ 75%]
+tests/test_stage8_chat_management.py ......                              [ 75%]
+tests/test_stage8_chat_permissions.py .....                              [ 76%]
+tests/test_stage8_chat_provider_settings.py ..                           [ 76%]
+tests/test_stage8_chat_reasoning.py ....FF                               [ 76%]
+tests/test_stage8_chat_runtime_control.py .......                        [ 76%]
+tests/test_stage8_chat_security.py ...............                       [ 77%]
+tests/test_stage8_chat_settings.py .......                               [ 77%]
+tests/test_stage8_chat_stream.py .....                                   [ 77%]
+tests/test_stage8_chat_submission.py .........                           [ 77%]
+tests/test_stage8_chat_timeline.py .....                                 [ 77%]
+tests/test_stage8_chat_workflows.py ..........                           [ 78%]
+tests/test_stage8_chat_workspace.py .....                                [ 78%]
+tests/test_stage8_cli_attach.py ..                                       [ 78%]
+tests/test_stage8_context_management.py ................................ [ 79%]
+...                                                                      [ 79%]
+tests/test_stage8_core_api.py ....................                       [ 80%]
+tests/test_stage8_core_api_security.py ...........                       [ 80%]
+tests/test_stage8_execution_roots.py .........                           [ 80%]
+tests/test_stage8_global_replan.py .....................                 [ 81%]
+tests/test_stage8_graph_planner.py .........................             [ 82%]
+tests/test_stage8_gui_serving.py .............                           [ 82%]
+tests/test_stage8_knowledge_management.py ......                         [ 82%]
+tests/test_stage8_mcp_management.py .......                              [ 83%]
+tests/test_stage8_operation_management.py ...                            [ 83%]
+tests/test_stage8_patch_continuation.py ...........                      [ 83%]
+tests/test_stage8_pause_drain.py ........                                [ 83%]
+tests/test_stage8_readonly_parallel.py ...........................       [ 84%]
+tests/test_stage8_run_control.py ...............                         [ 85%]
+tests/test_stage8_session_management.py ...                              [ 85%]
+tests/test_stage8_skill_management.py ..                                 [ 85%]
+tests/test_stage8_state_management.py ...                                [ 85%]
+tests/test_stage8_task_artifacts.py .......                              [ 85%]
+tests/test_stage8_workflow_editor.py ........                            [ 85%]
+tests/test_stage8_workspace_api.py ..                                    [ 85%]
+tests/test_stage8_workspace_directories.py ......                        [ 85%]
+tests/test_stage8_workspace_registry.py ...                              [ 86%]
+tests/test_stage9_html_preview.py ............                           [ 86%]
+tests/test_stage9_workspace_files.py ............                        [ 86%]
+tests/test_stage_boundary.py ..........                                  [ 87%]
+tests/test_state_and_workspace.py .....................................  [ 88%]
+tests/test_submit_completion_protocol.py .............                   [ 88%]
+tests/test_task_continuity_chat.py ....                                  [ 88%]
+tests/test_task_continuity_runtime.py ...............                    [ 89%]
+tests/test_task_continuity_store.py ......                               [ 89%]
+tests/test_terminal.py .......................                           [ 90%]
+tests/test_tool_contract_audit.py .....................                  [ 90%]
+tests/test_tool_failure_diagnostics_projection.py ...                    [ 90%]
+tests/test_tool_observation.py ....                                      [ 91%]
+tests/test_tool_visual_lifecycle.py ....                                 [ 91%]
+tests/test_tool_visual_observations.py ...............                   [ 91%]
+tests/test_tools.py ..............................                       [ 92%]
+tests/test_tracked_commands.py ...                                       [ 92%]
+tests/test_workflow_agent_presets.py ................................... [ 93%]
+...                                                                      [ 93%]
+tests/test_workflow_agent_routes.py ...                                  [ 93%]
+tests/test_workflow_consistency.py ...                                   [ 94%]
+tests/test_workflow_controls.py ........................................ [ 95%]
+................                                                         [ 95%]
+tests/test_workflow_deliveries.py .....................                  [ 96%]
+tests/test_workflow_historical_recovery.py ......                        [ 96%]
+tests/test_workflow_interrupt_continuation.py .....                      [ 96%]
+tests/test_workflow_llm_replan.py ...........                            [ 97%]
+tests/test_workflow_pause_continue_repair.py ..................          [ 97%]
+tests/test_workflow_plan_admission.py ...........                        [ 98%]
+tests/test_workflow_plan_change.py ...........                           [ 98%]
+tests/test_workflow_provider_continuity.py .                             [ 98%]
+tests/test_workflow_release_acceptance.py ............                   [ 98%]
+tests/test_workflow_repeat_interruption.py ....                          [ 98%]
+tests/test_workflow_session_ownership.py ....                            [ 99%]
+tests/test_workflow_stage_stream.py .........                            [ 99%]
+tests/test_workflow_task_planning.py .....................               [100%]
+
+=================================== FAILURES ===================================
+_______________ test_tracked_pages_redact_before_any_cut[1-True] _______________
+
+running = True, limit = 1
+
+    @pytest.mark.parametrize("running", [True, False])
+    @pytest.mark.parametrize("limit", [1, 4, 20, 64])
+    def test_tracked_pages_redact_before_any_cut(running, limit):
+        secret = "合成凭据_SECRET_1234"
+        raw = b"hello " + secret.encode() + b" world"
+        execution = _buffered_execution(raw, running=running)
+        redactor = SecretRedactor((secret,))
+        registry = TrackedProcessRegistry()
+        offset = 0
+        pages = []
+        while offset < len(raw):
+>           view = registry._view(
+                execution, offset=offset, stderr_offset=0, limit=limit, redactor=redactor
+            )
+
+tests/test_harness_acceptance_fixes.py:77: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <morrow.services.tracked_process.TrackedProcessRegistry object at 0x10ff1d310>
+execution = namespace(execution_id='exec_aaaaaaaaaaaaaaaaaaaaaaaa', spawned=namespace(stdout=<morrow.adapters.local.process._Curso...ing'>, exit_code=None, signal=None, lifecycle=<TrackedLifecycle.TASK: 'task'>, cwd_relative='.', command_class='shell')
+
+    def _view(
+        self,
+        execution: TrackedExecution,
+        *,
+        offset: int,
+        stderr_offset: int,
+        limit: int,
+        redactor,
+    ) -> TrackedCommandView:
+        chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
+>       secrets = tuple(dict.fromkeys((*execution.secret_bytes, *redactor.secret_bytes)))
+                                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'secret_bytes'
+
+src/morrow/services/tracked_process.py:289: AttributeError
+______________ test_tracked_pages_redact_before_any_cut[1-False] _______________
+
+running = False, limit = 1
+
+    @pytest.mark.parametrize("running", [True, False])
+    @pytest.mark.parametrize("limit", [1, 4, 20, 64])
+    def test_tracked_pages_redact_before_any_cut(running, limit):
+        secret = "合成凭据_SECRET_1234"
+        raw = b"hello " + secret.encode() + b" world"
+        execution = _buffered_execution(raw, running=running)
+        redactor = SecretRedactor((secret,))
+        registry = TrackedProcessRegistry()
+        offset = 0
+        pages = []
+        while offset < len(raw):
+>           view = registry._view(
+                execution, offset=offset, stderr_offset=0, limit=limit, redactor=redactor
+            )
+
+tests/test_harness_acceptance_fixes.py:77: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <morrow.services.tracked_process.TrackedProcessRegistry object at 0x10ff1fa70>
+execution = namespace(execution_id='exec_aaaaaaaaaaaaaaaaaaaaaaaa', spawned=namespace(stdout=<morrow.adapters.local.process._Curso...exited'>, exit_code=0, signal=None, lifecycle=<TrackedLifecycle.TASK: 'task'>, cwd_relative='.', command_class='shell')
+
+    def _view(
+        self,
+        execution: TrackedExecution,
+        *,
+        offset: int,
+        stderr_offset: int,
+        limit: int,
+        redactor,
+    ) -> TrackedCommandView:
+        chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
+>       secrets = tuple(dict.fromkeys((*execution.secret_bytes, *redactor.secret_bytes)))
+                                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'secret_bytes'
+
+src/morrow/services/tracked_process.py:289: AttributeError
+_______________ test_tracked_pages_redact_before_any_cut[4-True] _______________
+
+running = True, limit = 4
+
+    @pytest.mark.parametrize("running", [True, False])
+    @pytest.mark.parametrize("limit", [1, 4, 20, 64])
+    def test_tracked_pages_redact_before_any_cut(running, limit):
+        secret = "合成凭据_SECRET_1234"
+        raw = b"hello " + secret.encode() + b" world"
+        execution = _buffered_execution(raw, running=running)
+        redactor = SecretRedactor((secret,))
+        registry = TrackedProcessRegistry()
+        offset = 0
+        pages = []
+        while offset < len(raw):
+>           view = registry._view(
+                execution, offset=offset, stderr_offset=0, limit=limit, redactor=redactor
+            )
+
+tests/test_harness_acceptance_fixes.py:77: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <morrow.services.tracked_process.TrackedProcessRegistry object at 0x10fecbfb0>
+execution = namespace(execution_id='exec_aaaaaaaaaaaaaaaaaaaaaaaa', spawned=namespace(stdout=<morrow.adapters.local.process._Curso...ing'>, exit_code=None, signal=None, lifecycle=<TrackedLifecycle.TASK: 'task'>, cwd_relative='.', command_class='shell')
+
+    def _view(
+        self,
+        execution: TrackedExecution,
+        *,
+        offset: int,
+        stderr_offset: int,
+        limit: int,
+        redactor,
+    ) -> TrackedCommandView:
+        chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
+>       secrets = tuple(dict.fromkeys((*execution.secret_bytes, *redactor.secret_bytes)))
+                                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'secret_bytes'
+
+src/morrow/services/tracked_process.py:289: AttributeError
+______________ test_tracked_pages_redact_before_any_cut[4-False] _______________
+
+running = False, limit = 4
+
+    @pytest.mark.parametrize("running", [True, False])
+    @pytest.mark.parametrize("limit", [1, 4, 20, 64])
+    def test_tracked_pages_redact_before_any_cut(running, limit):
+        secret = "合成凭据_SECRET_1234"
+        raw = b"hello " + secret.encode() + b" world"
+        execution = _buffered_execution(raw, running=running)
+        redactor = SecretRedactor((secret,))
+        registry = TrackedProcessRegistry()
+        offset = 0
+        pages = []
+        while offset < len(raw):
+>           view = registry._view(
+                execution, offset=offset, stderr_offset=0, limit=limit, redactor=redactor
+            )
+
+tests/test_harness_acceptance_fixes.py:77: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <morrow.services.tracked_process.TrackedProcessRegistry object at 0x110d6d370>
+execution = namespace(execution_id='exec_aaaaaaaaaaaaaaaaaaaaaaaa', spawned=namespace(stdout=<morrow.adapters.local.process._Curso...exited'>, exit_code=0, signal=None, lifecycle=<TrackedLifecycle.TASK: 'task'>, cwd_relative='.', command_class='shell')
+
+    def _view(
+        self,
+        execution: TrackedExecution,
+        *,
+        offset: int,
+        stderr_offset: int,
+        limit: int,
+        redactor,
+    ) -> TrackedCommandView:
+        chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
+>       secrets = tuple(dict.fromkeys((*execution.secret_bytes, *redactor.secret_bytes)))
+                                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'secret_bytes'
+
+src/morrow/services/tracked_process.py:289: AttributeError
+______________ test_tracked_pages_redact_before_any_cut[20-True] _______________
+
+running = True, limit = 20
+
+    @pytest.mark.parametrize("running", [True, False])
+    @pytest.mark.parametrize("limit", [1, 4, 20, 64])
+    def test_tracked_pages_redact_before_any_cut(running, limit):
+        secret = "合成凭据_SECRET_1234"
+        raw = b"hello " + secret.encode() + b" world"
+        execution = _buffered_execution(raw, running=running)
+        redactor = SecretRedactor((secret,))
+        registry = TrackedProcessRegistry()
+        offset = 0
+        pages = []
+        while offset < len(raw):
+>           view = registry._view(
+                execution, offset=offset, stderr_offset=0, limit=limit, redactor=redactor
+            )
+
+tests/test_harness_acceptance_fixes.py:77: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <morrow.services.tracked_process.TrackedProcessRegistry object at 0x10ff1d6d0>
+execution = namespace(execution_id='exec_aaaaaaaaaaaaaaaaaaaaaaaa', spawned=namespace(stdout=<morrow.adapters.local.process._Curso...ing'>, exit_code=None, signal=None, lifecycle=<TrackedLifecycle.TASK: 'task'>, cwd_relative='.', command_class='shell')
+
+    def _view(
+        self,
+        execution: TrackedExecution,
+        *,
+        offset: int,
+        stderr_offset: int,
+        limit: int,
+        redactor,
+    ) -> TrackedCommandView:
+        chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
+>       secrets = tuple(dict.fromkeys((*execution.secret_bytes, *redactor.secret_bytes)))
+                                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'secret_bytes'
+
+src/morrow/services/tracked_process.py:289: AttributeError
+______________ test_tracked_pages_redact_before_any_cut[20-False] ______________
+
+running = False, limit = 20
+
+    @pytest.mark.parametrize("running", [True, False])
+    @pytest.mark.parametrize("limit", [1, 4, 20, 64])
+    def test_tracked_pages_redact_before_any_cut(running, limit):
+        secret = "合成凭据_SECRET_1234"
+        raw = b"hello " + secret.encode() + b" world"
+        execution = _buffered_execution(raw, running=running)
+        redactor = SecretRedactor((secret,))
+        registry = TrackedProcessRegistry()
+        offset = 0
+        pages = []
+        while offset < len(raw):
+>           view = registry._view(
+                execution, offset=offset, stderr_offset=0, limit=limit, redactor=redactor
+            )
+
+tests/test_harness_acceptance_fixes.py:77: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <morrow.services.tracked_process.TrackedProcessRegistry object at 0x10ff1e1b0>
+execution = namespace(execution_id='exec_aaaaaaaaaaaaaaaaaaaaaaaa', spawned=namespace(stdout=<morrow.adapters.local.process._Curso...exited'>, exit_code=0, signal=None, lifecycle=<TrackedLifecycle.TASK: 'task'>, cwd_relative='.', command_class='shell')
+
+    def _view(
+        self,
+        execution: TrackedExecution,
+        *,
+        offset: int,
+        stderr_offset: int,
+        limit: int,
+        redactor,
+    ) -> TrackedCommandView:
+        chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
+>       secrets = tuple(dict.fromkeys((*execution.secret_bytes, *redactor.secret_bytes)))
+                                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'secret_bytes'
+
+src/morrow/services/tracked_process.py:289: AttributeError
+______________ test_tracked_pages_redact_before_any_cut[64-True] _______________
+
+running = True, limit = 64
+
+    @pytest.mark.parametrize("running", [True, False])
+    @pytest.mark.parametrize("limit", [1, 4, 20, 64])
+    def test_tracked_pages_redact_before_any_cut(running, limit):
+        secret = "合成凭据_SECRET_1234"
+        raw = b"hello " + secret.encode() + b" world"
+        execution = _buffered_execution(raw, running=running)
+        redactor = SecretRedactor((secret,))
+        registry = TrackedProcessRegistry()
+        offset = 0
+        pages = []
+        while offset < len(raw):
+>           view = registry._view(
+                execution, offset=offset, stderr_offset=0, limit=limit, redactor=redactor
+            )
+
+tests/test_harness_acceptance_fixes.py:77: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <morrow.services.tracked_process.TrackedProcessRegistry object at 0x1102f6b70>
+execution = namespace(execution_id='exec_aaaaaaaaaaaaaaaaaaaaaaaa', spawned=namespace(stdout=<morrow.adapters.local.process._Curso...ing'>, exit_code=None, signal=None, lifecycle=<TrackedLifecycle.TASK: 'task'>, cwd_relative='.', command_class='shell')
+
+    def _view(
+        self,
+        execution: TrackedExecution,
+        *,
+        offset: int,
+        stderr_offset: int,
+        limit: int,
+        redactor,
+    ) -> TrackedCommandView:
+        chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
+>       secrets = tuple(dict.fromkeys((*execution.secret_bytes, *redactor.secret_bytes)))
+                                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'secret_bytes'
+
+src/morrow/services/tracked_process.py:289: AttributeError
+______________ test_tracked_pages_redact_before_any_cut[64-False] ______________
+
+running = False, limit = 64
+
+    @pytest.mark.parametrize("running", [True, False])
+    @pytest.mark.parametrize("limit", [1, 4, 20, 64])
+    def test_tracked_pages_redact_before_any_cut(running, limit):
+        secret = "合成凭据_SECRET_1234"
+        raw = b"hello " + secret.encode() + b" world"
+        execution = _buffered_execution(raw, running=running)
+        redactor = SecretRedactor((secret,))
+        registry = TrackedProcessRegistry()
+        offset = 0
+        pages = []
+        while offset < len(raw):
+>           view = registry._view(
+                execution, offset=offset, stderr_offset=0, limit=limit, redactor=redactor
+            )
+
+tests/test_harness_acceptance_fixes.py:77: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <morrow.services.tracked_process.TrackedProcessRegistry object at 0x10fecbfb0>
+execution = namespace(execution_id='exec_aaaaaaaaaaaaaaaaaaaaaaaa', spawned=namespace(stdout=<morrow.adapters.local.process._Curso...exited'>, exit_code=0, signal=None, lifecycle=<TrackedLifecycle.TASK: 'task'>, cwd_relative='.', command_class='shell')
+
+    def _view(
+        self,
+        execution: TrackedExecution,
+        *,
+        offset: int,
+        stderr_offset: int,
+        limit: int,
+        redactor,
+    ) -> TrackedCommandView:
+        chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
+>       secrets = tuple(dict.fromkeys((*execution.secret_bytes, *redactor.secret_bytes)))
+                                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'secret_bytes'
+
+src/morrow/services/tracked_process.py:289: AttributeError
+____ test_tracked_ring_truncation_hides_secret_suffix_and_arbitrary_offset _____
+
+    def test_tracked_ring_truncation_hides_secret_suffix_and_arbitrary_offset():
+        secret = "SYNTHETIC_SECRET_1234"
+        execution = _buffered_execution(secret.encode() + b"-safe", capacity=15)
+>       view = TrackedProcessRegistry()._view(
+            execution, offset=0, stderr_offset=0, limit=1, redactor=SecretRedactor((secret,))
+        )
+
+tests/test_harness_acceptance_fixes.py:92: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <morrow.services.tracked_process.TrackedProcessRegistry object at 0x10fec93d0>
+execution = namespace(execution_id='exec_aaaaaaaaaaaaaaaaaaaaaaaa', spawned=namespace(stdout=<morrow.adapters.local.process._Curso...ing'>, exit_code=None, signal=None, lifecycle=<TrackedLifecycle.TASK: 'task'>, cwd_relative='.', command_class='shell')
+
+    def _view(
+        self,
+        execution: TrackedExecution,
+        *,
+        offset: int,
+        stderr_offset: int,
+        limit: int,
+        redactor,
+    ) -> TrackedCommandView:
+        chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
+>       secrets = tuple(dict.fromkeys((*execution.secret_bytes, *redactor.secret_bytes)))
+                                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'secret_bytes'
+
+src/morrow/services/tracked_process.py:289: AttributeError
+_______ test_tracked_ring_smaller_than_credential_never_discloses_middle _______
+
+    def test_tracked_ring_smaller_than_credential_never_discloses_middle():
+        secret = "SYNTHETIC_" + "X" * 40 + "_SECRET"
+        execution = _buffered_execution(secret.encode(), capacity=12)
+>       view = TrackedProcessRegistry()._view(
+            execution, offset=0, stderr_offset=0, limit=2, redactor=SecretRedactor((secret,))
+        )
+
+tests/test_harness_acceptance_fixes.py:103: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <morrow.services.tracked_process.TrackedProcessRegistry object at 0x110cddbb0>
+execution = namespace(execution_id='exec_aaaaaaaaaaaaaaaaaaaaaaaa', spawned=namespace(stdout=<morrow.adapters.local.process._Curso...ing'>, exit_code=None, signal=None, lifecycle=<TrackedLifecycle.TASK: 'task'>, cwd_relative='.', command_class='shell')
+
+    def _view(
+        self,
+        execution: TrackedExecution,
+        *,
+        offset: int,
+        stderr_offset: int,
+        limit: int,
+        redactor,
+    ) -> TrackedCommandView:
+        chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
+>       secrets = tuple(dict.fromkeys((*execution.secret_bytes, *redactor.secret_bytes)))
+                                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'secret_bytes'
+
+src/morrow/services/tracked_process.py:289: AttributeError
+________________ test_tracked_stderr_uses_the_same_safe_paging _________________
+
+    def test_tracked_stderr_uses_the_same_safe_paging():
+        secret = "SYNTHETIC_SECRET_1234"
+        execution = _buffered_execution(b"ordinary")
+        execution.spawned.stderr.add(b"before " + secret.encode() + b" after")
+>       view = TrackedProcessRegistry()._view(
+            execution, offset=0, stderr_offset=0, limit=12, redactor=SecretRedactor((secret,))
+        )
+
+tests/test_harness_acceptance_fixes.py:114: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <morrow.services.tracked_process.TrackedProcessRegistry object at 0x10fecb230>
+execution = namespace(execution_id='exec_aaaaaaaaaaaaaaaaaaaaaaaa', spawned=namespace(stdout=<morrow.adapters.local.process._Curso...ing'>, exit_code=None, signal=None, lifecycle=<TrackedLifecycle.TASK: 'task'>, cwd_relative='.', command_class='shell')
+
+    def _view(
+        self,
+        execution: TrackedExecution,
+        *,
+        offset: int,
+        stderr_offset: int,
+        limit: int,
+        redactor,
+    ) -> TrackedCommandView:
+        chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
+>       secrets = tuple(dict.fromkeys((*execution.secret_bytes, *redactor.secret_bytes)))
+                                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'secret_bytes'
+
+src/morrow/services/tracked_process.py:289: AttributeError
+________ test_tracked_growing_stream_never_reveals_secret_across_polls _________
+
+    def test_tracked_growing_stream_never_reveals_secret_across_polls():
+        secret = "SYNTHETIC_SECRET_1234"
+        execution = _buffered_execution(b"prefix SYNTHETIC_")
+        registry = TrackedProcessRegistry()
+        redactor = SecretRedactor((secret,))
+>       first = registry._view(execution, offset=0, stderr_offset=0, limit=64, redactor=redactor)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_harness_acceptance_fixes.py:126: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <morrow.services.tracked_process.TrackedProcessRegistry object at 0x10e820ef0>
+execution = namespace(execution_id='exec_aaaaaaaaaaaaaaaaaaaaaaaa', spawned=namespace(stdout=<morrow.adapters.local.process._Curso...ing'>, exit_code=None, signal=None, lifecycle=<TrackedLifecycle.TASK: 'task'>, cwd_relative='.', command_class='shell')
+
+    def _view(
+        self,
+        execution: TrackedExecution,
+        *,
+        offset: int,
+        stderr_offset: int,
+        limit: int,
+        redactor,
+    ) -> TrackedCommandView:
+        chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
+>       secrets = tuple(dict.fromkeys((*execution.secret_bytes, *redactor.secret_bytes)))
+                                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'secret_bytes'
+
+src/morrow/services/tracked_process.py:289: AttributeError
+____ test_tracked_utf8_cursor_preserves_nonsecret_text_with_one_byte_limit _____
+
+    def test_tracked_utf8_cursor_preserves_nonsecret_text_with_one_byte_limit():
+        original = "开始 café 结束"
+        execution = _buffered_execution(original.encode())
+        registry = TrackedProcessRegistry()
+        offset = 0
+        pages = []
+        while offset < len(original.encode()):
+>           view = registry._view(
+                execution,
+                offset=offset,
+                stderr_offset=0,
+                limit=1,
+                redactor=SecretRedactor(("SYNTHETIC_SECRET",)),
+            )
+
+tests/test_harness_acceptance_fixes.py:148: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <morrow.services.tracked_process.TrackedProcessRegistry object at 0x10ff1c4d0>
+execution = namespace(execution_id='exec_aaaaaaaaaaaaaaaaaaaaaaaa', spawned=namespace(stdout=<morrow.adapters.local.process._Curso...ing'>, exit_code=None, signal=None, lifecycle=<TrackedLifecycle.TASK: 'task'>, cwd_relative='.', command_class='shell')
+
+    def _view(
+        self,
+        execution: TrackedExecution,
+        *,
+        offset: int,
+        stderr_offset: int,
+        limit: int,
+        redactor,
+    ) -> TrackedCommandView:
+        chunk_limit = max(1, min(limit, _POLL_CHUNK_BYTES))
+>       secrets = tuple(dict.fromkeys((*execution.secret_bytes, *redactor.secret_bytes)))
+                                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'secret_bytes'
+
+src/morrow/services/tracked_process.py:289: AttributeError
+_______ test_actual_chat_sdk_tools_retry_next_run_and_rehydration[False] _______
+
+tmp_path = PosixPath('/private/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/pytest-of-ruirui/pytest-46/test_actual_chat_sdk_tools_ret0')
+with_attachment = False
+
+    @pytest.mark.parametrize("with_attachment", [False, True])
+    async def test_actual_chat_sdk_tools_retry_next_run_and_rehydration(tmp_path, with_attachment):
+        import httpx
+        import openai
+    
+        from morrow.adapters.models.openai_compatible import OpenAICompatibleProvider
+        from morrow.core.models import ChatSettings
+        from morrow.core.runtime_policy import LongHorizonPolicyOverrides, RuntimePolicyOverrides
+        from morrow.runtime.agent import ModelCallRunner
+        from test_stage8_chat_submission import drain, new_session
+        from test_stage8_core_api import ServerFixture
+    
+        fx = ServerFixture(tmp_path)
+        requests, delays = [], []
+        sid = None
+    
+        class SDK:
+            async def create(self, **request):
+                requests.append(request)
+                if len(requests) == 1:
+                    # A selection change after admission cannot alter this run or its retries.
+                    svc = fx.host.context.chat.settings
+                    svc.put(
+                        sid,
+                        "session",
+                        ChatSettings(generation=GenerationOptions(reasoning_effort="low")),
+                        1,
+                    )
+                    raise openai.APIConnectionError(
+                        request=httpx.Request("POST", "https://example.test")
+                    )
+                if len(requests) == 2:
+                    delta = SimpleNamespace(
+                        content=None,
+                        tool_calls=[
+                            SimpleNamespace(
+                                index=0,
+                                id="read1",
+                                type="function",
+                                function=SimpleNamespace(name="read", arguments='{"path":"input.txt"}'),
+                            )
+                        ],
+                    )
+                    finish = "tool_calls"
+                else:
+                    delta, finish = (
+                        SimpleNamespace(
+                            content="visible result",
+                            tool_calls=None,
+                            reasoning_content="hidden-private-sentinel",
+                        ),
+                        "stop",
+                    )
+                return AsyncChunks(
+                    [
+                        SimpleNamespace(
+                            choices=[SimpleNamespace(index=0, delta=delta, finish_reason=finish)]
+                        )
+                    ]
+                )
+    
+        def factory(config, credential):
+            provider = OpenAICompatibleProvider(
+                config.base_url,
+                credential,
+                api_model_ids={mid: m.api_model_id for mid, m in config.models.items()},
+            )
+            provider._client = SimpleNamespace(chat=SimpleNamespace(completions=SDK()))
+            return provider
+    
+        try:
+            (fx.workspace_dir / "input.txt").write_text("data")
+    
+            def configure():
+                app = fx.app
+                app.registry.register(
+                    "fake-adapter",
+                    factory,
+                    capabilities=ProviderCapabilities(
+                        tool_protocol="openai_function",
+                        multiple_tool_calls=True,
+                        reasoning_efforts=("low", "high"),
+                        input_types=("text", "image"),
+                    ),
+                    reasoning_implementation=("low", "high"),
+                )
+                app.provider_service.configure_model(
+                    "fake-provider",
+                    "m1",
+                    capabilities=ModelCapabilityOverrides(
+                        reasoning_efforts=("low", "high"), input_types=("text", "image")
+                    ),
+                )
+                current = app.global_store.load()
+                app.global_store.update(
+                    lambda v: v.model_copy(
+                        update={
+                            "runtime_policy": RuntimePolicyOverrides(
+                                long_horizon=LongHorizonPolicyOverrides(
+                                    retry_enabled=True, max_retries=1
+                                )
+                            )
+                        }
+                    ),
+                    expected_revision=current.revision,
+                )
+    
+            await fx.on_core(configure)
+            sid, path = await new_session(fx)
+            response = await fx.client.post(
+                path + "/settings",
+                {"expected_revision": 0, "settings": {"generation": {"reasoning_effort": "high"}}},
+            )
+            assert response.status == 200, response.body
+    
+            async def no_sleep(delay):
+                delays.append(delay)
+    
+            def runtime():
+                products = fx.host.context.chat.runtime(
+                    sid, ModelRef(provider_id="fake-provider", model_id="m1")
+                )
+                products.orchestrator.runtime.loop.retry_sleep = no_sleep
+    
+            await fx.on_core(runtime)
+            attachments = []
+            if with_attachment:
+                import io
+    
+                from PIL import Image
+    
+                from test_stage8_attachment_api import uploaded
+    
+                image = io.BytesIO()
+                Image.new("RGB", (12, 14), "red").save(image, format="PNG")
+                row, _ = await uploaded(fx, sid, image.getvalue(), mime="image/png")
+                attachments.append(row["reference"])
+            sent = await fx.client.post(
+                path + "/interactions",
+                {
+                    "client_message_id": "reason.first",
+                    "text": "read the file",
+                    "attachments": attachments,
+                },
+            )
+            assert sent.status == 202, sent.body
+            await drain(fx, sid)
+            first = (await fx.client.get(path + "/interactions/reason.first")).json()["receipt"]
+>           assert first["status"] == "settled", first
+E           AssertionError: {'agent_run_id': 'arun_l0bdhdwM-VeQ-3kP', 'binding_digest': '93d8611d99b8bcf3911dbf50f0d39a2324105fcb4e3b6d127029c21503a2193c', 'client_message_id': 'reason.first', 'disposition': 'accepted', ...}
+E           assert 'blocked' == 'settled'
+E             
+E             - settled
+E             + blocked
+
+tests/test_stage8_chat_reasoning.py:222: AssertionError
+_______ test_actual_chat_sdk_tools_retry_next_run_and_rehydration[True] ________
+
+tmp_path = PosixPath('/private/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/pytest-of-ruirui/pytest-46/test_actual_chat_sdk_tools_ret1')
+with_attachment = True
+
+    @pytest.mark.parametrize("with_attachment", [False, True])
+    async def test_actual_chat_sdk_tools_retry_next_run_and_rehydration(tmp_path, with_attachment):
+        import httpx
+        import openai
+    
+        from morrow.adapters.models.openai_compatible import OpenAICompatibleProvider
+        from morrow.core.models import ChatSettings
+        from morrow.core.runtime_policy import LongHorizonPolicyOverrides, RuntimePolicyOverrides
+        from morrow.runtime.agent import ModelCallRunner
+        from test_stage8_chat_submission import drain, new_session
+        from test_stage8_core_api import ServerFixture
+    
+        fx = ServerFixture(tmp_path)
+        requests, delays = [], []
+        sid = None
+    
+        class SDK:
+            async def create(self, **request):
+                requests.append(request)
+                if len(requests) == 1:
+                    # A selection change after admission cannot alter this run or its retries.
+                    svc = fx.host.context.chat.settings
+                    svc.put(
+                        sid,
+                        "session",
+                        ChatSettings(generation=GenerationOptions(reasoning_effort="low")),
+                        1,
+                    )
+                    raise openai.APIConnectionError(
+                        request=httpx.Request("POST", "https://example.test")
+                    )
+                if len(requests) == 2:
+                    delta = SimpleNamespace(
+                        content=None,
+                        tool_calls=[
+                            SimpleNamespace(
+                                index=0,
+                                id="read1",
+                                type="function",
+                                function=SimpleNamespace(name="read", arguments='{"path":"input.txt"}'),
+                            )
+                        ],
+                    )
+                    finish = "tool_calls"
+                else:
+                    delta, finish = (
+                        SimpleNamespace(
+                            content="visible result",
+                            tool_calls=None,
+                            reasoning_content="hidden-private-sentinel",
+                        ),
+                        "stop",
+                    )
+                return AsyncChunks(
+                    [
+                        SimpleNamespace(
+                            choices=[SimpleNamespace(index=0, delta=delta, finish_reason=finish)]
+                        )
+                    ]
+                )
+    
+        def factory(config, credential):
+            provider = OpenAICompatibleProvider(
+                config.base_url,
+                credential,
+                api_model_ids={mid: m.api_model_id for mid, m in config.models.items()},
+            )
+            provider._client = SimpleNamespace(chat=SimpleNamespace(completions=SDK()))
+            return provider
+    
+        try:
+            (fx.workspace_dir / "input.txt").write_text("data")
+    
+            def configure():
+                app = fx.app
+                app.registry.register(
+                    "fake-adapter",
+                    factory,
+                    capabilities=ProviderCapabilities(
+                        tool_protocol="openai_function",
+                        multiple_tool_calls=True,
+                        reasoning_efforts=("low", "high"),
+                        input_types=("text", "image"),
+                    ),
+                    reasoning_implementation=("low", "high"),
+                )
+                app.provider_service.configure_model(
+                    "fake-provider",
+                    "m1",
+                    capabilities=ModelCapabilityOverrides(
+                        reasoning_efforts=("low", "high"), input_types=("text", "image")
+                    ),
+                )
+                current = app.global_store.load()
+                app.global_store.update(
+                    lambda v: v.model_copy(
+                        update={
+                            "runtime_policy": RuntimePolicyOverrides(
+                                long_horizon=LongHorizonPolicyOverrides(
+                                    retry_enabled=True, max_retries=1
+                                )
+                            )
+                        }
+                    ),
+                    expected_revision=current.revision,
+                )
+    
+            await fx.on_core(configure)
+            sid, path = await new_session(fx)
+            response = await fx.client.post(
+                path + "/settings",
+                {"expected_revision": 0, "settings": {"generation": {"reasoning_effort": "high"}}},
+            )
+            assert response.status == 200, response.body
+    
+            async def no_sleep(delay):
+                delays.append(delay)
+    
+            def runtime():
+                products = fx.host.context.chat.runtime(
+                    sid, ModelRef(provider_id="fake-provider", model_id="m1")
+                )
+                products.orchestrator.runtime.loop.retry_sleep = no_sleep
+    
+            await fx.on_core(runtime)
+            attachments = []
+            if with_attachment:
+                import io
+    
+                from PIL import Image
+    
+                from test_stage8_attachment_api import uploaded
+    
+                image = io.BytesIO()
+                Image.new("RGB", (12, 14), "red").save(image, format="PNG")
+                row, _ = await uploaded(fx, sid, image.getvalue(), mime="image/png")
+                attachments.append(row["reference"])
+            sent = await fx.client.post(
+                path + "/interactions",
+                {
+                    "client_message_id": "reason.first",
+                    "text": "read the file",
+                    "attachments": attachments,
+                },
+            )
+            assert sent.status == 202, sent.body
+            await drain(fx, sid)
+            first = (await fx.client.get(path + "/interactions/reason.first")).json()["receipt"]
+>           assert first["status"] == "settled", first
+E           AssertionError: {'agent_run_id': 'arun_SAJWZUvcmunjVeQ_', 'binding_digest': '4ea0567ea6dfe4fbc0ba7361f6ae4789eb7d401773f256282025e4f9a9af1a3a', 'client_message_id': 'reason.first', 'disposition': 'accepted', ...}
+E           assert 'blocked' == 'settled'
+E             
+E             - settled
+E             + blocked
+
+tests/test_stage8_chat_reasoning.py:222: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_harness_acceptance_fixes.py::test_tracked_pages_redact_before_any_cut[1-True]
+FAILED tests/test_harness_acceptance_fixes.py::test_tracked_pages_redact_before_any_cut[1-False]
+FAILED tests/test_harness_acceptance_fixes.py::test_tracked_pages_redact_before_any_cut[4-True]
+FAILED tests/test_harness_acceptance_fixes.py::test_tracked_pages_redact_before_any_cut[4-False]
+FAILED tests/test_harness_acceptance_fixes.py::test_tracked_pages_redact_before_any_cut[20-True]
+FAILED tests/test_harness_acceptance_fixes.py::test_tracked_pages_redact_before_any_cut[20-False]
+FAILED tests/test_harness_acceptance_fixes.py::test_tracked_pages_redact_before_any_cut[64-True]
+FAILED tests/test_harness_acceptance_fixes.py::test_tracked_pages_redact_before_any_cut[64-False]
+FAILED tests/test_harness_acceptance_fixes.py::test_tracked_ring_truncation_hides_secret_suffix_and_arbitrary_offset
+FAILED tests/test_harness_acceptance_fixes.py::test_tracked_ring_smaller_than_credential_never_discloses_middle
+FAILED tests/test_harness_acceptance_fixes.py::test_tracked_stderr_uses_the_same_safe_paging
+FAILED tests/test_harness_acceptance_fixes.py::test_tracked_growing_stream_never_reveals_secret_across_polls
+FAILED tests/test_harness_acceptance_fixes.py::test_tracked_utf8_cursor_preserves_nonsecret_text_with_one_byte_limit
+FAILED tests/test_stage8_chat_reasoning.py::test_actual_chat_sdk_tools_retry_next_run_and_rehydration[False]
+FAILED tests/test_stage8_chat_reasoning.py::test_actual_chat_sdk_tools_retry_next_run_and_rehydration[True]
+========== 15 failed, 3185 passed, 2 deselected in 215.76s (0:03:35) ===========

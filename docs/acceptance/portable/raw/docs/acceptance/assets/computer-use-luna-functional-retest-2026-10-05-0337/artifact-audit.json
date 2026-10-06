@@ -1,0 +1,454 @@
+{
+  "cases": [
+    {
+      "alias": "semantic-container",
+      "raw_status": "passed",
+      "raw_verdict_reason": "independent_effect",
+      "fixture_identity_matches": true,
+      "native_target_matches": true,
+      "observation_target_matches": true,
+      "native_entries": 1,
+      "network_guard_passed": true,
+      "fixture_process_exited": true,
+      "controller_image_hashes_match": true,
+      "receipt_count": 5,
+      "receipts": [
+        {
+          "sequence": 1,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 13.494418382644653
+        },
+        {
+          "sequence": 2,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 13.390599727630615
+        },
+        {
+          "sequence": 3,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 16.505972385406494
+        },
+        {
+          "sequence": 4,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 13.572726726531982
+        },
+        {
+          "sequence": 5,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 15.694772243499756
+        }
+      ],
+      "exact_attribute_reads": [],
+      "readonly_targets_match": true,
+      "readonly_token_matches_dispatched": true,
+      "attribute_read_proofs": [],
+      "reference_proofs": [
+        {
+          "call_id": "luna-3",
+          "observation_id": "cobs_gfWuI42z6VrHxRae",
+          "element_ref_sha256": "3630451f653fccbb718890298e3ca565b36272e731a5b196ce4b7091ecdfe5ff",
+          "observed_token_sha256": "28d382f97453ea15aff4369b9f4d9f3a929b198b3823013e8c6a1836a02567eb",
+          "same_ref_observed_then_dispatched": true,
+          "native_token_sha256": "28d382f97453ea15aff4369b9f4d9f3a929b198b3823013e8c6a1836a02567eb",
+          "native_token_matches_observed_sdk_token": true
+        }
+      ]
+    },
+    {
+      "alias": "enabled-foreground",
+      "raw_status": "passed",
+      "raw_verdict_reason": "independent_effect",
+      "fixture_identity_matches": true,
+      "native_target_matches": true,
+      "observation_target_matches": true,
+      "native_entries": 1,
+      "network_guard_passed": true,
+      "fixture_process_exited": true,
+      "controller_image_hashes_match": true,
+      "receipt_count": 5,
+      "receipts": [
+        {
+          "sequence": 1,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 10.522364139556885
+        },
+        {
+          "sequence": 2,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 13.022602558135986
+        },
+        {
+          "sequence": 3,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 16.133657693862915
+        },
+        {
+          "sequence": 4,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 11.865070343017578
+        },
+        {
+          "sequence": 5,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 107.30059480667114
+        }
+      ],
+      "exact_attribute_reads": [
+        {
+          "method": "read_element_attribute",
+          "pid": 93806,
+          "window_id": 1174,
+          "delivery_mode": null,
+          "amount": null,
+          "direction": null,
+          "x": null,
+          "y": null,
+          "token_hash": "2b94180b27e3e5364e16cf224e472c00e1fddfc013df3161b78f4297b8a4ca40",
+          "attribute": "enabled",
+          "identity": "exact",
+          "status": "readable",
+          "value": true,
+          "is_error": false
+        }
+      ],
+      "readonly_targets_match": true,
+      "readonly_token_matches_dispatched": true,
+      "attribute_read_proofs": [
+        {
+          "native_token_matches_observed_sdk_token": true,
+          "attribute": "enabled",
+          "identity": "exact",
+          "status": "readable",
+          "value": true,
+          "is_error": false,
+          "degraded": false
+        }
+      ],
+      "reference_proofs": []
+    },
+    {
+      "alias": "enabled-background",
+      "raw_status": "unsupported",
+      "raw_verdict_reason": "sdk_exact_attribute_readback_unavailable",
+      "fixture_identity_matches": true,
+      "native_target_matches": true,
+      "observation_target_matches": true,
+      "native_entries": 1,
+      "network_guard_passed": true,
+      "fixture_process_exited": true,
+      "controller_image_hashes_match": true,
+      "receipt_count": 7,
+      "receipts": [
+        {
+          "sequence": 1,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 41.0269570350647
+        },
+        {
+          "sequence": 2,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 18.365718126296997
+        },
+        {
+          "sequence": 3,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 38.7929253578186
+        },
+        {
+          "sequence": 4,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 36.25489568710327
+        },
+        {
+          "sequence": 5,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 25.217586278915405
+        },
+        {
+          "sequence": 6,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 22.730770587921143
+        },
+        {
+          "sequence": 7,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 25.623493194580078
+        }
+      ],
+      "exact_attribute_reads": [
+        {
+          "method": "read_element_attribute",
+          "pid": 14490,
+          "window_id": 1186,
+          "delivery_mode": null,
+          "amount": null,
+          "direction": null,
+          "x": null,
+          "y": null,
+          "token_hash": "af18593dfc6aa6836f454589ddac51cfcf405e9070485bb469b66dcda2059ad1",
+          "attribute": "enabled",
+          "identity": "exact",
+          "status": "readable",
+          "value": true,
+          "is_error": false
+        }
+      ],
+      "readonly_targets_match": true,
+      "readonly_token_matches_dispatched": true,
+      "attribute_read_proofs": [
+        {
+          "native_token_matches_observed_sdk_token": true,
+          "attribute": "enabled",
+          "identity": "exact",
+          "status": "readable",
+          "value": true,
+          "is_error": false,
+          "degraded": false
+        }
+      ],
+      "reference_proofs": []
+    },
+    {
+      "alias": "foreground-wheel",
+      "raw_status": "passed",
+      "raw_verdict_reason": "independent_effect",
+      "fixture_identity_matches": true,
+      "native_target_matches": true,
+      "observation_target_matches": true,
+      "native_entries": 1,
+      "network_guard_passed": true,
+      "fixture_process_exited": true,
+      "controller_image_hashes_match": true,
+      "receipt_count": 7,
+      "receipts": [
+        {
+          "sequence": 1,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 15.949047565460205
+        },
+        {
+          "sequence": 2,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 17.009143114089966
+        },
+        {
+          "sequence": 3,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 33.207255601882935
+        },
+        {
+          "sequence": 4,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 25.01583695411682
+        },
+        {
+          "sequence": 5,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 24.290883779525757
+        },
+        {
+          "sequence": 6,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 22.94317865371704
+        },
+        {
+          "sequence": 7,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 20.211915254592896
+        }
+      ],
+      "exact_attribute_reads": [],
+      "readonly_targets_match": true,
+      "readonly_token_matches_dispatched": true,
+      "attribute_read_proofs": [],
+      "reference_proofs": []
+    },
+    {
+      "alias": "background-double",
+      "raw_status": "passed",
+      "raw_verdict_reason": "independent_effect",
+      "fixture_identity_matches": true,
+      "native_target_matches": true,
+      "observation_target_matches": true,
+      "native_entries": 1,
+      "network_guard_passed": true,
+      "fixture_process_exited": true,
+      "controller_image_hashes_match": true,
+      "receipt_count": 9,
+      "receipts": [
+        {
+          "sequence": 1,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 16.76312518119812
+        },
+        {
+          "sequence": 2,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 18.322128534317017
+        },
+        {
+          "sequence": 3,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 32.337931394577026
+        },
+        {
+          "sequence": 4,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 24.499181509017944
+        },
+        {
+          "sequence": 5,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 34.376535177230835
+        },
+        {
+          "sequence": 6,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 60.77875304222107
+        },
+        {
+          "sequence": 7,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 28.110718250274658
+        },
+        {
+          "sequence": 8,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 25.70076060295105
+        },
+        {
+          "sequence": 9,
+          "accepted": true,
+          "error_category": null,
+          "request_hash_matches": true,
+          "decision_hash_matches": true,
+          "request_to_receipt_seconds": 20.287737607955933
+        }
+      ],
+      "exact_attribute_reads": [],
+      "readonly_targets_match": true,
+      "readonly_token_matches_dispatched": true,
+      "attribute_read_proofs": [],
+      "reference_proofs": [
+        {
+          "call_id": "luna-7",
+          "observation_id": "cobs_9CRcsyPWH8LbuhmW",
+          "element_ref_sha256": "1c19ec309cb80b491529863a4fd44d240655e80ded6b36c9b5725e43340ee6c4",
+          "observed_token_sha256": "2580fcf99e6a75c670acc974f18447e54a1c128dbf7af6e01b1b7225f1b1b17b",
+          "same_ref_observed_then_dispatched": true,
+          "native_token_sha256": "2580fcf99e6a75c670acc974f18447e54a1c128dbf7af6e01b1b7225f1b1b17b",
+          "native_token_matches_observed_sdk_token": true
+        }
+      ]
+    }
+  ],
+  "total_cases": 5,
+  "total_receipts": 33,
+  "total_native_entries": 5,
+  "total_exact_attribute_reads": 2,
+  "readonly_targets_passed": true,
+  "readonly_tokens_passed": true,
+  "receipt_integrity_passed": true,
+  "fixture_identity_passed": true,
+  "targets_passed": true,
+  "images_passed": true,
+  "network_guard_passed": true,
+  "fixture_cleanup_passed": true
+}

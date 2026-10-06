@@ -31,9 +31,9 @@ Morrow 已有单一主循环、持久化工具意图、结构化结果、上下�
 
 ### 2.1 原始结果复算
 
-输入为[最终报告](/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/results/final-evaluation-report.md)，并重新读取本机保留的 High trial `result.json`。按任务名选择 `finished_at` 最新且有数值 reward 的记录；归档副本也参与检索，同一时间的副本优先取 jobs 目录。没有挑最高分。
+输入为[最终报告](../acceptance/portable/views/evals/benchmarks/results/final-evaluation-report.md)，并重新读取本机保留的 High trial `result.json`。按任务名选择 `finished_at` 最新且有数值 reward 的记录；归档副本也参与检索，同一时间的副本优先取 jobs 目录。没有挑最高分。
 
-逐项结果、路径、结果文件 SHA256 和有限字段汇总保存在[审计快照](/Users/ruirui/Documents/Project/Agent/developing/docs/research/harness-benchmark-audit-2026-09-24.json)。快照不复制凭据、命令参数或模型文本。
+逐项结果、路径、结果文件 SHA256 和有限字段汇总保存在[审计快照](../acceptance/portable/raw/docs/research/harness-benchmark-audit-2026-09-24.json)。快照不复制凭据、命令参数或模型文本。
 
 | Harbor 执行状态 | reward 1 | reward 0 | 合计 |
 | --- | ---: | ---: | ---: |
@@ -57,9 +57,9 @@ Morrow 已有单一主循环、持久化工具意图、结构化结果、上下�
 
 早期根因报告中的“39 个失败仅约 13 个属于能力问题”，针对的是旧 64 项基线，不是最终 52 个失败。该归因还受日志完整性与任务选择影响，不应转化为“修好 Harness 就能恢复其余全部分数”。
 
-本次复核还发现：[R3 报告](/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/results/tb2-high-r3-repair-rerun-error-report.md)当时称 11 个 timeout 均无逐轮日志，目前本地其中 4 项已有部分 trace：regex-chess、rstan-to-pystan、schemelike-metacircular-eval、write-compressor；其余 7 项仍无 trace。这说明历史报告与当前保留材料存在时间差。部分 trace 也不能替代完整工具轨迹。
+本次复核还发现：[R3 报告](../acceptance/portable/views/evals/benchmarks/results/tb2-high-r3-repair-rerun-error-report.md)当时称 11 个 timeout 均无逐轮日志，目前本地其中 4 项已有部分 trace：regex-chess、rstan-to-pystan、schemelike-metacircular-eval、write-compressor；其余 7 项仍无 trace。这说明历史报告与当前保留材料存在时间差。部分 trace 也不能替代完整工具轨迹。
 
-模型配置的可用记录为 Volcengine OpenAI-compatible API、glm-5.3-flash、High effort，见[pilot 报告](/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/results/tb2-high-pilot-report.md)。本文比较的是 Harness 机制，不用不同模型的排行榜成绩推断代码优劣。
+模型配置的可用记录为 Volcengine OpenAI-compatible API、glm-5.3-flash、High effort，见[pilot 报告](../acceptance/portable/views/evals/benchmarks/results/tb2-high-pilot-report.md)。本文比较的是 Harness 机制，不用不同模型的排行榜成绩推断代码优劣。
 
 ### 2.3 历史缺陷的当前状态
 
@@ -73,7 +73,7 @@ Morrow 已有单一主循环、持久化工具意图、结构化结果、上下�
 | D6：默认工作区为 / | 已读取任务 workdir，否则容器 pwd | 默认目录问题已处理；结构化文件工具与系统任务的路径边界仍有摩擦 |
 | D8：后台进程不存活 | 本次定位到 HostProcessAdapter 主进程退出后主动清理同进程组 | 不只是容器 exec 的偶然现象，见 H2 |
 
-源码依据：[重试策略](/Users/ruirui/Documents/Project/Agent/developing/src/morrow/core/runtime_policy.py:17)、[Outcome 组装](/Users/ruirui/Documents/Project/Agent/developing/src/morrow/application/tasks.py:217)、[Harbor adapter](/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/harness/morrow_harbor_agent.py:132)、[资产脚本](/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/scripts/prepare_assets.sh:36)。
+源码依据：[重试策略](../../src/morrow/core/runtime_policy.py#L17)、[Outcome 组装](../../src/morrow/application/tasks.py#L217)、[Harbor adapter](../../evals/benchmarks/harness/morrow_harbor_agent.py#L132)、[资产脚本](../../evals/benchmarks/scripts/prepare_assets.sh#L36)。
 
 ## 3. 当前问题与修改方案
 
@@ -83,7 +83,7 @@ Morrow 已有单一主循环、持久化工具意图、结构化结果、上下�
 
 **证据：A + B；关联现象：C。**
 
-[ProcessExecutionService.preflight](/Users/ruirui/Documents/Project/Agent/developing/src/morrow/services/process.py:178)对整个 shell 字符串运行 `shlex.split`，并拒绝任何空 token。它把“命令字符串切词”当成了“shell 程序语法检查”。
+[ProcessExecutionService.preflight](../../src/morrow/services/process.py#L178)对整个 shell 字符串运行 `shlex.split`，并拒绝任何空 token。它把“命令字符串切词”当成了“shell 程序语法检查”。
 
 本次通过 `/bin/sh -n -c` 检查的两个合法输入，都被当前 preflight 拒绝：
 
@@ -94,7 +94,7 @@ Morrow 已有单一主循环、持久化工具意图、结构化结果、上下�
 
 前者的空参数本来就是合法值；后者的 heredoc 正文不该再被 shell 切词器当成普通 shell 语法。编写 Python、SQL、正则和生成文件时，这类输入很常见。
 
-此外，工具 schema 描述“Bash command”，[执行端](/Users/ruirui/Documents/Project/Agent/developing/src/morrow/adapters/local/process.py:151)调用 `asyncio.create_subprocess_shell` 却没有指定 Bash。在 POSIX 上其默认 shell 是 /bin/sh；若任务镜像使用 dash，Bash 专用语法会失败。该差异目前是源码风险判断，本次未在 Linux 镜像执行复现。
+此外，工具 schema 描述“Bash command”，[执行端](../../src/morrow/adapters/local/process.py#L151)调用 `asyncio.create_subprocess_shell` 却没有指定 Bash。在 POSIX 上其默认 shell 是 /bin/sh；若任务镜像使用 dash，Bash 专用语法会失败。该差异目前是源码风险判断，本次未在 Linux 镜像执行复现。
 
 **修改方案：**
 
@@ -110,9 +110,9 @@ Morrow 已有单一主循环、持久化工具意图、结构化结果、上下�
 
 **证据：B；关联现象：C。**
 
-[BashArguments 与 request 转换](/Users/ruirui/Documents/Project/Agent/developing/src/morrow/application/local_tools.py:685)将 timeout 强制限制在 1–90 秒，模型可见 schema 却只有“Timeout in seconds”，没有最大值。请求 300 秒会静默变成 90 秒。运行策略还有 120 秒默认工具上限、300 秒代码上限，形成多套不一致的数值。
+[BashArguments 与 request 转换](../../src/morrow/application/local_tools.py#L685)将 timeout 强制限制在 1–90 秒，模型可见 schema 却只有“Timeout in seconds”，没有最大值。请求 300 秒会静默变成 90 秒。运行策略还有 120 秒默认工具上限、300 秒代码上限，形成多套不一致的数值。
 
-[HostProcessAdapter](/Users/ruirui/Documents/Project/Agent/developing/src/morrow/adapters/local/process.py:163)在主进程退出后检查并终止同一进程组中的子进程。因此 `server &`、后台编译等写法可能在 shell 返回时失去进程；stdin 又是 DEVNULL，交互程序也没有终端会话语义。
+[HostProcessAdapter](../../src/morrow/adapters/local/process.py#L163)在主进程退出后检查并终止同一进程组中的子进程。因此 `server &`、后台编译等写法可能在 shell 返回时失去进程；stdin 又是 DEVNULL，交互程序也没有终端会话语义。
 
 这对 QEMU、服务器配置、长编译和训练尤其不利。QEMU 的新结果已经进入工具执行，不能继续把其失败归为旧安装问题；但现有 trace 不足以证明 H2 是其唯一根因。
 
@@ -131,11 +131,11 @@ Morrow 已有单一主循环、持久化工具意图、结构化结果、上下�
 
 **证据：B；关联现象：C。**
 
-Harbor 的 timeout multiplier 在[评测驱动](/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/run_tb2.py:184)生效；adapter 执行 `morrow run` 时没有把剩余时间交给 AgentLoop。模型和工具可以继续开始新的长操作，直到外层取消。
+Harbor 的 timeout multiplier 在[评测驱动](../../evals/benchmarks/run_tb2.py#L184)生效；adapter 执行 `morrow run` 时没有把剩余时间交给 AgentLoop。模型和工具可以继续开始新的长操作，直到外层取消。
 
-[Provider stream](/Users/ruirui/Documents/Project/Agent/developing/src/morrow/adapters/models/openai_compatible.py:694)已有连接/首块/块间时限，不能称为“完全没有 timeout”。但持续产生 SDK chunk 的单次请求没有独立的总用时上限；首块和块间默认同为 45 秒，又不能表达不同模型的推理特征。
+[Provider stream](../../src/morrow/adapters/models/openai_compatible.py#L694)已有连接/首块/块间时限，不能称为“完全没有 timeout”。但持续产生 SDK chunk 的单次请求没有独立的总用时上限；首块和块间默认同为 45 秒，又不能表达不同模型的推理特征。
 
-[R4 记录](/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/results/tb2-high-r4-verifier-rerun-error-report.md)中，winning-avg-corewars 一次模型阶段间隔达到 1393.3 秒，后续 2× 尝试在约 1751.7 秒 thinking 后 internal 结束。证据支持长时间停留在模型阶段，不能区分真实推理、服务端等待或具体内部异常。
+[R4 记录](../acceptance/portable/views/evals/benchmarks/results/tb2-high-r4-verifier-rerun-error-report.md)中，winning-avg-corewars 一次模型阶段间隔达到 1393.3 秒，后续 2× 尝试在约 1751.7 秒 thinking 后 internal 结束。证据支持长时间停留在模型阶段，不能区分真实推理、服务端等待或具体内部异常。
 
 **修改方案：**
 
@@ -154,11 +154,11 @@ Harbor 的 timeout multiplier 在[评测驱动](/Users/ruirui/Documents/Project/
 
 **证据：B；行为案例：C。**
 
-[AgentLoop 最终文本分支](/Users/ruirui/Documents/Project/Agent/developing/src/morrow/runtime/agent.py:1892)接受有效的无工具最终文本后结束回合。Morrow 已有 ValidationFact 和 outcome 证据，问题是普通任务没有在结束前利用它们检查最新交付状态。
+[AgentLoop 最终文本分支](../../src/morrow/runtime/agent.py#L1892)接受有效的无工具最终文本后结束回合。Morrow 已有 ValidationFact 和 outcome 证据，问题是普通任务没有在结束前利用它们检查最新交付状态。
 
 旧根因材料中的 configure-git-webserver 在验证后拆掉可用状态；cancel-async-tasks、filter-js-from-html 出现验证结论未得到有效处理；nginx-request-logging 因精确输出格式未满足而失败。这些涉及模型判断，也暴露了 Harness 可以改进的交付检查环节，不能简单都归入不可优化的“纯能力问题”。
 
-[Direct Coding 协议](/Users/ruirui/Documents/Project/Agent/developing/src/morrow/application/prompt.py:29)还统一要求交付前清理临时产物。若任务目标是运行中的服务或生成环境，这句通用指导可能产生歧义；不能据此断言它就是历史自毁行为的原因。
+[Direct Coding 协议](../../src/morrow/application/prompt.py#L29)还统一要求交付前清理临时产物。若任务目标是运行中的服务或生成环境，这句通用指导可能产生歧义；不能据此断言它就是历史自毁行为的原因。
 
 **修改方案：**
 
@@ -177,11 +177,11 @@ Harbor 的 timeout multiplier 在[评测驱动](/Users/ruirui/Documents/Project/
 
 **证据：B，现有回归测试直接固定该行为。**
 
-[_can_retry_provider_failure](/Users/ruirui/Documents/Project/Agent/developing/src/morrow/runtime/agent.py:232)拒绝“已有工具意图 + invalid_response”的重试；调用方传入的是 `state.tool_calls > 0`，代表整个本次 run 已有工具调用，而不是这次失败请求有没有提交副作用。
+[_can_retry_provider_failure](../../src/morrow/runtime/agent.py#L232)拒绝“已有工具意图 + invalid_response”的重试；调用方传入的是 `state.tool_calls > 0`，代表整个本次 run 已有工具调用，而不是这次失败请求有没有提交副作用。
 
-[test_nonretryable_invalid_response_and_post_tool_defect_do_not_repeat_work](/Users/ruirui/Documents/Project/Agent/developing/tests/test_long_task_reliability.py:228)明确验证：工具成功一次，下一次响应虽标记 retryable，仍停止为 invalid_response。因此旧 D1 的这一分支没有被完全解决。
+[test_nonretryable_invalid_response_and_post_tool_defect_do_not_repeat_work](../../tests/test_long_task_reliability.py#L228)明确验证：工具成功一次，下一次响应虽标记 retryable，仍停止为 invalid_response。因此旧 D1 的这一分支没有被完全解决。
 
-另外，[provider_retry.py](/Users/ruirui/Documents/Project/Agent/developing/src/morrow/runtime/provider_retry.py:38)的 120 秒是**全 run 累计 sleep 预算**，不是 120 秒真实恢复窗口。成功请求会重置 consecutive retry 次数，却不重置累计等待。默认 5 次无 Retry-After 的等抖动退避，总 sleep 约 31–62 秒；不能写成每次网络故障都可恢复两分钟。
+另外，[provider_retry.py](../../src/morrow/runtime/provider_retry.py#L38)的 120 秒是**全 run 累计 sleep 预算**，不是 120 秒真实恢复窗口。成功请求会重置 consecutive retry 次数，却不重置累计等待。默认 5 次无 Retry-After 的等抖动退避，总 sleep 约 31–62 秒；不能写成每次网络故障都可恢复两分钟。
 
 **修改方案：**
 
@@ -201,8 +201,8 @@ Harbor 的 timeout multiplier 在[评测驱动](/Users/ruirui/Documents/Project/
 
 不足主要有两点：
 
-- [bench_setup](/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/harness/bench_setup.py:52)只填 reasoning 能力；默认 OpenAI-compatible adapter 没有精确 context_window_tokens，因而通常使用 262,144 字符的保守 fallback。它是请求边界，不是模型真实 token 窗口；可能过早压缩，也可能估算不准。
-- [degrade_model_input](/Users/ruirui/Documents/Project/Agent/developing/src/morrow/application/context.py:500)在摘要失败时按完整旧 turn/cycle 丢弃投影。它保持日志与配对正确，却不保证丢弃部分中的已验证结论、错误单位、失败方案和运行中进程仍在模型输入中。`context_degraded` 当前主要是事件，不能等价于模型已获知丢失了哪些关键信息。
+- [bench_setup](../../evals/benchmarks/harness/bench_setup.py#L52)只填 reasoning 能力；默认 OpenAI-compatible adapter 没有精确 context_window_tokens，因而通常使用 262,144 字符的保守 fallback。它是请求边界，不是模型真实 token 窗口；可能过早压缩，也可能估算不准。
+- [degrade_model_input](../../src/morrow/application/context.py#L500)在摘要失败时按完整旧 turn/cycle 丢弃投影。它保持日志与配对正确，却不保证丢弃部分中的已验证结论、错误单位、失败方案和运行中进程仍在模型输入中。`context_degraded` 当前主要是事件，不能等价于模型已获知丢失了哪些关键信息。
 
 **修改方案：**
 
@@ -226,7 +226,7 @@ Harbor 的 timeout multiplier 在[评测驱动](/Users/ruirui/Documents/Project/
 
 **证据：A + B。**
 
-[AgentLoop failure_streaks](/Users/ruirui/Documents/Project/Agent/developing/src/morrow/runtime/agent.py:2090)以 tool name、error code、validation_path 为键累加，成功调用后不清零，也不包含参数或结果指纹。字段路径相同的第三次失败即可触发 loop_detected。
+[AgentLoop failure_streaks](../../src/morrow/runtime/agent.py#L2090)以 tool name、error code、validation_path 为键累加，成功调用后不清零，也不包含参数或结果指纹。字段路径相同的第三次失败即可触发 loop_detected。
 
 本次用 ScriptedModelProvider 复现：
 
@@ -251,7 +251,7 @@ Harbor 的 timeout multiplier 在[评测驱动](/Users/ruirui/Documents/Project/
 
 **证据：B + 实际数据。**
 
-adapter 当前只在 exec 结束/取消后回收一个 /tmp JSONL 文件，且 [_populate_context](/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/harness/morrow_harbor_agent.py:259)仅从 run.completed 生成用量。日志追回是尽力而为；缺少终态时，中途已成功的模型请求用量也未导出成 Harbor 指标。
+adapter 当前只在 exec 结束/取消后回收一个 /tmp JSONL 文件，且 [_populate_context](../../evals/benchmarks/harness/morrow_harbor_agent.py#L259)仅从 run.completed 生成用量。日志追回是尽力而为；缺少终态时，中途已成功的模型请求用量也未导出成 Harbor 指标。
 
 现有 trace 主要是状态和 text.delta，缺少可比较的工具输入/结果证据。因此 R1/R2 的大量 bash 调用无法判定是否重复；winning-avg 的 internal 也缺少足以定位到具体失败类型的信息。
 
@@ -276,7 +276,7 @@ Morrow 内部已经有 ConversationLog、工具执行记录与 model-request jou
 
 adapter version 从 wheel 文件名读取，难以唯一标识源码和资产。当前 vendored Harbor 在 commit 71c77fdd… 上还存在一个本地 Docker 凭据传递补丁；本次未修改它。这类必要补丁也必须进入运行指纹。
 
-[TokenBudget](/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/harness/budget.py:64)是 admission reservation + 完成后核算。1M/task 不是请求级硬上限；fix-ocaml-gc 所选结果的已知 input 已超过 2.8M。未知 usage 保留 reservation 是合理的保守账本行为，但固定 reservation 不能证明真实消费始终不越界。JSON 原子替换也不等价于多驱动进程并发的事务锁。
+[TokenBudget](../../evals/benchmarks/harness/budget.py#L64)是 admission reservation + 完成后核算。1M/task 不是请求级硬上限；fix-ocaml-gc 所选结果的已知 input 已超过 2.8M。未知 usage 保留 reservation 是合理的保守账本行为，但固定 reservation 不能证明真实消费始终不越界。JSON 原子替换也不等价于多驱动进程并发的事务锁。
 
 **修改方案：**
 

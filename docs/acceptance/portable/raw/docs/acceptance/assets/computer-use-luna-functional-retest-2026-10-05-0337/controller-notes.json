@@ -1,0 +1,112 @@
+{
+  "controller": {
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "mode": "live, per-request manual decisions from the current Morrow request, tool schema, actual observation tree, and screenshot"
+  },
+  "run_context": {
+    "assets_root": "/Users/ruirui/Documents/Project/Agent/developing/docs/acceptance/assets/computer-use-luna-functional-retest-2026-10-05-0337",
+    "head_reported_by_parent": "787dd246",
+    "sdk_reported_by_parent": "0.30.4+morrow.3",
+    "sdk_dylib_sha256_reported_by_parent": "dc35e83565283558c7ee46e08ff834bcd36eaebf56855084dae200985c557703"
+  },
+  "method_and_boundaries": [
+    "Responded to each live request individually; wrote each receipt atomically with os.replace.",
+    "Used only Morrow computer_observe/computer_action through the ordinary AgentLoop and production ToolExecutor for the controlled synthetic fixtures.",
+    "Did not use ScriptedProvider, prewritten action sequences, CUA, direct SDK calls, fixture state/oracle data, or real API credentials.",
+    "For every window observation, requested include_image=true and inspected the actual image before choosing coordinate targets or semantic refs.",
+    "Preserved every unknown result; no unknown/completed action was retried. Stale_observation/not_started requests were preserved and recovered only with fresh observations within the prompt attempt limit."
+  ],
+  "cases": [
+    {
+      "case": "semantic-container",
+      "delivery": "background",
+      "action": "one down scroll by amount 3 using the observed AXScrollArea label fixture-scroll ref; no coordinates",
+      "stale_not_started_attempts": 0,
+      "final_morrow_result": {
+        "status": "unknown",
+        "error_code": "unverified_action"
+      },
+      "actual_follow_up_image": "Viewport begins at Fixture row 2, compared with row 0 before the action.",
+      "retry_after_unknown": false
+    },
+    {
+      "case": "enabled-foreground",
+      "delivery": "foreground",
+      "action": "one left click on the observed Increment element_ref, count 1, with same-ref attribute_equals enabled value string \"true\"",
+      "stale_not_started_attempts": 0,
+      "final_morrow_result": {
+        "status": "unknown",
+        "error_code": "unverified_action",
+        "postcondition": "passed"
+      },
+      "actual_follow_up_image": "Count: 1; State output: ready.",
+      "retry_after_unknown": false
+    },
+    {
+      "case": "enabled-background",
+      "delivery": "background",
+      "action": "first click request was stale/not_started; refreshed image-backed observation once, then one left click on the new Increment element_ref, count 1, with same-ref enabled=true postcondition",
+      "stale_not_started_attempts": 1,
+      "action_requests": 2,
+      "native_input_count_reported_by_parent": 1,
+      "final_morrow_result": {
+        "status": "unknown",
+        "error_code": "unverified_action",
+        "postcondition": "passed"
+      },
+      "actual_follow_up_image": "Count: 1; State output: ready.",
+      "retry_after_unknown": false
+    },
+    {
+      "case": "foreground-wheel",
+      "delivery": "foreground",
+      "action": "first coordinate scroll request was stale/not_started; refreshed once, then one coordinate-only down scroll amount 3 at (520,768), the center of the image rows area; element_ref omitted",
+      "stale_not_started_attempts": 1,
+      "action_requests": 2,
+      "native_input_count_reported_by_parent": 1,
+      "final_morrow_result": {
+        "status": "unknown",
+        "error_code": "unverified_action",
+        "postcondition": "not_checked"
+      },
+      "actual_follow_up_image": "Viewport begins at Fixture row 2, compared with row 0 before the action.",
+      "retry_after_unknown": false
+    },
+    {
+      "case": "background-double",
+      "delivery": "background",
+      "action": "first two left double-click requests on Increment returned stale/not_started; each was followed by a fresh image-backed observation. Third/final request used the current element_ref, count 2, with x and y omitted.",
+      "stale_not_started_attempts": 2,
+      "fresh_reobservations": 2,
+      "action_requests": 3,
+      "native_input_count_reported_by_parent": 1,
+      "final_morrow_result": {
+        "status": "unknown",
+        "error_code": "unverified_action",
+        "postcondition": "not_checked"
+      },
+      "actual_follow_up_image": "Count: 2; State output: ready.",
+      "retry_after_unknown": false
+    }
+  ],
+  "campaign_audit_reported_by_parent": {
+    "runner_complete": true,
+    "runner_exit_code": 0,
+    "accepted_receipts": 33,
+    "native_inputs": 5,
+    "fixture_processes_exited": 5,
+    "raw_strict_verdict": "4 passed, 1 unsupported",
+    "strict_verdict_note": "Parent traced the enabled-background unsupported classification to the strict verifier treating the earlier stale/not_started response with postcondition not_checked as blocking, although the later single native action had postcondition passed.",
+    "independent_actual_effects": "Parent reports all five fixture effects matched their requested outcomes; this is parent audit evidence, not a claim that any Morrow status=unknown became completed."
+  },
+  "verification_scope": {
+    "source_or_runner_changes_by_controller": false,
+    "repository_tests_run_by_controller": false,
+    "build_or_performance_checks_run_by_controller": false,
+    "reason": "This task was live control of authorized synthetic fixtures; no implementation files were changed."
+  },
+  "limitations": [
+    "Morrow reported the final action status as unknown/unverified_action in all five cases. Screenshots showed visible effects in each case, but those images do not change the reported native status."
+  ]
+}

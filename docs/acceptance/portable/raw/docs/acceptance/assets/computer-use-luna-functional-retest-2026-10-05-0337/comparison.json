@@ -1,0 +1,485 @@
+[
+  {
+    "alias": "semantic-container",
+    "previous_sha256": "438c4b83624d94463597889dad9008ba46975187344b2a28588785bca1a20017",
+    "new_sha256": "1ecbf6e0a8fc975c044329e93b6ba501721ce9c3ba5430978cb2759f11b90606",
+    "previous_status": "blocked",
+    "previous_reason": "action_not_attempted",
+    "new_status": "passed",
+    "new_reason": "independent_effect",
+    "action_outcomes": [
+      {
+        "after_observation_id": "cobs_wZVVQLYhvqaM1gWR",
+        "before_observation_id": "cobs_gfWuI42z6VrHxRae",
+        "delivery": "background",
+        "error_code": "unverified_action",
+        "postcondition": "not_checked",
+        "status": "unknown"
+      }
+    ],
+    "snapshot": {
+      "healthy": true,
+      "fields_valid": true,
+      "revision_before": 4,
+      "revision_after": 10,
+      "revision_advanced": true
+    },
+    "native_entries": 1,
+    "action_attempts": 1,
+    "recovered_not_started": 0,
+    "postcondition": "not_checked",
+    "mouse_click_counts": [],
+    "pointer_events": [
+      {
+        "clickCount": 0,
+        "deltaY": -1,
+        "kind": "wheel",
+        "positionKnown": true,
+        "windowX": 260,
+        "windowY": 128
+      },
+      {
+        "clickCount": 0,
+        "deltaY": -1,
+        "kind": "wheel",
+        "positionKnown": true,
+        "windowX": 260,
+        "windowY": 128
+      },
+      {
+        "clickCount": 0,
+        "deltaY": -1,
+        "kind": "wheel",
+        "positionKnown": true,
+        "windowX": 260,
+        "windowY": 128
+      }
+    ],
+    "wheel_inside_scroll_region": true,
+    "attribute_read_proofs": [],
+    "reference_proofs": [
+      {
+        "call_id": "luna-3",
+        "observation_id": "cobs_gfWuI42z6VrHxRae",
+        "element_ref_sha256": "3630451f653fccbb718890298e3ca565b36272e731a5b196ce4b7091ecdfe5ff",
+        "observed_token_sha256": "28d382f97453ea15aff4369b9f4d9f3a929b198b3823013e8c6a1836a02567eb",
+        "same_ref_observed_then_dispatched": true,
+        "native_token_sha256": "28d382f97453ea15aff4369b9f4d9f3a929b198b3823013e8c6a1836a02567eb",
+        "native_token_matches_observed_sdk_token": true
+      }
+    ],
+    "count_delta": 0,
+    "callback_delta": 0,
+    "scroll_delta": 30,
+    "sdk_role_sets": [
+      [
+        "AXButton",
+        "AXMenu",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXMenuItem",
+        "AXScrollArea",
+        "AXTextField",
+        "AXWindow"
+      ],
+      [
+        "AXButton",
+        "AXMenu",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXMenuItem",
+        "AXScrollArea",
+        "AXTextField",
+        "AXWindow"
+      ]
+    ]
+  },
+  {
+    "alias": "enabled-foreground",
+    "previous_sha256": "55a69ba3bbc0fa9f5cf32fdafa568cbf5c686c2f109ad09d056c285adc51e38c",
+    "new_sha256": "bea3936e649168581309e1502e0a0e2df383685f58d3bcf5dfd490d7c5cfa108",
+    "previous_status": "unsupported",
+    "previous_reason": "sdk_exact_attribute_readback_unavailable",
+    "new_status": "passed",
+    "new_reason": "independent_effect",
+    "action_outcomes": [
+      {
+        "after_observation_id": "cobs_-FXrU9ciojCQ_Zbn",
+        "before_observation_id": "cobs_4EOvddYSpC1cx-oM",
+        "delivery": "foreground",
+        "error_code": "unverified_action",
+        "postcondition": "passed",
+        "status": "unknown"
+      }
+    ],
+    "snapshot": {
+      "healthy": true,
+      "fields_valid": true,
+      "revision_before": 6,
+      "revision_after": 9,
+      "revision_advanced": true
+    },
+    "native_entries": 1,
+    "action_attempts": 1,
+    "recovered_not_started": 0,
+    "postcondition": "passed",
+    "mouse_click_counts": [],
+    "pointer_events": [
+      {
+        "clickCount": 0,
+        "deltaY": 0,
+        "kind": "left",
+        "positionKnown": false,
+        "windowX": null,
+        "windowY": null
+      }
+    ],
+    "wheel_inside_scroll_region": false,
+    "attribute_read_proofs": [
+      {
+        "native_token_matches_observed_sdk_token": true,
+        "attribute": "enabled",
+        "identity": "exact",
+        "status": "readable",
+        "value": true,
+        "is_error": false,
+        "degraded": false
+      }
+    ],
+    "reference_proofs": [],
+    "count_delta": 1,
+    "callback_delta": 1,
+    "scroll_delta": 0,
+    "sdk_role_sets": [
+      [
+        "AXButton",
+        "AXMenu",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXMenuItem",
+        "AXScrollArea",
+        "AXTextField",
+        "AXWindow"
+      ],
+      [
+        "AXButton",
+        "AXMenu",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXMenuItem",
+        "AXScrollArea",
+        "AXTextField",
+        "AXWindow"
+      ]
+    ]
+  },
+  {
+    "alias": "enabled-background",
+    "previous_sha256": "d670fef2679eb3e78356e646893e5abf04b2a154ef13216c22d261c60117f82c",
+    "new_sha256": "87c158944bb11a3d9cd3b0e36692313ab50c2380bf9258aa4994ec2e237d46fa",
+    "previous_status": "unsupported",
+    "previous_reason": "sdk_exact_attribute_readback_unavailable",
+    "new_status": "unsupported",
+    "new_reason": "sdk_exact_attribute_readback_unavailable",
+    "action_outcomes": [
+      {
+        "after_observation_id": null,
+        "before_observation_id": null,
+        "delivery": null,
+        "error_code": "stale_observation",
+        "postcondition": "not_checked",
+        "status": "not_started"
+      },
+      {
+        "after_observation_id": "cobs_bIkzvVEQjeVcOEiW",
+        "before_observation_id": "cobs_YtLYgiPCoi-vUF5p",
+        "delivery": "background",
+        "error_code": "unverified_action",
+        "postcondition": "passed",
+        "status": "unknown"
+      }
+    ],
+    "snapshot": {
+      "healthy": true,
+      "fields_valid": true,
+      "revision_before": 4,
+      "revision_after": 6,
+      "revision_advanced": true
+    },
+    "native_entries": 1,
+    "action_attempts": 2,
+    "recovered_not_started": 1,
+    "postcondition": "passed",
+    "mouse_click_counts": [],
+    "pointer_events": [],
+    "wheel_inside_scroll_region": false,
+    "attribute_read_proofs": [
+      {
+        "native_token_matches_observed_sdk_token": true,
+        "attribute": "enabled",
+        "identity": "exact",
+        "status": "readable",
+        "value": true,
+        "is_error": false,
+        "degraded": false
+      }
+    ],
+    "reference_proofs": [],
+    "count_delta": 1,
+    "callback_delta": 1,
+    "scroll_delta": 0,
+    "sdk_role_sets": [
+      [
+        "AXButton",
+        "AXMenu",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXMenuItem",
+        "AXScrollArea",
+        "AXTextField",
+        "AXWindow"
+      ],
+      [
+        "AXButton",
+        "AXMenu",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXMenuItem",
+        "AXScrollArea",
+        "AXTextField",
+        "AXWindow"
+      ],
+      [
+        "AXButton",
+        "AXMenu",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXMenuItem",
+        "AXScrollArea",
+        "AXTextField",
+        "AXWindow"
+      ]
+    ]
+  },
+  {
+    "alias": "foreground-wheel",
+    "previous_sha256": "fe91869cb72d971961a71583300478ffd690de90d2e87e598ea23ab2b62019ae",
+    "new_sha256": "e8edc2f06a765731b79072159fe31284deb3608969a70f2b59638b0949366f64",
+    "previous_status": "unsupported",
+    "previous_reason": "native_not_entered",
+    "new_status": "passed",
+    "new_reason": "independent_effect",
+    "action_outcomes": [
+      {
+        "after_observation_id": null,
+        "before_observation_id": null,
+        "delivery": null,
+        "error_code": "stale_observation",
+        "postcondition": "not_checked",
+        "status": "not_started"
+      },
+      {
+        "after_observation_id": "cobs_EbrhuVhJ3A9oPe4j",
+        "before_observation_id": "cobs_l2WjlOuZkG_-KR-1",
+        "delivery": "foreground",
+        "error_code": "unverified_action",
+        "postcondition": "not_checked",
+        "status": "unknown"
+      }
+    ],
+    "snapshot": {
+      "healthy": true,
+      "fields_valid": true,
+      "revision_before": 6,
+      "revision_after": 12,
+      "revision_advanced": true
+    },
+    "native_entries": 1,
+    "action_attempts": 2,
+    "recovered_not_started": 1,
+    "postcondition": "not_checked",
+    "mouse_click_counts": [],
+    "pointer_events": [
+      {
+        "clickCount": 0,
+        "deltaY": -1,
+        "kind": "wheel",
+        "positionKnown": true,
+        "windowX": 260,
+        "windowY": 128
+      },
+      {
+        "clickCount": 0,
+        "deltaY": -1,
+        "kind": "wheel",
+        "positionKnown": true,
+        "windowX": 260,
+        "windowY": 128
+      },
+      {
+        "clickCount": 0,
+        "deltaY": -1,
+        "kind": "wheel",
+        "positionKnown": true,
+        "windowX": 260,
+        "windowY": 128
+      }
+    ],
+    "wheel_inside_scroll_region": true,
+    "attribute_read_proofs": [],
+    "reference_proofs": [],
+    "count_delta": 0,
+    "callback_delta": 0,
+    "scroll_delta": 30,
+    "sdk_role_sets": [
+      [
+        "AXButton",
+        "AXMenu",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXMenuItem",
+        "AXScrollArea",
+        "AXTextField",
+        "AXWindow"
+      ],
+      [
+        "AXButton",
+        "AXMenu",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXMenuItem",
+        "AXScrollArea",
+        "AXTextField",
+        "AXWindow"
+      ],
+      [
+        "AXButton",
+        "AXMenu",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXMenuItem",
+        "AXScrollArea",
+        "AXTextField",
+        "AXWindow"
+      ]
+    ]
+  },
+  {
+    "alias": "background-double",
+    "previous_sha256": "06acc6c4f4b10dcfeb404ceba6164f26d3381599d322813170f6e46c180d7baf",
+    "new_sha256": "49a90f01b93b8bb3d25fbb415ebf757ee1689026e80d5d846688e3c83a43cea9",
+    "previous_status": "unsupported",
+    "previous_reason": "native_not_entered",
+    "new_status": "passed",
+    "new_reason": "independent_effect",
+    "action_outcomes": [
+      {
+        "after_observation_id": null,
+        "before_observation_id": null,
+        "delivery": null,
+        "error_code": "stale_observation",
+        "postcondition": "not_checked",
+        "status": "not_started"
+      },
+      {
+        "after_observation_id": "cobs_9k4iczbgUQTTmyh6",
+        "before_observation_id": "cobs_9CRcsyPWH8LbuhmW",
+        "delivery": "background",
+        "error_code": "unverified_action",
+        "postcondition": "not_checked",
+        "status": "unknown"
+      }
+    ],
+    "snapshot": {
+      "healthy": true,
+      "fields_valid": true,
+      "revision_before": 4,
+      "revision_after": 12,
+      "revision_advanced": true
+    },
+    "native_entries": 1,
+    "action_attempts": 3,
+    "recovered_not_started": 2,
+    "postcondition": "not_checked",
+    "mouse_click_counts": [
+      1,
+      2
+    ],
+    "pointer_events": [
+      {
+        "clickCount": 1,
+        "deltaY": 0,
+        "kind": "left",
+        "positionKnown": true,
+        "windowX": 80,
+        "windowY": 382
+      },
+      {
+        "clickCount": 2,
+        "deltaY": 0,
+        "kind": "left",
+        "positionKnown": true,
+        "windowX": 80,
+        "windowY": 382
+      }
+    ],
+    "wheel_inside_scroll_region": false,
+    "attribute_read_proofs": [],
+    "reference_proofs": [
+      {
+        "call_id": "luna-7",
+        "observation_id": "cobs_9CRcsyPWH8LbuhmW",
+        "element_ref_sha256": "1c19ec309cb80b491529863a4fd44d240655e80ded6b36c9b5725e43340ee6c4",
+        "observed_token_sha256": "2580fcf99e6a75c670acc974f18447e54a1c128dbf7af6e01b1b7225f1b1b17b",
+        "same_ref_observed_then_dispatched": true,
+        "native_token_sha256": "2580fcf99e6a75c670acc974f18447e54a1c128dbf7af6e01b1b7225f1b1b17b",
+        "native_token_matches_observed_sdk_token": true
+      }
+    ],
+    "count_delta": 2,
+    "callback_delta": 2,
+    "scroll_delta": 0,
+    "sdk_role_sets": [
+      [
+        "AXButton",
+        "AXMenu",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXMenuItem",
+        "AXScrollArea",
+        "AXTextField",
+        "AXWindow"
+      ],
+      [
+        "AXButton",
+        "AXMenu",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXMenuItem",
+        "AXScrollArea",
+        "AXTextField",
+        "AXWindow"
+      ],
+      [
+        "AXButton",
+        "AXMenu",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXMenuItem",
+        "AXScrollArea",
+        "AXTextField",
+        "AXWindow"
+      ],
+      [
+        "AXButton",
+        "AXMenu",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXMenuItem",
+        "AXScrollArea",
+        "AXTextField",
+        "AXWindow"
+      ]
+    ]
+  }
+]

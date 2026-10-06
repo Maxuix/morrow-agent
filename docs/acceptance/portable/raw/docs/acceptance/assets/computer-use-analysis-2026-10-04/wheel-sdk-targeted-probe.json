@@ -1,0 +1,68 @@
+{
+  "provider_network": false,
+  "purpose": "component_diagnosis",
+  "morrow_admission_used": false,
+  "note": "direct public SDK probe on controlled fixture; does not validate production coordinate admission",
+  "steps": [
+    {
+      "case": "scroll_pixels",
+      "before": {
+        "oracle_text_length": 15,
+        "oracle_q_count": 0,
+        "oracle_Y_count": 0,
+        "native_text_length": 18,
+        "native_q_count": 1,
+        "native_Y_count": 1,
+        "oracle_scroll": 0,
+        "oracle_revision": 17
+      },
+      "after": {
+        "oracle_text_length": 15,
+        "oracle_q_count": 0,
+        "oracle_Y_count": 0,
+        "native_text_length": 18,
+        "native_q_count": 1,
+        "native_Y_count": 1,
+        "oracle_scroll": 60,
+        "oracle_revision": 20
+      },
+      "outcome": {
+        "status": "unknown",
+        "delivery": "foreground",
+        "before_observation_id": null,
+        "after_observation_id": null,
+        "error_code": "unverified_action",
+        "postcondition": "not_checked"
+      },
+      "image_error": "image_safety_unconfirmed"
+    }
+  ],
+  "before": {
+    "oracle_text_length": 15,
+    "oracle_q_count": 0,
+    "oracle_Y_count": 0,
+    "native_text_length": 18,
+    "native_q_count": 1,
+    "native_Y_count": 1,
+    "oracle_scroll": 0,
+    "oracle_revision": 17
+  },
+  "frame": {
+    "space": "image_px",
+    "target_space": "window",
+    "width": 1040,
+    "height": 1024,
+    "scale_x": 1.0,
+    "scale_y": 1.0,
+    "origin_x": 0,
+    "origin_y": 0,
+    "crop_width": 1040,
+    "crop_height": 1024
+  },
+  "native_screenshot": {
+    "screenshot_width": 1040,
+    "screenshot_height": 1024,
+    "screenshot_scale": 2.0,
+    "screenshot_frame_valid": true
+  }
+}

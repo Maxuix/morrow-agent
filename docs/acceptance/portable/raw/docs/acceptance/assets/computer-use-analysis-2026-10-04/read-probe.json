@@ -1,0 +1,148 @@
+{
+  "projection": {
+    "native_count": 133,
+    "total": 133,
+    "returned": 133,
+    "native_complete": false,
+    "kept": 133,
+    "omitted": 0,
+    "truncated": false,
+    "sensitive_count": 1,
+    "enabled_bool_count": 127
+  },
+  "sensitive_nodes": [
+    {
+      "index": 95,
+      "role": "axmenuitem",
+      "frame": null,
+      "has_value": false,
+      "value_length": null,
+      "has_label": true
+    }
+  ],
+  "keyword_matches": [
+    "password"
+  ],
+  "editable_metadata": [
+    {
+      "index": 2,
+      "label_is_unicode": false,
+      "label_is_synthetic": false,
+      "value_length": 18,
+      "native_lower_y_count": null,
+      "frame": {
+        "x": 498.0,
+        "y": 356.0,
+        "w": 480.0,
+        "h": 24.0
+      }
+    },
+    {
+      "index": 3,
+      "label_is_unicode": false,
+      "label_is_synthetic": true,
+      "value_length": 22,
+      "native_lower_y_count": null,
+      "frame": {
+        "x": 498.0,
+        "y": 420.0,
+        "w": 480.0,
+        "h": 24.0
+      }
+    }
+  ],
+  "increment_enabled": [
+    true
+  ],
+  "normal_synthetic_metadata": {
+    "q_count": 1,
+    "Y_count": 1,
+    "y_count": 0,
+    "tab_count": 0,
+    "newline_count": 0,
+    "is_expected_marker_qY": false
+  },
+  "roles": [
+    "axbutton",
+    "axmenu",
+    "axmenubar",
+    "axmenubaritem",
+    "axmenuitem",
+    "axtextfield",
+    "axwindow"
+  ],
+  "geometry": {
+    "x": 478.0,
+    "y": 202.0,
+    "width": 520.0,
+    "height": 512.0
+  },
+  "mask_projection_error": "image_safety_unconfirmed",
+  "gate": {
+    "schema_version": 1,
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "cpu": "arm64",
+    "python": "3.13.0",
+    "host_executable": "/tmp/morrow-basic-sdk-native/bin/python",
+    "probe": {
+      "sdk_present": true,
+      "sdk_version": "0.30.4",
+      "native_load_failed": false,
+      "system": "darwin",
+      "os_version": [
+        27,
+        0,
+        0
+      ],
+      "interactive_session": true,
+      "accessibility": true,
+      "screen_recording": true,
+      "driver_activated": false
+    },
+    "owner_main_thread": true,
+    "native_walk_limit": null,
+    "status": "passed",
+    "reason": null,
+    "discovery": {
+      "fixture_app_count": 2,
+      "fixture_pids": [
+        79306,
+        45021
+      ],
+      "window_count": 1,
+      "windows": [
+        {
+          "window_id": 10271,
+          "fixture_title": true
+        }
+      ],
+      "target_count": 1,
+      "selected_count": 1
+    },
+    "window_read": {
+      "ax_element_count": 133,
+      "ax_complete": false,
+      "truncated": false,
+      "degraded": null,
+      "reason": null,
+      "image_count": 1,
+      "frame_valid": true,
+      "max_returned_depth": 5,
+      "truncation_reason": null
+    },
+    "ax_element_count": 133,
+    "ax_complete": false,
+    "image_share_error": "image_safety_unconfirmed",
+    "capture": {
+      "mime": "image/png",
+      "width": 1040,
+      "height": 1024,
+      "byte_size": 141966,
+      "sha256": "ea1869348cbae4121c4308483638456804fe71a8eaba3cc9934d9b66bd05d8ee"
+    },
+    "editable_classification": {
+      "non_sensitive": 2,
+      "sensitive": 0
+    }
+  }
+}

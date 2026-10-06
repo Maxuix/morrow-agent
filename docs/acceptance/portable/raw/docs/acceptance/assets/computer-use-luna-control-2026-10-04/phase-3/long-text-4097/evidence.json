@@ -1,0 +1,1661 @@
+{
+  "action_outcomes": [
+    {
+      "delivery": null,
+      "error_code": "stale_observation",
+      "postcondition": "not_checked",
+      "status": "not_started"
+    },
+    {
+      "delivery": "background",
+      "error_code": null,
+      "postcondition": "not_checked",
+      "status": "completed"
+    }
+  ],
+  "action_plan": "none",
+  "active_turn": false,
+  "approval_attempt_call_ids": [
+    "luna-4",
+    "luna-6"
+  ],
+  "approval_context": {
+    "action_type": "type_text",
+    "call_id": "luna-6",
+    "call_matches_scripted_action": true,
+    "fixture_unchanged_before_decision": true
+  },
+  "approval_count": 2,
+  "approval_decisions": [
+    {
+      "approved": true,
+      "call_id": "luna-4"
+    },
+    {
+      "approved": true,
+      "call_id": "luna-6"
+    }
+  ],
+  "artifact_image_hashes": [
+    "eec9f1699bedaf3a04c75211631e2e017071fa212c3b21a36331c3b30b16d7b3",
+    "fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589",
+    "fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589",
+    "fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589",
+    "fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589"
+  ],
+  "artifact_integrity": [
+    true,
+    true,
+    true,
+    true,
+    true
+  ],
+  "campaign_verdict": {
+    "actual_variant": null,
+    "expected_variant": [
+      "type_text",
+      "element",
+      null,
+      null
+    ],
+    "status": "failed",
+    "verdict_reason": "action_count"
+  },
+  "case": "type_text",
+  "cua_driver_version": "0.30.4",
+  "decision_source": "Codex gpt-6-luna/max live IPC",
+  "degraded": false,
+  "finish_reason": "stop",
+  "fixture_bundle_id": "com.morrow.ComputerUseFixture",
+  "fixture_executable_sha256": "e50c90949e917dfae2497831521cda265b95cf9bbdb55404a6817cac3f13104b",
+  "fixture_identity_unchanged": true,
+  "fixture_instance_id": "3B4334E1-C374-490E-95FE-EE727582F3F3",
+  "fixture_instance_id_after": "3B4334E1-C374-490E-95FE-EE727582F3F3",
+  "fixture_launch_pid": 16939,
+  "fixture_pid": 16939,
+  "fixture_pid_after": 16939,
+  "fixture_process_exited": true,
+  "fixture_process_owned_and_identity_matched": true,
+  "fixture_scroll_geometry": {
+    "scroll_region": {
+      "height": 200,
+      "width": 480,
+      "x": 20,
+      "y": 28
+    },
+    "window": {
+      "backingScale": 2,
+      "contentHeight": 512,
+      "height": 512,
+      "number": 423,
+      "width": 520,
+      "x": 478,
+      "y": 242
+    }
+  },
+  "fixture_state_after_sha256": "dd79ef0c24cc0149419db668c358f69305d6c906889bc6938d00c8ea6b0593ac",
+  "fixture_state_before_sha256": "9a6dd0ea2c63d536a15fd848996d24c67ccb305ce49398b1c25231ccc07ef18e",
+  "fixture_text_after_length": 4113,
+  "fixture_text_after_sha256": "a79b7f1b8004c6c175120c2bc0f901ed87e51f2156b5993124ae3c74b8b4c1b8",
+  "fixture_text_before_length": 4097,
+  "fixture_text_before_sha256": "d839ad01419719228569d9824a9fff8cfcab4df7a82725ff99e93c86bd2b82f1",
+  "fixture_window_id": 423,
+  "fixture_window_id_after": 423,
+  "harness_sha256": "6ed6d4cacb83da02117a238923e3fe68f6eb19ac8b3100f37c124933cd9af8ed",
+  "image_hashes_match": true,
+  "independent_effect": {
+    "after_text_length": 4113,
+    "after_text_sha256": "a79b7f1b8004c6c175120c2bc0f901ed87e51f2156b5993124ae3c74b8b4c1b8",
+    "before_text_length": 4097,
+    "before_text_sha256": "d839ad01419719228569d9824a9fff8cfcab4df7a82725ff99e93c86bd2b82f1",
+    "correct_field": true,
+    "counter_delta": 0,
+    "exact_live_insert": true,
+    "inserted_suffix_count": 1,
+    "key_down_characters": [],
+    "key_down_fields": [],
+    "key_up_events": 0,
+    "mouse_click_counts": [],
+    "pointer_events": [],
+    "right_mouse_delta": 0,
+    "scroll_delta": 0,
+    "text_change_event_delta": 1,
+    "unchanged": false,
+    "wheel_inside_scroll_region": false
+  },
+  "ledger_states": [
+    "closed",
+    "closed",
+    "closed",
+    "closed",
+    "closed",
+    "closed",
+    "closed"
+  ],
+  "long_text_projection_evidence": {
+    "fixture_seed_length": 4097,
+    "native_long_value_exposed": true,
+    "native_token_matches_observed_sdk_token": false,
+    "public_observation_omitted_counts": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "public_observation_truncated_flags": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "public_text_truncated_flags": [
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false
+    ],
+    "public_value_lengths": [
+      4096,
+      22,
+      4096,
+      22,
+      4096,
+      22,
+      4096,
+      22
+    ],
+    "raw_sdk_value_description_lengths": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "raw_sdk_value_lengths": [
+      4097,
+      22,
+      4097,
+      22,
+      4097,
+      22,
+      4113,
+      22,
+      4113,
+      22
+    ],
+    "same_ref_observed_then_dispatched": false
+  },
+  "luna_controller_final": "我使用普通长文本框的本轮引用尝试追加了Luna-live-4097-🧭，Morrow返回status=completed。随后实际重新观察：普通字段仍以4096字符前缀读回并标记text_truncated，截图也只显示开头，无法从当前可见证据确认尾部后缀是否已追加；Synthetic secure field仍显示原占位文本。没有重投。",
+  "luna_live_decisions": [
+    {
+      "decision_basis": "本案尚无fixture窗口引用，先发现获准运行窗口以便观察预填输入框。",
+      "decision_sha256": "903728c7a6f9963d2888ecedcb04d6958422216afef66439e567ac67114392d7",
+      "request_sha256": "7e8654830275dbddcf5697b8694f4a1d3074efed8d0ada653f626b0a72d82690",
+      "sequence": 1,
+      "tool_name": "computer_observe"
+    },
+    {
+      "decision_basis": "本轮discover返回了获准fixture目标；读取该窗口的当前控件与图像，以安全区分普通输入和secure字段。",
+      "decision_sha256": "22eb270c888109aac8226934fd6372a4293533b1e2e33c86aacff95b3261c51a",
+      "request_sha256": "5a9fc5aba5932b1f92e4e4793edf88f91207dd57f46300efc573785776414e09",
+      "sequence": 2,
+      "tool_name": "computer_observe"
+    },
+    {
+      "decision_basis": "该输入框观察时间为10:23:16Z，当前已超过30秒TTL；在首次输入前刷新同一授权窗口。",
+      "decision_sha256": "c159c9d8e172f88ad1fe34df3c9ff0e1493b9d1b8caab71a103fd2544d3a7282",
+      "request_sha256": "17645fb1cf6a6a922efd128980a9757734776662734fc849015847a3b53c4732",
+      "sequence": 3,
+      "tool_name": "computer_observe"
+    },
+    {
+      "decision_basis": "新鲜截图与观察显示蓝色聚焦的普通长文本框值以L开头且text_truncated=true；另一明确标记的Synthetic secure field不作为目标。",
+      "decision_sha256": "e10575b35d5f4d408b9261d80d1626e3eb36c361b319d0c844835bd1a23fb1be",
+      "request_sha256": "d9b6e7d6b397a5bb704cdccee9434522da40f0a36a04664d346dda1dfb2c43d9",
+      "sequence": 4,
+      "tool_name": "computer_action"
+    },
+    {
+      "decision_basis": "刚才的type_text明确返回status=not_started/stale_observation且未启动native；在最后一次获准恢复内刷新窗口观察。",
+      "decision_sha256": "48cc69398306744bf6bfb7d2850769a7ab72db4fa2b313fbd4d675668292e100",
+      "request_sha256": "af7cda52f7864414288185aeca38ec647fbc957d9ed50b3874fd7b383a6ab3a6",
+      "sequence": 5,
+      "tool_name": "computer_observe"
+    },
+    {
+      "decision_basis": "刚获得的新鲜观察仍是以L开头、4096字符读回截断的普通文本框；安全字段是独立的Synthetic secure field，不作目标。",
+      "decision_sha256": "7a82435a6dcce6d35f7344f89d9da175fd58dfc8240d65f2d293faf728b09f9f",
+      "request_sha256": "125dfb4e938f1706aaa7dfef7f96a15dadbf6cb53a76d790ed5cbd006e9eded6",
+      "sequence": 6,
+      "tool_name": "computer_action"
+    },
+    {
+      "decision_basis": "type_text报告status=completed，但当前request没有提供更新图像；重新观察窗口以验证普通字段追加结果。",
+      "decision_sha256": "83f9fa9e7a8944debfc020afb7b034ff9d5326af917afb6589f95cd0e6f524b3",
+      "request_sha256": "1bb71566cffbc460c0dd280a8a147d29c5745e6d857c1dc7ba5473bd08cf4a9f",
+      "sequence": 7,
+      "tool_name": "computer_observe"
+    },
+    {
+      "decision_basis": "type_text返回status=completed；新观察仍把普通长字段截为4096字符并标记text_truncated，截图无法展示尾部后缀；secure字段仍未变化。",
+      "decision_sha256": "8a500d5faf58a287ab3a2c61d4bd221720d3f8e157dd53fa817054ce1a029d82",
+      "request_sha256": "a8735b601990b5c5ab3648226a34ae2cf487a404637929bc07b795ef729828d5",
+      "sequence": 8,
+      "tool_name": null
+    }
+  ],
+  "native_entries": [
+    {
+      "amount": null,
+      "delivery": "background",
+      "direction": null,
+      "element_token_sha256": "b25fc9a2e8709ab97d4f160ad660d13e662fa52d85aa0debd90f7ee2d9035e07",
+      "entry_number": 1,
+      "key": null,
+      "keys": null,
+      "method": "call_tool:type_text",
+      "pid": 16939,
+      "returned_outcome": {
+        "after_observation_id": null,
+        "before_observation_id": null,
+        "delivery": "background",
+        "error_code": null,
+        "postcondition": "not_checked",
+        "status": "completed"
+      },
+      "text_length": 16,
+      "text_sha256": "f8d730cff25a39b0b43698d1b2789de9a81f24ef1c5f3916f18a9d0afa3441b2",
+      "window_id": 423,
+      "x": null,
+      "y": null
+    }
+  ],
+  "network_guard": {
+    "http_client_constructor_attempts": 0,
+    "http_send_attempts": 0,
+    "openai_provider_constructor_attempts": 0
+  },
+  "network_guard_passed": true,
+  "observation_meta": [
+    {
+      "call_id": "luna-2",
+      "complete": false,
+      "editable_elements": [
+        {
+          "element_ref_sha256": "0e3f7e5f91dae6f02703b40408bc85e9098ee55ece0aecdbc67cc432459ead9c",
+          "enabled": true,
+          "label": null,
+          "role": "axtextfield",
+          "text_truncated": true,
+          "value_description_length": null,
+          "value_length": 4096,
+          "value_sha256": "495b63b9b5c41b598d95c9b884215a755c800e1994630244c7b80498b719049c"
+        },
+        {
+          "element_ref_sha256": "a25ef7212f5b6c5270fc98314111227ee51287e3703f8b7e1fdcb93f3ee33854",
+          "enabled": true,
+          "label": "Synthetic secure field",
+          "role": "axtextfield",
+          "text_truncated": false,
+          "value_description_length": null,
+          "value_length": 22,
+          "value_sha256": "2496eafc692ca842ca9e0bda9f7d275e750ecab16048dd7f44519918ad521a9e"
+        }
+      ],
+      "element_count": 131,
+      "image": true,
+      "omitted_count": 0,
+      "truncated": true
+    },
+    {
+      "call_id": "luna-3",
+      "complete": false,
+      "editable_elements": [
+        {
+          "element_ref_sha256": "f0597eb1fc4432094b927a87de433e10452704b3a5de64b0b7c005d987e623ab",
+          "enabled": true,
+          "label": null,
+          "role": "axtextfield",
+          "text_truncated": true,
+          "value_description_length": null,
+          "value_length": 4096,
+          "value_sha256": "495b63b9b5c41b598d95c9b884215a755c800e1994630244c7b80498b719049c"
+        },
+        {
+          "element_ref_sha256": "365dde5896f348cc28bb093be459b54ef67f0891e785b8fdd83151ce59d7280e",
+          "enabled": true,
+          "label": "Synthetic secure field",
+          "role": "axtextfield",
+          "text_truncated": false,
+          "value_description_length": null,
+          "value_length": 22,
+          "value_sha256": "2496eafc692ca842ca9e0bda9f7d275e750ecab16048dd7f44519918ad521a9e"
+        }
+      ],
+      "element_count": 131,
+      "image": true,
+      "omitted_count": 0,
+      "truncated": true
+    },
+    {
+      "call_id": "luna-5",
+      "complete": false,
+      "editable_elements": [
+        {
+          "element_ref_sha256": "794cadbb6412337085df5dc74ed849da28eb4de91e46f5bb30066cb1f27c9cb1",
+          "enabled": true,
+          "label": null,
+          "role": "axtextfield",
+          "text_truncated": true,
+          "value_description_length": null,
+          "value_length": 4096,
+          "value_sha256": "495b63b9b5c41b598d95c9b884215a755c800e1994630244c7b80498b719049c"
+        },
+        {
+          "element_ref_sha256": "6e81c569aa8c948a41274af99b057785a07a8caa77d2cc11b78d69197a1034aa",
+          "enabled": true,
+          "label": "Synthetic secure field",
+          "role": "axtextfield",
+          "text_truncated": false,
+          "value_description_length": null,
+          "value_length": 22,
+          "value_sha256": "2496eafc692ca842ca9e0bda9f7d275e750ecab16048dd7f44519918ad521a9e"
+        }
+      ],
+      "element_count": 131,
+      "image": true,
+      "omitted_count": 0,
+      "truncated": true
+    },
+    {
+      "call_id": "luna-7",
+      "complete": false,
+      "editable_elements": [
+        {
+          "element_ref_sha256": "8a087e023a7f269e6c8b2fcbae5646987a1144159b5c3069deb6e253955f24dc",
+          "enabled": true,
+          "label": null,
+          "role": "axtextfield",
+          "text_truncated": true,
+          "value_description_length": null,
+          "value_length": 4096,
+          "value_sha256": "495b63b9b5c41b598d95c9b884215a755c800e1994630244c7b80498b719049c"
+        },
+        {
+          "element_ref_sha256": "4e04771ad9c31a6cb2e006f3228868ee70b838fc2689fe14e46aef85e41e8a0e",
+          "enabled": true,
+          "label": "Synthetic secure field",
+          "role": "axtextfield",
+          "text_truncated": false,
+          "value_description_length": null,
+          "value_length": 22,
+          "value_sha256": "2496eafc692ca842ca9e0bda9f7d275e750ecab16048dd7f44519918ad521a9e"
+        }
+      ],
+      "element_count": 132,
+      "image": true,
+      "omitted_count": 0,
+      "truncated": true
+    }
+  ],
+  "provider_calls": [
+    {
+      "action": null,
+      "amount": null,
+      "button": null,
+      "call_id": "luna-1",
+      "coordinate_target": false,
+      "count": null,
+      "direction": null,
+      "element_target": false,
+      "key": null,
+      "keys": null,
+      "name": "computer_observe",
+      "operation": "discover",
+      "postcondition": null,
+      "postcondition_ref_matches_action": false
+    },
+    {
+      "action": null,
+      "amount": null,
+      "button": null,
+      "call_id": "luna-2",
+      "coordinate_target": false,
+      "count": null,
+      "direction": null,
+      "element_target": false,
+      "key": null,
+      "keys": null,
+      "name": "computer_observe",
+      "operation": "window",
+      "postcondition": null,
+      "postcondition_ref_matches_action": false
+    },
+    {
+      "action": null,
+      "amount": null,
+      "button": null,
+      "call_id": "luna-3",
+      "coordinate_target": false,
+      "count": null,
+      "direction": null,
+      "element_target": false,
+      "key": null,
+      "keys": null,
+      "name": "computer_observe",
+      "operation": "window",
+      "postcondition": null,
+      "postcondition_ref_matches_action": false
+    },
+    {
+      "action": "type_text",
+      "action_text_length": 16,
+      "action_text_sha256": "f8d730cff25a39b0b43698d1b2789de9a81f24ef1c5f3916f18a9d0afa3441b2",
+      "amount": null,
+      "button": null,
+      "call_id": "luna-4",
+      "coordinate_target": false,
+      "count": null,
+      "direction": null,
+      "element_target": true,
+      "key": null,
+      "keys": null,
+      "name": "computer_action",
+      "operation": null,
+      "postcondition": null,
+      "postcondition_ref_matches_action": false
+    },
+    {
+      "action": null,
+      "amount": null,
+      "button": null,
+      "call_id": "luna-5",
+      "coordinate_target": false,
+      "count": null,
+      "direction": null,
+      "element_target": false,
+      "key": null,
+      "keys": null,
+      "name": "computer_observe",
+      "operation": "window",
+      "postcondition": null,
+      "postcondition_ref_matches_action": false
+    },
+    {
+      "action": "type_text",
+      "action_text_length": 16,
+      "action_text_sha256": "f8d730cff25a39b0b43698d1b2789de9a81f24ef1c5f3916f18a9d0afa3441b2",
+      "amount": null,
+      "button": null,
+      "call_id": "luna-6",
+      "coordinate_target": false,
+      "count": null,
+      "direction": null,
+      "element_target": true,
+      "key": null,
+      "keys": null,
+      "name": "computer_action",
+      "operation": null,
+      "postcondition": null,
+      "postcondition_ref_matches_action": false
+    },
+    {
+      "action": null,
+      "amount": null,
+      "button": null,
+      "call_id": "luna-7",
+      "coordinate_target": false,
+      "count": null,
+      "direction": null,
+      "element_target": false,
+      "key": null,
+      "keys": null,
+      "name": "computer_observe",
+      "operation": "window",
+      "postcondition": null,
+      "postcondition_ref_matches_action": false
+    }
+  ],
+  "provider_failures": [],
+  "provider_image_hashes": [
+    [],
+    [],
+    [
+      "eec9f1699bedaf3a04c75211631e2e017071fa212c3b21a36331c3b30b16d7b3"
+    ],
+    [
+      "eec9f1699bedaf3a04c75211631e2e017071fa212c3b21a36331c3b30b16d7b3",
+      "fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589"
+    ],
+    [
+      "eec9f1699bedaf3a04c75211631e2e017071fa212c3b21a36331c3b30b16d7b3",
+      "fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589"
+    ],
+    [
+      "fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589",
+      "fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589"
+    ],
+    [
+      "fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589",
+      "fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589"
+    ],
+    [
+      "fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589",
+      "fa529819d14affb17a53d58aad15894c3e21cd6154c7fee89465db61207f7589"
+    ]
+  ],
+  "provider_request_count": 8,
+  "raw_status": "tested",
+  "real_provider_request_count": 0,
+  "requested_delivery": "background",
+  "scenario": "long-text-4097",
+  "scenario_result": "native-action-or-oracle-failed",
+  "schema_version": 1,
+  "scripted_provider": false,
+  "sdk_input_entries": 1,
+  "sdk_native_entries": 1,
+  "sdk_observations": [
+    {
+      "elements": [
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "2b94180b27e3e5364e16cf224e472c00e1fddfc013df3161b78f4297b8a4ca40",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 120.0,
+            "x": 498.0,
+            "y": 320.0
+          },
+          "label": "Increment",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXShowMenu",
+            "AXConfirm"
+          ],
+          "element_token_sha256": "648a58aa789ea150c43193922ca45c8803d300ea42aecbaa0c7f2bd1def18cba",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 480.0,
+            "x": 498.0,
+            "y": 358.0
+          },
+          "label": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": 4097,
+          "raw_value_sha256": "d839ad01419719228569d9824a9fff8cfcab4df7a82725ff99e93c86bd2b82f1",
+          "raw_value_type": "str",
+          "role": "AXTextField"
+        },
+        {
+          "actions": [
+            "AXShowMenu",
+            "AXConfirm"
+          ],
+          "element_token_sha256": "cd7e5a49c26cc92f34439a15104b879e00b1511fa73d9a65eb845da697015f2e",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 480.0,
+            "x": 498.0,
+            "y": 422.0
+          },
+          "label": "Synthetic secure field",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": 22,
+          "raw_value_sha256": "2496eafc692ca842ca9e0bda9f7d275e750ecab16048dd7f44519918ad521a9e",
+          "raw_value_type": "str",
+          "role": "AXTextField"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "28d382f97453ea15aff4369b9f4d9f3a929b198b3823013e8c6a1836a02567eb",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "60b360f5e7b81b446bbf629157beb0dfd2d969983311eb447bb5bb374b3e86b3",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "9864378317c338af6679b9ee893b7a7de0fbd1160f85ce1aaf025c4753728ae8",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": {
+            "h": 128.0,
+            "w": 6.0,
+            "x": 969.0,
+            "y": 547.5
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "d122e7d2798dd443e012e5cfb16e416c5dae38cdfff488ba03ce14a2fe7e31b8",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "4a47f1ce02cf57efb9d717751026d17c6b71d9b271c0ad182270baa89ab7c3f5",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 16.0,
+            "w": 16.0,
+            "x": 486.0,
+            "y": 210.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "dad2339657c9061b09d27e2c60846b3269911528fa9b1aefc1126ce9ddf71177",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 16.0,
+            "w": 16.0,
+            "x": 509.0,
+            "y": 210.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        }
+      ],
+      "elements_complete": false,
+      "returned_element_count": 131,
+      "screenshot_height": 1024,
+      "screenshot_scale": 2.0,
+      "screenshot_width": 1040,
+      "snapshot_id_sha256": "54983564a124e7ad390d3c1a678508e05b72e8a55a79c325da3f83b2e9b91c85",
+      "total_element_count": 131,
+      "truncated": false,
+      "window_id": 423,
+      "window_pid": 16939
+    },
+    {
+      "elements": [
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "af18593dfc6aa6836f454589ddac51cfcf405e9070485bb469b66dcda2059ad1",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 120.0,
+            "x": 498.0,
+            "y": 320.0
+          },
+          "label": "Increment",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXShowMenu",
+            "AXConfirm"
+          ],
+          "element_token_sha256": "c4cc0308dee51ecb04a8ca416f709d071038a3bedcf8fbd9076447a0f90a1eda",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 480.0,
+            "x": 498.0,
+            "y": 358.0
+          },
+          "label": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": 4097,
+          "raw_value_sha256": "d839ad01419719228569d9824a9fff8cfcab4df7a82725ff99e93c86bd2b82f1",
+          "raw_value_type": "str",
+          "role": "AXTextField"
+        },
+        {
+          "actions": [
+            "AXShowMenu",
+            "AXConfirm"
+          ],
+          "element_token_sha256": "dcfbf91e1e45bebdecb22b77b410de9a790013cec4465ae0c04eaa81213584c0",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 480.0,
+            "x": 498.0,
+            "y": 422.0
+          },
+          "label": "Synthetic secure field",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": 22,
+          "raw_value_sha256": "2496eafc692ca842ca9e0bda9f7d275e750ecab16048dd7f44519918ad521a9e",
+          "raw_value_type": "str",
+          "role": "AXTextField"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "849459f217211ae72d3510b021e79947ce38ddb71e869e3601b74e4115cffcd0",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "1b7f4760094fcaa3f391c46066d8b570fb74cf76f560697082de51181f3300d2",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "094032a2e76e14ff6194a9bd495fd7b24c3d30a240d3044a5cdc5c6d717aa20f",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": {
+            "h": 133.0,
+            "w": 6.0,
+            "x": 969.0,
+            "y": 550.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "311e5d6979ad568dcef77eeb716a32bd9f2c19729818afa0b70de7edda1dea39",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "cfed9283cc423e13b9b23a15ab9420770b87e39afef9ba0fa68dac9d20f5bc12",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 16.0,
+            "w": 16.0,
+            "x": 486.0,
+            "y": 210.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "04bb256816b7728368863383ef5e0e5c2ca103e9391cdfe353270eb5592da2d3",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 16.0,
+            "w": 16.0,
+            "x": 509.0,
+            "y": 210.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        }
+      ],
+      "elements_complete": false,
+      "returned_element_count": 131,
+      "screenshot_height": 1024,
+      "screenshot_scale": 2.0,
+      "screenshot_width": 1040,
+      "snapshot_id_sha256": "8d83d637d63ae2f82aa96449d57a707835b84151f86c753150439de81cbaf1b6",
+      "total_element_count": 131,
+      "truncated": false,
+      "window_id": 423,
+      "window_pid": 16939
+    },
+    {
+      "elements": [
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "2580fcf99e6a75c670acc974f18447e54a1c128dbf7af6e01b1b7225f1b1b17b",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 120.0,
+            "x": 498.0,
+            "y": 320.0
+          },
+          "label": "Increment",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXShowMenu",
+            "AXConfirm"
+          ],
+          "element_token_sha256": "b25fc9a2e8709ab97d4f160ad660d13e662fa52d85aa0debd90f7ee2d9035e07",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 480.0,
+            "x": 498.0,
+            "y": 358.0
+          },
+          "label": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": 4097,
+          "raw_value_sha256": "d839ad01419719228569d9824a9fff8cfcab4df7a82725ff99e93c86bd2b82f1",
+          "raw_value_type": "str",
+          "role": "AXTextField"
+        },
+        {
+          "actions": [
+            "AXShowMenu",
+            "AXConfirm"
+          ],
+          "element_token_sha256": "0e94bcf306261268746257138250b3a8f0a2ba4a6b7957e666134e9685885d25",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 480.0,
+            "x": 498.0,
+            "y": 422.0
+          },
+          "label": "Synthetic secure field",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": 22,
+          "raw_value_sha256": "2496eafc692ca842ca9e0bda9f7d275e750ecab16048dd7f44519918ad521a9e",
+          "raw_value_type": "str",
+          "role": "AXTextField"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "754c5fc2dadbe55ebe2b973d15388b121183ac5938f74038ba1e9f8b89b521ee",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "d7944f73942c5a7f3b523d093e608737d9cb58585665b4db97ac9203a062392b",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "4035ca447b6c0298c8e529ed542ab0d6b83362a651fc8ba75a34a39ff50a419a",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": {
+            "h": 133.0,
+            "w": 6.0,
+            "x": 969.0,
+            "y": 550.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "77ac034a57777f628f6f8e495d7403f37ae40d8273a4bd95fe68a55052ec73bc",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "32a702827abd57e44f74e6382df6fad016519ff42ec77fb6d65ddfc492935335",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 16.0,
+            "w": 16.0,
+            "x": 486.0,
+            "y": 210.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "a7860420b8a5683d0f17040d8316f0dbdbd9e2d5a5ae2d8bad9378c9b4c99b9c",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 16.0,
+            "w": 16.0,
+            "x": 509.0,
+            "y": 210.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        }
+      ],
+      "elements_complete": false,
+      "returned_element_count": 131,
+      "screenshot_height": 1024,
+      "screenshot_scale": 2.0,
+      "screenshot_width": 1040,
+      "snapshot_id_sha256": "82ec5ef93f73711ee6d42bc699933766274d77172ccf3a32e30aad3e013810d2",
+      "total_element_count": 131,
+      "truncated": false,
+      "window_id": 423,
+      "window_pid": 16939
+    },
+    {
+      "elements": [
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "3eb3de2cb956f98e88d196380141f97d51c959b2c5cb89314511a2dd2089ff3e",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 120.0,
+            "x": 498.0,
+            "y": 320.0
+          },
+          "label": "Increment",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXShowMenu",
+            "AXConfirm"
+          ],
+          "element_token_sha256": "dadc50f4bf7ee64265c36d9c630aec673a7483a5651ea7316aa33737a64f559c",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 480.0,
+            "x": 498.0,
+            "y": 358.0
+          },
+          "label": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLuna-live-4097-🧭",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": 4113,
+          "raw_value_sha256": "a79b7f1b8004c6c175120c2bc0f901ed87e51f2156b5993124ae3c74b8b4c1b8",
+          "raw_value_type": "str",
+          "role": "AXTextField"
+        },
+        {
+          "actions": [
+            "AXShowMenu",
+            "AXConfirm"
+          ],
+          "element_token_sha256": "050f60fa01030803dad342ee231553486135d4d0e4f406a4f2cd3546598d6700",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 480.0,
+            "x": 498.0,
+            "y": 422.0
+          },
+          "label": "Synthetic secure field",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": 22,
+          "raw_value_sha256": "2496eafc692ca842ca9e0bda9f7d275e750ecab16048dd7f44519918ad521a9e",
+          "raw_value_type": "str",
+          "role": "AXTextField"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "fe57ab0271557add056c7b9a73452ff0e34af1e71cea8c2b48b973ad845fa527",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "f7923476d8b8b7111870cc311d7fe5cbf752e1f2f931745c7eecbf5dc3e5c2b8",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "698975621e1f1f9b7503bce46f00f675fed00bd7129e2cc3a034003afd0bfdaa",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": {
+            "h": 133.0,
+            "w": 6.0,
+            "x": 969.0,
+            "y": 550.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "9d2ca349549871d761b8af5ace34f709158afa67ce9fa0258afc9caa8e367b8a",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "f720fbf72d66da08de3a53a3340db808fc7fd8bd4bac843a1e45a0c52e867b02",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 16.0,
+            "w": 16.0,
+            "x": 486.0,
+            "y": 210.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "4b2f3b3ff4296868600df40d3ab7e5909ccaaff9856a9578c1c1d2497388f366",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 16.0,
+            "w": 16.0,
+            "x": 509.0,
+            "y": 210.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        }
+      ],
+      "elements_complete": false,
+      "returned_element_count": 132,
+      "screenshot_height": 1024,
+      "screenshot_scale": 2.0,
+      "screenshot_width": 1040,
+      "snapshot_id_sha256": "af44529f8b01431912fff2e9d24dd207aa64ada99b9367ed68cea94d22df86be",
+      "total_element_count": 132,
+      "truncated": false,
+      "window_id": 423,
+      "window_pid": 16939
+    },
+    {
+      "elements": [
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "86eb2060b9ada4e05017ccb8d70d3846da1c1d3195ddb61c171eee1b30507151",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 120.0,
+            "x": 498.0,
+            "y": 320.0
+          },
+          "label": "Increment",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXShowMenu",
+            "AXConfirm"
+          ],
+          "element_token_sha256": "c48377fef44c52678914fc5a045eb2523e4af629e7ad0f7ab7a20ad66233060d",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 480.0,
+            "x": 498.0,
+            "y": 358.0
+          },
+          "label": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLuna-live-4097-🧭",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": 4113,
+          "raw_value_sha256": "a79b7f1b8004c6c175120c2bc0f901ed87e51f2156b5993124ae3c74b8b4c1b8",
+          "raw_value_type": "str",
+          "role": "AXTextField"
+        },
+        {
+          "actions": [
+            "AXShowMenu",
+            "AXConfirm"
+          ],
+          "element_token_sha256": "ab968ff598d7a48519811dac07daf4c351210bf26d284c33584c980eeaf8792d",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 480.0,
+            "x": 498.0,
+            "y": 422.0
+          },
+          "label": "Synthetic secure field",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": 22,
+          "raw_value_sha256": "2496eafc692ca842ca9e0bda9f7d275e750ecab16048dd7f44519918ad521a9e",
+          "raw_value_type": "str",
+          "role": "AXTextField"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "2e9519db6766ce4c06c25421865c1c250103911afe37f1f740d6ed9003d71201",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "6410019d60ce4e97ddcacfdc74dc44f34132c9698673733054d18e6ed0ab0f5f",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "5feec33b0949ef325c3283a54c636dca24c12200ccfed196d47a8d4624505316",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": {
+            "h": 133.0,
+            "w": 6.0,
+            "x": 969.0,
+            "y": 550.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "68f32259540bdb2e9729ede5b829289a074e479c8b9538fb0bad2835c04348ec",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "eb96119973fb88c98a132dcfcdf641e136220dd9f4415b7a86bd88cce8fa13ef",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 16.0,
+            "w": 16.0,
+            "x": 486.0,
+            "y": 210.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "7507a7abcb68ae798f2e668aa2faf8099b22171765b282dbd7e99eb1e4660fbe",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 16.0,
+            "w": 16.0,
+            "x": 509.0,
+            "y": 210.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        }
+      ],
+      "elements_complete": false,
+      "returned_element_count": 132,
+      "screenshot_height": 1024,
+      "screenshot_scale": 2.0,
+      "screenshot_width": 1040,
+      "snapshot_id_sha256": "1c989fbf4e80fb6d1ef13b81dbed40825ce976006f926462623cc8315d639cfd",
+      "total_element_count": 132,
+      "truncated": false,
+      "window_id": 423,
+      "window_pid": 16939
+    }
+  ],
+  "selected_window": {
+    "pid": 16939,
+    "window_id": 423
+  },
+  "source_execution_count": 7,
+  "status": "tested",
+  "tool_diagnostics": [
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "error": {
+          "code": null,
+          "details": [],
+          "reason": null
+        },
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "error": {
+          "code": null,
+          "details": [],
+          "reason": null
+        },
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-3",
+      "envelope": {
+        "error": {
+          "code": null,
+          "details": [],
+          "reason": null
+        },
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-4",
+      "envelope": {
+        "error": {
+          "code": null,
+          "details": [],
+          "reason": null
+        },
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "verification_error": null
+      }
+    },
+    {
+      "call_id": "luna-5",
+      "envelope": {
+        "error": {
+          "code": null,
+          "details": [],
+          "reason": null
+        },
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-6",
+      "envelope": {
+        "error": {
+          "code": null,
+          "details": [],
+          "reason": null
+        },
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "verification_error": null
+      }
+    },
+    {
+      "call_id": "luna-7",
+      "envelope": {
+        "error": {
+          "code": null,
+          "details": [],
+          "reason": null
+        },
+        "ok": true
+      },
+      "result": {}
+    }
+  ]
+}

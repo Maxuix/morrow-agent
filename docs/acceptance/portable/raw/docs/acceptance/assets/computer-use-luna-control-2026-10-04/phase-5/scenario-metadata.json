@@ -1,0 +1,7 @@
+{
+  "root": "/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/morrow-luna-container-uf37bg9t",
+  "scenario_alias": "semantic-scroll-container",
+  "fixture_case_key": "background-coordinate-scroll",
+  "goal_override": "专项复测语义滚动容器：只根据本轮真实控件树查找合法axscrollarea或axscrollview元素引用，尝试一次element_ref向下滚动amount=3。不要用坐标代替本案目标；如果实际观察没有合法容器ref，请明确报告缺少可用引用并结束，不能假造ref或用菜单条/文本行冒充滚动容器。unknown不重投，stale/not_started允许刷新一次。",
+  "reason": "separate semantic container availability from coordinate scrolling"
+}

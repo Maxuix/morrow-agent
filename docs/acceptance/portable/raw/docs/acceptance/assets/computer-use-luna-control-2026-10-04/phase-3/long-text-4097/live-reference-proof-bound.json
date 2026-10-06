@@ -1,0 +1,20 @@
+{
+  "case": "long-text-4097",
+  "basis": "derive live receipt and observation; do not use legacy scripted_target booleans",
+  "selected_public_elements": [
+    {
+      "role": "axtextfield",
+      "public_length": 4096,
+      "text_truncated": true,
+      "observation_ref_matches_action": true
+    }
+  ],
+  "raw_4097_token_matches_native": true,
+  "selected_pid_window_matches_native": true,
+  "exact_live_insert": true,
+  "suffix_count": 1,
+  "native_entries": 1,
+  "native_status": "completed",
+  "evidence_sha256": "b91812a23f7da6a099f713a3ff709e341d65bffaed61df5d26ed9a1b9044e476",
+  "decision_006_sha256": "7a82435a6dcce6d35f7344f89d9da175fd58dfc8240d65f2d293faf728b09f9f"
+}

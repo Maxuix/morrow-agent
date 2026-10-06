@@ -1,0 +1,20 @@
+................no run.completed record in morrow JSONL output
+.no run.completed record in morrow JSONL output
+.no run.completed record in morrow JSONL output
+.no run.completed record in morrow JSONL output
+.could not recover morrow run log: OSError
+no run.completed record in morrow JSONL output
+..could not recover morrow run log: FileNotFoundError
+no run.completed record in morrow JSONL output
+.no run.completed record in morrow JSONL output
+..no run.completed record in morrow JSONL output
+...no run.completed record in morrow JSONL output
+....model capacities are invalid: model input budget cannot cover recent history and prompt overhead
+.model capacities are invalid: model input budget cannot cover recent history and prompt overhead
+......declared model output exceeds the verified deployment example
+.model capacities are invalid: model input budget cannot cover recent history and prompt overhead
+.......
+----------------------------------------------------------------------
+Ran 47 tests in 2.074s
+
+OK

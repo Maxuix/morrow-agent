@@ -1,0 +1,143 @@
+{
+    "id": "d288851e-c18d-4c0e-b6aa-b106ae01f307",
+    "task_name": "terminal-bench/torch-tensor-parallelism",
+    "trial_name": "torch-tensor-parallelism__DRF8CP5",
+    "trial_uri": "file:///Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/torch-tensor-parallelism__DRF8CP5",
+    "task_id": {
+        "path": "/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/vendor/terminal-bench-2/torch-tensor-parallelism"
+    },
+    "source": "terminal-bench-2",
+    "task_checksum": "2f753e96dd887bfb7a28b1c848329ca960d2dc768650ce6aa867a309c3080942",
+    "config": {
+        "task": {
+            "path": "/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/vendor/terminal-bench-2/torch-tensor-parallelism",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "terminal-bench-2"
+        },
+        "trial_name": "torch-tensor-parallelism__DRF8CP5",
+        "trials_dir": "/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680",
+        "install_only": false,
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": 1.0,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "harness.morrow_harbor_agent:MorrowAgent",
+            "import_path": null,
+            "model_name": null,
+            "n_concurrent": null,
+            "concurrency_group": null,
+            "skills": [],
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "resume_trajectory": false,
+            "load_trajectory": null,
+            "extra_allowed_hosts": [],
+            "kwargs": {
+                "provider_adapter": "openai-compatible",
+                "provider_base_url": "https://ark.cn-beijing.volces.com/api/plan/v3",
+                "provider_id": "volcengine",
+                "model_id": "glm-5.3-flash",
+                "api_model_id": "glm-5.3-flash",
+                "reasoning_effort": "high",
+                "context_window_tokens": 256000,
+                "max_output_tokens": 239616
+            },
+            "mcp_servers": []
+        },
+        "user_agent": null,
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "stream": false,
+            "cpu_enforcement_policy": "auto",
+            "memory_enforcement_policy": "auto",
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "override_tpu": null,
+            "mounts": null,
+            "extra_docker_compose": [],
+            "kwargs": {},
+            "extra_allowed_hosts": []
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "env": {
+                "HTTP_PROXY": "http://host.docker.internal:60425",
+                "HTTPS_PROXY": "http://host.docker.internal:60425",
+                "http_proxy": "http://host.docker.internal:60425",
+                "https_proxy": "http://host.docker.internal:60425",
+                "NO_PROXY": "localhost,127.0.0.1,::1,*.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+                "no_proxy": "localhost,127.0.0.1,::1,*.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+            },
+            "disable": false
+        },
+        "artifacts": [],
+        "extra_instruction_paths": [],
+        "extra_instructions": [],
+        "job_id": "a0cf5945-9274-4f65-a117-6ff653917624",
+        "source_trial": null
+    },
+    "agent_info": {
+        "name": "morrow",
+        "version": "0.1.0",
+        "model_info": null
+    },
+    "agent_result": {
+        "n_input_tokens": 41870,
+        "n_cache_tokens": null,
+        "n_output_tokens": 4262,
+        "cost_usd": null,
+        "model_usage": {
+            "morrow-terminal-metrics": {
+                "n_input_tokens": 41870,
+                "n_cache_tokens": 0,
+                "n_output_tokens": 4262,
+                "cost_usd": null
+            }
+        },
+        "rollout_details": null,
+        "metadata": {
+            "morrow_fingerprint": "morrow-fingerprint.json",
+            "morrow_terminal_total_tokens": 46132
+        }
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0
+        }
+    },
+    "verifier_environment_mode": "shared",
+    "exception_info": null,
+    "started_at": "2026-09-28T04:10:44.651081Z",
+    "finished_at": "2026-09-28T04:15:03.475221Z",
+    "environment_setup": {
+        "started_at": "2026-09-28T04:10:44.652647Z",
+        "finished_at": "2026-09-28T04:10:46.150276Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-09-28T04:10:46.150313Z",
+        "finished_at": "2026-09-28T04:10:57.583615Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-09-28T04:10:57.584767Z",
+        "finished_at": "2026-09-28T04:13:22.982590Z"
+    },
+    "verifier": {
+        "started_at": "2026-09-28T04:13:23.815199Z",
+        "finished_at": "2026-09-28T04:14:59.261828Z"
+    },
+    "step_results": null
+}

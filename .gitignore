@@ -30,8 +30,8 @@ GEMINI*.md
 *.prompt.md
 *prompt*.md
 
-# Keep the published documentation limited to the project introduction and
-# the current architecture baseline.
+# Public entry points, current architecture, and explicitly selected acceptance
+# reports/evidence live in Git; other local working documents stay ignored.
 docs/*
 !docs/README.md
 !docs/ARCHITECTURE.md
@@ -88,3 +88,34 @@ evals/benchmarks/.venv/
 evals/benchmarks/__pycache__/
 evals/benchmarks/results/
 evals/benchmarks/pilot_tasks.json
+
+# Version-closeout public evidence: allow only indexed reports and the portable closure.
+!docs/acceptance/
+docs/acceptance/*
+!docs/acceptance/README.md
+!docs/acceptance/benchmark-runtime-limits-2026-09-29.md
+!docs/acceptance/benchmark-v2-2026-09-27.md
+!docs/acceptance/computer-use-analysis-and-fix-plan-2026-10-04.md
+!docs/acceptance/computer-use-capabilities-2026-10-05.md
+!docs/acceptance/computer-use-final-review-fixes-2026-10-05.md
+!docs/acceptance/computer-use-live-2026-10-04.md
+!docs/acceptance/computer-use-luna-fixes-2026-10-04.md
+!docs/acceptance/computer-use-luna-retest-fixes-2026-10-04.md
+!docs/acceptance/computer-use-recovery-verdict-2026-10-05.md
+!docs/acceptance/computer-use-repair-2026-10-04.md
+!docs/acceptance/harness-fixes-2026-09-27.md
+!docs/acceptance/tb2-g4-repair-2026-09-29.md
+!docs/acceptance/tb2-verifier-network-2026-09-28.md
+!docs/acceptance/portable/
+!docs/acceptance/portable/**
+!docs/research/
+docs/research/*
+!docs/research/harness-technical-analysis-2026-09-24.md
+
+!docs/acceptance/version-closeout-fixes-2026-10-06.md
+
+# Selected closeout validation logs; other generated output remains local.
+!docs/acceptance/evidence/
+docs/acceptance/evidence/*
+!docs/acceptance/evidence/version-closeout-2026-10-06/
+!docs/acceptance/evidence/version-closeout-2026-10-06/**

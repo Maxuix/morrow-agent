@@ -1,0 +1,103 @@
+{
+  "kind": "offline diagnostic ablation of earlier non-entered outcomes; not a new live case or production fix",
+  "source_evidence_sha256": "87c158944bb11a3d9cd3b0e36692313ab50c2380bf9258aa4994ec2e237d46fa",
+  "source_verdict_sha256": "e132d39edafec963576deb6b477561071d9145187f8e8c29e8d75a6d9eee58dc",
+  "unmodified_verdict": {
+    "status": "unsupported",
+    "verdict_reason": "sdk_exact_attribute_readback_unavailable",
+    "expected_variant": [
+      "click",
+      "element",
+      "left",
+      1
+    ],
+    "actual_variant": {
+      "call_id": "luna-5",
+      "observation_id": "cobs_YtLYgiPCoi-vUF5p",
+      "name": "computer_action",
+      "operation": null,
+      "action": "click",
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": true,
+      "include_image": null,
+      "button": "left",
+      "count": 1,
+      "postcondition": "attribute_equals"
+    },
+    "action_attempts": 2,
+    "sdk_input_entries": 1,
+    "recovered_not_started": 1,
+    "native_completion": [
+      "not_started",
+      "unknown"
+    ]
+  },
+  "earlier_outcomes": [
+    {
+      "after_observation_id": null,
+      "before_observation_id": null,
+      "delivery": null,
+      "error_code": "stale_observation",
+      "postcondition": "not_checked",
+      "status": "not_started"
+    }
+  ],
+  "final_outcome": {
+    "after_observation_id": "cobs_bIkzvVEQjeVcOEiW",
+    "before_observation_id": "cobs_YtLYgiPCoi-vUF5p",
+    "delivery": "background",
+    "error_code": "unverified_action",
+    "postcondition": "passed",
+    "status": "unknown"
+  },
+  "native_input_entries": 1,
+  "attribute_read_proofs": [
+    {
+      "native_token_matches_observed_sdk_token": true,
+      "attribute": "enabled",
+      "identity": "exact",
+      "status": "readable",
+      "value": true,
+      "is_error": false,
+      "degraded": false
+    }
+  ],
+  "diagnostic_verdict_final_outcome_only": {
+    "status": "passed",
+    "verdict_reason": "independent_effect",
+    "expected_variant": [
+      "click",
+      "element",
+      "left",
+      1
+    ],
+    "actual_variant": {
+      "call_id": "luna-5",
+      "observation_id": "cobs_YtLYgiPCoi-vUF5p",
+      "name": "computer_action",
+      "operation": null,
+      "action": "click",
+      "key": null,
+      "keys": null,
+      "direction": null,
+      "amount": null,
+      "coordinate_target": false,
+      "element_target": true,
+      "include_image": null,
+      "button": "left",
+      "count": 1,
+      "postcondition": "attribute_equals"
+    },
+    "action_attempts": 2,
+    "sdk_input_entries": 1,
+    "recovered_not_started": 1,
+    "native_completion": [
+      "unknown"
+    ]
+  },
+  "new_native_inputs": 0
+}

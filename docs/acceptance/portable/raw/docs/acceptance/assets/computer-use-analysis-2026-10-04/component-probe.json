@@ -1,0 +1,145 @@
+{
+  "provider_network": false,
+  "purpose": "component_diagnosis",
+  "steps": [
+    {
+      "case": "text",
+      "before": {
+        "oracle_text_length": 0,
+        "oracle_q_count": 0,
+        "oracle_Y_count": 0,
+        "native_text_length": 12,
+        "native_q_count": 0,
+        "native_Y_count": 0,
+        "oracle_scroll": 0,
+        "oracle_revision": 2
+      },
+      "after": {
+        "oracle_text_length": 15,
+        "oracle_q_count": 0,
+        "oracle_Y_count": 0,
+        "native_text_length": 15,
+        "native_q_count": 0,
+        "native_Y_count": 0,
+        "oracle_scroll": 0,
+        "oracle_revision": 17
+      },
+      "outcome": {
+        "status": "completed",
+        "delivery": "foreground",
+        "before_observation_id": "cobs_jitwD63bOv3Xa4Ne",
+        "after_observation_id": null,
+        "error_code": null,
+        "postcondition": "not_checked"
+      },
+      "image_error": "image_safety_unconfirmed"
+    },
+    {
+      "case": "q",
+      "before": {
+        "oracle_text_length": 15,
+        "oracle_q_count": 0,
+        "oracle_Y_count": 0,
+        "native_text_length": 15,
+        "native_q_count": 0,
+        "native_Y_count": 0,
+        "oracle_scroll": 0,
+        "oracle_revision": 17
+      },
+      "after": {
+        "oracle_text_length": 15,
+        "oracle_q_count": 0,
+        "oracle_Y_count": 0,
+        "native_text_length": 16,
+        "native_q_count": 1,
+        "native_Y_count": 0,
+        "oracle_scroll": 0,
+        "oracle_revision": 17
+      },
+      "outcome": {
+        "status": "completed",
+        "delivery": "foreground",
+        "before_observation_id": "cobs_6u8Cana3FN3lF2-K",
+        "after_observation_id": null,
+        "error_code": null,
+        "postcondition": "not_checked"
+      },
+      "image_error": "image_safety_unconfirmed"
+    },
+    {
+      "case": "Y",
+      "before": {
+        "oracle_text_length": 15,
+        "oracle_q_count": 0,
+        "oracle_Y_count": 0,
+        "native_text_length": 16,
+        "native_q_count": 1,
+        "native_Y_count": 0,
+        "oracle_scroll": 0,
+        "oracle_revision": 17
+      },
+      "after": {
+        "oracle_text_length": 15,
+        "oracle_q_count": 0,
+        "oracle_Y_count": 0,
+        "native_text_length": 18,
+        "native_q_count": 1,
+        "native_Y_count": 1,
+        "oracle_scroll": 0,
+        "oracle_revision": 17
+      },
+      "outcome": {
+        "status": "unknown",
+        "delivery": "foreground",
+        "before_observation_id": "cobs_JMumxCJw0-4lZj1U",
+        "after_observation_id": null,
+        "error_code": "unverified_action",
+        "postcondition": "not_checked"
+      },
+      "image_error": "image_safety_unconfirmed"
+    },
+    {
+      "case": "tab",
+      "before": {
+        "oracle_text_length": 15,
+        "oracle_q_count": 0,
+        "oracle_Y_count": 0,
+        "native_text_length": 18,
+        "native_q_count": 1,
+        "native_Y_count": 1,
+        "oracle_scroll": 0,
+        "oracle_revision": 17
+      },
+      "after": {
+        "oracle_text_length": 15,
+        "oracle_q_count": 0,
+        "oracle_Y_count": 0,
+        "native_text_length": 18,
+        "native_q_count": 1,
+        "native_Y_count": 1,
+        "oracle_scroll": 0,
+        "oracle_revision": 17
+      },
+      "outcome": {
+        "status": "unknown",
+        "delivery": "foreground",
+        "before_observation_id": "cobs_purBf1giSRZx0h8E",
+        "after_observation_id": null,
+        "error_code": "unverified_action",
+        "postcondition": "not_checked"
+      },
+      "image_error": "image_safety_unconfirmed"
+    }
+  ],
+  "before": {
+    "oracle_text_length": 0,
+    "oracle_q_count": 0,
+    "oracle_Y_count": 0,
+    "native_text_length": 12,
+    "native_q_count": 0,
+    "native_Y_count": 0,
+    "oracle_scroll": 0,
+    "oracle_revision": 2
+  },
+  "exception_type": "ComputerUseContractError"
+}

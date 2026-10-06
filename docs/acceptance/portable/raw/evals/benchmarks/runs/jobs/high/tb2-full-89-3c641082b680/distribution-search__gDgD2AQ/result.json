@@ -1,0 +1,148 @@
+{
+    "id": "f01983ec-186d-4fea-8071-1c8694f6298e",
+    "task_name": "terminal-bench/distribution-search",
+    "trial_name": "distribution-search__gDgD2AQ",
+    "trial_uri": "file:///Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680/distribution-search__gDgD2AQ",
+    "task_id": {
+        "path": "/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/vendor/terminal-bench-2/distribution-search"
+    },
+    "source": "terminal-bench-2",
+    "task_checksum": "cb4844f37f58b7e46e0bbff9daf78094b3dc8bd14ced772011530ee48edd3443",
+    "config": {
+        "task": {
+            "path": "/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/vendor/terminal-bench-2/distribution-search",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "terminal-bench-2"
+        },
+        "trial_name": "distribution-search__gDgD2AQ",
+        "trials_dir": "/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/runs/jobs/high/tb2-full-89-3c641082b680",
+        "install_only": false,
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": 1.0,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "harness.morrow_harbor_agent:MorrowAgent",
+            "import_path": null,
+            "model_name": null,
+            "n_concurrent": null,
+            "concurrency_group": null,
+            "skills": [],
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "resume_trajectory": false,
+            "load_trajectory": null,
+            "extra_allowed_hosts": [],
+            "kwargs": {
+                "provider_adapter": "openai-compatible",
+                "provider_base_url": "https://ark.cn-beijing.volces.com/api/plan/v3",
+                "provider_id": "volcengine",
+                "model_id": "glm-5.3-flash",
+                "api_model_id": "glm-5.3-flash",
+                "reasoning_effort": "high",
+                "context_window_tokens": 256000,
+                "max_output_tokens": 239616
+            },
+            "mcp_servers": []
+        },
+        "user_agent": null,
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "stream": false,
+            "cpu_enforcement_policy": "auto",
+            "memory_enforcement_policy": "auto",
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "override_tpu": null,
+            "mounts": null,
+            "extra_docker_compose": [],
+            "kwargs": {},
+            "extra_allowed_hosts": []
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "env": {
+                "HTTP_PROXY": "http://host.docker.internal:60425",
+                "HTTPS_PROXY": "http://host.docker.internal:60425",
+                "http_proxy": "http://host.docker.internal:60425",
+                "https_proxy": "http://host.docker.internal:60425",
+                "NO_PROXY": "localhost,127.0.0.1,::1,*.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+                "no_proxy": "localhost,127.0.0.1,::1,*.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+            },
+            "disable": false
+        },
+        "artifacts": [],
+        "extra_instruction_paths": [],
+        "extra_instructions": [],
+        "job_id": "a0cf5945-9274-4f65-a117-6ff653917624",
+        "source_trial": null
+    },
+    "agent_info": {
+        "name": "morrow",
+        "version": "0.1.0",
+        "model_info": null
+    },
+    "agent_result": {
+        "n_input_tokens": 5275,
+        "n_cache_tokens": null,
+        "n_output_tokens": 19320,
+        "cost_usd": null,
+        "model_usage": {
+            "morrow-terminal-metrics": {
+                "n_input_tokens": 5275,
+                "n_cache_tokens": 0,
+                "n_output_tokens": 19320,
+                "cost_usd": null
+            }
+        },
+        "rollout_details": null,
+        "metadata": {
+            "morrow_fingerprint": "morrow-fingerprint.json",
+            "morrow_terminal_total_tokens": 24595
+        }
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0
+        }
+    },
+    "verifier_environment_mode": "shared",
+    "exception_info": {
+        "exception_type": "NonZeroAgentExitCodeError",
+        "exception_message": "morrow run exited with code 2",
+        "exception_traceback": "Traceback (most recent call last):\n  File \"/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/.venv/lib/python3.12/site-packages/harbor/trial/single_step.py\", line 77, in _run_agent\n    await self._run_agent_phase(\n  File \"/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/.venv/lib/python3.12/site-packages/harbor/trial/trial.py\", line 608, in _run_agent_phase\n    await asyncio.wait_for(\n  File \"/Users/ruirui/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/.venv/lib/python3.12/site-packages/harbor/agents/installed/base.py\", line 186, in wrapper\n    return await fn(self, instruction, *args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/ruirui/Documents/Project/Agent/developing/evals/benchmarks/harness/morrow_harbor_agent.py\", line 436, in run\n    raise NonZeroAgentExitCodeError(f\"morrow run exited with code {exit_code}\")\nharbor.agents.installed.base.NonZeroAgentExitCodeError: morrow run exited with code 2\n",
+        "occurred_at": "2026-09-27T20:38:04.764539Z"
+    },
+    "started_at": "2026-09-27T20:31:41.052351Z",
+    "finished_at": "2026-09-27T20:38:34.194431Z",
+    "environment_setup": {
+        "started_at": "2026-09-27T20:31:41.054214Z",
+        "finished_at": "2026-09-27T20:31:42.521842Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-09-27T20:31:42.521877Z",
+        "finished_at": "2026-09-27T20:31:53.716503Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-09-27T20:31:53.717571Z",
+        "finished_at": "2026-09-27T20:38:04.761799Z"
+    },
+    "verifier": {
+        "started_at": "2026-09-27T20:38:05.648065Z",
+        "finished_at": "2026-09-27T20:38:30.207596Z"
+    },
+    "step_results": null
+}

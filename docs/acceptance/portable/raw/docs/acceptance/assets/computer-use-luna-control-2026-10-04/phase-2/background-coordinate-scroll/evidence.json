@@ -1,0 +1,762 @@
+{
+  "action_outcomes": [
+    {
+      "delivery": "background",
+      "error_code": "unverified_action",
+      "postcondition": "not_checked",
+      "status": "unknown"
+    }
+  ],
+  "action_plan": "none",
+  "active_turn": false,
+  "approval_attempt_call_ids": [
+    "luna-3"
+  ],
+  "approval_context": {
+    "action_type": "scroll",
+    "call_id": "luna-3",
+    "call_matches_scripted_action": true,
+    "fixture_unchanged_before_decision": true
+  },
+  "approval_count": 1,
+  "approval_decisions": [
+    {
+      "approved": true,
+      "call_id": "luna-3"
+    }
+  ],
+  "artifact_image_hashes": [
+    "86715cfd1591ad5fb1671b03df671f1ecefa20de9daec52e0f3f589d7251597a",
+    "c09d5eb3214780913348c511fed6d90f16507300b00580aef25c7c487d5c8abe"
+  ],
+  "artifact_integrity": [
+    true,
+    true
+  ],
+  "campaign_verdict": {
+    "actual_variant": {
+      "action": "scroll",
+      "amount": 3,
+      "button": null,
+      "call_id": "luna-3",
+      "coordinate_target": true,
+      "count": null,
+      "direction": "down",
+      "element_target": false,
+      "key": null,
+      "keys": null,
+      "name": "computer_action",
+      "operation": null,
+      "postcondition": null,
+      "postcondition_ref_matches_action": false
+    },
+    "expected_variant": [
+      "scroll",
+      "coordinate",
+      null,
+      null
+    ],
+    "status": "passed",
+    "verdict_reason": "independent_effect"
+  },
+  "case": "coordinate_scroll",
+  "cua_driver_version": "0.30.4",
+  "decision_source": "Codex gpt-6-luna/max live IPC",
+  "degraded": false,
+  "finish_reason": "stop",
+  "fixture_bundle_id": "com.morrow.ComputerUseFixture",
+  "fixture_executable_sha256": "3cf8ccdb14bb38834fe0e1987385a874fa747f5ad81388bc3b6c9daae9879af5",
+  "fixture_identity_unchanged": true,
+  "fixture_instance_id": "A725C643-59AC-4ED8-BBF7-66139854B112",
+  "fixture_instance_id_after": "A725C643-59AC-4ED8-BBF7-66139854B112",
+  "fixture_launch_pid": 65072,
+  "fixture_pid": 65072,
+  "fixture_pid_after": 65072,
+  "fixture_process_exited": true,
+  "fixture_process_owned_and_identity_matched": true,
+  "fixture_scroll_geometry": {
+    "scroll_region": {
+      "height": 200,
+      "width": 480,
+      "x": 20,
+      "y": 28
+    },
+    "window": {
+      "backingScale": 2,
+      "contentHeight": 512,
+      "height": 512,
+      "number": 384,
+      "width": 520,
+      "x": 478,
+      "y": 242
+    }
+  },
+  "fixture_state_after_sha256": "39ea62200747defac979cf7dc25f7b47335750425c8b60af72931a8e698160c2",
+  "fixture_state_before_sha256": "272f0e0c3f5e02741db7a8042721b35e8e25b4052b048e5f02c8dd0086fe6efc",
+  "fixture_text_after_length": 0,
+  "fixture_text_after_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "fixture_text_before_length": 0,
+  "fixture_text_before_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "fixture_window_id": 384,
+  "fixture_window_id_after": 384,
+  "harness_sha256": "a135e846980eb08adfd8e5691b221e0333b592bea060ce045f92a26b07fea822",
+  "image_hashes_match": true,
+  "independent_effect": {
+    "counter_delta": 0,
+    "key_down_characters": [],
+    "key_down_fields": [],
+    "key_up_events": 0,
+    "mouse_click_counts": [],
+    "pointer_events": [
+      {
+        "clickCount": 0,
+        "deltaY": -2,
+        "kind": "wheel",
+        "windowX": 250,
+        "windowY": 162
+      },
+      {
+        "clickCount": 0,
+        "deltaY": -2,
+        "kind": "wheel",
+        "windowX": 250,
+        "windowY": 162
+      },
+      {
+        "clickCount": 0,
+        "deltaY": -2,
+        "kind": "wheel",
+        "windowX": 250,
+        "windowY": 162
+      }
+    ],
+    "right_mouse_delta": 0,
+    "scroll_delta": 60,
+    "unchanged": false,
+    "wheel_inside_scroll_region": true
+  },
+  "ledger_states": [
+    "closed",
+    "closed",
+    "closed"
+  ],
+  "luna_controller_final": "我在截图确认的真实列表内以(500,700)执行了一次向下滚动3格。Morrow返回status=unknown、error_code=unverified_action；动作后的截图显示列表现在从Fixture row 4开始可见（此前从row 0开始），因此界面已滚动。没有重试。",
+  "luna_live_decisions": [
+    {
+      "decision_basis": "本案没有当前fixture窗口引用；先发现获准窗口再观察其真实滚动区域。",
+      "decision_sha256": "ab86d4500f6d13b746d2c1ffdf62c1c2e599353440516d81a22b4321402bbe96",
+      "request_sha256": "324579aec81e0387faff041e157aba09366a8301a1cb55d7536d980ed96d1e7f",
+      "sequence": 1,
+      "tool_name": "computer_observe"
+    },
+    {
+      "decision_basis": "已发现Morrow授权fixture目标；查看本轮真实窗口图像与观察数据，确定可见滚动区域及坐标。",
+      "decision_sha256": "d5537adfdde387d3b9f1491b5ca2dd09aaf961483d9b22d71ef662b7e219fb5c",
+      "request_sha256": "6624788b20e5c61ad33c0aa094f126abd230ada289a02404d4df516eb81fba04",
+      "sequence": 2,
+      "tool_name": "computer_observe"
+    },
+    {
+      "decision_basis": "截图的灰色Fixture row列表是实际滚动区域（约x=39–1000、y=568–968）；选其内部点(500,700)向下滚动3格。",
+      "decision_sha256": "dad89f11e0806e8f7ccd302af2561e8cf846e8b21178d397c10e161dc2d38cfb",
+      "request_sha256": "4d60eb9d8c110d67d9a5ff93dcb4dbab0b751958e958f7b76e7eeaefedecb522",
+      "sequence": 3,
+      "tool_name": "computer_action"
+    },
+    {
+      "decision_basis": "工具状态为unknown/unverified_action，但动作后的真实截图中列表已从row 0起始变为可见row 4，体现滚动效果。",
+      "decision_sha256": "b824a0a33ad0800a5de4ffecf8ef6bcac3c7819d2505a15d20920b08dd8ce34e",
+      "request_sha256": "6519774b554c217d26ba15d02c703bec5397e8406fc398d0564d6fc4b9d8a557",
+      "sequence": 4,
+      "tool_name": null
+    }
+  ],
+  "native_entries": [
+    {
+      "amount": 3,
+      "delivery": "background",
+      "direction": "down",
+      "element_token_sha256": null,
+      "entry_number": 1,
+      "key": null,
+      "keys": null,
+      "method": "call_tool:scroll",
+      "pid": 65072,
+      "returned_outcome": {
+        "after_observation_id": null,
+        "before_observation_id": null,
+        "delivery": "background",
+        "error_code": "unverified_action",
+        "postcondition": "not_checked",
+        "status": "unknown"
+      },
+      "text_length": null,
+      "text_sha256": null,
+      "window_id": 384,
+      "x": 500.0,
+      "y": 700.0
+    }
+  ],
+  "network_guard": {
+    "http_client_constructor_attempts": 0,
+    "http_send_attempts": 0,
+    "openai_provider_constructor_attempts": 0
+  },
+  "network_guard_passed": true,
+  "observation_meta": [
+    {
+      "call_id": "luna-2",
+      "complete": false,
+      "editable_elements": [
+        {
+          "element_ref_sha256": "0bee4254594cafca2134c65f363faaf2ad434d98a60defcc34b01be9bd566c71",
+          "enabled": true,
+          "label": "Unicode text",
+          "role": "axtextfield",
+          "text_truncated": false,
+          "value_description_length": null,
+          "value_length": 12,
+          "value_sha256": "8bfd7dbcdd0b26d6d31ab76e3a59d3ed452eb3d823c56b3eccb729437587a65d"
+        },
+        {
+          "element_ref_sha256": "4517c043de5fd1445b44a6a6ca94a84b03b3ab059bae61cec3e7b8ec4deece22",
+          "enabled": true,
+          "label": "Synthetic secure field",
+          "role": "axtextfield",
+          "text_truncated": false,
+          "value_description_length": null,
+          "value_length": 22,
+          "value_sha256": "2496eafc692ca842ca9e0bda9f7d275e750ecab16048dd7f44519918ad521a9e"
+        }
+      ],
+      "element_count": 131,
+      "image": true,
+      "omitted_count": 0,
+      "truncated": false
+    }
+  ],
+  "provider_calls": [
+    {
+      "action": null,
+      "amount": null,
+      "button": null,
+      "call_id": "luna-1",
+      "coordinate_target": false,
+      "count": null,
+      "direction": null,
+      "element_target": false,
+      "key": null,
+      "keys": null,
+      "name": "computer_observe",
+      "operation": "discover",
+      "postcondition": null,
+      "postcondition_ref_matches_action": false
+    },
+    {
+      "action": null,
+      "amount": null,
+      "button": null,
+      "call_id": "luna-2",
+      "coordinate_target": false,
+      "count": null,
+      "direction": null,
+      "element_target": false,
+      "key": null,
+      "keys": null,
+      "name": "computer_observe",
+      "operation": "window",
+      "postcondition": null,
+      "postcondition_ref_matches_action": false
+    },
+    {
+      "action": "scroll",
+      "amount": 3,
+      "button": null,
+      "call_id": "luna-3",
+      "coordinate_target": true,
+      "count": null,
+      "direction": "down",
+      "element_target": false,
+      "key": null,
+      "keys": null,
+      "name": "computer_action",
+      "operation": null,
+      "postcondition": null,
+      "postcondition_ref_matches_action": false
+    }
+  ],
+  "provider_failures": [],
+  "provider_image_hashes": [
+    [],
+    [],
+    [
+      "86715cfd1591ad5fb1671b03df671f1ecefa20de9daec52e0f3f589d7251597a"
+    ],
+    [
+      "86715cfd1591ad5fb1671b03df671f1ecefa20de9daec52e0f3f589d7251597a",
+      "c09d5eb3214780913348c511fed6d90f16507300b00580aef25c7c487d5c8abe"
+    ]
+  ],
+  "provider_request_count": 4,
+  "raw_status": "tested",
+  "real_provider_request_count": 0,
+  "requested_delivery": "background",
+  "scenario": "background-coordinate-scroll",
+  "scenario_result": "passed",
+  "schema_version": 1,
+  "scripted_provider": false,
+  "sdk_input_entries": 1,
+  "sdk_native_entries": 1,
+  "sdk_observations": [
+    {
+      "elements": [
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "2b94180b27e3e5364e16cf224e472c00e1fddfc013df3161b78f4297b8a4ca40",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 120.0,
+            "x": 498.0,
+            "y": 320.0
+          },
+          "label": "Increment",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXShowMenu",
+            "AXConfirm"
+          ],
+          "element_token_sha256": "648a58aa789ea150c43193922ca45c8803d300ea42aecbaa0c7f2bd1def18cba",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 480.0,
+            "x": 498.0,
+            "y": 358.0
+          },
+          "label": "Unicode text",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": 12,
+          "raw_value_sha256": "8bfd7dbcdd0b26d6d31ab76e3a59d3ed452eb3d823c56b3eccb729437587a65d",
+          "raw_value_type": "str",
+          "role": "AXTextField"
+        },
+        {
+          "actions": [
+            "AXShowMenu",
+            "AXConfirm"
+          ],
+          "element_token_sha256": "cd7e5a49c26cc92f34439a15104b879e00b1511fa73d9a65eb845da697015f2e",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 480.0,
+            "x": 498.0,
+            "y": 422.0
+          },
+          "label": "Synthetic secure field",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": 22,
+          "raw_value_sha256": "2496eafc692ca842ca9e0bda9f7d275e750ecab16048dd7f44519918ad521a9e",
+          "raw_value_type": "str",
+          "role": "AXTextField"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "28d382f97453ea15aff4369b9f4d9f3a929b198b3823013e8c6a1836a02567eb",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "60b360f5e7b81b446bbf629157beb0dfd2d969983311eb447bb5bb374b3e86b3",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "9864378317c338af6679b9ee893b7a7de0fbd1160f85ce1aaf025c4753728ae8",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": {
+            "h": 128.0,
+            "w": 6.0,
+            "x": 969.0,
+            "y": 547.5
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "d122e7d2798dd443e012e5cfb16e416c5dae38cdfff488ba03ce14a2fe7e31b8",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "4a47f1ce02cf57efb9d717751026d17c6b71d9b271c0ad182270baa89ab7c3f5",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 16.0,
+            "w": 16.0,
+            "x": 486.0,
+            "y": 210.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "dad2339657c9061b09d27e2c60846b3269911528fa9b1aefc1126ce9ddf71177",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 16.0,
+            "w": 16.0,
+            "x": 509.0,
+            "y": 210.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        }
+      ],
+      "elements_complete": false,
+      "returned_element_count": 131,
+      "screenshot_height": 1024,
+      "screenshot_scale": 2.0,
+      "screenshot_width": 1040,
+      "snapshot_id_sha256": "54983564a124e7ad390d3c1a678508e05b72e8a55a79c325da3f83b2e9b91c85",
+      "total_element_count": 131,
+      "truncated": false,
+      "window_id": 384,
+      "window_pid": 65072
+    },
+    {
+      "elements": [
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "af18593dfc6aa6836f454589ddac51cfcf405e9070485bb469b66dcda2059ad1",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 120.0,
+            "x": 498.0,
+            "y": 320.0
+          },
+          "label": "Increment",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXShowMenu",
+            "AXConfirm"
+          ],
+          "element_token_sha256": "c4cc0308dee51ecb04a8ca416f709d071038a3bedcf8fbd9076447a0f90a1eda",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 480.0,
+            "x": 498.0,
+            "y": 358.0
+          },
+          "label": "Unicode text",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": 12,
+          "raw_value_sha256": "8bfd7dbcdd0b26d6d31ab76e3a59d3ed452eb3d823c56b3eccb729437587a65d",
+          "raw_value_type": "str",
+          "role": "AXTextField"
+        },
+        {
+          "actions": [
+            "AXShowMenu",
+            "AXConfirm"
+          ],
+          "element_token_sha256": "dcfbf91e1e45bebdecb22b77b410de9a790013cec4465ae0c04eaa81213584c0",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 24.0,
+            "w": 480.0,
+            "x": 498.0,
+            "y": 422.0
+          },
+          "label": "Synthetic secure field",
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": 22,
+          "raw_value_sha256": "2496eafc692ca842ca9e0bda9f7d275e750ecab16048dd7f44519918ad521a9e",
+          "raw_value_type": "str",
+          "role": "AXTextField"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "849459f217211ae72d3510b021e79947ce38ddb71e869e3601b74e4115cffcd0",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "1b7f4760094fcaa3f391c46066d8b570fb74cf76f560697082de51181f3300d2",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": null,
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "094032a2e76e14ff6194a9bd495fd7b24c3d30a240d3044a5cdc5c6d717aa20f",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": {
+            "h": 110.5,
+            "w": 6.0,
+            "x": 969.0,
+            "y": 565.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "311e5d6979ad568dcef77eeb716a32bd9f2c19729818afa0b70de7edda1dea39",
+          "enabled": null,
+          "enabled_type": "NoneType",
+          "frame": {
+            "h": 17.0,
+            "w": 6.0,
+            "x": 969.0,
+            "y": 489.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "cfed9283cc423e13b9b23a15ab9420770b87e39afef9ba0fa68dac9d20f5bc12",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 16.0,
+            "w": 16.0,
+            "x": 486.0,
+            "y": 210.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        },
+        {
+          "actions": [
+            "AXPress"
+          ],
+          "element_token_sha256": "04bb256816b7728368863383ef5e0e5c2ca103e9391cdfe353270eb5592da2d3",
+          "enabled": true,
+          "enabled_type": "bool",
+          "frame": {
+            "h": 16.0,
+            "w": 16.0,
+            "x": 509.0,
+            "y": 210.0
+          },
+          "label": null,
+          "raw_value_description_length": null,
+          "raw_value_description_sha256": null,
+          "raw_value_description_type": null,
+          "raw_value_length": null,
+          "raw_value_sha256": null,
+          "raw_value_type": null,
+          "role": "AXButton"
+        }
+      ],
+      "elements_complete": false,
+      "returned_element_count": 131,
+      "screenshot_height": 1024,
+      "screenshot_scale": 2.0,
+      "screenshot_width": 1040,
+      "snapshot_id_sha256": "8d83d637d63ae2f82aa96449d57a707835b84151f86c753150439de81cbaf1b6",
+      "total_element_count": 131,
+      "truncated": false,
+      "window_id": 384,
+      "window_pid": 65072
+    }
+  ],
+  "selected_window": {
+    "pid": 65072,
+    "window_id": 384
+  },
+  "source_execution_count": 3,
+  "status": "tested",
+  "tool_diagnostics": [
+    {
+      "call_id": "luna-1",
+      "envelope": {
+        "error": {
+          "code": null,
+          "details": [],
+          "reason": null
+        },
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-2",
+      "envelope": {
+        "error": {
+          "code": null,
+          "details": [],
+          "reason": null
+        },
+        "ok": true
+      },
+      "result": {}
+    },
+    {
+      "call_id": "luna-3",
+      "envelope": {
+        "error": {
+          "code": null,
+          "details": [],
+          "reason": null
+        },
+        "ok": true
+      },
+      "result": {
+        "observation_error": null,
+        "verification_error": null
+      }
+    }
+  ]
+}

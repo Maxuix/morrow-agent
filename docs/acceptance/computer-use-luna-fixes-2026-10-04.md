@@ -1,6 +1,6 @@
 # Luna 实时报告：问题修复与验证
 
-依据：[最新实时控制报告](computer-use-luna-control-2026-10-04.md)。本轮从 main `35a49216` 开始，修复分支 `fix/computer-use-luna-findings`。原始 request、receipt、图片和判定记录不改写。
+依据：[最新实时控制报告](portable/views/docs/acceptance/computer-use-luna-control-2026-10-04.md)。本轮从 main `35a49216` 开始，修复分支 `fix/computer-use-luna-findings`。原始 request、receipt、图片和判定记录不改写。
 
 ## 根因与处理
 

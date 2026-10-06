@@ -1,0 +1,63 @@
+$ vite build && pnpm run check:budget
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 624 modules transformed.
+rendering chunks...
+computing gzip size...
+../src/morrow/gui_static/index.html                                                     0.79 kB │ gzip:   0.36 kB
+../src/morrow/gui_static/assets/jetbrains-mono-vietnamese-wght-normal-Bt-aOZkq.woff2    7.50 kB
+../src/morrow/gui_static/assets/jetbrains-mono-greek-wght-normal-Bw9x6K1M.woff2         9.00 kB
+../src/morrow/gui_static/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2            10.25 kB
+../src/morrow/gui_static/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2             11.23 kB
+../src/morrow/gui_static/assets/newsreader-vietnamese-wght-normal-Czsa-EzN.woff2       11.93 kB
+../src/morrow/gui_static/assets/jetbrains-mono-cyrillic-wght-normal-D73BlboJ.woff2     12.11 kB
+../src/morrow/gui_static/assets/jetbrains-mono-latin-ext-wght-normal-DBQx-q_a.woff2    15.20 kB
+../src/morrow/gui_static/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2              18.75 kB
+../src/morrow/gui_static/assets/inter-greek-wght-normal-CkhJZR-_.woff2                 19.00 kB
+../src/morrow/gui_static/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2          25.96 kB
+../src/morrow/gui_static/assets/newsreader-latin-ext-wght-normal-C-3rgBeH.woff2        36.24 kB
+../src/morrow/gui_static/assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2        40.40 kB
+../src/morrow/gui_static/assets/inter-latin-wght-normal-Dx4kXJAl.woff2                 48.26 kB
+../src/morrow/gui_static/assets/newsreader-latin-wght-normal-CCVVNp6i.woff2            58.08 kB
+../src/morrow/gui_static/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2             85.07 kB
+../src/morrow/gui_static/assets/vendor-xyflow-CYyiZVnC.css                             11.42 kB │ gzip:   2.12 kB
+../src/morrow/gui_static/assets/index-B9atvMCf.css                                    111.00 kB │ gzip:  21.35 kB
+../src/morrow/gui_static/assets/SourceView-BRhsBGnt.js                                  1.65 kB │ gzip:   0.86 kB
+../src/morrow/gui_static/assets/markdownHighlight-BQ2FP419.js                           2.39 kB │ gzip:   1.02 kB
+../src/morrow/gui_static/assets/PreferenceProfilePage-CwtPxXIp.js                      32.28 kB │ gzip:   9.85 kB
+../src/morrow/gui_static/assets/EditorShell-B17IliK1.js                                36.56 kB │ gzip:  11.26 kB
+../src/morrow/gui_static/assets/vendor-codemirror-languages-DSOCVgYJ.js                48.29 kB │ gzip:  17.15 kB
+../src/morrow/gui_static/assets/PlanWorkflowInspector-DvaJy2Iv.js                      64.54 kB │ gzip:  18.86 kB
+../src/morrow/gui_static/assets/vendor-markdown-doOxucA-.js                           157.29 kB │ gzip:  47.49 kB
+../src/morrow/gui_static/assets/vendor-xyflow-U6rw2N4h.js                             180.00 kB │ gzip:  58.66 kB
+../src/morrow/gui_static/assets/vendor-react-B12KlvqY.js                              192.51 kB │ gzip:  60.28 kB
+../src/morrow/gui_static/assets/vendor-codemirror-lezer-BvJr-sT6.js                   256.46 kB │ gzip:  96.73 kB
+../src/morrow/gui_static/assets/vendor-codemirror-P39obQSg.js                         374.48 kB │ gzip: 122.01 kB
+../src/morrow/gui_static/assets/index-hw1ASITJ.js                                     478.42 kB │ gzip: 137.00 kB
+✓ built in 1.45s
+$ node scripts/check-budget.mjs
+
+Bundle budget report
+====================
+   467.2 KiB  assets/index-hw1ASITJ.js
+   365.7 KiB  assets/vendor-codemirror-P39obQSg.js
+   250.4 KiB  assets/vendor-codemirror-lezer-BvJr-sT6.js
+   188.0 KiB  assets/vendor-react-B12KlvqY.js
+   175.8 KiB  assets/vendor-xyflow-U6rw2N4h.js
+   153.6 KiB  assets/vendor-markdown-doOxucA-.js
+   108.4 KiB  assets/index-B9atvMCf.css
+    83.1 KiB  assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2
+    63.0 KiB  assets/PlanWorkflowInspector-DvaJy2Iv.js
+    56.7 KiB  assets/newsreader-latin-wght-normal-CCVVNp6i.woff2
+    47.2 KiB  assets/vendor-codemirror-languages-DSOCVgYJ.js
+    47.1 KiB  assets/inter-latin-wght-normal-Dx4kXJAl.woff2
+  ... and 18 more files
+--------------------
+  JS total:    1782.1 KiB  (budget 1900.0 KiB)
+  JS chunk:     500.0 KiB  (per .js file)
+  CSS total:    119.5 KiB  (budget 120.0 KiB)
+  Fonts total:  399.4 KiB  (woff2 only)
+  Other:          0.8 KiB
+  All files:   2301.8 KiB  (30 files)
+
+Budget check passed.

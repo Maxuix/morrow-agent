@@ -1,0 +1,87 @@
+[
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/evals/computer_use/live_bridge.py",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/evals/computer_use/live_provider.py",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/evals/computer_use/run_live_controller.py",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/evals/computer_use/campaign_verdict.py",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/evals/computer_use/Fixture.swift",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/evals/computer_use/build_fixture.py",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/adapters/computer_use/candidates.py",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/adapters/computer_use/projection.py",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/adapters/computer_use/session.py",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/services/computer_verification.py",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/core/computer_use.py",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/application/computer_tools.py",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/adapters/computer_use/action_inputs.py",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/src/morrow/adapters/computer_use/diagnostics.py",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/vendor/cua-driver-functional/functional.patch",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/pyproject.toml",
+    "current_matches": true,
+    "archive_matches": true
+  },
+  {
+    "source": "/Users/ruirui/Documents/Project/Agent/developing/uv.lock",
+    "current_matches": true,
+    "archive_matches": true
+  }
+]

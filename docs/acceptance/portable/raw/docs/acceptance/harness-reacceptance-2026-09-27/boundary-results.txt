@@ -1,0 +1,154 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_running_process_polled_in_later_run_invalidates_validation[task-previous-task] _
+
+tmp_path = PosixPath('/private/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/pytest-of-ruirui/pytest-136/test_running_process_polled_in0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10841d810>
+lifecycle = <TrackedLifecycle.TASK: 'task'>, next_task = 'previous-task'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "lifecycle,next_task",
+        [
+            (TrackedLifecycle.TASK, "previous-task"),
+            (TrackedLifecycle.ACCEPTANCE, "next-task"),
+        ],
+    )
+    async def test_running_process_polled_in_later_run_invalidates_validation(
+        tmp_path, monkeypatch, lifecycle, next_task
+    ):
+        service = ProcessExecutionService(WorkspaceFileService(WorkspacePathResolver(tmp_path)))
+        execution_id = "exec_" + "a" * 24
+        execution = TrackedExecution(
+            execution_id=execution_id,
+            session_id="s",
+            task_id="previous-task",
+            lifecycle=lifecycle,
+            command_class="shell",
+            cwd_relative=".",
+            adapter=HostProcessAdapter(),
+            spawned=SimpleNamespace(
+                stdout=_CursorBuffer(1024), stderr=_CursorBuffer(1024), started=time.monotonic()
+            ),
+        )
+        service.tracked._items[execution_id] = execution
+        monkeypatch.setattr(service.tracked, "_refresh", lambda item: None)
+        # Each AgentLoop.run_task gets a fresh ToolRunContext. The registry survives.
+        run = ToolRunContext(run_id="next-run", session_id="s", owner_task_id=next_task)
+        run.record(
+            (
+                ValidationFact(
+                    call_id="validate",
+                    tool_name="bash",
+                    ordinal=1,
+                    approval_verdict=PolicyVerdict.ALLOW,
+                    relative_paths=(".",),
+                    validator_kind="pytest",
+                    scope=".",
+                    status="passed",
+                    exit_code=0,
+                    evidence_summary="exit_zero",
+                ),
+            )
+        )
+        result = await bash_execution.run_bash(
+            service,
+            PreparedBash(action="poll", execution_id=execution_id),
+            session_id="s",
+            task_id=next_task,
+            result_limit=8192,
+            run=run,
+            call_id="poll",
+            tool_name="bash",
+            ordinal=2,
+            approval_verdict=PolicyVerdict.ALLOW,
+        )
+        assert result.payload.status.value == "running"
+        run.record(result.facts)
+>       assert check_completion(run).validation_outcome != "passed", (
+            "running process visible through poll is missing from the new run facts"
+        )
+E       AssertionError: running process visible through poll is missing from the new run facts
+E       assert 'passed' != 'passed'
+E        +  where 'passed' = CompletionCheck(validation_outcome='passed', issues=(), evidence=('pytest (.)：passed',)).validation_outcome
+E        +    where CompletionCheck(validation_outcome='passed', issues=(), evidence=('pytest (.)：passed',)) = check_completion(ToolRunContext(run_id='next-run', session_id='s', owner_task_id='previous-task'))
+
+docs/acceptance/harness-reacceptance-2026-09-27/boundary_probes.py:75: AssertionError
+_ test_running_process_polled_in_later_run_invalidates_validation[acceptance-next-task] _
+
+tmp_path = PosixPath('/private/var/folders/6c/h_0cyj2x7b9383tdk5tvvn180000gn/T/pytest-of-ruirui/pytest-136/test_running_process_polled_in1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107710b00>
+lifecycle = <TrackedLifecycle.ACCEPTANCE: 'acceptance'>, next_task = 'next-task'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "lifecycle,next_task",
+        [
+            (TrackedLifecycle.TASK, "previous-task"),
+            (TrackedLifecycle.ACCEPTANCE, "next-task"),
+        ],
+    )
+    async def test_running_process_polled_in_later_run_invalidates_validation(
+        tmp_path, monkeypatch, lifecycle, next_task
+    ):
+        service = ProcessExecutionService(WorkspaceFileService(WorkspacePathResolver(tmp_path)))
+        execution_id = "exec_" + "a" * 24
+        execution = TrackedExecution(
+            execution_id=execution_id,
+            session_id="s",
+            task_id="previous-task",
+            lifecycle=lifecycle,
+            command_class="shell",
+            cwd_relative=".",
+            adapter=HostProcessAdapter(),
+            spawned=SimpleNamespace(
+                stdout=_CursorBuffer(1024), stderr=_CursorBuffer(1024), started=time.monotonic()
+            ),
+        )
+        service.tracked._items[execution_id] = execution
+        monkeypatch.setattr(service.tracked, "_refresh", lambda item: None)
+        # Each AgentLoop.run_task gets a fresh ToolRunContext. The registry survives.
+        run = ToolRunContext(run_id="next-run", session_id="s", owner_task_id=next_task)
+        run.record(
+            (
+                ValidationFact(
+                    call_id="validate",
+                    tool_name="bash",
+                    ordinal=1,
+                    approval_verdict=PolicyVerdict.ALLOW,
+                    relative_paths=(".",),
+                    validator_kind="pytest",
+                    scope=".",
+                    status="passed",
+                    exit_code=0,
+                    evidence_summary="exit_zero",
+                ),
+            )
+        )
+        result = await bash_execution.run_bash(
+            service,
+            PreparedBash(action="poll", execution_id=execution_id),
+            session_id="s",
+            task_id=next_task,
+            result_limit=8192,
+            run=run,
+            call_id="poll",
+            tool_name="bash",
+            ordinal=2,
+            approval_verdict=PolicyVerdict.ALLOW,
+        )
+        assert result.payload.status.value == "running"
+        run.record(result.facts)
+>       assert check_completion(run).validation_outcome != "passed", (
+            "running process visible through poll is missing from the new run facts"
+        )
+E       AssertionError: running process visible through poll is missing from the new run facts
+E       assert 'passed' != 'passed'
+E        +  where 'passed' = CompletionCheck(validation_outcome='passed', issues=(), evidence=('pytest (.)：passed',)).validation_outcome
+E        +    where CompletionCheck(validation_outcome='passed', issues=(), evidence=('pytest (.)：passed',)) = check_completion(ToolRunContext(run_id='next-run', session_id='s', owner_task_id='next-task'))
+
+docs/acceptance/harness-reacceptance-2026-09-27/boundary_probes.py:75: AssertionError
+=========================== short test summary info ============================
+FAILED docs/acceptance/harness-reacceptance-2026-09-27/boundary_probes.py::test_running_process_polled_in_later_run_invalidates_validation[task-previous-task]
+FAILED docs/acceptance/harness-reacceptance-2026-09-27/boundary_probes.py::test_running_process_polled_in_later_run_invalidates_validation[acceptance-next-task]
+2 failed in 0.14s

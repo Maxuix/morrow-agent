@@ -1,0 +1,131 @@
+$ vitest run
+
+ RUN  v3.2.7 /Users/ruirui/Documents/Project/Agent/developing/gui
+
+ ✓ src/views/inspector/ChatColumns.dom.test.tsx (8 tests) 318ms
+ ✓ src/views/PatchEditor.dom.test.tsx (3 tests) 470ms
+ ✓ src/views/inspector/TaskArtifactsTerminal.dom.test.tsx (4 tests) 407ms
+ ✓ src/views/tools/WorkspaceToolsPage.dom.test.tsx (6 tests) 840ms
+   ✓ WorkspaceToolsPage skills and MCP > binds a version and enables a skill without ID lookup or raw JSON  339ms
+ ✓ src/views/inspector/FileInspector.dom.test.tsx (11 tests) 806ms
+   ✓ FileInspector > shows one path row and read-only source with target line, without a toolbar  495ms
+ ✓ src/views/knowledge/WorkspaceKnowledgePage.dom.test.tsx (7 tests) 987ms
+   ✓ WorkspaceKnowledgePage knowledge library > lists knowledge with structured fields and enable/disable/dispute/delete  330ms
+ ✓ src/views/WorkflowEditor.dom.test.tsx (8 tests) 1064ms
+ ✓ src/views/settings/SettingsPage.dom.test.tsx (10 tests) 1084ms
+ ✓ src/views/EditorShell.dom.test.tsx (8 tests) 1189ms
+(node:43036) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/views/assetNavigation.dom.test.tsx (3 tests) 348ms
+ ✓ src/views/Sidebar.nav.dom.test.tsx (4 tests) 388ms
+ ✓ src/views/ComputerWindowPicker.dom.test.tsx (4 tests) 618ms
+   ✓ reads only on request and binds explicit windows, delivery and optional capabilities  329ms
+ ✓ src/views/chat/InlineApprovalCard.dom.test.tsx (7 tests) 356ms
+ ✓ src/views/pages/Pages.dom.test.tsx (5 tests) 299ms
+ ✓ src/views/inspector/InspectorAddMenu.dom.test.tsx (5 tests) 358ms
+ ✓ src/views/ChatSettingsBar.permissions.dom.test.tsx (4 tests) 388ms
+ ✓ src/views/inspector/ChatInspector.dom.test.tsx (6 tests) 248ms
+(node:43049) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/App.nav.dom.test.tsx (2 tests) 247ms
+ ✓ src/views/ComputerUseControl.dom.test.tsx (4 tests) 193ms
+ ✓ src/views/inspector/InspectorTabBar.dom.test.tsx (6 tests) 280ms
+ ✓ src/views/ChatSettingsBar.dom.test.tsx (4 tests) 236ms
+ ✓ src/views/AssetWrites.dom.test.tsx (2 tests) 218ms
+ ✓ src/views/ActivityContentRefs.dom.test.tsx (9 tests) 237ms
+ ✓ src/views/TaskResultMessage.dom.test.tsx (6 tests) 262ms
+ ✓ src/views/editor/ConnectionEditor.dom.test.tsx (3 tests) 192ms
+ ✓ src/views/DefinitionLifecycle.dom.test.tsx (3 tests) 212ms
+ ✓ src/views/inspector/HeaderButtons.dom.test.tsx (2 tests) 150ms
+ ✓ src/views/RecoveryBanner.test.tsx (6 tests) 219ms
+ ✓ src/views/inspector/InspectorBodies.dom.test.tsx (2 tests) 185ms
+ ✓ src/views/editor/WorkflowDiagnostics.dom.test.tsx (1 test) 103ms
+ ✓ src/views/DesktopRuntimeNotice.dom.test.tsx (2 tests) 96ms
+ ✓ src/state/managementWrites.dom.test.tsx (7 tests) 216ms
+ ✓ src/views/ChatComposer.dom.test.tsx (2 tests) 189ms
+ ✓ src/views/inspector/FilePreview.dom.test.tsx (5 tests) 144ms
+ ✓ src/views/ChatWorkspace.draft.dom.test.tsx (1 test) 256ms
+ ✓ src/views/editor/PublishReview.test.tsx (2 tests) 173ms
+ ✓ src/state/navigation.dom.test.ts (6 tests) 57ms
+ ✓ src/state/sync.dom.test.tsx (2 tests) 128ms
+ ✓ src/views/editor/RunSettings.test.tsx (2 tests) 165ms
+ ✓ src/views/editor/WorkflowLibrary.dom.test.tsx (1 test) 55ms
+ ✓ src/views/inspector/shortcut.dom.test.ts (3 tests) 7ms
+ ✓ src/views/WorkspaceManager.dom.test.tsx (1 test) 86ms
+ ✓ src/state/runView.test.tsx (2 tests) 18ms
+ ✓ src/state/inspector.dom.test.ts (7 tests) 13ms
+(node:43122) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/state/sidebar.test.ts (13 tests) 87ms
+ ✓ src/state/chat.test.ts (15 tests) 151ms
+ ✓ src/api/proxy.test.ts (1 test) 154ms
+ ✓ src/views/preferences/PreferenceList.test.tsx (15 tests) 45ms
+ ✓ src/views/ChatMessage.test.tsx (10 tests) 29ms
+ ✓ src/state/sync.test.ts (14 tests) 370ms
+ ✓ src/state/theme.test.ts (3 tests) 5ms
+ ✓ src/state/inspector.resources.dom.test.ts (1 test) 3ms
+ ✓ src/state/taskPlan.test.ts (26 tests) 37ms
+ ✓ src/views/WorkflowEditor.test.tsx (3 tests) 58ms
+ ✓ src/views/lib/MarkdownBody.test.tsx (4 tests) 18ms
+ ✓ src/views/ContextManagement.test.tsx (6 tests) 14ms
+ ✓ src/state/workflowDraft.test.ts (8 tests) 28ms
+ ✓ src/state/activity.test.ts (45 tests) 20ms
+ ✓ src/views/PlanReviewWorkspace.test.tsx (9 tests) 17ms
+ ✓ src/views/preferences/ProfileEditor.test.tsx (9 tests) 43ms
+ ✓ src/views/lib/planGraph.test.ts (10 tests) 23ms
+ ✓ src/views/lib/stages.test.ts (3 tests) 12ms
+ ✓ src/views/GraphPlanner.test.tsx (4 tests) 9ms
+ ✓ src/views/ActivityTimeline.test.tsx (13 tests) 17ms
+ ✓ src/state/fileBuffer.test.ts (14 tests) 20ms
+ ✓ src/views/NodeExecution.test.tsx (7 tests) 16ms
+ ✓ src/views/ChatComposer.test.tsx (22 tests) 9ms
+ ✓ src/views/lib/chatOperations.test.tsx (3 tests) 12ms
+ ✓ src/views/TaskPlanPanel.test.tsx (5 tests) 11ms
+ ✓ src/views/ProviderSettings.test.tsx (3 tests) 17ms
+(node:43165) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/views/knowledgeCommands.test.ts (9 tests) 10ms
+ ✓ src/views/Sidebar.test.tsx (4 tests) 9ms
+ ✓ src/views/ReplanPanel.test.tsx (3 tests) 19ms
+ ✓ src/views/Attachments.test.tsx (3 tests) 16ms
+ ✓ src/views/McpManager.test.tsx (2 tests) 14ms
+ ✓ src/views/lib/transcript.test.ts (10 tests) 12ms
+ ✓ src/views/lib/execution.test.ts (26 tests) 11ms
+ ✓ src/views/editor/relations.test.ts (6 tests) 3ms
+ ✓ src/views/KnowledgeManagement.test.tsx (4 tests) 14ms
+ ✓ src/api/client.test.ts (12 tests) 13ms
+ ✓ src/components/ErrorBoundary.test.tsx (4 tests) 9ms
+ ✓ src/views/lib/graph.test.ts (10 tests) 4ms
+ ✓ src/state/inspector.test.ts (24 tests) 4ms
+ ✓ src/state/preferenceProfile.test.ts (8 tests) 3ms
+ ✓ src/views/lib/inlineLinks.test.ts (8 tests) 2ms
+ ✓ src/views/lib/editor.test.ts (9 tests) 6ms
+ ✓ src/state/preferences.test.ts (7 tests) 2ms
+ ✓ src/views/lib/labels.test.ts (3 tests) 4ms
+ ✓ src/views/lib/popover.test.ts (2 tests) 1ms
+ ✓ src/api/computerSelection.test.ts (1 test) 5ms
+ ✓ src/views/lib/budget.test.ts (7 tests) 2ms
+ ✓ src/views/lib/messageActions.test.ts (3 tests) 3ms
+ ✓ src/state/navigation.test.ts (11 tests) 5ms
+ ✓ src/state/inspectorResources.test.ts (3 tests) 4ms
+ ✓ src/views/PatchEditor.test.ts (16 tests) 7ms
+ ✓ src/views/AgentPresetsPanel.test.tsx (3 tests) 6ms
+ ✓ src/views/editor/display.test.ts (3 tests) 8ms
+ ✓ src/views/editor/fixtures.test.ts (2 tests) 4ms
+ ✓ src/views/TaskOutcomeActions.test.ts (2 tests) 2ms
+ ✓ src/views/RunControls.test.ts (11 tests) 7ms
+ ✓ src/api/contracts.test.ts (9 tests) 3ms
+ ✓ src/views/editor/diagnostics.test.ts (4 tests) 4ms
+ ✓ src/views/lib/taskPlan.test.ts (30 tests) 7ms
+ ✓ src/state/approvalDecision.test.ts (5 tests) 4ms
+ ✓ src/vendorChunk.test.ts (2 tests) 2ms
+ ✓ src/views/lib/outcomePresentation.test.ts (3 tests) 4ms
+ ✓ src/styles/tokens.test.ts (2 tests) 1ms
+ ✓ src/views/editor/canvasState.test.ts (2 tests) 3ms
+ ✓ src/views/knowledge/source.test.ts (1 test) 1ms
+
+ Test Files  109 passed (109)
+      Tests  736 passed (736)
+   Start at  16:15:06
+   Duration  9.54s (transform 3.15s, setup 742ms, collect 13.70s, tests 15.97s, environment 24.35s, prepare 5.41s)
+

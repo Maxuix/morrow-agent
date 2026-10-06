@@ -1,0 +1,275 @@
+{
+  "production_commits": [
+    "ea1ad393",
+    "63d21964",
+    "d953cb39"
+  ],
+  "harness_commit": "11a67402",
+  "first_matrix": {
+    "cases": 36,
+    "statuses": {
+      "passed": 29,
+      "unsupported": 4,
+      "failed": 3
+    }
+  },
+  "latest_matrix": {
+    "cases": 36,
+    "statuses": {
+      "passed": 1,
+      "failed": 35
+    },
+    "provider_failure_cases": 33
+  },
+  "provider_diagnostic": {
+    "http_status": 402,
+    "error_code": "invalid_request_error",
+    "balance_marker": true
+  },
+  "offline": {
+    "passed": 3101,
+    "deselected": 2,
+    "seconds": 211.73
+  },
+  "gui": {
+    "passed": 724,
+    "files": 107
+  },
+  "sha256": {
+    "background-pointer-diagnostic.json": "8bd3a7b97f4a1bffcd678e0005f04f3bb53263c33ef3c6e1bea03b81451c6b68",
+    "commit-smoke.json": "e886847ef290b56ef8b5fba722b3104b01da051702651babb48a504e8efdc788",
+    "counter-foreground-active.json": "381f6b5ac67b2d3dc22d2a48c06ddfab1200d0bfd3094a43631363bb355d1a03",
+    "counter-foreground-inactive.json": "2bc612f312cd68cd3b4c3b8d23c6266c35d12282d440e9f0eaa9dc5f7dffcb8b",
+    "foreground-wheel-active-diagnostic.json": "b99dc35a39cfa37ca37a44f0d25df7d7a19ff524619bd5b80eeb6c7120b9d0e2",
+    "foreground-wheel-diagnostic.json": "f2182b13265c4cc7ee95d2be96809974aaeda57af984434057441aff2ddafec9",
+    "key-events-smoke.json": "b2dd9ec8e1a768cad91fd971d1816d836265616139c48665fc29fb3a0b505f75",
+    "live-matrix-v1.json": "57f8443245721532b62925e95fc6db34ebbacd2e4b4516c7c79490997a26f8f7",
+    "live-matrix-v2-harness-blocked.json": "eaacc66b4d6cea787a0988fdbd6c202f41bb8db5e3f75be14fae4416326fcc2c",
+    "live-matrix.json": "90851df27133649b7bbb3b4565d646c5e003813e5c601e83318de71a435980e9",
+    "provider-diagnostic.json": "b487da1a10b6c9a6d0248d131469a656b3d2999f4683907949e1b5bd47530f9b",
+    "sdk-contract.json": "350c31b0153511e53e7a84b63f4029215e1dfd0bce17da23e541a9a7167edf76",
+    "source-manifest-v1.json": "8dc055fa9255fead0bcb0cb07e1f5f99fe63c5238b73db221e7e2caada4d1866",
+    "source-manifest-v2-harness-blocked.json": "b79e4db0033370cf3e570b02906c6364387cfbbb8296d927fb64498437bfc278",
+    "source-manifest.json": "5a0e63b62fd6a715940b0b75077d014fdd4d62ebd9a6b7e925ff520af0d3c32b",
+    "luna-agentloop-background-pixel-scroll-correction.json": "a4e6e182d24bd89d94e6e4f5594a25b83099268feae6ff700cee3d707f0d0e30",
+    "luna-semantic-counter-foreground-active.json": "22e889bd3ed1f5cdcff2940f3326bae870cee7a779f6c3586c8f163d110bb291",
+    "luna-semantic-counter-swiftui-control.json": "08c3b8b207a60817d22a1f0c78e81210eceae443831b26b52678aeec34bc2309",
+    "luna-counter-probe.py": "43ce7e277e18f047844ca5a18cb73b2100225e34c9825d9a2ad256ee7bfce2d2",
+    "offline-luna-first-timeout.txt": "f522db70a5ab408a9ffa4243c64bef590a43ab2f32f19a348928b69762197518",
+    "luna-ax-readonly.swift": "ad9305d057c10780ee140ad48666306e65a21c368a82bdecf33c9dcf9c13e0c1",
+    "luna-semantic-counter-callback-probe.json": "6fe3f62d378305bc1334d3249f9573e1d0c7eee51897164bf47dbe0b3dff0c03",
+    "luna-agentloop-background-pixel-scroll.json": "4b7040ca742662a526473113f5f334658c2d259668458651354e478a62bc3174",
+    "luna_scripted_live_case.py": "9f57ae0194bbe2c28e0f78b0611c5e4ba2caf5ab7d6f1a47f37585033634b6c7",
+    "luna-semantic-counter-foreground-inactive.json": "a8627b2aec87e8d063129ee2fc9fd679e04690646930edf890e85dcfd04b457f",
+    "luna-core-background-pixel-scroll.json": "6e22cbfeb5057bfd697e71f763e85871f9a3d47d041e694cc639932796768869",
+    "luna-core-secure-input.json": "c6b530cc8e3fd3ca72a313e24a4c66d77d805ccf7f57d0dd50d5b30092696143",
+    "luna-scripted-agent-loop.json": "d7e6d57df117895333b1e8631d314d160a5bfbf7ef590c634b8dc689b98a1269",
+    "luna-core-observe.json": "35239a2b91a87dc19c15eecdfdf87ad154ca5ff7ad18a8c291114c36d9bca1b3",
+    "luna-core-secure-input-hash-check.json": "71728b74bbce5d76af0dcec4a9209d1331aaeddbeaf61b552b430b43910b08db",
+    "luna-semantic-counter-ax-advertisement.json": "6f441f085edffc0d7b728c8511a9f6729f52a7f85ac7050a8a79c9df20047f0e",
+    "luna-core-hotkey-shift-y.json": "a5ca36bd1ee73926310e51542065241a93110955cf66047db90c26f4b9021456",
+    "offline-luna-final.txt": "fc1ce18d1c55bdce066e36c816cf87b02bd00edacd8fa25abac21b90cf39f8ef",
+    "luna-core-keyboard-cases-process-reused.json": "f396b2145a15b90bdcf6e01a749274da3e89ae3d0e3fba27bac4c7d3d8ba22f2",
+    "luna-evidence-manifest.json": "da746cf155f6eb578b2c6b152eea091460289497babb593314f7f96eaf46efef",
+    "review-focused.txt": "36f679f817b3482868ba6e4fa11b19f53ce80cc7e737205d9a96defee16818a3",
+    "review-build.txt": "297e0254477e108ef316a6a334fb2327b09097158269fbda1696c03d2f38919e",
+    "review-global-format.txt": "3aca51f0ccf0606d230f0df38dde6233221ebbecf11dfa7a9744a11318563882",
+    "review-offline.txt": "737796a759d44025bc380380cfcc96ebf4f6d9798956edc8bfbdb9987d069a68",
+    "review-rescore.json": "c97beae15888dbd1ff588fd47a867464c1ec6c346309216b4b01b278ff2e774b",
+    "delivery-source-manifest-review.json": "57e202d7b89db04fe26df736648599ba82d869b971c13b345bfb7973dee21b2c"
+  },
+  "delivery_source_manifest_sha256": "c834bc4db5d879b257093d7af1899aa5559c1175df4cc98c3640f65c6a3c4c34",
+  "offline_before_luna": {
+    "passed": 3081,
+    "deselected": 2,
+    "seconds": 215.14
+  },
+  "luna_assisted": {
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "harness_commit": "f639c152",
+    "live_api_acceptance": false,
+    "valid_scripted_agent_loop": "one approved text action; exact independent insert and Artifact/Provider image hashes matched",
+    "keyboard": "q completed; Y unknown with exact independent one-pair key effect",
+    "secure": "SDK unknown; independent requested/live input SHA matched",
+    "semantic_click": "correct owned PID/window and AXPress advertisement; NSButton and SwiftUI controls both counter/callback 0",
+    "coordinate_setup_block": "image_not_published; zero SDK entries",
+    "invalid_provider_substitution": "runpy returned dictionary mutation did not reach function globals; real DeepSeek adapter with placeholder credential returned auth; zero approvals/native entries; not a scripted success; no precise HTTP/billing claim",
+    "native_product_complete": false,
+    "fresh_cases_not_completed": [
+      "Enter",
+      "background coordinate scroll",
+      "foreground double click",
+      "foreground right click"
+    ]
+  },
+  "delivery_source_manifest_luna_sha256": "4f09d0a844c82f5175f01f7f46debdd9d3b862a5bafd7dacf225956ae8322692",
+  "git_delivery": {
+    "main": "35a49216",
+    "push_verified": true,
+    "ahead": 0,
+    "behind": 0,
+    "topic_branches_deleted": [
+      "fix/computer-use-repair",
+      "refactor/computer-use-admission",
+      "fix/computer-use-review"
+    ],
+    "user_staged_dirty_preserved": true,
+    "entire_plan_complete": false
+  },
+  "offline_before_review": {
+    "passed": 3087,
+    "deselected": 2,
+    "seconds": 212.93,
+    "first_run": {
+      "passed": 3086,
+      "failed": 1,
+      "deselected": 2,
+      "seconds": 209.34,
+      "failure": "existing sandbox 1-second subprocess timeout",
+      "isolated_recheck": "1 passed in 1.27s"
+    }
+  },
+  "review": {
+    "source_commit": "e2085a220af78aa3d5a185a320bf63d068bcfd45",
+    "computer_tests_passed": 486,
+    "issues_fixed": [
+      "long text preserves refs and flags partial content",
+      "requested postcondition checked before unsupported",
+      "explicit correlated denial and approval_rejected required"
+    ],
+    "historical_evidence_rescore": {
+      "live-matrix-v1.json": {
+        "raw_sha256": "57f8443245721532b62925e95fc6db34ebbacd2e4b4516c7c79490997a26f8f7",
+        "historical_counts": {
+          "passed": 29,
+          "unsupported": 4,
+          "failed": 3
+        },
+        "review_counts": {
+          "passed": 26,
+          "unsupported": 4,
+          "failed": 6
+        },
+        "changes": [
+          {
+            "index": 10,
+            "case": "denied",
+            "mode": "semantic",
+            "delivery": "foreground",
+            "historical_status": "passed",
+            "review_verdict": {
+              "status": "failed",
+              "verdict_reason": "denial_effect",
+              "expected_variant": [
+                "click",
+                "element",
+                "left",
+                1
+              ],
+              "actual_variant": {
+                "name": "computer_action",
+                "operation": null,
+                "action": "click",
+                "key": null,
+                "keys": null,
+                "direction": null,
+                "amount": null,
+                "coordinate_target": false,
+                "element_target": true,
+                "include_image": null,
+                "button": "left",
+                "count": 1,
+                "postcondition": null
+              }
+            }
+          },
+          {
+            "index": 22,
+            "case": "denied",
+            "mode": "semantic",
+            "delivery": "background",
+            "historical_status": "passed",
+            "review_verdict": {
+              "status": "failed",
+              "verdict_reason": "denial_effect",
+              "expected_variant": [
+                "click",
+                "element",
+                "left",
+                1
+              ],
+              "actual_variant": {
+                "name": "computer_action",
+                "operation": null,
+                "action": "click",
+                "key": null,
+                "keys": null,
+                "direction": null,
+                "amount": null,
+                "coordinate_target": false,
+                "element_target": true,
+                "include_image": null,
+                "button": "left",
+                "count": 1,
+                "postcondition": null
+              }
+            }
+          },
+          {
+            "index": 31,
+            "case": "coordinate_scroll",
+            "mode": "hybrid",
+            "delivery": "background",
+            "historical_status": "passed",
+            "review_verdict": {
+              "status": "failed",
+              "verdict_reason": "independent_effect",
+              "expected_variant": [
+                "scroll",
+                "coordinate",
+                null,
+                null
+              ],
+              "actual_variant": {
+                "name": "computer_action",
+                "operation": null,
+                "action": "scroll",
+                "key": null,
+                "keys": null,
+                "direction": "down",
+                "amount": 3,
+                "coordinate_target": true,
+                "element_target": false,
+                "include_image": null,
+                "button": null,
+                "count": null,
+                "postcondition": null
+              }
+            }
+          }
+        ]
+      },
+      "live-matrix.json": {
+        "raw_sha256": "90851df27133649b7bbb3b4565d646c5e003813e5c601e83318de71a435980e9",
+        "historical_counts": {
+          "passed": 1,
+          "failed": 35
+        },
+        "review_counts": {
+          "passed": 1,
+          "failed": 35
+        },
+        "changes": []
+      },
+      "note": "Offline rescore of immutable raw evidence. Missing explicit approval evidence is not proof that a historical native action occurred or that denial malfunctioned. No Provider or native SDK called."
+    },
+    "live_tests_run": false,
+    "gui_rerun": false,
+    "git_delivery": {
+      "main": "35a49216",
+      "upstream": "0/0",
+      "branch_removed": true
+    }
+  }
+}

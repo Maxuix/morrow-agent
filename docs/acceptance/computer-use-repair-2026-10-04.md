@@ -48,7 +48,7 @@ Morrow 可实施的内容链、截图、手势、能力描述和 fixture 判定�
 
 首轮修复后矩阵（生产 `ea1ad393`，当时的 v2 fixture）：**36 场景，29 passed / 4 unsupported / 3 failed**。semantic 前后台输入/按键/提交/secure、text_appears/element_exists、拒绝审批，以及 hybrid 观察/坐标点击/前台双击/左右键和后台坐标滚动有独立效果证据；hybrid 图像 SHA 与 Provider 请求一致。3 个失败为 foreground 坐标滚动（1920/640）与 background 双击，随后用原生指针事件定位并增加投递前 SDK 能力拒绝。首轮不是最终源码全量通过证据。
 
-上述29个passed是历史脚本口径。review后的当前门槛离线回算为26 passed / 4 unsupported / 6 failed：两场拒绝审批缺少明确决定与对应call ID记录，一场后台坐标滚动缺少完整wheel-region证据。不能用“状态未变/位移改变”补齐这些证明，也不据此宣称历史动作新发生了故障。原始JSON保持不变，差异见 [review-rescore.json](assets/computer-use-repair-2026-10-04/review-rescore.json)。最后真实矩阵回算仍为1 passed / 35 failed。
+上述29个passed是历史脚本口径。review后的当前门槛离线回算为26 passed / 4 unsupported / 6 failed：两场拒绝审批缺少明确决定与对应call ID记录，一场后台坐标滚动缺少完整wheel-region证据。不能用“状态未变/位移改变”补齐这些证明，也不据此宣称历史动作新发生了故障。原始JSON保持不变，差异见 [review-rescore.json](portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/review-rescore.json)。最后真实矩阵回算仍为1 passed / 35 failed。
 
 | 额外定向证据 | 可核验结果 |
 | --- | --- |
@@ -64,7 +64,7 @@ Morrow 可实施的内容链、截图、手势、能力描述和 fixture 判定�
 
 native unknown 始终保持；独立 oracle 通过只证明对应 fixture 效果。640-pixel moved-window 的最终后台滚动场景因 Provider 402 未获得最终产品效果证据，不声称缩放/移动矩阵全部通过。
 
-原始证据按仓库惯例保存在 gitignored assets/computer-use-repair-2026-10-04/；汇总及 SHA-256 见 [summary.json](assets/computer-use-repair-2026-10-04/summary.json)。原分析/旧 Provider 证据不改写。首批 smoke 发现的 fixture/模型参数问题保留为诊断记录，不计入最终通过率。
+原始证据按仓库惯例保存在 gitignored assets/computer-use-repair-2026-10-04/；汇总及 SHA-256 见 [summary.json](portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/summary.json)。原分析/旧 Provider 证据不改写。首批 smoke 发现的 fixture/模型参数问题保留为诊断记录，不计入最终通过率。
 
 ## Luna max 辅助受控验收
 
@@ -82,7 +82,7 @@ v3 fixture/native_counter 增加 callback 与选择对象身份诊断，投递�
 
 追加坐标闭环的测试脚本替换失败：`runpy.run_path()` 返回字典的替换未进入 `run_fixture.__globals__`，仍构造真实 DeepSeek adapter，并以占位凭据走到 `real.stream` 后返回 auth。未使用用户实际 API key；不能声称没有触发外网，也未保存 HTTP status，不能进一步断言确切响应或计费。该路径已停止。原 JSON 的外层 scripted 标签不可信，由单独 sidecar 撤销；批准0/原生投递0/未发布图片，不能计为有效坐标或 scripted 验收。此前 `native_loop.py` 的独立 ScriptedProvider 输入闭环不受此注入错误影响。
 
-直接坐标组件另外被 image_not_published 拒绝，投递0；没有伪造发布事实。Luna 本轮未取得新的背景坐标滚动/前台 double/right 产品闭环证据，也未重跑 fresh Enter；先前矩阵与独立 AppKit/commit 证据仍保持原版本边界。Luna 原始记录与实验脚本由 [证据清单](assets/computer-use-repair-2026-10-04/luna-evidence-manifest.json) 索引，误路由由 [纠正旁注](assets/computer-use-repair-2026-10-04/luna-agentloop-background-pixel-scroll-correction.json) 撤销错误标签。
+直接坐标组件另外被 image_not_published 拒绝，投递0；没有伪造发布事实。Luna 本轮未取得新的背景坐标滚动/前台 double/right 产品闭环证据，也未重跑 fresh Enter；先前矩阵与独立 AppKit/commit 证据仍保持原版本边界。Luna 原始记录与实验脚本由 [证据清单](portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/luna-evidence-manifest.json) 索引，误路由由 [纠正旁注](portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/luna-agentloop-background-pixel-scroll-correction.json) 撤销错误标签。
 
 ## 交付与后续条件
 
@@ -104,4 +104,4 @@ Morrow 代码与离线/GUI/build 修复已提交；Luna 诊断提交为 `f639c15
 
 - `delivery-source-manifest.json`：`c834bc4db5d879b257093d7af1899aa5559c1175df4cc98c3640f65c6a3c4c34`（Luna 诊断前的源码版本，区别于真实矩阵启动时版本）
 - `delivery-source-manifest-luna.json`：`4f09d0a844c82f5175f01f7f46debdd9d3b862a5bafd7dacf225956ae8322692`（Luna 诊断源码，`f639c152`，含753个文件hash；review改动另见下项）
-- 最新review源码及日志：[delivery-source-manifest-review.json](assets/computer-use-repair-2026-10-04/delivery-source-manifest-review.json)（`e2085a22`），[review-offline.txt](assets/computer-use-repair-2026-10-04/review-offline.txt)、[review-focused.txt](assets/computer-use-repair-2026-10-04/review-focused.txt)。
+- 最新review源码及日志：[delivery-source-manifest-review.json](portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/delivery-source-manifest-review.json)（`e2085a22`），[review-offline.txt](portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/review-offline.txt)、[review-focused.txt](portable/raw/docs/acceptance/assets/computer-use-repair-2026-10-04/review-focused.txt)。
