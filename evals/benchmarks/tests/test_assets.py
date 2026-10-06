@@ -63,6 +63,49 @@ class AssetTests(unittest.TestCase):
             )
             self.assertEqual(build_manifest(repo, assets, wheel)["source_commit"], first)
 
+    def test_wheel_compares_resources_and_rejects_missing_or_extra_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "src" / "morrow" / "resources"
+            source.mkdir(parents=True)
+            resources = {
+                "runtime-policy.toml": b"tool_timeout_seconds = 120\n",
+                "stage5-preference-v2-evaluation.json": b'{"version": 2}\n',
+            }
+            for name, content in resources.items():
+                (source / name).write_bytes(content)
+            cache = source.parent / "__pycache__"
+            cache.mkdir()
+            (cache / "module.pyc").write_bytes(b"local bytecode")
+            wheel = root / "candidate.whl"
+            with ZipFile(wheel, "w") as archive:
+                for name, content in resources.items():
+                    archive.writestr(f"morrow/resources/{name}", content)
+                archive.writestr("morrow/__pycache__/module.pyc", b"different bytecode")
+            self.assertEqual(wheel_source_mismatches(wheel, root / "src"), [])
+            (source / "additional.bin").write_bytes(b"new packaged resource")
+            self.assertEqual(
+                wheel_source_mismatches(wheel, root / "src"),
+                ["morrow/resources/additional.bin"],
+            )
+            (source / "additional.bin").unlink()
+            (source / "runtime-policy.toml").write_bytes(b"tool_timeout_seconds = 180\n")
+            self.assertEqual(
+                wheel_source_mismatches(wheel, root / "src"),
+                ["morrow/resources/runtime-policy.toml"],
+            )
+            (source / "runtime-policy.toml").write_bytes(resources["runtime-policy.toml"])
+            (source / "stage5-preference-v2-evaluation.json").unlink()
+            self.assertEqual(
+                wheel_source_mismatches(wheel, root / "src"),
+                ["morrow/resources/stage5-preference-v2-evaluation.json"],
+            )
+            (source / "stage5-preference-v2-evaluation.json").write_bytes(b'{"version": 3}\n')
+            self.assertEqual(
+                wheel_source_mismatches(wheel, root / "src"),
+                ["morrow/resources/stage5-preference-v2-evaluation.json"],
+            )
+
     def test_stale_wheel_is_rejected_even_with_same_filename(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)

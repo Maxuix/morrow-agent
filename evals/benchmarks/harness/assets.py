@@ -23,18 +23,26 @@ def _product_source_commit(repo: Path) -> str | None:
     return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else None
 
 
+def _packaged_path(path: Path) -> bool:
+    """Apply pyproject.toml's explicit wheel exclusions to the package tree.
+
+    Compare every other file, including unknown resources and extra wheel files;
+    a cache-like directory name alone must not hide a packaged payload difference.
+    """
+    return "__pycache__" not in path.parts and path.suffix != ".pyc"
+
+
 def wheel_source_mismatches(wheel: Path, source_root: Path) -> list[str]:
     source = {
         path.relative_to(source_root).as_posix(): path.read_bytes()
         for path in (source_root / "morrow").rglob("*")
-        if path.is_file() and (path.suffix == ".py" or "gui_static" in path.parts)
+        if path.is_file() and _packaged_path(path.relative_to(source_root))
     }
     with ZipFile(wheel) as archive:
         packaged = {
             name: archive.read(name)
             for name in archive.namelist()
-            if name.startswith("morrow/")
-            and (name.endswith(".py") or name.startswith("morrow/gui_static/"))
+            if name.startswith("morrow/") and not name.endswith("/") and _packaged_path(Path(name))
         }
     return sorted(
         name for name in source.keys() | packaged.keys() if source.get(name) != packaged.get(name)
@@ -44,7 +52,7 @@ def wheel_source_mismatches(wheel: Path, source_root: Path) -> list[str]:
 def build_manifest(repo: Path, assets: Path, wheel: Path) -> dict:
     mismatches = wheel_source_mismatches(wheel, repo / "src")
     if mismatches:
-        raise ValueError(f"wheel differs from source in {len(mismatches)} Python files")
+        raise ValueError(f"wheel differs from source in {len(mismatches)} package files")
     python_assets = list(assets.glob("cpython-3.12*-x86_64-unknown-linux-gnu-install_only.tar.gz"))
     if len(python_assets) != 1:
         raise ValueError("expected exactly one CPython asset")
