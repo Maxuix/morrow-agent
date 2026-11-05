@@ -191,6 +191,12 @@ and review the change with targeted tests.
 
 Review the generated graph, adjust the steps and permissions, and explicitly start it. General, Explore, and Review presets are available to task planning. Planning or editing a graph does not run its business steps.
 
+### Review and undo file changes
+
+Open **查看变更** on a task result to inspect historical diffs, mark files reviewed, and preview a file-level undo. Supported controlled text edits retain byte-exact snapshots, and an undo can itself be restored. Later edits, permission changes, or replaced file identities invalidate a preview. Shell-only changes and structural operations do not promise automatic undo.
+
+The terminal uses the same Core through `morrow changes --help`. See the [review and restore guide](docs/architecture/code-review-undo.md) for scope, retention, budgets, and safety limits.
+
 ### Maintain a reusable definition
 
 ![Morrow Workflow editor with a three-step graph, explicit input and output bindings, validation feedback, and a separate publish action](assets/readme/workflow-editor.png)

@@ -11,6 +11,7 @@
 | 理解模块、所有权与依赖方向 | [架构总览](ARCHITECTURE.md) |
 | 查看版本收尾与后续复核修复 | [公开验收索引](acceptance/README.md)、[最新 Grok 核实修复](acceptance/grok-review-fixes-2026-10-06.md) |
 | 核对历史证据原字节与引用 | [Portable evidence](acceptance/portable/README.md) |
+| 查看任务修改、审阅 Diff、预览和撤销文件 | [文件变更审阅与撤销](architecture/code-review-undo.md) |
 | 使用 Benchmark harness | [TB2 协议与评测入口](../evals/benchmarks/README.md) |
 | 核对安装包或显式执行受控桌面验收 | [Computer-use gates](../evals/computer_use/README.md) |
 | 构建 wheel/sdist | [README 构建说明](../README.zh-CN.md#构建分发包)、[构建脚本](../scripts/build_release.py) |

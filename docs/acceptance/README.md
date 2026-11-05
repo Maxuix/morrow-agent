@@ -29,6 +29,10 @@
 - [2026-10-06 版本收尾修复](version-closeout-fixes-2026-10-06.md)：逐项修复、验证与公开证据映射。
 - [2026-10-06 Grok 复核修复](grok-review-fixes-2026-10-06.md)：管理命令原提交重放、草稿编辑幂等与批量偏好拒绝状态。
 
+## 文件变更审阅与撤销
+
+- [2026-11-06 M1 文件级闭环](code-review-undo-m1-2026-11-06.md)：生产入口、快照、恢复、API/CLI、GUI 与故障验证。
+
 ## 来源与复算
 
 [Portable evidence](portable/README.md) 和 [SHA-256 manifest](portable/manifest.json) 补齐此前仅在本机的报告/原件。

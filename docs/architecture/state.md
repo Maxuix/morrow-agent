@@ -125,3 +125,6 @@ restore 只写不存在的新目标，凭据永不进入 bundle。
 
 YAML 文档同样只接受当前 schema，
 解析器不会把旧字段转换为当前字段。
+
+文件修改账本与恢复操作使用 schema 50 的两个 payload authority；内部快照复用 Artifact 存储和引用保留。
+具体协议、开关和容量边界见[文件变更审阅与撤销](code-review-undo.md)。
