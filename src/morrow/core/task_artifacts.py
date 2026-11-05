@@ -190,8 +190,9 @@ class CommandOutputWire(ProtocolModel):
 
 
 class TaskArtifactsWire(ProtocolModel):
-    validation_historical: bool = False
     """Complete read model for the Artifacts and Terminal Inspector tabs."""
+
+    validation_historical: bool = False
 
     schema_version: Literal[TASK_ARTIFACTS_SCHEMA_VERSION] = TASK_ARTIFACTS_SCHEMA_VERSION
     session_id: str

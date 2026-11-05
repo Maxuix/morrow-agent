@@ -23,6 +23,7 @@ CHANGE_SCHEMA = (
         apply_command_id TEXT, payload_json TEXT NOT NULL, row_version INTEGER NOT NULL,
         UNIQUE(workspace_id,command_id), UNIQUE(workspace_id,apply_command_id)
     )""",
+    "CREATE INDEX workspace_restore_pending ON workspace_restore_operations(workspace_id,json_extract(payload_json,'$.state'))",
 )
 
 
@@ -220,7 +221,8 @@ class WorkspaceChangeJournal:
 
     def pending(self, workspace_id):
         rows = self.backend.read_all(
-            "SELECT payload_json FROM workspace_restore_operations WHERE workspace_id=?",
+            "SELECT payload_json FROM workspace_restore_operations WHERE workspace_id=? "
+            "AND json_extract(payload_json,'$.state') IN ('prepared','applying','needs_reconciliation')",
             (workspace_id,),
         )
         return tuple(

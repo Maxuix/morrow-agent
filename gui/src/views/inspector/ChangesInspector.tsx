@@ -171,7 +171,7 @@ function ChangesBody({client, workspaceId, sessionId, active, target, currentTas
           <p className="break-all font-mono text-xs">{path}</p>
           {!timeline && <p className="my-1 break-all text-xs text-secondary">{chain.length} 次记录 · 连续链可合并查看；存在间隙时请切换时间线。</p>}
           {(timeline ? chain : [chain.at(-1)!]).map(row => <div key={row.change_id} className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-xs">
-            <label className="flex items-center gap-1"><input type="checkbox" aria-label={`选择 ${path} 第 ${row.workspace_sequence} 次修改`} checked={selected.includes(row.change_id)} onChange={e => toggle([row.change_id], e.target.checked)} />#{row.workspace_sequence}</label>
+            <label className="flex items-center gap-1"><input type="checkbox" aria-label={`选择 ${path} 第 ${row.workspace_sequence} 次修改`} checked={(timeline ? [row.change_id] : chain.map(r => r.change_id)).every(id => selected.includes(id))} onChange={e => toggle(timeline ? [row.change_id] : chain.map(r => r.change_id), e.target.checked)} />#{row.workspace_sequence}</label>
             <button className={buttonClass} onClick={() => void showDiff(row, false, timeline ? [row.change_id] : chain.map(r => r.change_id))}>查看历史 Diff</button>
             <span>{row.review_state === 'reviewed' ? '已审阅' : '待审阅'} · {label(row.restore_support)}</span>
             <p className="w-full break-words text-secondary">{row.origin === 'restore' ? '用户恢复' : '受控工具'} · {row.operation} · +{row.added_lines ?? 0} −{row.removed_lines ?? 0}{row.restore_reason ? ` · ${row.restore_reason}` : ''}</p>
@@ -190,7 +190,7 @@ function ChangesBody({client, workspaceId, sessionId, active, target, currentTas
       <h3 className="text-sm font-medium" role="status">{label(operation.state)}</h3>
       <p className="mt-1 break-all text-xs text-secondary">操作 {operation.operation_id}</p>
       <p className="mt-1 text-xs">{completed ? '以下为后端持久化结果。' : `预览有效至 ${new Date(operation.expires_at).toLocaleTimeString()}；执行时会再次核对文件。`}</p>
-      <ul className="mt-2 space-y-2 text-xs">{operation.items.map(item => <li key={item.path} className="break-all"><strong>{item.path}</strong> · {label(item.state)}<br/>当前 B {short(item.expected.sha256)} → 恢复 A {short(item.desired.sha256)}{item.reason && <p>{item.reason}</p>}{completed && <p className="text-secondary">保全位置：{[...item.path.split('/').slice(0,-1), item.capture_name].join('/')}；临时位置：{[...item.path.split('/').slice(0,-1), item.temporary_name].join('/')}</p>}</li>)}</ul>
+      <ul className="mt-2 space-y-2 text-xs">{operation.items.map(item => <li key={item.path} className="break-all"><strong>{item.path}</strong> · {label(item.state)}<br/>当前 B {short(item.expected.sha256)} → 恢复 A {short(item.desired.sha256)}<p>{item.desired.exists ? '恢复历史文件内容' : '删除本次创建的文件'} · 权限 {item.expected.mode?.toString(8) ?? '无'} → {item.desired.mode?.toString(8) ?? '无'}</p>{item.reason && <p>{item.reason}</p>}{completed && <p className="text-secondary">保全位置：{[...item.path.split('/').slice(0,-1), item.capture_name].join('/')}；临时位置：{[...item.path.split('/').slice(0,-1), item.temporary_name].join('/')}</p>}</li>)}</ul>
       <div className="mt-3 flex flex-wrap gap-2">
         {operation.state === 'previewed' && <button className={buttonClass} disabled={pending || operation.items.some(item => item.state === 'conflict')} onClick={() => void apply()}>确认按预览恢复</button>}
         <button className={buttonClass} disabled={pending} onClick={() => void act(() => status())}>查询原操作状态</button>

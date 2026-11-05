@@ -307,6 +307,8 @@ class WorkspaceRestoreService:
     def review(self, session_id, ids, versions, *, selectors=None):
         rows = self.selected(session_id, ids, selectors or {})
         for row in rows:
+            if row.effect_state == "prepared":
+                fail("修改仍在发布，请收束后再标记审阅", ApplicationErrorCode.BUSY)
             if versions.get(row.change_id) != row.row_version:
                 fail("审阅版本已变化", ApplicationErrorCode.STALE)
 
@@ -340,7 +342,21 @@ class WorkspaceRestoreService:
         return tuple(self.records.get(self.workspace_id, row.change_id) for row in rows)
 
     def pin(self, session_id, ids, *, selectors=None):
+        self._write_allowed(restore=False)
         rows = self.selected(session_id, ids, selectors or {})
+        for row in rows:
+            if row.coverage != "complete":
+                fail("此修改没有可固定的完整恢复快照", ApplicationErrorCode.UNAVAILABLE)
+            for value in (row.before, row.after):
+                if value.exists:
+                    if not value.snapshot_id:
+                        fail("snapshot_missing", ApplicationErrorCode.UNAVAILABLE)
+                    try:
+                        raw = self.artifacts.read_workspace_snapshot(value.snapshot_id)
+                    except ArtifactError:
+                        fail("snapshot_missing_or_corrupt", ApplicationErrorCode.UNAVAILABLE)
+                    if sha256_digest(raw) != value.sha256:
+                        fail("snapshot_corrupt", ApplicationErrorCode.UNAVAILABLE)
 
         def work(_):
             for row in rows:

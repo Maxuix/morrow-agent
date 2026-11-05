@@ -293,3 +293,20 @@ def test_expired_snapshot_can_be_pinned_and_prepared_change_reconciled(fx):
     result = fx.restore.reconcile_changes("ses_root", [row.change_id])
     assert result[0].effect_state == "applied"
     assert not any(r.origin == "restore" for r in fx.journal.workspace_changes.list(WS))
+
+
+def test_review_of_prepared_record_cannot_race_capture_settlement(fx):
+    row = record(fx)
+    row = fx.journal.workspace_changes.save(row.model_copy(update={"effect_state": "prepared"}))
+    with pytest.raises(ApplicationError):
+        fx.restore.review("ses_root", [row.change_id], {row.change_id: row.row_version})
+    assert fx.journal.workspace_changes.get(WS, row.change_id).row_version == row.row_version
+
+
+def test_metadata_only_change_cannot_claim_pinned_snapshot(fx):
+    row = record(fx)
+    row = fx.journal.workspace_changes.save(
+        row.model_copy(update={"coverage": "metadata_only", "omission_reason": "sensitive_content"})
+    )
+    with pytest.raises(ApplicationError):
+        fx.restore.pin("ses_root", [row.change_id])

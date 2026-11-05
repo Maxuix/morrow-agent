@@ -54,6 +54,17 @@ describe('scoped changes review and undo', () => {
     expect(screen.getByText(/原任务结果、审阅和测试记录仍属于历史版本/)).toBeTruthy()
   })
 
+  it('selects the whole loaded file chain in the default net view', async () => {
+    const api = client()
+    api.workspaceChanges.mockResolvedValue({...page, items: [row, {...row, change_id: 'chg_two', workspace_sequence: 2, before: row.after, after: {...row.after, sha256: 'e'.repeat(64)}}]})
+    render(<ChangesInspector {...props} client={api as unknown as ApiClient}/>)
+    await screen.findByText(row.path)
+    fireEvent.click(screen.getByRole('checkbox', {name: /选择 src/}))
+    fireEvent.click(screen.getByRole('button', {name: /预览撤销/}))
+    await waitFor(() => expect(api.previewRestore).toHaveBeenCalledTimes(1))
+    expect(api.previewRestore.mock.calls[0][2].change_ids).toEqual(['chg_one', 'chg_two'])
+  })
+
   it('queries the persisted operation after a lost response and remount', async () => {
     const api = client()
     api.applyRestore.mockRejectedValueOnce(new Error('connection lost'))

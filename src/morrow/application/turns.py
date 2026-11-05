@@ -171,7 +171,7 @@ class SessionPersistence:
             return None
         ids = ", ".join(op.operation_id for op in affected)
         return (
-            f"工作区文件已发生用户恢复操作（{ids}）。此前对话、修改结果与测试属于历史版本；"
+            f"工作区记录了用户文件恢复操作（{ids}）。此前对话、修改结果与测试不一定对应当前磁盘；"
             "继续修改前重新读取当前文件，并重新执行相关验证。未完成或冲突操作需先核对状态。"
         )
 

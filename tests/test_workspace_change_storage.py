@@ -96,6 +96,7 @@ def test_snapshot_refs_survive_backup_restore_and_doctor_is_read_only(fx, tmp_pa
     assert backup.verify(bundle).ok
     target = tmp_path / "restored"
     restored = backup.restore(bundle, target)
+    assert restored.ok
     assert restored.target_root == str(target)
     store = OperationalStore(target)
     with store.open(StoreOpenMode.READ_ONLY) as handle:
