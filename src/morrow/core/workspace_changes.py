@@ -76,6 +76,8 @@ class RestoreOperation(ProtocolModel):
     command_id: str
     request_digest: str
     preview_digest: str
+    selection_digest: str
+    selectors: dict[str, str | None] = {}
     root_identity: tuple[int, int]
     state: Literal[
         "previewed",
