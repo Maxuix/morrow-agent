@@ -726,14 +726,8 @@ def make_promote_sandbox_tool(
         facts = []
         for index, (_change, plan) in enumerate(zip(changes, plans, strict=True)):
             try:
-                result, fact = await asyncio.to_thread(
-                    mutation.apply,
-                    plan,
-                    call_id=context.call_id,
-                    tool_name=context.tool_name,
-                    ordinal=context.ordinal,
-                    approval_verdict=context.approval_verdict,
-                    run=context.run,
+                result, fact = await _recorded_mutation(
+                    mutation, plan, context, mutation_ordinal=index + 1
                 )
             except LocalFileError as exc:
                 if exc.change_result is not None:
@@ -895,6 +889,30 @@ async def _blocking_mutation(callback):
         raise
 
 
+async def _recorded_mutation(mutation, plan, context, *, mutation_ordinal=1):
+    recorder = mutation.recorder
+    ticket = (
+        recorder.prepare(plan, context, mutation_ordinal=mutation_ordinal) if recorder else None
+    )
+    succeeded = False
+    try:
+        result = await _blocking_mutation(
+            lambda: mutation.apply(
+                plan,
+                call_id=context.call_id,
+                tool_name=context.tool_name,
+                ordinal=context.ordinal,
+                approval_verdict=context.approval_verdict,
+                run=context.run,
+            )
+        )
+        succeeded = True
+        return result
+    finally:
+        if recorder:
+            recorder.finish(ticket, succeeded=succeeded)
+
+
 def _mutation_tool(
     *,
     name: str,
@@ -923,16 +941,7 @@ def _mutation_tool(
         if plan is None:
             raise ToolExecutionError(ToolErrorCode.PREFLIGHT_FAILED, "变更预检不存在")
         try:
-            result, fact = await _blocking_mutation(
-                lambda: mutation.apply(
-                    plan,
-                    call_id=context.call_id,
-                    tool_name=context.tool_name,
-                    ordinal=context.ordinal,
-                    approval_verdict=context.approval_verdict,
-                    run=context.run,
-                )
-            )
+            result, fact = await _recorded_mutation(mutation, plan, context)
         except LocalFileError as exc:
             raise _tool_error(exc) from exc
         changes.record(context.run, result)

@@ -17,7 +17,7 @@ from test_stage7_multi_agent_pipeline import (
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("workflow", [False, True])
-async def test_factory_write_has_facts_but_legacy_capture_is_disabled(tmp_path, workflow):
+async def test_factory_write_records_byte_snapshots_for_chat_and_workflow(tmp_path, workflow):
     from morrow.application.workflows.publication import WorkflowCompilationService
     from morrow.application.workflows.start import StartWorkflowCommand
     from morrow.core.workflows.contracts import NodeOutputRef, OutputContract, TaskContract
@@ -119,11 +119,21 @@ async def test_factory_write_has_facts_but_legacy_capture_is_disabled(tmp_path, 
         write = next(e for e in executions if e.tool_name == "write")
         assert write.facts.files
         assert not products.mutation.artifact_capture
-        assert not [
+        records = journal.workspace_changes.list(
+            identity.workspace_id, task_ids=(write.task_run_id,)
+        )
+        assert len(records) == 1
+        row = records[0]
+        assert row.effect_state == "applied"
+        assert row.tool_execution_id == write.tool_execution_id
+        assert products.artifacts.read_workspace_snapshot(row.after.snapshot_id) == b"agent\n"
+        captures = [
             a
             for a in journal.list_artifacts(identity.workspace_id)
             if any(r.role == "change_capture" for r in a.provenance_refs)
         ]
+        assert bool(captures) is workflow
+
     finally:
         products.persistence.close()
         fixture.close()

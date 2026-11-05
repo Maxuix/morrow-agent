@@ -739,6 +739,7 @@ class WorkspaceMutationService:
     def __init__(self, files: WorkspaceFileService, *, artifact_capture: bool = False) -> None:
         self.files = files
         self.artifact_capture = artifact_capture
+        self.recorder = None
         self._previews: dict[tuple[str, str], tuple[MutationPlan, ...]] = {}
         self._captures: dict[tuple[str, str], list[ChangeCaptureDraft]] = {}
 

@@ -873,6 +873,11 @@ def build_session_application(
             journal=preference_journal,
         )
         journal = operational.journal
+        from morrow.application.workspace_changes import WorkspaceChangeRecorder
+
+        mutation.recorder = WorkspaceChangeRecorder(
+            journal, operational.artifacts, mutation, workspace_id=identity.workspace_id
+        )
         from morrow.application.computer_runs import ComputerUseRunFactory
         from morrow.application.computer_visuals import ComputerVisualService
         from morrow.runtime.policy import resolve_computer_use_settings

@@ -59,7 +59,12 @@ class ChangeArtifactCapture:
     ) -> tuple[ArtifactReference, ...]:
         published: list[ArtifactReference] = []
         if self.mutation is not None:
-            for draft in self.mutation.take_captures(execution.agent_run_id, execution.call_id):
+            drafts = (
+                self.mutation.recorder.workflow_drafts(execution)
+                if self.mutation.recorder is not None
+                else self.mutation.take_captures(execution.agent_run_id, execution.call_id)
+            )
+            for draft in drafts:
                 published.append(self._publish_change(execution, draft))
         output_ref = next(
             (ref.artifact_id for ref in artifact_refs if ref.role == "tool_output"),
