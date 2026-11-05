@@ -39,8 +39,11 @@ class WorkspaceChangeRecorder:
         self.mutation = mutation
         self.workspace_id = workspace_id
         self.records = journal.workspace_changes
+        self.event_sink = None
 
     def prepare(self, plan, context, *, mutation_ordinal=1):
+        if self.records.pending(self.workspace_id):
+            raise LocalFileError("workspace_busy", "存在未核对的文件恢复，请先处理恢复状态")
         if plan.status.value == "unchanged":
             return None
         execution = next(
@@ -163,7 +166,23 @@ class WorkspaceChangeRecorder:
                 )
             except (LocalFileError, OSError):
                 state = "outcome_unknown"
-        self.records.save(record.model_copy(update={"effect_state": state}))
+
+        def work(_):
+            saved = self.records.save(record.model_copy(update={"effect_state": state}))
+            if self.event_sink:
+                self.event_sink(
+                    "workspace_change_recorded",
+                    "workspace_change",
+                    saved.change_id,
+                    {
+                        "session_id": saved.session_id,
+                        "task_run_id": saved.task_run_id,
+                        "row_version": saved.row_version,
+                        "effect_state": saved.effect_state,
+                    },
+                )
+
+        self.journal.transact(work)
 
     def workflow_drafts(self, execution):
         from morrow.services.files import ChangeCaptureDraft, _complete_diff

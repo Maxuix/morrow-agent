@@ -61,6 +61,15 @@ class TrackedProcessRegistry:
         self._items: dict[str, TrackedExecution] = {}
         self._lock = threading.Lock()
 
+    def has_running(self) -> bool:
+        """Cancellation is not process exit; refresh actual process state under the registry lock."""
+        with self._lock:
+            for item in self._items.values():
+                self._refresh(item)
+                if item.status is TrackedCommandStatus.RUNNING:
+                    return True
+        return False
+
     async def start(
         self,
         adapter: HostProcessAdapter,

@@ -68,6 +68,8 @@ def build_server_context(
     # The transitions service is shared by the scheduler, the finalizer and the
     # management facade, so this one seam covers every run/node state change.
     products.workflow_runtime.transitions.event_sink = emitter.emit
+    if products.mutation.recorder is not None:
+        products.mutation.recorder.event_sink = emitter.emit
     approval_port.emitter = emitter
 
     tool_executor = products.orchestrator.runtime.loop.tool_executor
@@ -230,6 +232,8 @@ def _build_management_context(
                     computer_use_lifecycle=context.computer_use,
                 )
                 products.workflow_runtime.transitions.event_sink = emitter.emit
+                if products.mutation.recorder is not None:
+                    products.mutation.recorder.event_sink = emitter.emit
                 workflow_bridge = WorkflowStreamBridge(context.chat, journal, identity.workspace_id)
                 products.workflow_runtime.scheduler.event_observer = workflow_bridge
                 products.workflow_runtime.scheduler.activity_observer = workflow_bridge
@@ -311,6 +315,8 @@ def _attach_chat(context, identity, permission_profile, handle, approval_port):
             pause_control=context.chat.turn_pause_control,
             computer_use_lifecycle=context.computer_use,
         )
+        if products.mutation.recorder is not None:
+            products.mutation.recorder.event_sink = context.emitter.emit
         if context.workspaces is not None:
             products.api.maintenance_check = context.workspaces.require_maintenance_idle
             products.backup.maintenance_check = context.workspaces.require_maintenance_idle

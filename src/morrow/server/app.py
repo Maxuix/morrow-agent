@@ -59,6 +59,7 @@ from .protocol import (
     WorkflowStartRequest,
 )
 from .static import make_gui_static_handler
+from .workspace_change_routes import workspace_change_routes
 from .workspace_file_routes import workspace_file_routes
 
 
@@ -975,6 +976,7 @@ def create_asgi_app(
             *workflow_output_routes(host),
             *workspace_routes(host, _parse_body),
             *workspace_file_routes(host, _parse_body),
+            *workspace_change_routes(host, _parse_body),
             *session_routes(host, _parse_body),
             *provider_routes(host, _parse_body),
             *settings_routes(host, _parse_body),
