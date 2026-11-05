@@ -47,8 +47,11 @@ def workspace_change_routes(host, parse):
 
         def busy():
             registry = c.workspaces
-            if registry is not None and registry.busy(
-                c.workspace_id, pending=True, subscriptions=False
+            if registry is not None and registry.source_write_busy(c.workspace_id):
+                return True
+            if (
+                getattr(c, "_execution_process", None) is not None
+                and c._execution_process.tracked.has_running()
             ):
                 return True
             products = [c.products, *c.chat.runtimes.values()]
@@ -112,6 +115,9 @@ def workspace_change_routes(host, parse):
                 request.path_params["change_id"],
                 selectors=selectors(request),
                 offset=offset,
+                chain_ids=request.query_params.get("chain", "").split(",")
+                if request.query_params.get("chain")
+                else None,
             )
 
         return JSONResponse(await host.execute_query(query))
@@ -141,7 +147,7 @@ def workspace_change_routes(host, parse):
             cid, request_digest, replay = api._prepare(name, payload, body.command_id)
             app = service(c)
             if replay is not None:
-                if kind == "change_review":
+                if kind in {"change_review", "change_pin", "change_reconcile"}:
                     return {"disposition": "replay", "reviewed": list(body.change_ids)}
                 return app.get_operation(sid, replay.result_id).model_dump(mode="json")
 
@@ -149,8 +155,10 @@ def workspace_change_routes(host, parse):
                 event = c.emitter.emit(
                     "workspace_change_reviewed"
                     if kind == "change_review"
+                    else "workspace_change_updated"
+                    if kind.startswith("change_")
                     else "workspace_restore_updated",
-                    "workspace_change" if kind == "change_review" else "workspace_restore",
+                    "workspace_change" if kind.startswith("change_") else "workspace_restore",
                     result_id,
                     {"session_id": sid, "row_version": row_version},
                 )
@@ -161,16 +169,26 @@ def workspace_change_routes(host, parse):
                     digest=request_digest,
                     session_id=sid,
                     result_kind="workspace_change"
-                    if kind == "change_review"
+                    if kind.startswith("change_")
                     else "workspace_restore",
                     result_id=result_id,
                     event_cursor=event.cursor,
                     row_version=row_version,
                 )
 
-            if kind == "change_review":
+            if kind in {"change_review", "change_pin", "change_reconcile"}:
 
                 def review(_):
+                    if kind == "change_reconcile":
+                        rows = app.reconcile_changes(
+                            sid, body.change_ids, selectors=selection(body)
+                        )
+                        receipt(rows[0].change_id, rows[0].row_version)
+                        return {"disposition": "accepted", "reconciled": list(body.change_ids)}
+                    if kind == "change_pin":
+                        rows = app.pin(sid, body.change_ids, selectors=selection(body))
+                        receipt(rows[0].change_id, rows[0].row_version)
+                        return {"disposition": "accepted", "pinned": list(body.change_ids)}
                     rows = app.review(
                         sid, body.change_ids, body.versions, selectors=selection(body)
                     )
@@ -194,6 +212,12 @@ def workspace_change_routes(host, parse):
     async def review(request):
         return await command(request, "change_review", ChangeReviewRequest)
 
+    async def reconcile_changes(request):
+        return await command(request, "change_reconcile", ChangeSelectionRequest)
+
+    async def pin(request):
+        return await command(request, "change_pin", ChangeSelectionRequest)
+
     async def preview(request):
         return await command(request, "restore_preview", ChangeSelectionRequest)
 
@@ -207,6 +231,8 @@ def workspace_change_routes(host, parse):
     return [
         Route(root + "/changes", listing),
         Route(root + "/changes/review", review, methods=["POST"]),
+        Route(root + "/changes/pin", pin, methods=["POST"]),
+        Route(root + "/changes/reconcile", reconcile_changes, methods=["POST"]),
         Route(root + "/changes/{change_id}", detail),
         Route(root + "/changes/{change_id}/diff", detail),
         Route(root + "/restores/preview", preview, methods=["POST"]),

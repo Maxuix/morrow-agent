@@ -138,6 +138,10 @@ def workspace_file_routes(host, parse):
                     "mutation": None,
                     "disposition": "replay",
                 }
+            if registry().source_write_busy(request.path_params["workspace_id"]):
+                raise ApplicationError(
+                    ApplicationErrorCode.BUSY, "workspace_busy：工作区仍有写操作"
+                )
             value = current.replace(
                 path=body.path,
                 content=body.content,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from collections import defaultdict
 from datetime import timedelta
 from pathlib import Path
@@ -13,7 +14,7 @@ from morrow.adapters.local.restore import RestorePublisher, identity
 from morrow.application.task_artifacts import TaskArtifactsService
 from morrow.application.workspace_changes import WorkspaceChangeRecorder, equivalent
 from morrow.core.application import ApplicationError, ApplicationErrorCode
-from morrow.core.artifacts import ArtifactError, ArtifactRetention
+from morrow.core.artifacts import ArtifactError, ArtifactErrorCode, ArtifactRetention
 from morrow.core.domain import canonical_json_bytes, sha256_digest
 from morrow.core.workspace_changes import RestoreItem, RestoreOperation, WorkspaceChange
 from morrow.services.files import (
@@ -26,6 +27,12 @@ from morrow.services.files import (
 
 def digest(value):
     return sha256_digest(canonical_json_bytes(value))
+
+
+def continuous(a, b):
+    return equivalent(a, b) and (
+        a.file_identity is None or b.file_identity is None or a.file_identity == b.file_identity
+    )
 
 
 def fail(message, code=ApplicationErrorCode.CONFLICT):
@@ -108,13 +115,27 @@ class WorkspaceRestoreService:
                     ApplicationErrorCode.UNAVAILABLE,
                 )
             raw = self.artifacts.read_workspace_snapshot(value.snapshot_id)
-        except ArtifactError:
-            fail("snapshot_missing_or_corrupt：快照缺失或损坏", ApplicationErrorCode.UNAVAILABLE)
+        except ArtifactError as exc:
+            reason = (
+                "snapshot_missing：快照缺失"
+                if exc.code is ArtifactErrorCode.MISSING
+                else "snapshot_corrupt：快照损坏"
+                if exc.code is ArtifactErrorCode.INTEGRITY
+                else "snapshot_unavailable：快照不可用"
+            )
+            fail(reason, ApplicationErrorCode.UNAVAILABLE)
         if len(raw) != value.byte_size or sha256_digest(raw) != value.sha256:
             fail("snapshot_corrupt", ApplicationErrorCode.UNAVAILABLE)
         return raw
 
     def capability(self, row):
+        if os.environ.get("MORROW_RESTORE_CHANGES", "1") == "0":
+            return "unsupported", "restore_disabled"
+        try:
+            if row.root_identity is None or identity(self.root) != row.root_identity:
+                return "unsupported", "workspace_identity_changed_or_missing"
+        except (OSError, FileSystemMutationError):
+            return "unavailable", "workspace_unavailable"
         if row.coverage != "complete" or row.operation not in {
             "create",
             "patch",
@@ -132,6 +153,11 @@ class WorkspaceRestoreService:
             current = self.reader.current(row.path)
             if equivalent(current, row.before):
                 return "already_target", "目标内容已存在；没有本操作的执行证据"
+            if (
+                row.after.file_identity is not None
+                and current.file_identity != row.after.file_identity
+            ):
+                return "conflict", "文件身份在修改后已变化"
             if not equivalent(current, row.after):
                 return "conflict", "当前文件有后续修改或权限变化"
             later = self.records.list(
@@ -188,8 +214,14 @@ class WorkspaceRestoreService:
         )
         page = rows[:limit]
         items = []
+        read_budget = 16 * 1024 * 1024
         for row in page:
-            support, reason = self.capability(row)
+            required = row.before.byte_size + row.after.byte_size * 2
+            if required > read_budget:
+                support, reason = "unavailable", "完整性检查待预览时进行"
+            else:
+                support, reason = self.capability(row)
+                read_budget -= required
             items.append(
                 {
                     **row.model_dump(mode="json"),
@@ -229,13 +261,30 @@ class WorkspaceRestoreService:
             "legacy_message": "旧任务或未启用捕获的修改没有恢复快照" if not items else None,
         }
 
-    def detail(self, session_id, change_id, *, selectors=None, offset=0, limit=128 * 1024):
-        row = self.selected(session_id, [change_id], selectors or {})[0]
+    def detail(
+        self, session_id, change_id, *, selectors=None, offset=0, limit=128 * 1024, chain_ids=None
+    ):
+        chain = self.selected(session_id, chain_ids or [change_id], selectors or {})
+        row = chain[-1]
+        if row.change_id != change_id or any(
+            r.path != row.path or r.task_run_id != row.task_run_id for r in chain
+        ):
+            fail("净变化选择无效", ApplicationErrorCode.INVALID)
+        for a, b in zip(chain, chain[1:], strict=False):
+            between = self.records.list(
+                self.workspace_id,
+                path=row.path,
+                after=a.workspace_sequence,
+                through=b.workspace_sequence,
+                limit=1001,
+            )
+            if not continuous(a.after, b.before) or [r.change_id for r in between] != [b.change_id]:
+                fail("中间存在其他修改，请查看修改时间线")
         if offset < 0 or not 1 <= limit <= 128 * 1024:
             fail("Diff 读取范围无效", ApplicationErrorCode.INVALID)
         from morrow.services.files import _complete_diff
 
-        a, b = self.bytes(row.before), self.bytes(row.after)
+        a, b = self.bytes(chain[0].before), self.bytes(row.after)
         text = _complete_diff(
             (a or b"").decode("utf-8-sig"), (b or b"").decode("utf-8-sig"), row.path
         )
@@ -244,6 +293,9 @@ class WorkspaceRestoreService:
         support, reason = self.capability(row)
         return {
             "change": row.model_dump(mode="json"),
+            "before": chain[0].before.model_dump(mode="json"),
+            "after": row.after.model_dump(mode="json"),
+            "chain_ids": [r.change_id for r in chain],
             "diff": page,
             "next_offset": offset + len(page) if offset + len(page) < len(text) else None,
             "complete": offset + len(page) >= len(text),
@@ -275,7 +327,33 @@ class WorkspaceRestoreService:
 
         return self.journal.transact(work)
 
-    def _write_allowed(self):
+    def reconcile_changes(self, session_id, ids, *, selectors=None):
+        self._write_allowed(restore=False)
+        rows = self.selected(session_id, ids, selectors or {})
+        for row in rows:
+            if row.effect_state in {"prepared", "outcome_unknown"} and row.coverage == "complete":
+                if row.root_identity != identity(self.root):
+                    fail("工作区身份已变化", ApplicationErrorCode.STALE)
+                self.bytes(row.before)
+                self.bytes(row.after)
+                self.reader.finish(row, succeeded=False)
+        return tuple(self.records.get(self.workspace_id, row.change_id) for row in rows)
+
+    def pin(self, session_id, ids, *, selectors=None):
+        rows = self.selected(session_id, ids, selectors or {})
+
+        def work(_):
+            for row in rows:
+                for value in (row.before, row.after):
+                    if value.snapshot_id:
+                        self.artifacts.pin(value.snapshot_id)
+            return tuple(self.records.save(row) for row in rows)
+
+        return self.journal.transact(work)
+
+    def _write_allowed(self, *, restore=True):
+        if restore and os.environ.get("MORROW_RESTORE_CHANGES", "1") == "0":
+            fail("unsupported_restore：恢复写入已关闭", ApplicationErrorCode.UNAVAILABLE)
         if not self.writable():
             fail("工作区只读", ApplicationErrorCode.READ_ONLY)
         if self.busy():
@@ -284,6 +362,8 @@ class WorkspaceRestoreService:
     def preview(self, session_id, ids, *, command_id, selectors=None):
         selectors = selectors or {}
         request = digest([session_id, ids, selectors])
+        if self.records.operation(self.workspace_id, apply_command_id=command_id):
+            fail("同一 command_id 已用于执行恢复")
         previous = self.records.operation(self.workspace_id, command_id=command_id)
         if previous:
             if previous.session_id != session_id or previous.request_digest != request:
@@ -305,7 +385,7 @@ class WorkspaceRestoreService:
             first, last = chain[0], chain[-1]
             support, reason = self.capability(last)
             for a, b in zip(chain, chain[1:], strict=False):
-                if a.task_run_id != b.task_run_id or not equivalent(a.after, b.before):
+                if a.task_run_id != b.task_run_id or not continuous(a.after, b.before):
                     support, reason = "conflict", "修改链中间存在其他变化"
                 between = self.records.list(
                     self.workspace_id,
@@ -335,6 +415,9 @@ class WorkspaceRestoreService:
                     expected=last.after,
                     desired=first.before,
                     parent_identity=parent,
+                    file_identity=self.reader.current(path).file_identity
+                    if support in {"ready", "already_target"}
+                    else None,
                     capture_name=f".morrow-restore-{token}-capture",
                     temporary_name=f".morrow-restore-{token}-new",
                     state="pending"
@@ -374,6 +457,8 @@ class WorkspaceRestoreService:
     def apply(self, session_id, operation_id, *, preview_digest, command_id):
         op = self.get_operation(session_id, operation_id)
         request = digest([session_id, operation_id, preview_digest])
+        if self.records.operation(self.workspace_id, command_id=command_id):
+            fail("同一 command_id 已用于创建预览")
         prior = self.records.operation(self.workspace_id, apply_command_id=command_id)
         if prior:
             if prior.operation_id != operation_id or prior.apply_digest != request:
@@ -425,6 +510,7 @@ class WorkspaceRestoreService:
             expected_state = item.desired if item.state == "target_reached" else item.expected
             if (
                 not equivalent(current, expected_state)
+                or current.file_identity != item.file_identity
                 or identity((self.root / item.path).parent) != item.parent_identity
             ):
                 fail("restore_conflict：文件或父目录在预览后已变化", ApplicationErrorCode.STALE)
@@ -449,6 +535,7 @@ class WorkspaceRestoreService:
                 WorkspaceChange(
                     change_id=self.artifacts.id_source.new_id("chg"),
                     workspace_id=self.workspace_id,
+                    root_identity=op.root_identity,
                     session_id=original.session_id,
                     task_run_id=original.task_run_id,
                     mutation_key=f"{op.operation_id}:{index}",
@@ -479,6 +566,7 @@ class WorkspaceRestoreService:
                     temporary_name=item.temporary_name,
                     root_identity=op.root_identity,
                     parent_identity=item.parent_identity,
+                    expected_identity=item.file_identity,
                 )
             except (FileSystemMutationError, OSError, ApplicationError) as exc:
                 unknown = getattr(exc, "effect_applied", False)
@@ -507,7 +595,17 @@ class WorkspaceRestoreService:
                         }
                     )
                 )
-            self.records.save(change.model_copy(update={"effect_state": "applied"}))
+            actual = self.reader.current(item.path)
+            self.records.save(
+                change.model_copy(
+                    update={
+                        "effect_state": "applied",
+                        "after": change.after.model_copy(
+                            update={"file_identity": actual.file_identity}
+                        ),
+                    }
+                )
+            )
             items[index] = item.model_copy(update={"state": "applied"})
             op = self.records.put_operation(op.model_copy(update={"items": tuple(items)}))
         op = self.records.put_operation(op.model_copy(update={"state": "completed"}))
@@ -520,7 +618,7 @@ class WorkspaceRestoreService:
         op = self.get_operation(session_id, operation_id)
         if op.state not in {"prepared", "applying", "needs_reconciliation"}:
             return op
-        self._write_allowed()
+        self._write_allowed(restore=False)
         items = []
         for item in op.items:
             state, reason = item.state, item.reason
@@ -545,6 +643,14 @@ class WorkspaceRestoreService:
                 if item.change_id:
                     row = self.records.get(self.workspace_id, item.change_id)
                     if row:
+                        if state == "target_reached":
+                            row = row.model_copy(
+                                update={
+                                    "after": row.after.model_copy(
+                                        update={"file_identity": current.file_identity}
+                                    )
+                                }
+                            )
                         self.records.save(
                             row.model_copy(
                                 update={

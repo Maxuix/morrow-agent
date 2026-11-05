@@ -2,6 +2,7 @@ import hashlib
 
 import pytest
 
+from morrow.adapters.local.restore import identity
 from morrow.core.workspace_changes import FileManifest, WorkspaceChange
 from test_stage8_core_api import ServerFixture, create_session_and_task
 
@@ -29,6 +30,7 @@ async def seed(fx, sid, task):
             WorkspaceChange(
                 change_id="chg_one",
                 workspace_id=fx.workspace_id,
+                root_identity=identity(fx.workspace_dir),
                 session_id=sid,
                 task_run_id=task,
                 mutation_key="tex_one:1",

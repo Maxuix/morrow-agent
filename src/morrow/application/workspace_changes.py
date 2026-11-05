@@ -6,6 +6,7 @@ Workflow and sandbox promotion; Workflow-only output contracts remain separate.
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import stat
 
@@ -16,7 +17,7 @@ from morrow.runtime.durable_log import durable_call_id
 from morrow.services.files import LocalFileError
 
 
-def manifest(raw: bytes | None, mode: int | None = None, snapshot_id=None):
+def manifest(raw: bytes | None, mode: int | None = None, snapshot_id=None, file_identity=None):
     if raw is None:
         return FileManifest()
     return FileManifest(
@@ -25,6 +26,7 @@ def manifest(raw: bytes | None, mode: int | None = None, snapshot_id=None):
         byte_size=len(raw),
         mode=mode,
         snapshot_id=snapshot_id,
+        file_identity=file_identity,
     )
 
 
@@ -74,12 +76,17 @@ class WorkspaceChangeRecorder:
                     reason = "unsupported_link"
                 for raw in (before, after):
                     if raw is not None:
+                        if b"\x00" in raw:
+                            reason = "unsupported_binary"
                         refuse_secret_material(
                             raw, label="file snapshot", profile="workflow_value_sensitive"
                         )
             except ValueError:
                 reason = "sensitive_content"
         bm, am = manifest(before, mode), manifest(after, mode)
+        if before is not None:
+            source_stat = plan.target.stat(follow_symlinks=False)
+            bm = bm.model_copy(update={"file_identity": (source_stat.st_dev, source_stat.st_ino)})
         if reason is None:
             required = sum(len(raw) for raw in (before, after) if raw is not None)
             task_used = self.journal.artifact_bytes_for_task(
@@ -108,11 +115,28 @@ class WorkspaceChangeRecorder:
                     am = am.model_copy(update={"snapshot_id": a.artifact_id})
             except ArtifactError as exc:
                 raise LocalFileError("capture_failed", "恢复快照未能持久化，未写入文件") from exc
+        from morrow.adapters.local.restore import identity
+
+        added = removed = 0
+        if reason is None:
+            for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
+                None,
+                (before or b"").decode("utf-8-sig").splitlines(),
+                (after or b"").decode("utf-8-sig").splitlines(),
+                autojunk=False,
+            ).get_opcodes():
+                if tag != "equal":
+                    added += j2 - j1
+                    removed += i2 - i1
+
         try:
             return self.records.insert(
                 WorkspaceChange(
                     change_id=self.artifacts.id_source.new_id("chg"),
                     workspace_id=self.workspace_id,
+                    root_identity=identity(self.mutation.files.resolver.root),
+                    added_lines=added,
+                    removed_lines=removed,
                     session_id=execution.session_id,
                     task_run_id=execution.task_run_id,
                     agent_run_id=execution.agent_run_id,
@@ -147,7 +171,7 @@ class WorkspaceChangeRecorder:
             workspace_root=self.mutation.files.resolver.root,
             max_bytes=MAX_SOURCE_FILE_BYTES,
         )
-        return manifest(source.raw, source.mode)
+        return manifest(source.raw, source.mode, file_identity=(state.st_dev, state.st_ino))
 
     def finish(self, record, *, succeeded):
         if record is None:
@@ -168,7 +192,12 @@ class WorkspaceChangeRecorder:
                 state = "outcome_unknown"
 
         def work(_):
-            saved = self.records.save(record.model_copy(update={"effect_state": state}))
+            updates = {"effect_state": state}
+            if state == "applied" and record.coverage == "complete":
+                updates["after"] = record.after.model_copy(
+                    update={"file_identity": actual.file_identity}
+                )
+            saved = self.records.save(record.model_copy(update=updates))
             if self.event_sink:
                 self.event_sink(
                     "workspace_change_recorded",

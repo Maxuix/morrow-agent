@@ -74,3 +74,79 @@ def test_hardlink_refused(tmp_path):
     with pytest.raises(FileSystemMutationError):
         publish(tmp_path)
     assert target.read_bytes() == b"agent"
+
+
+def test_parent_replacement_after_capture_keeps_external_tree(tmp_path, monkeypatch):
+    root = tmp_path / "workspace"
+    root.mkdir()
+    parent = root / "sub"
+    parent.mkdir()
+    target = parent / "a.txt"
+    target.write_bytes(b"agent")
+    target.chmod(0o644)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "a.txt").write_bytes(b"external")
+    publisher = RestorePublisher()
+    sync = publisher._fsync_required
+    moved = root / "moved"
+
+    def swap(fd):
+        sync(fd)
+        if parent.is_dir() and not parent.is_symlink():
+            parent.rename(moved)
+            parent.symlink_to(outside, target_is_directory=True)
+
+    monkeypatch.setattr(publisher, "_fsync_required", swap)
+    with pytest.raises(FileSystemMutationError) as error:
+        publisher.publish(
+            root,
+            "sub/a.txt",
+            expected=b"agent",
+            expected_mode=0o644,
+            desired=b"user",
+            desired_mode=0o644,
+            capture_name=".morrow-restore-capture",
+            temporary_name=".morrow-restore-new",
+            root_identity=identity(root),
+            parent_identity=identity(parent),
+        )
+    assert error.value.effect_applied
+    assert (outside / "a.txt").read_bytes() == b"external"
+    assert (moved / ".morrow-restore-capture").read_bytes() == b"agent"
+
+
+def test_external_rewrite_before_capture_is_preserved(tmp_path, monkeypatch):
+    path = tmp_path / "a.txt"
+    path.write_bytes(b"agent")
+    path.chmod(0o644)
+    publisher = RestorePublisher()
+    rename = publisher._rename_no_replace
+
+    def rewrite(src, source, dst, destination):
+        if destination == ".morrow-restore-capture":
+            path.write_bytes(b"external")
+        rename(src, source, dst, destination)
+
+    monkeypatch.setattr(publisher, "_rename_no_replace", rewrite)
+    with pytest.raises(FileSystemMutationError):
+        publish(tmp_path, publisher)
+    assert path.read_bytes() == b"external"
+
+
+def test_cancelled_but_live_host_process_stays_busy(monkeypatch):
+    from types import SimpleNamespace
+
+    from morrow.core.local_tools import TrackedCommandStatus
+    from morrow.services.tracked_process import TrackedProcessRegistry
+
+    registry = TrackedProcessRegistry()
+    registry._items["one"] = SimpleNamespace(
+        status=TrackedCommandStatus.CANCELLED,
+        spawned=SimpleNamespace(process=SimpleNamespace(pid=123, returncode=None)),
+        stop_requested=True,
+    )
+    monkeypatch.setattr("morrow.services.tracked_process._group_alive", lambda pid: True)
+    assert registry.has_running()
+    monkeypatch.setattr("morrow.services.tracked_process._group_alive", lambda pid: False)
+    assert not registry.has_running()

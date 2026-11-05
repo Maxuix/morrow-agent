@@ -87,11 +87,13 @@ export function TaskResultMessage({
   client,
   onOpenFile,
   onTask,
+  onChanges,
 }: {
   item: TimelineItem
   client: ApiClient
   onOpenFile?: (target: FileTarget) => void
   onTask: (id: string) => void
+  onChanges?: (id: string) => void
 }) {
   const result = item.result ?? null
   const [full, setFull] = useState<string | null>(null)
@@ -193,6 +195,7 @@ export function TaskResultMessage({
           {result.notes.map((note, index) => <li key={index}>{note}</li>)}
         </ul>
       )}
+      {onChanges && <button type="button" className="editor-button mt-2" onClick={() => onChanges(result.task_run_id)}>查看变更</button>}
       {error && <p role="alert" className="text-sm text-failed">{error}</p>}
     </article>
   )

@@ -50,7 +50,7 @@ describe('ChatInspector', () => {
     act(() => store.setVisible(true))
     expect(aside().hidden).toBe(false)
     const cards = container.querySelectorAll('.inspector-empty-card')
-    expect(cards).toHaveLength(6)
+    expect(cards).toHaveLength(7)
     expect(screen.getByRole('button', { name: /学习审阅/ })).toBeDefined()
   })
 
@@ -88,7 +88,7 @@ describe('ChatInspector', () => {
       store.closeTab('context')
     })
     expect(aside().hidden).toBe(false)
-    expect(container.querySelectorAll('.inspector-empty-card')).toHaveLength(6)
+    expect(container.querySelectorAll('.inspector-empty-card')).toHaveLength(7)
     expect(store.getState().activeTab).toBeNull()
   })
 
@@ -111,6 +111,6 @@ describe('ChatInspector', () => {
     })
     expect(screen.getByRole('status', { hidden: true }).textContent).toContain('损坏')
     act(() => corrupt.setVisible(true))
-    expect(container.querySelectorAll('.inspector-empty-card')).toHaveLength(6)
+    expect(container.querySelectorAll('.inspector-empty-card')).toHaveLength(7)
   })
 })

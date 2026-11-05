@@ -36,7 +36,7 @@ describe('InspectorAddMenu', () => {
     await user.keyboard('{Enter}')
     expect(screen.getByRole('menu', { name: '添加执行工具' })).toBeTruthy()
     const items = screen.getAllByRole('menuitem')
-    expect(items).toHaveLength(6)
+    expect(items).toHaveLength(7)
     expect((items[0] as HTMLButtonElement).disabled).toBe(true) // 上下文已打开
     expect(document.activeElement).toBe(items[2]) // 首个可用：任务与产物
 
@@ -58,14 +58,16 @@ describe('InspectorAddMenu', () => {
     expect(document.activeElement).toBe(items[4]) // 学习审阅
     await user.keyboard('{ArrowDown}')
     expect(document.activeElement).toBe(items[5]) // 文件
+    await user.keyboard('{ArrowDown}') // 代码变更
+    expect(document.activeElement).toBe(items[6])
     await user.keyboard('{ArrowDown}') // 环绕回首个可用
     expect(document.activeElement).toBe(items[2])
     await user.keyboard('{ArrowUp}')
-    expect(document.activeElement).toBe(items[5])
+    expect(document.activeElement).toBe(items[6])
 
     await user.keyboard('{Enter}')
     expect(onSelect).toHaveBeenCalledTimes(1)
-    expect(onSelect).toHaveBeenCalledWith('file')
+    expect(onSelect).toHaveBeenCalledWith('changes')
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
@@ -93,7 +95,7 @@ describe('InspectorAddMenu', () => {
   it('keeps the add button operable when all six kinds are open', async () => {
     act(() => {
       root.render(<InspectorAddMenu
-        openKinds={['context', 'workflow', 'artifacts', 'terminal', 'learning', 'file']}
+        openKinds={['context', 'workflow', 'artifacts', 'terminal', 'learning', 'file', 'changes']}
         onSelect={onSelect}
       />)
     })

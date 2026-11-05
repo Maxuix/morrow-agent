@@ -66,7 +66,7 @@ class TrackedProcessRegistry:
         with self._lock:
             for item in self._items.values():
                 self._refresh(item)
-                if item.status is TrackedCommandStatus.RUNNING:
+                if _group_alive(item.spawned.process.pid):
                     return True
         return False
 

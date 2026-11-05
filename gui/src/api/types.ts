@@ -288,6 +288,7 @@ export interface CommandOutputWire {
 }
 
 export interface TaskArtifactsWire {
+  validation_historical?: boolean
   schema_version: 1
   session_id: string
   task_run_id: string | null

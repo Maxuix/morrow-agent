@@ -31,6 +31,7 @@ export const INSPECTOR_META: Record<InspectorKind, { label: string; description:
   context: { label: '上下文', description: '查看本轮运行实际生效的上下文与约束', Icon: () => <Icon d={PATHS.context} /> },
   workflow: { label: '计划与工作流', description: '审阅任务计划、节点与工作流运行', Icon: () => <Icon d={PATHS.workflow} /> },
   artifacts: { label: '任务与产物', description: '浏览任务结果、文件与 Artifact', Icon: () => <Icon d={PATHS.artifacts} /> },
+  changes: { label: '代码变更', description: '审阅历史 Diff，预览并撤销文件修改', Icon: () => <Icon d={PATHS.file} /> },
   terminal: { label: '终端输出', description: '查看命令与工具执行的输出', Icon: () => <Icon d={PATHS.terminal} /> },
   learning: { label: '学习审阅', description: '审阅本会话产生的学习候选', Icon: () => <Icon d={PATHS.learning} /> },
   file: { label: '文件', description: '查看结果与消息里打开的文件', Icon: () => <Icon d={PATHS.file} /> },

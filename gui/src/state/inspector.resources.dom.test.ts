@@ -51,7 +51,7 @@ describe('Inspector shell resource bound (X03)', () => {
     const inspector = new InspectorStore()
     const exercise = () => {
       for (const kind of INSPECTOR_KINDS) inspector.openInspectorTab(kind)
-      expect(inspector.getState().tabs).toHaveLength(6)
+      expect(inspector.getState().tabs).toHaveLength(7)
       for (const kind of INSPECTOR_KINDS) inspector.activateTab(kind)
       inspector.toggleVisible()
       inspector.toggleVisible()
@@ -70,7 +70,7 @@ describe('Inspector shell resource bound (X03)', () => {
     inspector.setScope(scopeA)
 
     expect(sockets).toEqual([])
-    expect(inspector.getState().tabs).toHaveLength(6)
+    expect(inspector.getState().tabs).toHaveLength(7)
     for (const [sessionId, stores] of sessions) {
       const original = before.get(sessionId)!
       expect(stores.chat).toBe(original.chat)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal, Protocol
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from morrow.core.capabilities import _clean_relative_path
 from morrow.core.models import ProtocolModel, utc_now
@@ -20,6 +20,22 @@ class FileManifest(ProtocolModel):
     byte_size: int = Field(default=0, ge=0, le=MAX_SNAPSHOT_BYTES)
     mode: int | None = Field(default=None, ge=0, le=0o7777)
     snapshot_id: str | None = None
+    file_identity: tuple[int, int] | None = None
+
+    @model_validator(mode="after")
+    def consistent(self):
+        if self.exists:
+            if self.sha256 is None or self.mode is None:
+                raise ValueError("existing file requires digest and mode")
+        elif (
+            self.sha256 is not None
+            or self.mode is not None
+            or self.byte_size
+            or self.snapshot_id
+            or self.file_identity
+        ):
+            raise ValueError("absent file cannot contain snapshot metadata")
+        return self
 
 
 class WorkspaceChange(ProtocolModel):
@@ -32,9 +48,12 @@ class WorkspaceChange(ProtocolModel):
     tool_execution_id: str | None = None
     mutation_key: str
     workspace_sequence: int = Field(default=0, ge=0)
+    root_identity: tuple[int, int] | None = None
+    added_lines: int = Field(default=0, ge=0)
+    removed_lines: int = Field(default=0, ge=0)
     path: str
     destination_path: str | None = None
-    operation: str
+    operation: Literal["create", "patch", "replace", "delete", "move", "rename", "restore"]
     origin: Literal["tool", "restore"] = "tool"
     related_change_ids: tuple[str, ...] = ()
     restore_operation_id: str | None = None
@@ -57,6 +76,7 @@ class RestoreItem(ProtocolModel):
     expected: FileManifest
     desired: FileManifest
     parent_identity: tuple[int, int]
+    file_identity: tuple[int, int] | None = None
     capture_name: str
     temporary_name: str
     change_id: str | None = None

@@ -45,12 +45,19 @@ class RestorePublisher(FileSystemAdapter):
         temporary_name: str,
         root_identity: tuple[int, int],
         parent_identity: tuple[int, int],
+        expected_identity: tuple[int, int] | None = None,
     ) -> None:
         self._require_confined_mutation_support()
         self._rename_primitive()  # Reject unsupported platforms before any effect.
         for name in (capture_name, temporary_name):
             if not name.startswith(".morrow-restore-") or "/" in name or "\\" in name:
                 raise FileSystemMutationError("source_conflict", "保全路径无效")
+        if (
+            not path
+            or path.startswith("/")
+            or any(part in {"", ".", ".."} for part in path.split("/"))
+        ):
+            raise FileSystemMutationError("source_conflict", "恢复路径无效")
         target = root / path
         if identity(root) != root_identity or identity(target.parent) != parent_identity:
             raise FileSystemMutationError("source_conflict", "工作区或父目录身份已变化")
@@ -69,6 +76,11 @@ class RestorePublisher(FileSystemAdapter):
                 source_fd, metadata, raw = self._open_regular_at(
                     parent, target.name, max_bytes=8 * 1024 * 1024
                 )
+                if (
+                    expected_identity is not None
+                    and (metadata.st_dev, metadata.st_ino) != expected_identity
+                ):
+                    raise FileSystemMutationError("source_conflict", "文件身份在预览后已变化")
                 if (
                     metadata.st_nlink != 1
                     or raw != expected
@@ -126,6 +138,7 @@ class RestorePublisher(FileSystemAdapter):
                 if actual.raw != desired or actual.mode != desired_mode:
                     raise FileSystemMutationError("outcome_unknown", "发布后的文件已变化")
         except (OSError, FileSystemMutationError) as exc:
+            effect = effect or getattr(exc, "effect_applied", False)
             raise FileSystemMutationError(
                 "outcome_unknown" if effect else "source_conflict",
                 "恢复未完成，请核对当前文件及保全位置",

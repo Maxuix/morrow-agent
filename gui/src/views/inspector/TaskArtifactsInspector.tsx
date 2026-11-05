@@ -298,6 +298,7 @@ function TaskArtifactsContent({ target, active, client, workspaceId, sessionId, 
     {resource.error && <div className="shrink-0 px-4 pt-3"><p role="alert" className="text-sm text-failed">{resource.error}</p><button type="button" className={buttonClass} onClick={() => void resource.reload()}>重试</button></div>}
     {!resource.data && resource.loading && <p role="status" className="p-4 text-sm text-secondary">正在读取任务产物…</p>}
     {resource.data && <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3"><div className="space-y-3">
+      {data.validation_historical && <p role="status" className="text-xs text-secondary">文件已发生后续恢复；此处测试与任务结果属于历史版本，请重新验证。</p>}
       {message && <p role="status" className="rounded-[8px] border border-subtle bg-raised p-3 text-xs text-secondary">{message}</p>}
       <ResultSummary data={data} />
       {data.task && <TaskOutcomeActions client={client} task={data.task} onChanged={() => void resource.reload()} />}

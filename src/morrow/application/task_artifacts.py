@@ -496,7 +496,11 @@ class TaskArtifactsService:
             message = "此会话还没有可显示的任务产物。"
         elif not artifact_entries and not files and not commands and not outcomes:
             message = "该历史任务没有登记产物或命令输出。"
+        changes = getattr(self.journal, "workspace_changes", None)
         return TaskArtifactsWire(
+            validation_historical=bool(
+                changes and changes.has_restore(self.workspace_id, scope.task_ids)
+            ),
             session_id=scope.session_id,
             task_run_id=selected_task.task_run_id if selected_task is not None else None,
             title=title,

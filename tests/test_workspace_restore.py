@@ -4,6 +4,7 @@ import hashlib
 
 import pytest
 
+from morrow.adapters.local.restore import identity
 from morrow.application.workspace_restore import WorkspaceRestoreService
 from morrow.core.application import ApplicationError
 from morrow.core.workspace_changes import FileManifest, WorkspaceChange
@@ -44,6 +45,7 @@ def record(fx, path="a.txt", before=b"user\r\n", after=b"agent\r\n", *, mode=0o7
     row = WorkspaceChange(
         change_id=fx.ids.new_id("chg"),
         workspace_id=WS,
+        root_identity=identity(fx.root),
         session_id="ses_root",
         task_run_id="task_root",
         mutation_key=fx.ids.new_id("key"),
@@ -200,3 +202,94 @@ def test_scope_and_review_version_and_pagination(fx):
         )
     with pytest.raises(ApplicationError):
         fx.restore.review("ses_root", [a.change_id], {a.change_id: 1})
+
+
+def test_target_already_present_does_not_invent_compensation(fx):
+    row = record(fx)
+    (fx.root / "a.txt").write_bytes(b"user\r\n")
+    op = preview(fx, [row])
+    assert op.items[0].state == "target_reached"
+    result = apply(fx, op)
+    assert result.state == "completed"
+    assert result.items[0].change_id is None
+
+
+def test_new_record_after_preview_invalidates_it(fx):
+    row = record(fx)
+    op = preview(fx, [row])
+    record(fx, before=b"agent\r\n", after=b"other")
+    (fx.root / "a.txt").write_bytes(b"agent\r\n")
+    with pytest.raises(ApplicationError):
+        apply(fx, op)
+    assert (fx.root / "a.txt").read_bytes() == b"agent\r\n"
+
+
+def test_independent_restore_switch_keeps_history_readable(fx, monkeypatch):
+    row = record(fx)
+    monkeypatch.setenv("MORROW_RESTORE_CHANGES", "0")
+    listing = fx.restore.listing("ses_root", selectors={"task_run_id": "task_root"})
+    assert listing["items"][0]["restore_reason"] == "restore_disabled"
+    assert fx.restore.detail("ses_root", row.change_id)["diff"]
+    with pytest.raises(ApplicationError):
+        preview(fx, [row])
+
+
+def test_snapshot_corruption_refuses_restore(fx):
+    row = record(fx)
+    metadata = fx.artifacts.get(row.before.snapshot_id)
+    path = fx.artifacts.filesystem.layout.artifacts_dir / (metadata.artifact_id + ".artifact")
+    path.write_bytes(b"corrupt")
+    with pytest.raises(ApplicationError):
+        preview(fx, [row])
+    assert (fx.root / "a.txt").read_bytes() == b"agent\r\n"
+
+
+def test_git_staged_and_user_unstaged_bytes_survive_restore(fx):
+    import os
+    import subprocess
+
+    def git(*args):
+        return subprocess.run(
+            ["git", *args],
+            cwd=fx.root,
+            env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
+            check=True,
+            capture_output=True,
+        ).stdout
+
+    git("init", "-q")
+    target = fx.root / "a.txt"
+    target.write_bytes(b"staged")
+    git("add", "a.txt")
+    index_before = (fx.root / ".git/index").read_bytes()
+    row = record(fx, before=b"staged plus user unstaged", after=b"agent changes")
+    assert apply(fx, preview(fx, [row])).state == "completed"
+    assert target.read_bytes() == b"staged plus user unstaged"
+    assert (fx.root / ".git/index").read_bytes() == index_before
+    assert git("show", ":a.txt") == b"staged"
+
+
+def test_same_bytes_on_new_inode_invalidates_preview(fx):
+    row = record(fx)
+    op = preview(fx, [row])
+    replacement = fx.root / "replacement"
+    replacement.write_bytes(b"agent\r\n")
+    replacement.chmod(0o755)
+    replacement.replace(fx.root / "a.txt")
+    with pytest.raises(ApplicationError):
+        apply(fx, op)
+    assert (fx.root / "a.txt").read_bytes() == b"agent\r\n"
+
+
+def test_expired_snapshot_can_be_pinned_and_prepared_change_reconciled(fx):
+    row = record(fx)
+    fx.clock.advance(31 * 86400)
+    with pytest.raises(ApplicationError):
+        preview(fx, [row])
+    fx.restore.pin("ses_root", [row.change_id])
+    assert preview(fx, [row]).items[0].state == "pending"
+    latest = fx.journal.workspace_changes.get(WS, row.change_id)
+    fx.journal.workspace_changes.save(latest.model_copy(update={"effect_state": "prepared"}))
+    result = fx.restore.reconcile_changes("ses_root", [row.change_id])
+    assert result[0].effect_state == "applied"
+    assert not any(r.origin == "restore" for r in fx.journal.workspace_changes.list(WS))

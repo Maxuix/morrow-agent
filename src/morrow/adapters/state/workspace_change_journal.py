@@ -70,6 +70,20 @@ class WorkspaceChangeJournal:
         params.append(limit)
         return tuple(self._change(r) for r in self.backend.read_all(sql, tuple(params)))
 
+    def has_restore(self, workspace_id, task_ids):
+        if not task_ids:
+            return False
+        return (
+            self.backend.read_one(
+                "SELECT 1 FROM workspace_changes WHERE workspace_id=? AND task_run_id IN ("
+                + ",".join("?" for _ in task_ids)
+                + ") AND json_extract(payload_json,'$.origin')='restore' "
+                "AND json_extract(payload_json,'$.effect_state')='applied' LIMIT 1",
+                (workspace_id, *task_ids),
+            )
+            is not None
+        )
+
     def high_watermark(self, workspace_id):
         return int(
             self.backend.read_one(

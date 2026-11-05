@@ -878,6 +878,8 @@ def build_session_application(
         mutation.recorder = WorkspaceChangeRecorder(
             journal, operational.artifacts, mutation, workspace_id=identity.workspace_id
         )
+        if os.environ.get("MORROW_CAPTURE_CHANGES", "1") == "0":
+            mutation.recorder = None
         from morrow.application.computer_runs import ComputerUseRunFactory
         from morrow.application.computer_visuals import ComputerVisualService
         from morrow.runtime.policy import resolve_computer_use_settings

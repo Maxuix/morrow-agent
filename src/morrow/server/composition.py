@@ -239,6 +239,7 @@ def _build_management_context(
                 products.workflow_runtime.scheduler.activity_observer = workflow_bridge
                 journal.workflows.planning.activity_listener = workflow_bridge.planning_event
                 cache.append(products)
+                context._execution_process = products.process
                 if context.workspaces is not None:
                     products.api.maintenance_check = context.workspaces.require_maintenance_idle
                     products.backup.maintenance_check = context.workspaces.require_maintenance_idle

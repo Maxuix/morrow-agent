@@ -295,6 +295,9 @@ class ContextBuilder:
                     )
                 )
             )
+        restore_context = getattr(session.committer, "workspace_restore_context", None)
+        if restore_context is not None and (notice := restore_context()):
+            messages.append(SystemMessage(content=notice))
         if checkpoint is not None:
             messages.append(SystemMessage(content=render_checkpoint_projection(checkpoint)))
         return tuple(messages)

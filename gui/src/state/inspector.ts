@@ -9,7 +9,7 @@
  * （ChatStore/TaskPlanStore/ActivityStore）的生命周期不随本状态变化。
  */
 
-export type InspectorKind = 'context' | 'workflow' | 'artifacts' | 'terminal' | 'learning' | 'file'
+export type InspectorKind = 'context' | 'workflow' | 'changes' | 'artifacts' | 'terminal' | 'learning' | 'file'
 export const INSPECTOR_KINDS: readonly InspectorKind[] = [
   'context',
   'workflow',
@@ -17,6 +17,7 @@ export const INSPECTOR_KINDS: readonly InspectorKind[] = [
   'terminal',
   'learning',
   'file',
+  'changes',
 ]
 
 /** 非敏感定位信息：正文用它重新核验并加载目标，不存正文内容。 */

@@ -43,7 +43,18 @@ class SessionRuntimeManager:
             self.runtimes.move_to_end(session_id)
             return self.runtimes[session_id]
         while len(self.runtimes) >= MAX_SESSION_RUNTIMES:
-            idle = next((key for key in self.runtimes if key not in self.drivers), None)
+            idle = next(
+                (
+                    key
+                    for key, value in self.runtimes.items()
+                    if key not in self.drivers
+                    and not (
+                        getattr(getattr(value, "process", None), "tracked", None)
+                        and value.process.tracked.has_running()
+                    )
+                ),
+                None,
+            )
             if idle is None:
                 raise ApplicationError(ApplicationErrorCode.BUSY, "Session runtime cache is busy")
             # No store close: all committers share the Core-owned handle.

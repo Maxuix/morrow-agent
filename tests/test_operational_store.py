@@ -213,7 +213,7 @@ def test_new_store_uses_only_the_current_schema_without_migration_ledger(tmp_pat
             lambda executor: executor.execute(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             )
-        ) == ((83,),)
+        ) == ((85,),)
         assert (
             session.run_read(
                 lambda executor: executor.execute(

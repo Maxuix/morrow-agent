@@ -270,6 +270,12 @@ class OperationalDoctor:
                 issues,
                 issue_factory=self._issue,
             )
+            from morrow.application.workspace_change_doctor import inspect_workspace_changes
+
+            inspect_workspace_changes(
+                journal, workspace_id, counts, issues, issue_factory=self._issue
+            )
+            checks.append("workspace_changes_and_restores")
             self._inspect_artifacts(journal, workspace_id, counts, issues)
             self._inspect_events(journal, workspace_id, counts, issues)
         except StorageError as exc:

@@ -137,3 +137,130 @@ async def test_factory_write_records_byte_snapshots_for_chat_and_workflow(tmp_pa
     finally:
         products.persistence.close()
         fixture.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["snapshot", "journal"])
+async def test_capture_failure_precedes_file_write(tmp_path, monkeypatch, failure):
+    from morrow.adapters.credentials.keyring import MemoryCredentialStore
+    from morrow.bootstrap import build_application
+    from morrow.core.artifacts import ArtifactError, ArtifactErrorCode
+
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    project = tmp_path / "workspace"
+    project.mkdir()
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    provider = ScriptedModelProvider(
+        [
+            AssistantMessage(
+                tool_calls=(
+                    FunctionToolCall(
+                        id="write",
+                        name="write",
+                        arguments=json.dumps({"path": "new.txt", "content": "new"}),
+                    ),
+                )
+            ),
+            AssistantMessage(content="done"),
+        ]
+    )
+    products = build_session_application(
+        app, identity, provider=provider, model=MODEL, approval_port=AutoApprovalPort()
+    )
+    try:
+        if failure == "snapshot":
+
+            def broken(*a, **k):
+                raise ArtifactError(ArtifactErrorCode.BUDGET, "injected")
+
+            monkeypatch.setattr(products.artifacts, "publish_workspace_snapshot", broken)
+        else:
+
+            def broken(*a, **k):
+                raise RuntimeError("injected")
+
+            monkeypatch.setattr(products.api.journal.workspace_changes, "insert", broken)
+        [e async for e in products.orchestrator.stream("create new.txt")]
+        assert not (project / "new.txt").exists()
+    finally:
+        products.persistence.close()
+
+
+@pytest.mark.asyncio
+async def test_factory_sandbox_promotion_records_each_file(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from morrow.adapters.credentials.keyring import MemoryCredentialStore
+    from morrow.adapters.local.sandbox import SandboxCapability
+    from morrow.bootstrap import build_application
+    from morrow.services.files import WorkspaceFileService, WorkspacePathResolver
+    from morrow.services.sandbox import SandboxSnapshotService
+
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    project = tmp_path / "workspace"
+    project.mkdir()
+    files = WorkspaceFileService(WorkspacePathResolver(project))
+    sandbox = SandboxSnapshotService(files, temp_parent=tmp_path)
+    isolated = sandbox.prepare(project, run_id="probe", call_id="probe")
+    try:
+        for name in ("a.txt", "b.txt"):
+            (isolated.snapshot_root / name).write_text(name)
+        change_set = sandbox.collect(isolated)
+    finally:
+        sandbox.cleanup(isolated)
+    select = SandboxSnapshotService.selected_changes
+
+    def select_frozen(run, cid, paths):
+        run.retain_change_set(change_set.change_set_id, change_set)
+        return select(run, cid, paths)
+
+    monkeypatch.setattr(SandboxSnapshotService, "selected_changes", staticmethod(select_frozen))
+    monkeypatch.setattr(
+        "morrow.bootstrap.default_sandbox_backend",
+        lambda: SimpleNamespace(
+            probe=lambda: SandboxCapability(
+                platform="test", backend="test", supported=True, reason="scripted change set"
+            )
+        ),
+    )
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    provider = ScriptedModelProvider(
+        [
+            AssistantMessage(
+                tool_calls=(
+                    FunctionToolCall(
+                        id="promote",
+                        name="promote_sandbox_changes",
+                        arguments=json.dumps(
+                            {"change_set_id": change_set.change_set_id, "paths": ["a.txt", "b.txt"]}
+                        ),
+                    ),
+                )
+            ),
+            AssistantMessage(content="done"),
+        ]
+    )
+    from morrow.core.capabilities import PermissionPreset, PermissionProfile
+
+    products = build_session_application(
+        app,
+        identity,
+        provider=provider,
+        model=MODEL,
+        approval_port=AutoApprovalPort(),
+        permission_profile=PermissionProfile.from_preset(PermissionPreset.AUTO_SANDBOXED),
+    )
+    try:
+        [e async for e in products.orchestrator.stream("promote the two selected text files")]
+        rows = products.api.journal.workspace_changes.list(identity.workspace_id)
+        assert [r.path for r in rows] == ["a.txt", "b.txt"]
+        assert len({r.tool_execution_id for r in rows}) == 1
+        assert len({r.mutation_key for r in rows}) == 2
+        for row in rows:
+            assert row.effect_state == "applied"
+            assert (
+                products.artifacts.read_workspace_snapshot(row.after.snapshot_id)
+                == row.path.encode()
+            )
+    finally:
+        products.persistence.close()

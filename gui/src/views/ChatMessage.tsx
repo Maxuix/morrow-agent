@@ -20,13 +20,13 @@ export function Markdown({
   return <MarkdownBody text={text} onOpenFile={onOpenFile} />
 }
 
-export function ChatMessage({item, client, onTask, onOpenFile, expanded, onExpand}: {item: TimelineItem; client: ApiClient; onTask: (id: string) => void; onOpenFile?: (target: FileTarget) => void; expanded: boolean; onExpand: () => void}) {
+export function ChatMessage({item, client, onTask, onChanges, onOpenFile, expanded, onExpand}: {item: TimelineItem; client: ApiClient; onTask: (id: string) => void; onChanges?: (id: string) => void; onOpenFile?: (target: FileTarget) => void; expanded: boolean; onExpand: () => void}) {
   const [body, setBody] = useState<string | null>(null); const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   useEffect(() => {if(!expanded)setBody(null)}, [expanded])
   // A result is its own component: it renders the Outcome body, outputs and
   // files instead of the generic mechanism line.
-  if (item.kind === 'result') return <TaskResultMessage item={item} client={client} onOpenFile={onOpenFile} onTask={onTask} />
+  if (item.kind === 'result') return <TaskResultMessage item={item} client={client} onOpenFile={onOpenFile} onTask={onTask} onChanges={onChanges} />
   const isUser = item.kind === 'user_message'
   const message = isUser || item.kind === 'assistant_message'
   const content = typeof item.content === 'string' ? item.content : body

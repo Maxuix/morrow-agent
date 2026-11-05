@@ -1,3 +1,4 @@
+import type { ChangePage, ChangeDiff, RestoreOperation, ChangeSelection } from './changes'
 import { attachmentPath, type AttachmentWire, type FileSearch } from './attachments'
 import type { ChatSettings, ChatSettingsView, ProviderSettingsView, ComputerUseSettings, ComputerUseSettingsView, ComputerWindowCandidates, ComputerWindowSelection, ComputerWindowSelectionRequest } from './settings'
 export interface SessionMetadata {title:string;pinned:boolean;revision:number}
@@ -201,6 +202,33 @@ export class ApiClient {
       chatPath(workspace, session) + `/workflow-recovery/${encodeURIComponent(workflowRunId)}`,
       body,
     )
+  }
+  workspaceChanges(workspace: string, session: string, params: TaskArtifactSelectors & { cursor?: string } = {}): Promise<ChangePage> {
+    return this.get(chatPath(workspace, session) + '/changes' + query(params))
+  }
+  workspaceChangeDiff(workspace: string, session: string, id: string, params: TaskArtifactSelectors & { offset?: number; chain?: string } = {}): Promise<ChangeDiff> {
+    return this.get(chatPath(workspace, session) + '/changes/' + encodeURIComponent(id) + '/diff' + query(params))
+  }
+  reviewChanges(workspace: string, session: string, body: ChangeSelection & { versions: Record<string, number> }): Promise<{ reviewed: string[] }> {
+    return this.post(chatPath(workspace, session) + '/changes/review', body)
+  }
+  reconcileChanges(workspace: string, session: string, body: ChangeSelection): Promise<{reconciled: string[]}> {
+    return this.post(chatPath(workspace, session) + '/changes/reconcile', body)
+  }
+  pinChangeSnapshots(workspace: string, session: string, body: ChangeSelection): Promise<{pinned: string[]}> {
+    return this.post(chatPath(workspace, session) + '/changes/pin', body)
+  }
+  previewRestore(workspace: string, session: string, body: ChangeSelection): Promise<RestoreOperation> {
+    return this.post(chatPath(workspace, session) + '/restores/preview', body)
+  }
+  applyRestore(workspace: string, session: string, body: {command_id: string; preview_id: string; preview_digest: string}): Promise<RestoreOperation> {
+    return this.post(chatPath(workspace, session) + '/restores', body)
+  }
+  restoreStatus(workspace: string, session: string, id: string): Promise<RestoreOperation> {
+    return this.get(chatPath(workspace, session) + '/restores/' + encodeURIComponent(id))
+  }
+  reconcileRestore(workspace: string, session: string, id: string, command_id: string): Promise<RestoreOperation> {
+    return this.post(chatPath(workspace, session) + '/restores/' + encodeURIComponent(id) + '/reconcile', {command_id})
   }
   taskArtifacts(workspace: string, session: string, params: TaskArtifactSelectors = {}): Promise<TaskArtifactsWire> {
     return this.get(chatPath(workspace, session) + '/task-artifacts' + query(params))

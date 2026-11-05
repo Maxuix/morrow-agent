@@ -157,6 +157,24 @@ class SessionPersistence:
         self.writer: DurableConversationWriter | None = None
         self._session: Session | None = None
 
+    def workspace_restore_context(self) -> str | None:
+        rows = self.journal._backend.read_all(
+            "SELECT operation_id,payload_json FROM workspace_restore_operations "
+            "WHERE workspace_id=? ORDER BY rowid DESC LIMIT 5",
+            (self.workspace_id,),
+        )
+        from morrow.core.workspace_changes import RestoreOperation
+
+        operations = [RestoreOperation.model_validate_json(r[1]) for r in rows]
+        affected = [op for op in operations if op.state != "previewed"]
+        if not affected:
+            return None
+        ids = ", ".join(op.operation_id for op in affected)
+        return (
+            f"工作区文件已发生用户恢复操作（{ids}）。此前对话、修改结果与测试属于历史版本；"
+            "继续修改前重新读取当前文件，并重新执行相关验证。未完成或冲突操作需先核对状态。"
+        )
+
     @property
     def current_turn_id(self) -> str | None:
         return self.turn_state.turn_id

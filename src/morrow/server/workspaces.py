@@ -208,6 +208,15 @@ class WorkspaceRuntimeRegistry:
                 "SELECT 1 FROM chat_attachments WHERE workspace_id=? AND state IN ('uploading','processing') LIMIT 1",
                 (workspace_id,),
             )
+            or any(
+                getattr(getattr(p, "process", None), "tracked", None)
+                and p.process.tracked.has_running()
+                for p in context.chat.runtimes.values()
+            )
+            or (
+                getattr(context, "_execution_process", None) is not None
+                and context._execution_process.tracked.has_running()
+            )
             or context.supervisor._drivers
             or (subscriptions and context.chat.streams.subscribers)
             or (subscriptions and context.hub._subscribers)
@@ -219,6 +228,20 @@ class WorkspaceRuntimeRegistry:
                 journal.interactions.pending(workspace_id, session.session_id)
                 for session in journal.list_sessions(workspace_id)
             )
+        return False
+
+    def source_write_busy(self, workspace_id):
+        """One conservative admission check for restore and human source replacement."""
+        if self.coordinator.active or self.coordinator.waiting:
+            return True
+        if self.busy(workspace_id, pending=True, subscriptions=False):
+            return True
+        for context in self.contexts.values():
+            process = getattr(context, "_execution_process", None)
+            if process is not None and process.tracked.has_running():
+                return True
+            if any(p.process.tracked.has_running() for p in context.chat.runtimes.values()):
+                return True
         return False
 
     def require_idle(self, workspace_id):

@@ -32,10 +32,13 @@ const PlanWorkflowInspector = lazy(() =>
   import('./PlanWorkflowInspector').then((module) => ({ default: module.PlanWorkflowInspector })),
 )
 
+const ChangesInspector = lazy(() => import('./ChangesInspector').then(module => ({default: module.ChangesInspector})))
+
 const INSPECTOR_BODIES: Record<InspectorKind, ComponentType<InspectorBodyProps>> = {
   context: ContextInspector,
   workflow: PlanWorkflowInspector,
   artifacts: TaskArtifactsInspector,
+  changes: ChangesInspector,
   terminal: TerminalOutputInspector,
   learning: LearningReviewInspector,
   file: FileInspector,

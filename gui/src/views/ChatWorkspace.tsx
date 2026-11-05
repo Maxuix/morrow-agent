@@ -935,7 +935,7 @@ function SessionChat({client, store, capabilities, sessionId, drafts, planStore,
         const item = entry.item
         const editState = item.kind==='user_message'&&item.source.record_id ? editForkState(item) : null
         return <div className={`chat-entry ${item.kind === 'user_message' ? 'chat-entry-user' : ''}`}>
-          <ChatMessage item={item} client={client} onOpenFile={openFile} expanded={expandedContent===item.item_id} onExpand={()=>setExpandedContent(item.item_id)} onTask={id=>void selectTask(id)}/>
+          <ChatMessage item={item} client={client} onOpenFile={openFile} expanded={expandedContent===item.item_id} onExpand={()=>setExpandedContent(item.item_id)} onTask={id=>void selectTask(id)} onChanges={id=>openInspector('changes',{taskRunId:id})}/>
           {editState&&<button className="message-edit-button" disabled={busy||!!queue?.items.length||!editState.enabled} title={editState.enabled?'从此消息之前的闭合对话分叉；首条消息创建空对话。在新对话中编辑并发送。':(editState.hint??'')} onClick={()=>void editMessage(item.source.record_id!)}>编辑到新对话</button>}
           {editState&&!editState.enabled&&<p className="message-edit-hint text-xs text-secondary">{editState.hint}</p>}
         </div>
@@ -948,7 +948,7 @@ function SessionChat({client, store, capabilities, sessionId, drafts, planStore,
           <p className="text-xs text-secondary">Workflow 任务 · {card.workflow.workflow_definition_id} · {card.run_status ?? card.status}</p>
           <p className="whitespace-pre-wrap">{card.text}</p>
           {card.outcome && !(card.workflow_run_id !== null && resultRuns.has(card.workflow_run_id)) && <p>{outcomeSummary(card.outcome.summary, card.outcome.task_status)}</p>}
-          {card.task_run_id && <><button type="button" className="editor-button" onClick={()=>{void selectTask(card.task_run_id!,false);openInspector('workflow',{taskRunId:card.task_run_id!})}}>查看计划、进度与结果</button>
+          {card.task_run_id && <><button type="button" className="editor-button" onClick={()=>{void selectTask(card.task_run_id!,false);openInspector('workflow',{taskRunId:card.task_run_id!})}}>查看计划、进度与结果</button><button type="button" className="editor-button" onClick={()=>openInspector('changes',{taskRunId:card.task_run_id!})}>查看变更</button>
             <button type="button" className="editor-button" onClick={()=>onText(`请基于任务 ${card.task_run_id} 的结果继续：`)}>追问此结果</button></>}
         </article>
       }

@@ -7,7 +7,12 @@ import pytest
 
 from fixtures.v43_schema import V43_SCHEMA_STATEMENTS
 from morrow.adapters.state.operational import OperationalStore
-from morrow.core.store import APPLICATION_ID, APPLICATION_NAME, StoreOpenMode
+from morrow.core.store import (
+    APPLICATION_ID,
+    APPLICATION_NAME,
+    SUPPORTED_SCHEMA_VERSION,
+    StoreOpenMode,
+)
 
 
 def _seed(store, statements, version):
@@ -152,7 +157,7 @@ def _seed_legacy_session_facts(store):
 def test_v42_upgrade_preserves_rows_and_verified_backup(tmp_path, mode):
     store = v42_store(tmp_path)
     with store.open(mode) as session:
-        assert session.schema_version == 49
+        assert session.schema_version == SUPPORTED_SCHEMA_VERSION
     with sqlite3.connect(store.layout.database) as db:
         assert db.execute("SELECT session_id FROM sessions").fetchall() == [("ses_old",)]
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
@@ -217,7 +222,7 @@ def test_v43_upgrade_drops_value_checks_and_preserves_rows(tmp_path, mode):
         ]
         assert "'archived'" in sessions_ddl
     with store.open(mode) as session:
-        assert session.schema_version == 49
+        assert session.schema_version == SUPPORTED_SCHEMA_VERSION
     with sqlite3.connect(store.layout.database) as db:
         assert db.execute("SELECT session_id FROM sessions").fetchall() == [("ses_old",)]
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
