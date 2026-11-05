@@ -142,6 +142,9 @@ class SqliteOperationalJournal:
         from morrow.adapters.state.attachment_journal import AttachmentJournal
 
         self.attachments = AttachmentJournal(self._backend)
+        from morrow.adapters.state.workspace_change_journal import WorkspaceChangeJournal
+
+        self.workspace_changes = WorkspaceChangeJournal(self._backend, self)
         self._recovery_journal = SqliteRecoveryJournal(
             self._backend,
             session_exists=lambda workspace_id, session_id: (

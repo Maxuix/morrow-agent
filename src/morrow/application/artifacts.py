@@ -101,6 +101,10 @@ class ArtifactService:
         artifact_id: str | None = None,
         already_redacted: bool = False,
     ) -> ArtifactMetadata:
+        if kind is ArtifactKind.WORKSPACE_SNAPSHOT:
+            raise ArtifactError(
+                ArtifactErrorCode.INVALID, "internal snapshot requires dedicated publication"
+            )
         return self._publish_bytes(
             content,
             kind=kind,
@@ -116,6 +120,33 @@ class ArtifactService:
             if kind is ArtifactKind.COMPUTER_OBSERVATION
             else TextSafetyProfile.LEGACY_STRICT,
         )
+
+    def publish_workspace_snapshot(self, content: bytes, *, session_id: str, task_run_id: str):
+        from morrow.core.workspace_changes import MAX_SNAPSHOT_BYTES, WORKSPACE_SNAPSHOT_BYTES
+
+        if len(content) > MAX_SNAPSHOT_BYTES:
+            raise ArtifactBudgetError("snapshot file budget exceeded")
+        used = sum(
+            a.byte_size
+            for a in self.journal.list_artifacts(self.workspace_id)
+            if a.kind is ArtifactKind.WORKSPACE_SNAPSHOT
+        )
+        if used + len(content) > WORKSPACE_SNAPSHOT_BYTES:
+            raise ArtifactBudgetError("workspace snapshot budget exceeded")
+        return self._publish_bytes(
+            content,
+            kind=ArtifactKind.WORKSPACE_SNAPSHOT,
+            session_id=session_id,
+            task_run_id=task_run_id,
+            excerpt="Internal file snapshot",
+            text_safety_profile=TextSafetyProfile.WORKFLOW_VALUE_SENSITIVE,
+        )
+
+    def read_workspace_snapshot(self, artifact_id: str) -> bytes:
+        with self._read_scope(artifact_id, 0, internal_snapshot=True) as metadata:
+            if metadata.kind is not ArtifactKind.WORKSPACE_SNAPSHOT:
+                raise ArtifactError(ArtifactErrorCode.INVALID, "not a workspace snapshot")
+            return self.filesystem.read(metadata, max_bytes=metadata.byte_size)
 
     def publish_attachment_bytes(
         self, content: bytes, *, session_id: str, artifact_id: str, role: str
@@ -376,10 +407,14 @@ class ArtifactService:
         return ArtifactRead(metadata=metadata, content=content)
 
     @contextmanager
-    def _read_scope(self, artifact_id: str, start_byte: int):
+    def _read_scope(self, artifact_id: str, start_byte: int, *, internal_snapshot: bool = False):
         metadata = self.journal.get_artifact(self.workspace_id, artifact_id)
         if metadata is None:
             raise ArtifactError(ArtifactErrorCode.MISSING, "artifact metadata is missing")
+        if metadata.kind is ArtifactKind.WORKSPACE_SNAPSHOT and not internal_snapshot:
+            raise ArtifactError(
+                ArtifactErrorCode.INVALID, "internal snapshot is not a public artifact"
+            )
         if metadata.state is not ArtifactState.AVAILABLE:
             code = (
                 ArtifactErrorCode.MISSING

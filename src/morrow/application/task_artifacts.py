@@ -615,6 +615,7 @@ class TaskArtifactsService:
                     item.workspace_id != self.workspace_id
                     or item.task_run_id != task_id
                     or item.session_id != expected_session
+                    or item.kind is ArtifactKind.WORKSPACE_SNAPSHOT
                 ):
                     continue
                 values[item.artifact_id] = item

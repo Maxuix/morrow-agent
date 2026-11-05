@@ -34,7 +34,7 @@ from morrow.core.application import (
     ApplicationEvent,
     QueryPage,
 )
-from morrow.core.artifacts import ArtifactMetadata
+from morrow.core.artifacts import ArtifactKind, ArtifactMetadata
 from morrow.core.computer_use import SelectedWindowScope
 from morrow.core.domain import (
     WORKSPACE_ID_PREFIX,
@@ -290,6 +290,7 @@ class OperationalApplicationService:
                 self.workspace_id, session_id=session_id, task_run_id=task_run_id
             )
         )
+        items = tuple(item for item in items if item.kind is not ArtifactKind.WORKSPACE_SNAPSHOT)
         page = items[offset : offset + limit]
         return QueryPage(page, str(offset + len(page)) if offset + len(page) < len(items) else None)
 

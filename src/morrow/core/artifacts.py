@@ -48,6 +48,7 @@ ARTIFACT_PAYLOAD_BUDGETS: dict[str, int] = {
 
 
 class ArtifactKind(StrEnum):
+    WORKSPACE_SNAPSHOT = "workspace_snapshot"
     COMMAND_OUTPUT = "command_output"
     PATCH = "patch"
     DIFF = "diff"
@@ -256,6 +257,7 @@ class ArtifactMetadata(ProtocolModel):
         if (
             self.text_safety_profile == TextSafetyProfile.WORKFLOW_VALUE_SENSITIVE
             and self.contract is None
+            and self.kind is not ArtifactKind.WORKSPACE_SNAPSHOT
         ):
             raise ValueError("Workflow Artifact profile requires a typed contract")
         refuse_secret_material(

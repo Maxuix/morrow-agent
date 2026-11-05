@@ -902,7 +902,18 @@ def upgrade_v49(connection: sqlite3.Connection, *, before_commit) -> None:
     _run_data_migration(connection, 49, work, before_commit)
 
 
+def upgrade_v50(connection, *, before_commit=lambda: None):
+    from morrow.adapters.state.workspace_change_journal import CHANGE_SCHEMA
+
+    def work(db):
+        for statement in CHANGE_SCHEMA:
+            db.execute(statement)
+
+    _run_data_migration(connection, 50, work, before_commit)
+
+
 DATA_MIGRATIONS = {
+    49: upgrade_v50,
     44: upgrade_v45,
     45: upgrade_v46,
     46: upgrade_v47,

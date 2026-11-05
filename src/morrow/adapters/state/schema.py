@@ -10,6 +10,7 @@ budgets, NULL shape, and cross-column arithmetic.
 
 from __future__ import annotations
 
+from morrow.adapters.state.workspace_change_journal import CHANGE_SCHEMA
 from morrow.core.store import SUPPORTED_SCHEMA_VERSION
 
 CURRENT_SCHEMA_VERSION = SUPPORTED_SCHEMA_VERSION
@@ -451,3 +452,6 @@ def _compact_schema(statements: tuple[str, ...]) -> tuple[str, ...]:
 CURRENT_SCHEMA_STATEMENTS = _compact_schema(LEGACY_SCHEMA_STATEMENTS)
 
 __all__ = ["CURRENT_SCHEMA_STATEMENTS", "CURRENT_SCHEMA_VERSION", "LEGACY_SCHEMA_STATEMENTS"]
+
+
+CURRENT_SCHEMA_STATEMENTS += CHANGE_SCHEMA
