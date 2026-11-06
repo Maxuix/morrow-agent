@@ -33,6 +33,8 @@
 
 - [2026-11-06 M1 文件级闭环](code-review-undo-m1-2026-11-06.md)：生产入口、快照、恢复、API/CLI、GUI 与故障验证。
 
+- 修改块、三方合并与结构恢复的验证。 [2026-11-06 M2 验收](code-review-undo-m2-2026-11-06.md)
+
 ## 来源与复算
 
 [Portable evidence](portable/README.md) 和 [SHA-256 manifest](portable/manifest.json) 补齐此前仅在本机的报告/原件。

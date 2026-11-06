@@ -193,7 +193,7 @@ Review the generated graph, adjust the steps and permissions, and explicitly sta
 
 ### Review and undo file changes
 
-Open **查看变更** on a task result to inspect historical diffs, mark files reviewed, and preview a file-level undo. Supported controlled text edits retain byte-exact snapshots, and an undo can itself be restored. Later edits, permission changes, or replaced file identities invalidate a preview. Shell-only changes and structural operations do not promise automatic undo.
+Open **查看变更** on a task result to review historical diffs and preview an undo by file or by selected hunks. A hunk preview can preserve later edits when the changes can be separated unambiguously. Supported sandbox promotions can also restore deleted, moved, or renamed text files. Shell-only changes have no automatic undo.
 
 The terminal uses the same Core through `morrow changes --help`. See the [review and restore guide](docs/architecture/code-review-undo.md) for scope, retention, budgets, and safety limits.
 
