@@ -55,3 +55,36 @@ def test_cli_list_and_explicit_preview_digest(monkeypatch):
     )
     assert result.exit_code == 0, result.output
     assert calls[-1][2]["command_id"] == "cmd_one"
+
+
+def test_cli_passes_selected_hunk_ids(monkeypatch):
+    calls = []
+
+    class Client:
+        workspace_id = "ws_one"
+
+        def request(self, method, path, body=None):
+            calls.append((method, path, body))
+            return {}
+
+    monkeypatch.setattr(CoreClient, "discover", lambda *a: Client())
+    result = CliRunner().invoke(
+        app,
+        [
+            "changes",
+            "restore-preview",
+            "--session",
+            "ses_one",
+            "--task",
+            "task_one",
+            "--change",
+            "chg_one",
+            "--hunk",
+            "a" * 64,
+            "--hunk",
+            "b" * 64,
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert calls[0][1].endswith("/restores/preview")
+    assert calls[0][2]["hunk_ids"] == ["a" * 64, "b" * 64]

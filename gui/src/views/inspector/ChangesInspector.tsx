@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeDiff, ChangePage, RestoreOperation, WorkspaceChange } from '../../api/changes'
+import type { ChangeDiff, ChangePage, RestoreItem, RestoreOperation, WorkspaceChange } from '../../api/changes'
 import type { InspectorBodyProps } from './InspectorBodyProps'
 import { selectorParams } from './TaskArtifactsInspector'
 import { buttonClass } from '../management/styles'
@@ -16,15 +16,15 @@ const commandId = () => `cmd_${crypto.randomUUID().replaceAll('-', '')}`
 const short = (hash: string | null) => hash?.slice(0, 10) ?? '不存在'
 
 /** Lines remain inert text nodes, including source that looks like HTML. */
-function Diff({ value }: {value: string}) {
-  const [mode, setMode] = useState<'unified' | 'split'>('split')
+function Diff({ value, preview = false }: {value: string; preview?: boolean}) {
+  const [mode, setMode] = useState<'unified' | 'split'>(preview ? 'unified' : 'split')
   return <div className="min-w-0 rounded-lg border border-subtle bg-base">
     <div className="flex flex-wrap gap-2 border-b border-subtle p-2" aria-label="差异显示方式">
       <button className={buttonClass} aria-pressed={mode === 'split'} onClick={() => setMode('split')}>两侧对照</button>
       <button className={buttonClass} aria-pressed={mode === 'unified'} onClick={() => setMode('unified')}>统一 Diff</button>
     </div>
-    {mode === 'split' && <div className="grid grid-cols-2 gap-2 border-b border-subtle px-2 py-1 text-xs"><span>修改前 A</span><span>修改后 B</span></div>}
-    <div className="max-h-96 overflow-auto font-mono text-xs leading-relaxed" aria-label="历史版本差异">
+    {mode === 'split' && <div className="grid grid-cols-2 gap-2 border-b border-subtle px-2 py-1 text-xs"><span>{preview ? '当前 C' : '修改前 A'}</span><span>{preview ? '恢复结果 D' : '修改后 B'}</span></div>}
+    <div className="max-h-96 overflow-auto font-mono text-xs leading-relaxed" aria-label={preview ? '恢复结果差异' : '历史版本差异'}>
       {value.split('\n').map((line, index) => {
         const add = line.startsWith('+') && !line.startsWith('+++')
         const remove = line.startsWith('-') && !line.startsWith('---')
@@ -37,6 +37,28 @@ function Diff({ value }: {value: string}) {
   </div>
 }
 
+function RestoreItemView({item, completed}: {item: RestoreItem; completed: boolean}) {
+  const hasHunks = !!item.hunk_ids?.length
+  const target = item.destination_path ?? item.path
+  const localName = (path: string, name: string) => [...path.split('/').slice(0, -1), name].join('/')
+  const action = item.destination_path ? '移回原路径'
+    : hasHunks ? `撤销 ${item.hunk_ids!.length} 个修改块`
+    : item.desired.exists ? (item.expected.exists ? '恢复历史文件内容' : '重建文件')
+    : '移除文件'
+  return <li className="min-w-0 break-all">
+    <strong>{item.path}{item.destination_path && ` → ${item.destination_path}`}</strong> · {label(item.state)}
+    <p>当前 {hasHunks ? 'C' : 'B'} {short(item.expected.sha256)} → 恢复 {hasHunks ? 'D' : 'A'} {short(item.desired.sha256)}</p>
+    <p>{action} · 权限 {item.expected.mode?.toString(8) ?? '无'} → {item.desired.mode?.toString(8) ?? '无'}</p>
+    {item.reason && <p>{item.reason}</p>}
+    {item.preview_unavailable && <p role="status">当前文件或预览已变化，请重新预览。</p>}
+    {!completed && item.preview_diff && <Diff value={item.preview_diff} preview/>}
+    {item.preview_truncated && <p>预览已达到显示上限，仅展示部分差异。</p>}
+    {completed && <p className="text-secondary">保全位置：{localName(item.path, item.capture_name)}；临时位置：{localName(target, item.temporary_name)}</p>}
+  </li>
+}
+
+type PreviewSelection = {command_id: string; change_ids: string[]; hunk_ids?: string[]}
+
 export function ChangesInspector(props: InspectorBodyProps) {
   const { client, workspaceId, sessionId } = props
   if (!client || !workspaceId || !sessionId) return <p className="p-4">选择会话后查看代码变更。</p>
@@ -47,6 +69,7 @@ function ChangesBody({client, workspaceId, sessionId, active, target, currentTas
   const params = useMemo(() => selectorParams(target, currentTaskRunId), [target, currentTaskRunId])
   const [page, setPage] = useState<ChangePage | null>(null)
   const [selected, setSelected] = useState<string[]>([])
+  const [selectedHunks, setSelectedHunks] = useState<string[]>([])
   const [focused, setFocused] = useState<string | null>(null)
   const [diff, setDiff] = useState<ChangeDiff | null>(null)
   const [operation, setOperation] = useState<RestoreOperation | null>(null)
@@ -59,7 +82,7 @@ function ChangesBody({client, workspaceId, sessionId, active, target, currentTas
   const generation = useRef(0)
   const diffGeneration = useRef(0)
   const applyKey = useRef<string | null>(null)
-  const retryPreview = useRef<{command_id: string; change_ids: string[]} | null>(null)
+  const retryPreview = useRef<PreviewSelection | null>(null)
   const storageKey = `morrow.restore.v1.${workspaceId}.${sessionId}`
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 
@@ -85,10 +108,13 @@ function ChangesBody({client, workspaceId, sessionId, active, target, currentTas
   const showDiff = async (row: WorkspaceChange, append = false, chainIds: string[] = [row.change_id]) => {
     const version = ++diffGeneration.current
     setFocused(row.change_id)
-    if (!append) setDiff(null)
+    if (!append) {
+      setDiff(null)
+      if (selectedHunks.length) { setSelectedHunks([]); setOperation(null); retryPreview.current = null }
+    }
     try {
       const value = await client.workspaceChangeDiff(workspaceId, sessionId, row.change_id, {...params, chain: (append ? diff?.chain_ids ?? chainIds : chainIds).join(','), ...(append && diff?.next_offset !== null ? {offset: diff?.next_offset} : {})})
-      if (mounted.current && version === diffGeneration.current) setDiff(previous => append && previous ? {...value, diff: previous.diff + value.diff} : value)
+      if (mounted.current && version === diffGeneration.current) setDiff(previous => append && previous ? {...value, hunks: previous.hunks, hunk_reason: previous.hunk_reason, diff: previous.diff + value.diff} : value)
     } catch (e) { if (mounted.current && version === diffGeneration.current) setError((e as Error).message) }
   }
   const act = async (work: () => Promise<void>) => {
@@ -121,34 +147,51 @@ function ChangesBody({client, workspaceId, sessionId, active, target, currentTas
 
   const rows = page?.items ?? []
   const groups = new Map<string, WorkspaceChange[]>()
-  for (const row of rows) groups.set(row.path, [...(groups.get(row.path) ?? []), row])
+  for (const row of rows) {
+    const structural = row.destination_path || row.operation === 'delete'
+      || (row.origin === 'restore' && row.source_parent_identity)
+    const key = structural ? `change:${row.change_id}` : `file:${row.path}`
+    groups.set(key, [...(groups.get(key) ?? []), row])
+  }
   const toggle = (ids: string[], enabled: boolean) => {
     setSelected(old => enabled ? [...new Set([...old, ...ids])] : old.filter(id => !ids.includes(id)))
     setOperation(null); retryPreview.current = null
   }
-  const preview = () => act(async () => {
-    const request = retryPreview.current ?? {command_id: commandId(), change_ids: selected}
+  const toggleHunk = (id: string, checked: boolean) => {
+    setSelectedHunks(old => checked ? [...old, id] : old.filter(value => value !== id))
+    setOperation(null); retryPreview.current = null
+  }
+  const preview = (changeIds: string[], hunkIds?: string[]) => act(async () => {
+    const selection = {change_ids: changeIds, ...(hunkIds?.length ? {hunk_ids: hunkIds} : {})}
+    const prior = retryPreview.current
+    const sameSelection = prior && JSON.stringify([prior.change_ids, prior.hunk_ids])
+      === JSON.stringify([changeIds, hunkIds])
+    const request = sameSelection ? prior : {...selection, command_id: commandId()}
     retryPreview.current = request
     const result = await client.previewRestore(workspaceId, sessionId, {...params, ...request})
     remember(result, commandId())
+    retryPreview.current = null
   })
   const apply = () => act(async () => {
     if (!operation || !applyKey.current) return
     const result = await client.applyRestore(workspaceId, sessionId, {preview_id: operation.operation_id, preview_digest: operation.preview_digest, command_id: applyKey.current})
     setOperation(result)
-    setNotice('文件版本已变化；原任务结果、审阅和测试记录仍属于历史版本，请重新验证。')
-    for (const item of result.items) if (['applied','target_reached'].includes(item.state)) {
-      if (fileBuffers) void fileBuffers.load({workspaceId, sessionId}, item.path)
+    const paths = result.items.flatMap(item =>
+      ['applied','target_reached','needs_reconciliation'].includes(item.state)
+        ? [item.path, ...(item.destination_path ? [item.destination_path] : [])] : [])
+    if (paths.length) {
+      setNotice('原任务结果、审阅和测试记录仍属于历史版本，请重新验证。')
+      for (const path of paths) if (fileBuffers) void fileBuffers.load({workspaceId, sessionId}, path)
+      window.dispatchEvent(new CustomEvent('morrow:workspace-restored', {detail: {workspaceId, sessionId, paths}}))
     }
-    window.dispatchEvent(new CustomEvent('morrow:workspace-restored', {detail: {workspaceId, sessionId, paths: result.items.map(item => item.path)}}))
-    setSelected([]); setDiff(null); await refresh()
+    setSelected([]); setSelectedHunks([]); setDiff(null); await refresh()
   })
   const review = () => act(async () => {
     await client.reviewChanges(workspaceId, sessionId, {...params, command_id: commandId(), change_ids: selected, versions: Object.fromEntries(rows.filter(r => selected.includes(r.change_id)).map(r => [r.change_id, r.row_version]))})
     setOperation(null); setSelected([]); await refresh()
   })
   const focusedRow = rows.find(row => row.change_id === focused)
-  const completed = operation && operation.state !== 'previewed'
+  const completed = !!operation && operation.state !== 'previewed'
   return <section className="flex h-full min-h-0 min-w-0 flex-col overflow-y-auto p-4" aria-label="代码变更" data-inspector-kind="changes">
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-medium">任务代码变更</h2><button className={buttonClass} disabled={pending} onClick={() => void refresh()}>刷新</button></div>
     <p className="mt-2 text-xs text-secondary">{page?.coverage_message ?? '正在读取修改记录…'}</p>
@@ -159,16 +202,18 @@ function ChangesBody({client, workspaceId, sessionId, active, target, currentTas
     {notice && <p role="status" className="mt-2 text-sm">{notice}</p>}
     <div className="my-3 flex flex-wrap gap-2">
       <button className={buttonClass} disabled={!selected.length || pending} onClick={() => void review()}>标记已审阅</button>
-      <button className={buttonClass} disabled={!selected.length || pending} onClick={() => void preview()}>预览撤销（{selected.length} 次修改）</button>
+      <button className={buttonClass} disabled={!selected.length || pending} onClick={() => void preview(selected)}>预览撤销（{selected.length} 次修改）</button>
       {rows.some(r => ['prepared','outcome_unknown'].includes(r.effect_state)) && <button className={buttonClass} disabled={!selected.length || pending} onClick={() => void act(async () => {await client.reconcileChanges(workspaceId, sessionId, {...params, command_id: commandId(), change_ids: selected}); await refresh()})}>核对修改记录</button>}
       <button className={buttonClass} disabled={!selected.length || pending} onClick={() => void act(async () => {await client.pinChangeSnapshots(workspaceId, sessionId, {...params, command_id: commandId(), change_ids: selected}); setNotice('所选恢复快照已固定保留。'); await refresh()})}>固定恢复快照</button>
       <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={timeline} onChange={e => setTimeline(e.target.checked)}/>修改时间线</label>
     </div>
     <p className="mb-3 text-xs text-secondary">普通快照 30 天内可恢复，可手动固定。审阅仅表示已阅读。撤销不改变 Git 暂存区与提交历史。</p>
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(12rem,0.8fr)_minmax(0,1.2fr)]">
-      <div className="min-w-0 space-y-3"><p className="text-xs">{groups.size} 个已加载文件 · 已审阅 {rows.filter(r => r.review_state === 'reviewed').length}/{rows.length} 次修改</p>
-        {[...groups].map(([path, chain]) => <div key={path} className="min-w-0 rounded-lg border border-subtle p-2">
-          <p className="break-all font-mono text-xs">{path}</p>
+      <div className="min-w-0 space-y-3"><p className="text-xs">{new Set(rows.map(row => row.path)).size} 个已加载文件 · 已审阅 {rows.filter(r => r.review_state === 'reviewed').length}/{rows.length} 次修改</p>
+        {[...groups].map(([key, chain]) => {
+          const {path, destination_path} = chain[0]
+          return <div key={key} className="min-w-0 rounded-lg border border-subtle p-2">
+          <p className="break-all font-mono text-xs">{path}{destination_path && ` → ${destination_path}`}</p>
           {!timeline && <p className="my-1 break-all text-xs text-secondary">{chain.length} 次记录 · 连续链可合并查看；存在间隙时请切换时间线。</p>}
           {(timeline ? chain : [chain.at(-1)!]).map(row => <div key={row.change_id} className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-xs">
             <label className="flex items-center gap-1"><input type="checkbox" aria-label={`选择 ${path} 第 ${row.workspace_sequence} 次修改`} checked={(timeline ? [row.change_id] : chain.map(r => r.change_id)).every(id => selected.includes(id))} onChange={e => toggle(timeline ? [row.change_id] : chain.map(r => r.change_id), e.target.checked)} />#{row.workspace_sequence}</label>
@@ -177,12 +222,24 @@ function ChangesBody({client, workspaceId, sessionId, active, target, currentTas
             <p className="w-full break-words text-secondary">{row.origin === 'restore' ? '用户恢复' : '受控工具'} · {row.operation} · +{row.added_lines ?? 0} −{row.removed_lines ?? 0}{row.restore_reason ? ` · ${row.restore_reason}` : ''}</p>
           </div>)}
           {!timeline && chain.length > 1 && <button className={`${buttonClass} mt-2`} onClick={() => toggle(chain.map(r => r.change_id), true)}>选择此文件的已加载修改链</button>}
-        </div>)}
+        </div>})}
         {page?.next_cursor && <button className={buttonClass} onClick={() => void refresh(true)}>加载更多（当前列表尚不完整）</button>}
       </div>
       <div className="min-w-0 space-y-2">
-        {focusedRow && <><h3 className="break-all text-xs font-medium">{focusedRow.path} · 历史 A → B</h3><p className="break-all text-xs text-secondary">{short(diff?.before?.sha256 ?? focusedRow.before.sha256)} → {short(focusedRow.after.sha256)} · 当前磁盘：{label(diff?.restore_support ?? focusedRow.restore_support)}</p><button className={buttonClass} onClick={() => onOpenFile?.({kind: 'workspace', path: focusedRow.path})}>比较当前文件 C</button></>}
-        {diff && <><Diff value={diff.diff}/>{diff.next_offset !== null && focusedRow && <button className={buttonClass} onClick={() => void showDiff(focusedRow, true)}>继续加载完整差异</button>}</>}
+        {focusedRow && <><h3 className="break-all text-xs font-medium">{focusedRow.path} · 历史 A → B</h3><p className="break-all text-xs text-secondary">{short(diff?.before?.sha256 ?? focusedRow.before.sha256)} → {short(focusedRow.after.sha256)} · 当前磁盘：{label(diff?.restore_support ?? focusedRow.restore_support)}</p><button className={buttonClass} onClick={() => onOpenFile?.({kind: 'workspace', path: focusedRow.destination_path ?? focusedRow.path})}>比较当前文件 C</button></>}
+        {diff && <>{diff.diff ? <Diff value={diff.diff}/> : <p className="text-xs text-secondary">此记录没有可显示的文本差异。</p>}
+          {!!diff.hunks?.length && <fieldset className="min-w-0 rounded-lg border border-subtle p-2">
+            <legend className="px-1 text-xs font-medium">选择要撤销的修改块</legend>
+            <p className="text-xs text-secondary">预览将检查后续编辑是否能保留。</p>
+            {diff.hunks.map((hunk, index) => <label key={hunk.hunk_id} className="my-2 flex min-w-0 items-start gap-2 text-xs">
+              <input type="checkbox" checked={selectedHunks.includes(hunk.hunk_id)} disabled={pending} onChange={event => toggleHunk(hunk.hunk_id, event.target.checked)}/>
+              <span className="min-w-0"><span>修改块 {index + 1} · A {hunk.before_start} 行起 / {hunk.before_count} 行 → B {hunk.after_start} 行起 / {hunk.after_count} 行</span>
+              <code className="block whitespace-pre-wrap break-all">{hunk.excerpt}</code></span>
+            </label>)}
+            <button className={buttonClass} disabled={!selectedHunks.length || pending} onClick={() => void preview([diff.change.change_id], selectedHunks)}>预览撤销 {selectedHunks.length} 个修改块</button>
+          </fieldset>}
+          {diff.hunk_reason && <p className="text-xs text-secondary">{diff.hunk_reason}</p>}
+          {diff.next_offset !== null && focusedRow && <button className={buttonClass} onClick={() => void showDiff(focusedRow, true)}>继续加载完整差异</button>}</>}
         {!focused && <p className="text-sm text-secondary">选择一个历史 Diff 开始审阅。</p>}
       </div>
     </div>
@@ -190,9 +247,11 @@ function ChangesBody({client, workspaceId, sessionId, active, target, currentTas
       <h3 className="text-sm font-medium" role="status">{label(operation.state)}</h3>
       <p className="mt-1 break-all text-xs text-secondary">操作 {operation.operation_id}</p>
       <p className="mt-1 text-xs">{completed ? '以下为后端持久化结果。' : `预览有效至 ${new Date(operation.expires_at).toLocaleTimeString()}；执行时会再次核对文件。`}</p>
-      <ul className="mt-2 space-y-2 text-xs">{operation.items.map(item => <li key={item.path} className="break-all"><strong>{item.path}</strong> · {label(item.state)}<br/>当前 B {short(item.expected.sha256)} → 恢复 A {short(item.desired.sha256)}<p>{item.desired.exists ? '恢复历史文件内容' : '删除本次创建的文件'} · 权限 {item.expected.mode?.toString(8) ?? '无'} → {item.desired.mode?.toString(8) ?? '无'}</p>{item.reason && <p>{item.reason}</p>}{completed && <p className="text-secondary">保全位置：{[...item.path.split('/').slice(0,-1), item.capture_name].join('/')}；临时位置：{[...item.path.split('/').slice(0,-1), item.temporary_name].join('/')}</p>}</li>)}</ul>
+      <ul className="mt-2 space-y-2 text-xs">{operation.items.map(item =>
+        <RestoreItemView key={item.path} item={item} completed={completed}/>
+      )}</ul>
       <div className="mt-3 flex flex-wrap gap-2">
-        {operation.state === 'previewed' && <button className={buttonClass} disabled={pending || operation.items.some(item => item.state === 'conflict')} onClick={() => void apply()}>确认按预览恢复</button>}
+        {operation.state === 'previewed' && <button className={buttonClass} disabled={pending || operation.items.some(item => item.state === 'conflict' || item.preview_unavailable)} onClick={() => void apply()}>确认按预览恢复</button>}
         <button className={buttonClass} disabled={pending} onClick={() => void act(() => status())}>查询原操作状态</button>
         {operation.state === 'needs_reconciliation' && <button className={buttonClass} disabled={pending} onClick={() => void act(async () => {setOperation(await client.reconcileRestore(workspaceId, sessionId, operation.operation_id, commandId())); await refresh()})}>核对中断结果</button>}
         {completed && operation.items.some(i => i.change_id && ['applied','target_reached'].includes(i.state)) && <button className={buttonClass} disabled={pending} onClick={() => void act(async () => { const ids = operation.items.filter(i => ['applied','target_reached'].includes(i.state) && i.change_id).map(i => i.change_id!); remember(await client.previewRestore(workspaceId, sessionId, {...params, command_id: commandId(), change_ids: ids}), commandId()) })}>预览恢复刚才撤销的内容</button>}

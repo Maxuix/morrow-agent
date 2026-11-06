@@ -93,3 +93,36 @@ async def test_review_preview_apply_replay_and_scope(tmp_path):
         ).status == 404
     finally:
         fx.close()
+
+
+@pytest.mark.asyncio
+async def test_hunk_preview_is_scoped_and_persists_only_digests(tmp_path):
+    fx = ServerFixture(tmp_path)
+    try:
+        sid, task, _ = await create_session_and_task(fx.client)
+        row = await seed(fx, sid, task)
+        root = f"/v1/workspaces/{fx.workspace_id}/sessions/{sid}"
+        detail = await fx.client.get(root + "/changes/chg_one/diff?task_run_id=" + task)
+        hunk_id = detail.json()["hunks"][0]["hunk_id"]
+        body = {
+            "command_id": "cmd_hunk",
+            "change_ids": [row.change_id],
+            "hunk_ids": [hunk_id],
+            "task_run_id": task,
+        }
+        response = await fx.client.request("POST", root + "/restores/preview", body=body)
+        assert response.status == 200, response.body
+        op = response.json()
+        assert "+user" in op["items"][0]["preview_diff"]
+        url = root + "/restores/" + op["operation_id"]
+        assert "preview_diff" not in (await fx.client.get(url)).json()["items"][0]
+        assert (await fx.client.get(url + "?preview_diff=1")).json() == op
+        other, _, _ = await create_session_and_task(fx.client)
+        assert (await fx.client.get(url.replace(sid, other) + "?preview_diff=1")).status == 404
+        body["hunk_ids"] = ["0" * 64]
+        assert (
+            await fx.client.request("POST", root + "/restores/preview", body=body)
+        ).status == 409
+        assert (fx.workspace_dir / "a.txt").read_bytes() == b"agent\n"
+    finally:
+        fx.close()

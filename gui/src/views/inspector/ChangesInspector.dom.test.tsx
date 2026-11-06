@@ -80,3 +80,44 @@ describe('scoped changes review and undo', () => {
     expect(api.applyRestore).toHaveBeenCalledTimes(1)
   })
 })
+
+it('previews only the selected hunk and renders C→D separately from history', async () => {
+  const api = client()
+  const hunks = [
+    {hunk_id: 'a'.repeat(64), before_start: 1, before_count: 1, after_start: 1, after_count: 1, excerpt: 'first old → first new'},
+    {hunk_id: 'b'.repeat(64), before_start: 7, before_count: 1, after_start: 7, after_count: 1, excerpt: 'second old → second new'},
+  ]
+  api.workspaceChangeDiff.mockResolvedValue({...await api.workspaceChangeDiff(), hunks})
+  api.previewRestore.mockResolvedValue({...operation, items: [{
+    ...operation.items[0], hunk_ids: [hunks[1].hunk_id], preview_diff: '-second new\n+second old',
+  }]})
+  render(<ChangesInspector {...props} client={api as unknown as ApiClient}/>)
+  fireEvent.click(await screen.findByRole('button', {name: '查看历史 Diff'}))
+  fireEvent.click(await screen.findByRole('checkbox', {name: /修改块 2/}))
+  fireEvent.click(screen.getByRole('button', {name: '预览撤销 1 个修改块'}))
+  await screen.findByLabelText('恢复结果差异')
+  expect(api.previewRestore.mock.calls[0][2]).toMatchObject({
+    change_ids: [row.change_id], hunk_ids: [hunks[1].hunk_id],
+  })
+  expect(api.applyRestore).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', {name: '确认按预览恢复'}))
+  await waitFor(() => expect(api.applyRestore).toHaveBeenCalledTimes(1))
+})
+
+it('shows both move paths and disables confirmation for a stale preview', async () => {
+  const api = client()
+  api.workspaceChanges.mockResolvedValue({...page, items: [{
+    ...row, operation: 'move', destination_path: 'other/new.ts',
+  }]})
+  api.previewRestore.mockResolvedValue({...operation, items: [{
+    ...operation.items[0], path: 'other/new.ts', destination_path: row.path,
+    structure: 'move', preview_unavailable: true,
+  }]})
+  render(<ChangesInspector {...props} client={api as unknown as ApiClient}/>)
+  await screen.findByText(`${row.path} → other/new.ts`)
+  fireEvent.click(screen.getByRole('checkbox', {name: /选择 src/}))
+  fireEvent.click(screen.getByRole('button', {name: /预览撤销/}))
+  await screen.findByText(`other/new.ts → ${row.path}`)
+  const confirm = await screen.findByRole<HTMLButtonElement>('button', {name: '确认按预览恢复'})
+  expect(confirm.disabled).toBe(true)
+})

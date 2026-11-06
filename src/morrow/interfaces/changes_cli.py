@@ -74,6 +74,9 @@ def preview(
     session: str = typer.Option(..., "--session"),
     task: str = typer.Option(..., "--task"),
     change: list[str] = typer.Option(..., "--change"),
+    hunk: list[str] | None = typer.Option(
+        None, "--hunk", help="使用 changes diff 返回的修改块 ID。可重复，需属于同一次修改。"
+    ),
     command_id: str | None = typer.Option(None, "--command-id"),
     workspace_id: str | None = typer.Option(None, "--workspace-id"),
     state_root: Path = typer.Option(Path.home() / ".morrow", "--state-root"),
@@ -86,7 +89,12 @@ def preview(
         return client.request(
             "POST",
             root + "/restores/preview",
-            {"command_id": cid, "change_ids": change, "task_run_id": task},
+            {
+                "command_id": cid,
+                "change_ids": change,
+                "task_run_id": task,
+                **({"hunk_ids": hunk} if hunk else {}),
+            },
         )
 
     _run(run)
@@ -104,10 +112,15 @@ def restore(
 ):
     def run():
         client, root = _client(state_root, workspace_id, session)
-        plan = client.request("GET", root + "/restores/" + quote(preview, safe=""))
+        url = root + "/restores/" + quote(preview, safe="")
+        plan = client.request("GET", url if yes else url + "?preview_diff=1")
         if plan["preview_digest"] != preview_digest:
             raise ValueError("预览摘要不一致，请重新预览")
         if not yes:
+            if plan["state"] == "previewed" and any(
+                item.get("preview_unavailable") for item in plan["items"]
+            ):
+                raise ValueError("修改块预览已失效，请重新预览")
             typer.echo(json.dumps(plan, ensure_ascii=False, indent=2))
             typer.confirm("确认按此预览恢复这些文件？", abort=True)
         typer.echo("command_id: " + command_id, err=True)

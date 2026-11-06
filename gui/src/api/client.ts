@@ -218,14 +218,14 @@ export class ApiClient {
   pinChangeSnapshots(workspace: string, session: string, body: ChangeSelection): Promise<{pinned: string[]}> {
     return this.post(chatPath(workspace, session) + '/changes/pin', body)
   }
-  previewRestore(workspace: string, session: string, body: ChangeSelection): Promise<RestoreOperation> {
+  previewRestore(workspace: string, session: string, body: ChangeSelection & {hunk_ids?: string[]}): Promise<RestoreOperation> {
     return this.post(chatPath(workspace, session) + '/restores/preview', body)
   }
   applyRestore(workspace: string, session: string, body: {command_id: string; preview_id: string; preview_digest: string}): Promise<RestoreOperation> {
     return this.post(chatPath(workspace, session) + '/restores', body)
   }
   restoreStatus(workspace: string, session: string, id: string): Promise<RestoreOperation> {
-    return this.get(chatPath(workspace, session) + '/restores/' + encodeURIComponent(id))
+    return this.get(chatPath(workspace, session) + '/restores/' + encodeURIComponent(id) + '?preview_diff=1')
   }
   reconcileRestore(workspace: string, session: string, id: string, command_id: string): Promise<RestoreOperation> {
     return this.post(chatPath(workspace, session) + '/restores/' + encodeURIComponent(id) + '/reconcile', {command_id})

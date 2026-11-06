@@ -13,6 +13,8 @@ export interface WorkspaceChange {
   tool_execution_id: string | null
   workspace_sequence: number
   path: string
+  destination_path?: string | null
+  source_parent_identity?: [number, number] | null
   added_lines?: number
   removed_lines?: number
   operation: string
@@ -36,7 +38,17 @@ export interface ChangePage {
   coverage_message: string
   legacy_message: string | null
 }
+export interface ChangeHunk {
+  hunk_id: string
+  before_start: number
+  before_count: number
+  after_start: number
+  after_count: number
+  excerpt: string
+}
 export interface ChangeDiff {
+  hunks?: ChangeHunk[]
+  hunk_reason?: string | null
   before?: FileManifest
   after?: FileManifest
   chain_ids?: string[]
@@ -52,6 +64,12 @@ export interface RestoreItem {
   change_ids: string[]
   change_id: string | null
   path: string
+  destination_path?: string | null
+  structure?: 'delete' | 'move' | null
+  hunk_ids?: string[]
+  preview_diff?: string
+  preview_truncated?: boolean
+  preview_unavailable?: boolean
   expected: FileManifest
   desired: FileManifest
   capture_name: string
