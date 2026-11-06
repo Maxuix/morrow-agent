@@ -310,3 +310,100 @@ def test_metadata_only_change_cannot_claim_pinned_snapshot(fx):
     )
     with pytest.raises(ApplicationError):
         fx.restore.pin("ses_root", [row.change_id])
+
+
+def hunk_preview(fx, row, indexes=(0,), *, command="cmd_hunk"):
+    view = fx.restore.detail("ses_root", row.change_id, selectors={"task_run_id": "task_root"})
+    ids = tuple(view["hunks"][i]["hunk_id"] for i in indexes)
+    return fx.restore.preview(
+        "ses_root",
+        [row.change_id],
+        command_id=command,
+        selectors={"task_run_id": "task_root"},
+        hunk_ids=ids,
+    )
+
+
+def bind_after_identity(fx, row):
+    actual = fx.restore.reader.current(row.path)
+    return fx.restore.records.save(
+        row.model_copy(
+            update={"after": row.after.model_copy(update={"file_identity": actual.file_identity})}
+        )
+    )
+
+
+@pytest.mark.parametrize("drift", [False, True])
+def test_select_hunk_and_preserve_other_changes_byte_for_byte(fx, drift):
+    before = b"\xef\xbb\xbfhead\r\nleft\r\nold\r\nright\r\nspace\r\nold final"
+    after = before.replace(b"old", b"new")
+    row = bind_after_identity(fx, record(fx, before=before, after=after))
+    path = fx.root / row.path
+    current = b"\xef\xbb\xbfinserted\r\n" + after[3:] if drift else after
+    path.write_bytes(current)
+    op = hunk_preview(fx, row)
+    item = op.items[0]
+    assert item.state == "pending"
+    assert item.expected.snapshot_id is item.desired.snapshot_id is None
+    assert path.read_bytes() == current
+    diff = fx.restore.operation_view(op)["items"][0]["preview_diff"]
+    assert "-new" in diff and "+old" in diff
+    result = apply(fx, op)
+    assert result.state == "completed"
+    assert path.read_bytes() == current.replace(b"new\r\n", b"old\r\n")
+    assert path.stat().st_mode & 0o777 == 0o755
+    assert apply(fx, op) == result
+    compensation = fx.restore.records.get(WS, result.items[0].change_id)
+    assert fx.restore.bytes(compensation.before) == current
+    assert apply(fx, preview(fx, [compensation], "cmd_redo"), "cmd_redo_apply").state == "completed"
+    assert path.read_bytes() == current
+
+
+@pytest.mark.parametrize(
+    "before,after,current",
+    [
+        (b"head\nold\ntail\nend", b"head\nnew\ntail\nend", b"head\nuser\ntail\nend"),
+        (b"same\nold\nsame\nend", b"same\nnew\nsame\nend", b"same\nnew\nsame\nmore"),
+        (b"head\nold\ntail\nend", b"head\ntail\nend", b"head\nuser\ntail\nend"),
+    ],
+)
+def test_hunks_reject_overlap_and_ambiguous_anchors(fx, before, after, current):
+    row = bind_after_identity(fx, record(fx, before=before, after=after))
+    path = fx.root / row.path
+    path.write_bytes(current)
+    op = hunk_preview(fx, row)
+    assert op.items[0].state == "conflict"
+    assert apply(fx, op).state == "blocked"
+    assert path.read_bytes() == current
+
+
+def test_hunk_preview_invalidated_by_drift_or_disabled_merge(fx, monkeypatch):
+    row = bind_after_identity(fx, record(fx, before=b"a\nold\nb\nc", after=b"a\nnew\nb\nc"))
+    path = fx.root / row.path
+    op = hunk_preview(fx, row)
+    path.write_bytes(b"extra\na\nnew\nb\nc")
+    assert fx.restore.operation_view(op)["items"][0]["preview_unavailable"]
+    with pytest.raises(ApplicationError):
+        apply(fx, op)
+    monkeypatch.setenv("MORROW_RESTORE_MERGE", "0")
+    blocked = hunk_preview(fx, row, command="cmd_disabled")
+    assert blocked.items[0].state == "conflict"
+    assert path.read_bytes() == b"extra\na\nnew\nb\nc"
+
+
+def test_hunk_ids_bind_revision_and_multiple_selected_hunks(fx):
+    before = b"start\nold\nseparator\nold final"
+    after = b"start\nnew\nseparator\nnew final"
+    first = bind_after_identity(fx, record(fx, before=before, after=after))
+    op = hunk_preview(fx, first, (0, 1))
+    assert apply(fx, op).state == "completed"
+    assert (fx.root / first.path).read_bytes() == before
+    second = bind_after_identity(fx, record(fx, before=before, after=after))
+    bad = fx.restore.preview(
+        "ses_root",
+        [second.change_id],
+        command_id="cmd_wrong",
+        selectors={"task_run_id": "task_root"},
+        hunk_ids=op.items[0].hunk_ids,
+    )
+    assert bad.items[0].state == "conflict"

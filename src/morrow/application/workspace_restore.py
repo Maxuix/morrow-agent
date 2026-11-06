@@ -7,16 +7,23 @@ import json
 import os
 from collections import defaultdict
 from datetime import timedelta
+from difflib import unified_diff
 from pathlib import Path
 
 from morrow.adapters.local.filesystem import FileSystemMutationError
 from morrow.adapters.local.restore import RestorePublisher, identity
+from morrow.application.restore_hunks import HunkConflict, HunkPlan, enabled
 from morrow.application.task_artifacts import TaskArtifactsService
-from morrow.application.workspace_changes import WorkspaceChangeRecorder, equivalent
+from morrow.application.workspace_changes import WorkspaceChangeRecorder, equivalent, manifest
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.artifacts import ArtifactError, ArtifactErrorCode, ArtifactRetention
-from morrow.core.domain import canonical_json_bytes, sha256_digest
-from morrow.core.workspace_changes import RestoreItem, RestoreOperation, WorkspaceChange
+from morrow.core.domain import canonical_json_bytes, refuse_secret_material, sha256_digest
+from morrow.core.workspace_changes import (
+    MAX_SNAPSHOT_BYTES,
+    RestoreItem,
+    RestoreOperation,
+    WorkspaceChange,
+)
 from morrow.services.files import (
     LocalFileError,
     WorkspaceFileService,
@@ -127,6 +134,110 @@ class WorkspaceRestoreService:
         if len(raw) != value.byte_size or sha256_digest(raw) != value.sha256:
             fail("snapshot_corrupt", ApplicationErrorCode.UNAVAILABLE)
         return raw
+
+    def _hunk_plan(self, row):
+        if (
+            not enabled("HUNKS")
+            or row.coverage != "complete"
+            or row.effect_state != "applied"
+            or row.operation not in {"patch", "replace", "restore"}
+            or not row.before.exists
+            or not row.after.exists
+        ):
+            raise HunkConflict("该版本不支持修改块")
+        return HunkPlan(row, self.bytes(row.before), self.bytes(row.after))
+
+    def _hunk_candidate(self, row, ids):
+        if (
+            not enabled("CHANGES")
+            or not self.publisher.supported()
+            or row.root_identity != identity(self.root)
+        ):
+            raise HunkConflict("当前工作区或平台不支持修改块恢复")
+        plan = self._hunk_plan(row)
+        current, raw = self.reader.current_bytes(row.path)
+        lineage = row.after.file_identity
+        later = self.records.list(
+            self.workspace_id, path=row.path, after=row.workspace_sequence, limit=101
+        )
+        if len(later) > 100:
+            raise HunkConflict("后续修改链超出比较预算")
+        for change in later:
+            if (
+                change.path != row.path
+                or change.operation not in {"patch", "replace", "restore"}
+                or change.coverage != "complete"
+                or change.effect_state != "applied"
+                or change.root_identity != row.root_identity
+                or not lineage
+                or not change.after.file_identity
+                or change.before.file_identity != lineage
+                or change.before.mode != row.after.mode
+                or change.after.mode != row.after.mode
+            ):
+                raise HunkConflict("存在无法确认的后续修改链")
+            lineage = change.after.file_identity
+        if (
+            raw is None
+            or current.mode != row.after.mode
+            or (lineage is not None and current.file_identity != lineage)
+            or (lineage is None and not equivalent(current, row.after))
+        ):
+            raise HunkConflict("文件身份或权限已变化")
+        result = plan.inverse(raw, ids)
+        if len(result) > MAX_SNAPSHOT_BYTES:
+            raise HunkConflict("恢复结果超出文件预算")
+        for value in (raw, result):
+            try:
+                refuse_secret_material(
+                    value, label="file snapshot", profile="workflow_value_sensitive"
+                )
+            except ValueError as exc:
+                raise HunkConflict("当前或恢复内容无法通过快照安全检查") from exc
+        return current, raw, result
+
+    def operation_view(self, op):
+        """Render bounded C→D for the still-current preview; never persist source in a receipt."""
+        view = op.model_dump(mode="json")
+        if op.state != "previewed" or self.clock() >= op.expires_at:
+            return view
+        for item, item_view in zip(op.items, view["items"], strict=True):
+            if not item.hunk_ids or item.state != "pending":
+                continue
+            try:
+                (row,) = self.selected(op.session_id, item.change_ids, op.selectors)
+                if (
+                    digest([row.model_dump(mode="json")]) != op.selection_digest
+                    or identity((self.root / item.path).parent) != item.parent_identity
+                ):
+                    raise HunkConflict("预览已失效")
+                current, raw, desired = self._hunk_candidate(row, item.hunk_ids)
+                if current != item.expected or not equivalent(
+                    manifest(desired, current.mode), item.desired
+                ):
+                    raise HunkConflict("当前文件已变化，请重新预览")
+                before = raw.decode("utf-8-sig").splitlines(keepends=True)
+                after = desired.decode("utf-8-sig").splitlines(keepends=True)
+                parts = []
+                remaining = 32 * 1024
+                for line in unified_diff(before, after, fromfile="C", tofile="D"):
+                    if not line.endswith("\n"):
+                        line += "\n\\ No newline at end of file\n"
+                    parts.append(line[:remaining])
+                    remaining -= len(line)
+                    if remaining < 0:
+                        break
+                item_view["preview_diff"] = "".join(parts)
+                item_view["preview_truncated"] = remaining < 0
+            except (
+                ApplicationError,
+                HunkConflict,
+                LocalFileError,
+                OSError,
+                FileSystemMutationError,
+            ):
+                item_view["preview_unavailable"] = True
+        return view
 
     def capability(self, row):
         if os.environ.get("MORROW_RESTORE_CHANGES", "1") == "0":
@@ -291,7 +402,17 @@ class WorkspaceRestoreService:
         # Character pagination avoids splitting UTF-8 codepoints; each response <= 512 KiB.
         page = text[offset : offset + limit]
         support, reason = self.capability(row)
+        hunks, hunk_reason = [], None
+        if offset == 0 and len(chain) == 1 and a is not None and b is not None:
+            if enabled("HUNKS") and row.operation in {"patch", "replace", "restore"}:
+                try:
+                    if row.coverage == "complete" and row.effect_state == "applied":
+                        hunks = HunkPlan(row, a, b).descriptions()
+                except HunkConflict as exc:
+                    hunk_reason = str(exc)
         return {
+            "hunks": hunks,
+            "hunk_reason": hunk_reason,
             "change": row.model_dump(mode="json"),
             "before": chain[0].before.model_dump(mode="json"),
             "after": row.after.model_dump(mode="json"),
@@ -375,9 +496,12 @@ class WorkspaceRestoreService:
         if self.busy():
             fail("workspace_busy：工作区写入尚未结束", ApplicationErrorCode.BUSY)
 
-    def preview(self, session_id, ids, *, command_id, selectors=None):
+    def preview(self, session_id, ids, *, command_id, selectors=None, hunk_ids=()):
         selectors = selectors or {}
-        request = digest([session_id, ids, selectors])
+        hunk_ids = tuple(hunk_ids)
+        request = digest(
+            [session_id, ids, selectors, hunk_ids] if hunk_ids else [session_id, ids, selectors]
+        )
         if self.records.operation(self.workspace_id, apply_command_id=command_id):
             fail("同一 command_id 已用于执行恢复")
         previous = self.records.operation(self.workspace_id, command_id=command_id)
@@ -389,6 +513,8 @@ class WorkspaceRestoreService:
         if self.records.pending(self.workspace_id):
             fail("operation_in_progress：请先核对未完成恢复", ApplicationErrorCode.BUSY)
         rows = self.selected(session_id, ids, selectors)
+        if hunk_ids and (len(rows) != 1 or len(hunk_ids) != len(set(hunk_ids))):
+            fail("修改块必须选自同一次修改，且不能重复", ApplicationErrorCode.INVALID)
         groups = defaultdict(list)
         for row in rows:
             groups[row.path].append(row)
@@ -417,10 +543,30 @@ class WorkspaceRestoreService:
                     support, reason = "unsupported", "缺少完整修改材料"
                 self.bytes(row.before)
                 self.bytes(row.after)
-            total += first.before.byte_size + last.after.byte_size
+            expected, desired = last.after, first.before
+            file_identity = None
+            if hunk_ids:
+                try:
+                    expected, raw, candidate = self._hunk_candidate(last, hunk_ids)
+                    desired = manifest(candidate, expected.mode)
+                    file_identity = expected.file_identity
+                    support, reason = ("already_target" if raw == candidate else "ready"), None
+                except (
+                    ApplicationError,
+                    HunkConflict,
+                    LocalFileError,
+                    OSError,
+                    FileSystemMutationError,
+                ) as exc:
+                    support, reason = (
+                        "conflict",
+                        getattr(exc, "message", None)
+                        or (str(exc) if isinstance(exc, HunkConflict) else "当前文件无法安全比较"),
+                    )
+            total += desired.byte_size + expected.byte_size
             try:
                 parent = identity((self.root / path).parent)
-            except OSError:
+            except (OSError, FileSystemMutationError):
                 parent = (0, 0)
                 support, reason = "conflict", "父目录不存在或已变化"
             token = sha256_digest(f"{operation_id}:{index}")
@@ -428,10 +574,13 @@ class WorkspaceRestoreService:
                 RestoreItem(
                     change_ids=tuple(r.change_id for r in chain),
                     path=path,
-                    expected=last.after,
-                    desired=first.before,
+                    expected=expected,
+                    desired=desired,
+                    hunk_ids=hunk_ids,
                     parent_identity=parent,
-                    file_identity=self.reader.current(path).file_identity
+                    file_identity=(
+                        file_identity if hunk_ids else self.reader.current(path).file_identity
+                    )
                     if support in {"ready", "already_target"}
                     else None,
                     capture_name=f".morrow-restore-{token}-capture",
@@ -487,6 +636,8 @@ class WorkspaceRestoreService:
         if op.apply_command_id is not None:
             fail("此预览已经执行，请查询原操作")
         self._write_allowed()
+        if self.records.pending(self.workspace_id):
+            fail("operation_in_progress：请先核对未完成恢复", ApplicationErrorCode.BUSY)
         if (
             op.state != "previewed"
             or self.clock() >= op.expires_at
@@ -512,11 +663,12 @@ class WorkspaceRestoreService:
             fail("预览后的修改记录已变化", ApplicationErrorCode.STALE)
         for item in op.items:
             last = self.records.get(self.workspace_id, item.change_ids[-1])
-            if self.records.list(
+            if not item.hunk_ids and self.records.list(
                 self.workspace_id, path=item.path, after=last.workspace_sequence, limit=1
             ):
                 fail("预览后出现后续修改记录", ApplicationErrorCode.STALE)
         # All prechecks before the first effect. Exact selected versions stay bound.
+        prepared_items = []
         for item in op.items:
             for cid in item.change_ids:
                 row = self.records.get(self.workspace_id, cid)
@@ -530,12 +682,45 @@ class WorkspaceRestoreService:
                 or identity((self.root / item.path).parent) != item.parent_identity
             ):
                 fail("restore_conflict：文件或父目录在预览后已变化", ApplicationErrorCode.STALE)
-            self.bytes(item.expected)
-            self.bytes(item.desired)
+            if item.hunk_ids:
+                row = self.records.get(self.workspace_id, item.change_ids[0])
+                try:
+                    verified, raw, candidate = self._hunk_candidate(row, item.hunk_ids)
+                except (HunkConflict, LocalFileError, OSError, FileSystemMutationError):
+                    fail("修改块预览已失效，请重新预览", ApplicationErrorCode.STALE)
+                if verified != item.expected or not equivalent(
+                    manifest(candidate, verified.mode), item.desired
+                ):
+                    fail("修改块预览已失效，请重新预览", ApplicationErrorCode.STALE)
+                if item.state == "pending":
+                    try:
+                        captured = [
+                            self.artifacts.publish_workspace_snapshot(
+                                data, session_id=row.session_id, task_run_id=row.task_run_id
+                            )
+                            for data in (raw, candidate)
+                        ]
+                    except ArtifactError:
+                        fail("无法持久化修改块恢复快照", ApplicationErrorCode.UNAVAILABLE)
+                    item = item.model_copy(
+                        update={
+                            "expected": item.expected.model_copy(
+                                update={"snapshot_id": captured[0].artifact_id}
+                            ),
+                            "desired": item.desired.model_copy(
+                                update={"snapshot_id": captured[1].artifact_id}
+                            ),
+                        }
+                    )
+            else:
+                self.bytes(item.expected)
+                self.bytes(item.desired)
+            prepared_items.append(item)
         op = self.records.put_operation(
             op.model_copy(
                 update={
                     "state": "prepared",
+                    "items": tuple(prepared_items),
                     "apply_command_id": command_id,
                     "apply_digest": request,
                 }
@@ -584,6 +769,14 @@ class WorkspaceRestoreService:
                     parent_identity=item.parent_identity,
                     expected_identity=item.file_identity,
                 )
+                try:
+                    actual = self.reader.current(item.path)
+                    if not equivalent(actual, item.desired):
+                        raise LocalFileError("conflict", "发布后的文件已变化")
+                except (LocalFileError, OSError) as exc:
+                    raise FileSystemMutationError(
+                        "outcome_unknown", "恢复发布后文件状态无法确认", effect_applied=True
+                    ) from exc
             except (FileSystemMutationError, OSError, ApplicationError) as exc:
                 unknown = getattr(exc, "effect_applied", False)
                 self.records.save(
@@ -611,7 +804,6 @@ class WorkspaceRestoreService:
                         }
                     )
                 )
-            actual = self.reader.current(item.path)
             self.records.save(
                 change.model_copy(
                     update={

@@ -1,6 +1,7 @@
 """Session/task scoped review and restore commands on the Core owner."""
 
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import Field
 from starlette.responses import JSONResponse
@@ -17,6 +18,12 @@ class ChangeSelectionRequest(CommandRequest):
     task_run_id: str | None = None
     workflow_run_id: str | None = None
     node_run_id: str | None = None
+
+
+class RestorePreviewRequest(ChangeSelectionRequest):
+    hunk_ids: tuple[Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")], ...] = Field(
+        default=(), max_length=200
+    )
 
 
 class ChangeReviewRequest(ChangeSelectionRequest):
@@ -122,18 +129,19 @@ def workspace_change_routes(host, parse):
 
         return JSONResponse(await host.execute_query(query))
 
-    async def operation(request):
-        return JSONResponse(
-            await host.execute_query(
-                lambda: (
-                    service(context(request))
-                    .get_operation(
-                        request.path_params["session_id"], request.path_params["operation_id"]
-                    )
-                    .model_dump(mode="json")
-                )
-            )
+    def operation_view(request):
+        app = service(context(request))
+        op = app.get_operation(
+            request.path_params["session_id"], request.path_params["operation_id"]
         )
+        return (
+            app.operation_view(op)
+            if request.query_params.get("preview_diff") == "1"
+            else op.model_dump(mode="json")
+        )
+
+    async def operation(request):
+        return JSONResponse(await host.execute_query(lambda: operation_view(request)))
 
     async def command(request, kind, model):
         body = await parse(request, model)
@@ -144,12 +152,19 @@ def workspace_change_routes(host, parse):
             api = c.api
             name = "workspace_" + kind
             payload = {"session_id": sid, **body.model_dump(mode="json")}
+            if kind == "restore_preview" and not body.hunk_ids:
+                del payload["hunk_ids"]
             cid, request_digest, replay = api._prepare(name, payload, body.command_id)
             app = service(c)
             if replay is not None:
                 if kind in {"change_review", "change_pin", "change_reconcile"}:
                     return {"disposition": "replay", "reviewed": list(body.change_ids)}
-                return app.get_operation(sid, replay.result_id).model_dump(mode="json")
+                op = app.get_operation(sid, replay.result_id)
+                return (
+                    app.operation_view(op)
+                    if kind == "restore_preview"
+                    else op.model_dump(mode="json")
+                )
 
             def receipt(result_id, row_version=None):
                 event = c.emitter.emit(
@@ -197,7 +212,13 @@ def workspace_change_routes(host, parse):
 
                 return c.journal.transact(review)
             if kind == "restore_preview":
-                op = app.preview(sid, body.change_ids, command_id=cid, selectors=selection(body))
+                op = app.preview(
+                    sid,
+                    body.change_ids,
+                    command_id=cid,
+                    selectors=selection(body),
+                    hunk_ids=body.hunk_ids,
+                )
             elif kind == "restore_apply":
                 op = app.apply(
                     sid, body.preview_id, preview_digest=body.preview_digest, command_id=cid
@@ -205,7 +226,9 @@ def workspace_change_routes(host, parse):
             else:
                 op = app.reconcile(sid, request.path_params["operation_id"])
             c.journal.transact(lambda _: receipt(op.operation_id, op.row_version))
-            return op.model_dump(mode="json")
+            return (
+                app.operation_view(op) if kind == "restore_preview" else op.model_dump(mode="json")
+            )
 
         return JSONResponse(await host.execute_command(mutate))
 
@@ -219,7 +242,7 @@ def workspace_change_routes(host, parse):
         return await command(request, "change_pin", ChangeSelectionRequest)
 
     async def preview(request):
-        return await command(request, "restore_preview", ChangeSelectionRequest)
+        return await command(request, "restore_preview", RestorePreviewRequest)
 
     async def apply(request):
         return await command(request, "restore_apply", RestoreApplyRequest)

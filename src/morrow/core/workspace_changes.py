@@ -77,6 +77,7 @@ class RestoreItem(ProtocolModel):
     desired: FileManifest
     parent_identity: tuple[int, int]
     file_identity: tuple[int, int] | None = None
+    hunk_ids: tuple[str, ...] = Field(default=(), max_length=200)
     capture_name: str
     temporary_name: str
     change_id: str | None = None

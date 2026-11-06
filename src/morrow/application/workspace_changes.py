@@ -156,22 +156,33 @@ class WorkspaceChangeRecorder:
             raise LocalFileError("capture_failed", "修改意图未能持久化，未写入文件") from exc
 
     def current(self, path):
-        from morrow.adapters.local.filesystem import FileSystemAdapter
+        return self.current_bytes(path)[0]
+
+    def current_bytes(self, path):
+        from morrow.adapters.local.filesystem import FileSystemAdapter, FileSystemMutationError
         from morrow.services.files import MAX_SOURCE_FILE_BYTES
 
         target = self.mutation.files.resolver.resolve_mutation(path).target
         try:
             state = target.stat(follow_symlinks=False)
         except FileNotFoundError:
-            return FileManifest()
+            return FileManifest(), None
         if not stat.S_ISREG(state.st_mode) or state.st_nlink != 1:
             raise LocalFileError("conflict", "当前文件类型或链接身份不支持恢复")
-        source = FileSystemAdapter().read_confined_file(
-            target,
-            workspace_root=self.mutation.files.resolver.root,
-            max_bytes=MAX_SOURCE_FILE_BYTES,
-        )
-        return manifest(source.raw, source.mode, file_identity=(state.st_dev, state.st_ino))
+        try:
+            source = FileSystemAdapter().read_confined_file(
+                target,
+                workspace_root=self.mutation.files.resolver.root,
+                max_bytes=MAX_SOURCE_FILE_BYTES,
+            )
+        except FileSystemMutationError as exc:
+            raise LocalFileError("conflict", "当前文件无法安全读取") from exc
+        checked = target.stat(follow_symlinks=False)
+        if checked.st_nlink != 1 or not FileSystemAdapter._same_file_identity(state, checked):
+            raise LocalFileError("conflict", "读取时文件身份已变化")
+        return manifest(
+            source.raw, source.mode, file_identity=(state.st_dev, state.st_ino)
+        ), source.raw
 
     def finish(self, record, *, succeeded):
         if record is None:
