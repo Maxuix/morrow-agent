@@ -58,6 +58,8 @@ class ConfinedFileState:
     mode: int
     size: int
     mtime_ns: int
+    file_identity: tuple[int, int]
+    link_count: int
 
 
 class FileSystemAdapter:
@@ -680,6 +682,8 @@ class FileSystemAdapter:
                     mode=stat.S_IMODE(published_metadata.st_mode),
                     size=published_metadata.st_size,
                     mtime_ns=published_metadata.st_mtime_ns,
+                    file_identity=(published_metadata.st_dev, published_metadata.st_ino),
+                    link_count=published_metadata.st_nlink,
                 )
             finally:
                 if destination_fd is not None:
@@ -1026,6 +1030,8 @@ class FileSystemAdapter:
                 mode=stat.S_IMODE(metadata.st_mode),
                 size=metadata.st_size,
                 mtime_ns=metadata.st_mtime_ns,
+                file_identity=(metadata.st_dev, metadata.st_ino),
+                link_count=metadata.st_nlink,
             )
         finally:
             try:

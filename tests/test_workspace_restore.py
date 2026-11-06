@@ -6,7 +6,7 @@ import pytest
 
 from morrow.adapters.local.restore import identity
 from morrow.application.workspace_restore import WorkspaceRestoreService
-from morrow.core.application import ApplicationError
+from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.workspace_changes import FileManifest, WorkspaceChange
 from test_stage7_multi_agent_pipeline import WS, PipelineFixture
 
@@ -407,3 +407,185 @@ def test_hunk_ids_bind_revision_and_multiple_selected_hunks(fx):
         hunk_ids=op.items[0].hunk_ids,
     )
     assert bad.items[0].state == "conflict"
+
+
+def structural_record(fx, kind):
+    row = record(fx, before=b"\xef\xbb\xbforiginal\r\nno final newline", after=None)
+    destination = {"delete": None, "move": "sub/new.txt", "rename": "new.txt"}[kind]
+    after = row.after
+    if destination:
+        path = fx.root / destination
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(fx.restore.bytes(row.before))
+        path.chmod(row.before.mode)
+        actual = fx.restore.reader.current(destination)
+        after = row.before.model_copy(update={"file_identity": actual.file_identity})
+    return fx.restore.records.save(
+        row.model_copy(
+            update={
+                "operation": kind,
+                "destination_path": destination,
+                "source_parent_identity": identity(fx.root),
+                "destination_parent_identity": identity(path.parent) if destination else None,
+                "after": after,
+            }
+        )
+    )
+
+
+@pytest.mark.parametrize("kind", ["delete", "move", "rename"])
+def test_structural_restore_and_redo(fx, kind):
+    row = structural_record(fx, kind)
+    op = preview(fx, [row])
+    assert op.items[0].state == "pending"
+    result = apply(fx, op)
+    original = fx.root / row.path
+    assert result.state == "completed"
+    assert original.read_bytes() == fx.restore.bytes(row.before)
+    assert original.stat().st_mode & 0o777 == 0o755
+    if row.destination_path:
+        assert not (fx.root / row.destination_path).exists()
+        assert (fx.root / row.destination_path).with_name(result.items[0].capture_name).exists()
+    compensation = fx.restore.records.get(WS, result.items[0].change_id)
+    redo = preview(fx, [compensation], "cmd_redo_preview")
+    assert apply(fx, redo, "cmd_redo").state == "completed"
+    assert not original.exists()
+    if row.destination_path:
+        assert (fx.root / row.destination_path).read_bytes() == fx.restore.bytes(row.before)
+
+
+@pytest.mark.parametrize("kind", ["delete", "move", "rename"])
+def test_structural_target_claim_between_preview_and_apply(fx, kind):
+    row = structural_record(fx, kind)
+    op = preview(fx, [row])
+    # Even a byte-identical occupant must be preserved.
+    original = fx.root / row.path
+    original.write_bytes(fx.restore.bytes(row.before))
+    original.chmod(row.before.mode)
+    with pytest.raises(ApplicationError):
+        apply(fx, op)
+    assert original.exists()
+    assert preview(fx, [row], "cmd_occupied").items[0].state == "conflict"
+    if row.destination_path:
+        assert (fx.root / row.destination_path).exists()
+
+
+@pytest.mark.parametrize("kind", ["delete", "move"])
+def test_structural_occupied_during_publish_requires_evidence(fx, monkeypatch, kind):
+    row = structural_record(fx, kind)
+    op = preview(fx, [row])
+    rename = fx.restore.publisher._rename_no_replace
+    original = fx.root / row.path
+
+    def race(src, source, dst, destination):
+        if destination == original.name:
+            original.write_bytes(fx.restore.bytes(row.before))
+            original.chmod(row.before.mode)
+        return rename(src, source, dst, destination)
+
+    monkeypatch.setattr(fx.restore.publisher, "_rename_no_replace", race)
+    result = apply(fx, op)
+    assert result.state == "needs_reconciliation"
+    item = result.items[0]
+    assert original.stat().st_ino != item.published_identity[1]
+    assert original.with_name(item.temporary_name).read_bytes() == original.read_bytes()
+    if row.destination_path:
+        capture = (fx.root / row.destination_path).with_name(item.capture_name)
+        assert capture.read_bytes() == original.read_bytes()
+    retry = apply(fx, op)
+    assert retry.state == "needs_reconciliation"
+    assert fx.restore.records.get(WS, item.change_id).effect_state == "outcome_unknown"
+
+
+@pytest.mark.parametrize("kind", ["delete", "move"])
+def test_structural_reconciliation_after_publication(fx, monkeypatch, kind):
+    row = structural_record(fx, kind)
+    op = preview(fx, [row])
+    save = fx.restore.records.save
+
+    def crash(row):
+        if row.origin == "restore":
+            raise RuntimeError("injected")
+        return save(row)
+
+    monkeypatch.setattr(fx.restore.records, "save", crash)
+    with pytest.raises(RuntimeError, match="injected"):
+        apply(fx, op)
+    monkeypatch.setattr(fx.restore.records, "save", save)
+    monkeypatch.setattr(fx.restore.publisher, "publish", lambda *a, **k: pytest.fail("replay"))
+    result = apply(fx, op)
+    assert result.state == "completed"
+    assert result.items[0].state == "target_reached"
+    assert (fx.root / row.path).read_bytes() == fx.restore.bytes(row.before)
+
+
+def test_move_restore_rejects_later_destination_change_or_feature_disable(fx, monkeypatch):
+    row = structural_record(fx, "move")
+    op = preview(fx, [row])
+    monkeypatch.setenv("MORROW_RESTORE_MOVE", "0")
+    with pytest.raises(ApplicationError):
+        apply(fx, op)
+    monkeypatch.delenv("MORROW_RESTORE_MOVE")
+    # The destination is also indexed as a touched path, even for another move.
+    later = record(fx, path="other.txt", before=b"old", after=b"new")
+    fx.restore.records.save(later.model_copy(update={"destination_path": row.destination_path}))
+    with pytest.raises(ApplicationError):
+        apply(fx, op)
+    assert (fx.root / row.destination_path).exists()
+
+
+def test_hunk_preserves_later_controlled_edit_and_can_undo_another_hunk(fx):
+    before = b"start\nold\nleft\nuser zone\nright\nold final"
+    after = b"start\nnew\nleft\nuser zone\nright\nnew final"
+    row = bind_after_identity(fx, record(fx, before=before, after=after))
+    current = after.replace(b"user zone", b"later zone")
+    later = record(fx, before=after, after=current)
+    later = bind_after_identity(fx, later)
+    fx.restore.records.save(
+        later.model_copy(
+            update={
+                "before": later.before.model_copy(update={"file_identity": row.after.file_identity})
+            }
+        )
+    )
+    assert apply(fx, hunk_preview(fx, row)).state == "completed"
+    second = hunk_preview(fx, row, (1,), command="cmd_second")
+    assert apply(fx, second, "cmd_second_apply").state == "completed"
+    assert (fx.root / row.path).read_bytes() == before.replace(b"user zone", b"later zone")
+
+
+def test_move_refuses_replaced_destination_parent(fx):
+    row = structural_record(fx, "move")
+    op = preview(fx, [row])
+    (fx.root / "sub").rename(fx.root / "old-sub")
+    (fx.root / "sub").mkdir()
+    (fx.root / row.destination_path).write_bytes(b"external")
+    with pytest.raises(ApplicationError):
+        apply(fx, op)
+    assert (fx.root / row.destination_path).read_bytes() == b"external"
+    assert (fx.root / "old-sub/new.txt").read_bytes() == fx.restore.bytes(row.before)
+    assert not (fx.root / row.path).exists()
+
+
+def test_move_staging_record_failure_retains_both_materials(fx, monkeypatch):
+    row = structural_record(fx, "move")
+    op = preview(fx, [row])
+    put_operation = fx.restore.records.put_operation
+
+    def fail_staging(operation, **kwargs):
+        if operation.items[0].published_identity:
+            raise ApplicationError(
+                ApplicationErrorCode.UNAVAILABLE, "injected staging journal failure"
+            )
+        return put_operation(operation, **kwargs)
+
+    monkeypatch.setattr(fx.restore.records, "put_operation", fail_staging)
+    result = apply(fx, op)
+    assert result.state == "needs_reconciliation"
+    item = result.items[0]
+    assert not (fx.root / row.path).exists()
+    assert not (fx.root / row.destination_path).exists()
+    assert (fx.root / item.path).with_name(item.capture_name).read_bytes() == fx.restore.bytes(
+        row.before
+    )
+    assert (fx.root / item.destination_path).with_name(item.temporary_name).exists()

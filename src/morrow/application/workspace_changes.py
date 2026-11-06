@@ -10,6 +10,8 @@ import difflib
 import hashlib
 import stat
 
+from morrow.adapters.local.filesystem import FileSystemAdapter, FileSystemMutationError
+from morrow.adapters.local.restore import identity
 from morrow.core.artifacts import TASK_ARTIFACT_MAX_BYTES, ArtifactError
 from morrow.core.domain import refuse_secret_material
 from morrow.core.workspace_changes import WORKSPACE_SNAPSHOT_BYTES, FileManifest, WorkspaceChange
@@ -66,29 +68,40 @@ class WorkspaceChangeRecorder:
             raise LocalFileError("conflict", "这次修改已有记录，请先核对执行结果")
         before = plan.before.raw if plan.before is not None else None
         mode = stat.S_IMODE(plan.before.mode) if plan.before is not None else 0o644
-        after = plan.desired_raw if plan.operation.value in {"create", "patch", "replace"} else None
+        operation = plan.operation.value
+        structural = operation in {"delete", "move", "rename"}
+        after = None if operation == "delete" else before if structural else plan.desired_raw
         reason = None
-        if plan.operation.value not in {"create", "patch", "replace"}:
-            reason = "structural_operation"
-        else:
+        if before is not None:
+            source_stat = plan.target.stat(follow_symlinks=False)
+            if not stat.S_ISREG(source_stat.st_mode) or source_stat.st_nlink != 1:
+                reason = "unsupported_link"
+        for raw in (before, after):
+            if raw is None or reason:
+                continue
+            if structural and plan.before.newline.value == "mixed":
+                reason = "unsupported_text_format"
+                continue
+            if b"\x00" in raw or (structural and not plan.before.is_text):
+                reason = "unsupported_binary"
+                continue
             try:
-                if before is not None and plan.target.stat(follow_symlinks=False).st_nlink != 1:
-                    reason = "unsupported_link"
-                for raw in (before, after):
-                    if raw is not None:
-                        if b"\x00" in raw:
-                            reason = "unsupported_binary"
-                        refuse_secret_material(
-                            raw, label="file snapshot", profile="workflow_value_sensitive"
-                        )
+                refuse_secret_material(
+                    raw, label="file snapshot", profile="workflow_value_sensitive"
+                )
             except ValueError:
                 reason = "sensitive_content"
         bm, am = manifest(before, mode), manifest(after, mode)
         if before is not None:
-            source_stat = plan.target.stat(follow_symlinks=False)
             bm = bm.model_copy(update={"file_identity": (source_stat.st_dev, source_stat.st_ino)})
+        source_parent = identity(plan.target.parent) if structural else None
+        destination_parent = (
+            identity(plan.destination_target.parent)
+            if plan.destination_target is not None
+            else None
+        )
         if reason is None:
-            required = sum(len(raw) for raw in (before, after) if raw is not None)
+            required = bm.byte_size + (0 if structural else am.byte_size)
             task_used = self.journal.artifact_bytes_for_task(
                 self.workspace_id, execution.task_run_id
             )
@@ -109,14 +122,17 @@ class WorkspaceChangeRecorder:
                     )
                     bm = bm.model_copy(update={"snapshot_id": a.artifact_id})
                 if after is not None:
-                    a = self.artifacts.publish_workspace_snapshot(
-                        after, session_id=execution.session_id, task_run_id=execution.task_run_id
-                    )
-                    am = am.model_copy(update={"snapshot_id": a.artifact_id})
+                    if structural:
+                        am = am.model_copy(update={"snapshot_id": bm.snapshot_id})
+                    else:
+                        a = self.artifacts.publish_workspace_snapshot(
+                            after,
+                            session_id=execution.session_id,
+                            task_run_id=execution.task_run_id,
+                        )
+                        am = am.model_copy(update={"snapshot_id": a.artifact_id})
             except ArtifactError as exc:
                 raise LocalFileError("capture_failed", "恢复快照未能持久化，未写入文件") from exc
-        from morrow.adapters.local.restore import identity
-
         added = removed = 0
         if reason is None:
             for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
@@ -144,6 +160,8 @@ class WorkspaceChangeRecorder:
                     mutation_key=key,
                     path=plan.relative_path,
                     destination_path=plan.destination_relative_path,
+                    source_parent_identity=source_parent,
+                    destination_parent_identity=destination_parent,
                     operation=plan.operation.value,
                     before=bm,
                     after=am,
@@ -159,7 +177,6 @@ class WorkspaceChangeRecorder:
         return self.current_bytes(path)[0]
 
     def current_bytes(self, path):
-        from morrow.adapters.local.filesystem import FileSystemAdapter, FileSystemMutationError
         from morrow.services.files import MAX_SOURCE_FILE_BYTES
 
         target = self.mutation.files.resolver.resolve_mutation(path).target
@@ -178,7 +195,12 @@ class WorkspaceChangeRecorder:
         except FileSystemMutationError as exc:
             raise LocalFileError("conflict", "当前文件无法安全读取") from exc
         checked = target.stat(follow_symlinks=False)
-        if checked.st_nlink != 1 or not FileSystemAdapter._same_file_identity(state, checked):
+        if (
+            source.link_count != 1
+            or checked.st_nlink != 1
+            or source.file_identity != (checked.st_dev, checked.st_ino)
+            or not FileSystemAdapter._same_file_identity(state, checked)
+        ):
             raise LocalFileError("conflict", "读取时文件身份已变化")
         return manifest(
             source.raw, source.mode, file_identity=(state.st_dev, state.st_ino)
@@ -191,15 +213,41 @@ class WorkspaceChangeRecorder:
             state = "applied" if succeeded else "outcome_unknown"
         else:
             try:
-                actual = self.current(record.path)
-                state = (
-                    "applied"
-                    if equivalent(actual, record.after)
-                    else "not_applied"
-                    if equivalent(actual, record.before)
-                    else "outcome_unknown"
-                )
-            except (LocalFileError, OSError):
+                current = self.current(record.path)
+                if record.destination_path:
+                    actual = self.current(record.destination_path)
+                    expected_move = (
+                        not current.exists
+                        and actual.file_identity == record.before.file_identity
+                        and equivalent(actual, record.after)
+                    )
+                    state = (
+                        "applied"
+                        if expected_move
+                        else "not_applied"
+                        if equivalent(current, record.before) and not actual.exists
+                        else "outcome_unknown"
+                    )
+                else:
+                    actual = current
+                    state = (
+                        "applied"
+                        if equivalent(actual, record.after)
+                        else "not_applied"
+                        if equivalent(actual, record.before)
+                        else "outcome_unknown"
+                    )
+                for path, expected_parent in (
+                    (record.path, record.source_parent_identity),
+                    (record.destination_path, record.destination_parent_identity),
+                ):
+                    if (
+                        expected_parent is not None
+                        and identity((self.mutation.files.resolver.root / path).parent)
+                        != expected_parent
+                    ):
+                        state = "outcome_unknown"
+            except (LocalFileError, OSError, FileSystemMutationError):
                 state = "outcome_unknown"
 
         def work(_):
@@ -237,6 +285,8 @@ class WorkspaceChangeRecorder:
             complete = row.coverage == "complete" and row.effect_state == "applied"
             diff = None
             reason = row.omission_reason
+            if complete and row.operation in {"delete", "move", "rename"}:
+                complete, reason = False, "structural_operation"
             if complete:
                 before = (
                     self.artifacts.read_workspace_snapshot(row.before.snapshot_id)
@@ -266,9 +316,11 @@ class WorkspaceChangeRecorder:
                         "rename": "renamed",
                     }[row.operation],
                     before_sha256=row.before.sha256,
-                    after_sha256=row.after.sha256,
+                    after_sha256=row.after.sha256 if row.destination_path is None else None,
                     before_size=row.before.byte_size if row.before.exists else None,
-                    after_size=row.after.byte_size if row.after.exists else None,
+                    after_size=row.after.byte_size
+                    if row.after.exists and row.destination_path is None
+                    else None,
                     unified_diff=diff,
                     content_complete=complete,
                     omission_reason=reason if not complete else None,

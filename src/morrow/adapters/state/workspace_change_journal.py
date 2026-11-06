@@ -62,8 +62,8 @@ class WorkspaceChangeJournal:
             sql += " AND task_run_id IN (" + ",".join("?" for _ in task_ids) + ")"
             params.extend(task_ids)
         if path is not None:
-            sql += " AND path=?"
-            params.append(path)
+            sql += " AND (path=? OR json_extract(payload_json,'$.destination_path')=?)"
+            params.extend((path, path))
         if through is not None:
             sql += " AND workspace_sequence<=?"
             params.append(through)
@@ -100,9 +100,8 @@ class WorkspaceChangeJournal:
             else [value.before, value.after]
         )
         refs = tuple(
-            ArtifactReference(artifact_id=m.snapshot_id, role="restore_snapshot")
-            for m in manifests
-            if m.snapshot_id
+            ArtifactReference(artifact_id=snapshot_id, role="restore_snapshot")
+            for snapshot_id in dict.fromkeys(m.snapshot_id for m in manifests if m.snapshot_id)
         )
         self.journal._replace_artifact_references(
             value.workspace_id,

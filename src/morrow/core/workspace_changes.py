@@ -53,6 +53,8 @@ class WorkspaceChange(ProtocolModel):
     removed_lines: int = Field(default=0, ge=0)
     path: str
     destination_path: str | None = None
+    source_parent_identity: tuple[int, int] | None = None
+    destination_parent_identity: tuple[int, int] | None = None
     operation: Literal["create", "patch", "replace", "delete", "move", "rename", "restore"]
     origin: Literal["tool", "restore"] = "tool"
     related_change_ids: tuple[str, ...] = ()
@@ -69,6 +71,11 @@ class WorkspaceChange(ProtocolModel):
 
     _path = field_validator("path")(_clean_relative_path)
 
+    @field_validator("destination_path")
+    @classmethod
+    def clean_destination(cls, value):
+        return _clean_relative_path(value) if value is not None else None
+
 
 class RestoreItem(ProtocolModel):
     change_ids: tuple[str, ...] = Field(min_length=1, max_length=1000)
@@ -76,6 +83,10 @@ class RestoreItem(ProtocolModel):
     expected: FileManifest
     desired: FileManifest
     parent_identity: tuple[int, int]
+    destination_path: str | None = None
+    destination_parent_identity: tuple[int, int] | None = None
+    structure: Literal["delete", "move"] | None = None
+    published_identity: tuple[int, int] | None = None
     file_identity: tuple[int, int] | None = None
     hunk_ids: tuple[str, ...] = Field(default=(), max_length=200)
     capture_name: str
@@ -87,6 +98,11 @@ class RestoreItem(ProtocolModel):
     reason: str | None = None
 
     _path = field_validator("path")(_clean_relative_path)
+
+    @field_validator("destination_path")
+    @classmethod
+    def clean_destination(cls, value):
+        return _clean_relative_path(value) if value is not None else None
 
 
 class RestoreOperation(ProtocolModel):

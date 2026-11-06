@@ -187,7 +187,8 @@ async def test_capture_failure_precedes_file_write(tmp_path, monkeypatch, failur
 
 
 @pytest.mark.asyncio
-async def test_factory_sandbox_promotion_records_each_file(tmp_path, monkeypatch):
+@pytest.mark.parametrize("structural", [False, True])
+async def test_factory_sandbox_promotion_records_each_file(tmp_path, monkeypatch, structural):
     from types import SimpleNamespace
 
     from morrow.adapters.credentials.keyring import MemoryCredentialStore
@@ -199,12 +200,24 @@ async def test_factory_sandbox_promotion_records_each_file(tmp_path, monkeypatch
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     project = tmp_path / "workspace"
     project.mkdir()
+    if structural:
+        for name, raw in (
+            ("delete.txt", b"delete"),
+            ("move.txt", b"move"),
+            ("rename.txt", b"rename"),
+        ):
+            (project / name).write_bytes(raw)
+        (project / "sub").mkdir()
     files = WorkspaceFileService(WorkspacePathResolver(project))
     sandbox = SandboxSnapshotService(files, temp_parent=tmp_path)
     isolated = sandbox.prepare(project, run_id="probe", call_id="probe")
     try:
         for name in ("a.txt", "b.txt"):
             (isolated.snapshot_root / name).write_text(name)
+        if structural:
+            (isolated.snapshot_root / "delete.txt").unlink()
+            (isolated.snapshot_root / "move.txt").rename(isolated.snapshot_root / "sub/new.txt")
+            (isolated.snapshot_root / "rename.txt").rename(isolated.snapshot_root / "renamed.txt")
         change_set = sandbox.collect(isolated)
     finally:
         sandbox.cleanup(isolated)
@@ -232,7 +245,11 @@ async def test_factory_sandbox_promotion_records_each_file(tmp_path, monkeypatch
                         id="promote",
                         name="promote_sandbox_changes",
                         arguments=json.dumps(
-                            {"change_set_id": change_set.change_set_id, "paths": ["a.txt", "b.txt"]}
+                            {
+                                "change_set_id": change_set.change_set_id,
+                                "paths": ["a.txt", "b.txt"]
+                                + (["delete.txt", "move.txt", "rename.txt"] if structural else []),
+                            }
                         ),
                     ),
                 )
@@ -253,14 +270,44 @@ async def test_factory_sandbox_promotion_records_each_file(tmp_path, monkeypatch
     try:
         [e async for e in products.orchestrator.stream("promote the two selected text files")]
         rows = products.api.journal.workspace_changes.list(identity.workspace_id)
-        assert [r.path for r in rows] == ["a.txt", "b.txt"]
+        assert [r.path for r in rows] == ["a.txt", "b.txt"] + (
+            ["delete.txt", "move.txt", "rename.txt"] if structural else []
+        )
         assert len({r.tool_execution_id for r in rows}) == 1
-        assert len({r.mutation_key for r in rows}) == 2
-        for row in rows:
-            assert row.effect_state == "applied"
+        assert len({r.mutation_key for r in rows}) == len(rows)
+        assert all(row.effect_state == "applied" for row in rows)
+        for row in rows[:2]:
             assert (
                 products.artifacts.read_workspace_snapshot(row.after.snapshot_id)
                 == row.path.encode()
             )
+        if structural:
+            from morrow.application.workspace_restore import WorkspaceRestoreService
+
+            restore = WorkspaceRestoreService(
+                products.api.journal, products.artifacts, project, identity.workspace_id
+            )
+            assert [r.operation for r in rows[2:]] == ["delete", "move", "rename"]
+            assert [r.destination_path for r in rows[2:]] == [None, "sub/new.txt", "renamed.txt"]
+            for row in rows[2:]:
+                assert not (project / row.path).exists()
+                assert row.coverage == "complete"
+                assert restore.bytes(row.before) == row.operation.encode()
+            op = restore.preview(
+                rows[0].session_id,
+                [r.change_id for r in rows[2:]],
+                command_id="cmd_restore_preview",
+                selectors={"task_run_id": rows[0].task_run_id},
+            )
+            assert all(item.state == "pending" for item in op.items)
+            result = restore.apply(
+                op.session_id,
+                op.operation_id,
+                preview_digest=op.preview_digest,
+                command_id="cmd_restore_apply",
+            )
+            assert result.state == "completed"
+            for row in rows[2:]:
+                assert (project / row.path).read_bytes() == row.operation.encode()
     finally:
         products.persistence.close()
